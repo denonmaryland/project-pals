@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Publish a Terminal Botz release: everyone's About → Check for updates (and crewd's daily check)
+# will see it and can update in one click.
+#
+#   ./release 0.2.0 "What changed, a few lines"
+#   ./release 0.2.0 -F notes.md
+#
+# It sets VERSION, commits, tags v0.2.0, builds dist/terminal-botz-0.2.0.tar.gz plus SHA256SUMS
+# (the updater refuses a download that doesn't match), pushes, and creates the GitHub release.
+# Needs: a clean tree on main, the GitHub repo in botz.json created, and gh signed in.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+version="${1:-}"; shift || true
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: ./release X.Y.Z \"notes\" | -F notes.md" >&2; exit 2; }
+if [[ "${1:-}" == "-F" ]]; then notes="$(cat "$2")"; else notes="${1:-}"; fi
+[[ -n "$notes" ]] || { echo "say what changed: ./release $version \"notes\"" >&2; exit 2; }
+
+repo="$(python3 -c 'import json; print(json.load(open("botz.json"))["repo"])')"
+current="$(cat VERSION)"
+python3 - "$current" "$version" <<'PY' || { echo "$version isn't newer than $current" >&2; exit 2; }
+import sys
+t = lambda v: tuple(int(x) for x in v.split("."))
+sys.exit(0 if t(sys.argv[2]) > t(sys.argv[1]) else 1)
+PY
+[[ "$(git branch --show-current)" == "main" ]] || { echo "release from main" >&2; exit 2; }
+[[ -z "$(git status --porcelain)" ]] || { echo "commit or stash your changes first" >&2; exit 2; }
+gh repo view "$repo" >/dev/null 2>&1 || { echo "GitHub repo $repo doesn't exist yet. Create it first, e.g.: gh repo create $repo --public --source . --push" >&2; exit 2; }
+
+for f in install.sh VERSION botz.json layouts/crew.json; do [[ -e "$f" ]] || { echo "missing $f" >&2; exit 2; }; done
+
+printf '%s\n' "$version" > VERSION
+git add VERSION
+git commit -qm "Release v$version"
+git tag -a "v$version" -m "Terminal Botz $version"
+
+mkdir -p dist
+tarball="dist/terminal-botz-$version.tar.gz"
+git archive --format=tar.gz --prefix="terminal-botz-$version/" -o "$tarball" "v$version"
+(cd dist && sha256sum "terminal-botz-$version.tar.gz" > SHA256SUMS)
+
+git push -q origin main "v$version"
+gh release create "v$version" "$tarball" dist/SHA256SUMS --repo "$repo" --title "Terminal Botz $version" --notes "$notes"
+echo "released $version: installs see it at their next check (About → Check for updates)"

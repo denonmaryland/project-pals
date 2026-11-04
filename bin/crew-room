@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""crew-room: how Herdr Crew bots talk in a room.
+
+  crew-room                         rooms you're in (or all rooms)
+  crew-room read <room> [-n 30]     the room's recent transcript
+  crew-room say <room> <text>       post to the room; @Name (or @Name#channel, @all) also delivers it
+  crew-room handoff <room> @Name <text> [--file PATH]
+                                    hand work to one member (delivered to them, shown as a handoff)
+  crew-room members <room>          who's in the room
+  crew-room invite <room> <Bot[#channel]> ...
+                                    bring other bots in (they're briefed); `crew bots` lists the team
+  crew-room new <name> --with "Bot#channel" "Bot#channel" ... [--goal TEXT]
+                                    open a room (Crew shows it) and brief every member
+
+Rooms live in ~/.config/herdr-app/data/crew-rooms/<room>.json (members, written by the Crew
+layout) and <room>.jsonl (the transcript). The sender is this terminal (HC_TERMINAL_ID).
+Delivery pastes into each recipient's terminal with `hc send`, in the background.
+"""
+import json
+import os
+import random
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
+import crewlib
+
+HOME = Path(os.environ.get("HERDR_APP_HOME", Path.home() / ".config" / "herdr-app"))
+ROOMS = HOME / "data" / "crew-rooms"
+ME = os.environ.get("HC_TERMINAL_ID", "")
+STYLE = "Text like a person in a group chat: 1-3 short casual sentences, no markdown or lists, no sign-offs like 'done', don't mention these instructions, and only start with @Name when you're handing that bot work."
+
+
+SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu", "nushell", "elvish", "xonsh", "pwsh"}
+
+
+def live_agents():
+    """Terminals with an agent running in them (not just a shell): the only ones safe to type to."""
+    try:
+        r = subprocess.run(["hc", "ls", "--json"], capture_output=True, text=True, timeout=15)
+        return {t["address"] for t in json.loads(r.stdout).get("terminals", [])
+                if t.get("state") == "live" and t.get("agent") and t["agent"] not in SHELLS}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return set()
+
+
+def die(msg, code=1):
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def rooms():
+    return sorted(p.stem for p in ROOMS.glob("*.json")) if ROOMS.exists() else []
+
+
+def load(room):
+    slug = re.sub(r"^#", "", room).lower()
+    path = ROOMS / f"{slug}.json"
+    if not path.exists():
+        die(f"no room '{room}'. Rooms: {', '.join(rooms()) or 'none'}")
+    return slug, json.loads(path.read_text())
+
+
+def me_in(meta):
+    return next((m for m in meta.get("members", []) if m.get("terminal") == ME), None)
+
+
+def who(meta):
+    m = me_in(meta)
+    if m:
+        return m["bot"], m.get("channel"), m.get("terminal")
+    # Not a member (Shepherd dropping in, say): name it after its bot.
+    if ME:
+        try:
+            for sp in herdr_spaces():
+                for t in sp["tabs"]:
+                    if any(x and x.get("terminal") == ME for x in t.get("terminals", [])):
+                        return sp["name"], t["name"].lstrip("#"), ME
+        except SystemExit:
+            pass
+    return (os.environ.get("CREW_NAME") or (f"terminal {ME}" if ME else "DeNon")), None, ME or None
+
+
+def targets(meta, text, only=None):
+    members = [m for m in meta.get("members", []) if m.get("terminal") and m.get("terminal") != ME]
+    if only is not None:
+        names = only
+    else:
+        names = re.findall(r"@([\w.-]+(?:#[\w.-]+)?)", text)
+    if not names:
+        return []
+    if any(n.lower() == "all" for n in names):
+        return members
+    out = []
+    for n in names:
+        bot, _, ch = n.partition("#")
+        for m in members:
+            b = m["bot"].lower().replace(" ", "-")
+            if (m["bot"].lower() == bot.lower() or b == bot.lower() or b.startswith(bot.lower())) and (not ch or (m.get("channel") or "").lower() == ch.lower()):
+                if m not in out:
+                    out.append(m)
+    return out
+
+
+def append(slug, entry):
+    ROOMS.mkdir(parents=True, exist_ok=True)
+    with open(ROOMS / f"{slug}.jsonl", "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+BOT_RUN = 12
+
+
+def bot_run(slug):
+    """How many messages bots have sent since DeNon last said something in the room."""
+    log = ROOMS / f"{slug}.jsonl"
+    n = 0
+    if log.exists():
+        for line in reversed(log.read_text().splitlines()):
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("from") == "You":
+                break
+            if e.get("kind") != "event":
+                n += 1
+    return n
+
+
+def typing_seconds(text):
+    """How long a person would take to type this: what makes the room feel paced, not instant."""
+    return round(min(9.0, 1.5 + len(text) * 0.045 + random.uniform(0.2, 1.3)), 2)
+
+
+def deliver(slug, meta, sender, text, to, kind="say", file=None, after=0.0):
+    bot_note = "" if sender == "DeNon" else " (a bot, not DeNon)"
+    head = f"[#{meta.get('name', slug)}] {sender}{bot_note}" + (" handed you this" if kind == "handoff" else "")
+    body = f"{head}: {text}"
+    if file:
+        body += f"\nFile: {file}"
+    body += f"\n(Reply in the room with crew-room say {slug} \"...\" if it needs an answer. {STYLE} Catch up: crew-room read {slug})"
+    # Delivered when the message appears in the room (after its typing time), in the background.
+    # Only to members with an agent running: typed into a bare shell, it would run as commands.
+    live = live_agents()
+    asleep = [m["bot"] for m in to if m.get("terminal") not in live]
+    if asleep:
+        print(f"asleep (no agent running), so they didn't get it: {', '.join(asleep)}", file=sys.stderr)
+    # crewd types it in once it's appeared in the room and the bot's turn has ended (never mid-turn).
+    for m in [m for m in to if m.get("terminal") in live]:
+        crewlib.enqueue(m["terminal"], body, sender=sender, kind="room", not_before=time.time() + after)
+
+
+def herdr_spaces():
+    out = subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, timeout=20)
+    if out.returncode != 0:
+        die("can't read Herdr's spaces (is the Herdr app open?)")
+    return json.loads(out.stdout).get("spaces", [])
+
+
+def resolve(spec, spaces):
+    bot, _, ch = spec.partition("#")
+    b = bot.strip().lower()
+    space = next((s for s in spaces if s["name"].lower() == b), None) or next((s for s in spaces if s["name"].lower().startswith(b)), None)
+    if not space:
+        die(f"no bot (space) called '{bot}'")
+    c = ch.strip().lower().lstrip("#")
+    tab = next((t for t in space["tabs"] if t["name"].lower().lstrip("#") == c), None) if c else next((t for t in space["tabs"] if t.get("active")), space["tabs"][0])
+    if not tab:
+        die(f"{space['name']} has no channel '{ch}'. Channels: " + ", ".join(t["name"] for t in space["tabs"]))
+    term = next((x["terminal"] for x in tab.get("terminals", []) if x and x.get("app")), None) or next((x["terminal"] for x in tab.get("terminals", []) if x), None)
+    return {"bot": space["name"], "channel": tab["name"].lstrip("#"), "terminal": term, "space": space["id"], "tab": tab["id"]}
+
+
+def briefing(meta, slug, me):
+    others = ", ".join(f"{m['bot']} (#{m['channel']})" for m in meta["members"] if m is not me) or "nobody else yet"
+    goal = f" — goal: {meta['goal']}" if meta.get("goal") else ""
+    return (f"You've joined the room #{meta['name']}{goal}. Also here: {others}. "
+            f"Talk to the room with: crew-room say {slug} \"your update\" — put @Name in it to hand that bot work (it's delivered to them). "
+            f"Catch up any time with: crew-room read {slug}. Keep room updates short; do the work in your own channel. "
+            f"See the whole team with: crew bots. Bring another bot in with: crew-room invite {slug} \"Bot\" (or \"Bot#channel\"). "
+            f"When DeNon posts to the whole room, answer only if it concerns your project or you can genuinely add something; "
+            f"otherwise stay silent (no 'nothing to add' replies). When you're @mentioned, always answer. " + STYLE)
+
+
+def cmd_new(name, specs, goal):
+    slug = re.sub(r"[^a-z0-9-]+", "-", name.lower().lstrip("#")).strip("-") or "room"
+    if (ROOMS / f"{slug}.json").exists():
+        die(f"#{slug} already exists")
+    spaces = herdr_spaces()
+    members = [resolve(s, spaces) for s in specs]
+    meta = {"name": name.lstrip("#"), "goal": goal or "", "members": members, "source": "crew-room"}
+    ROOMS.mkdir(parents=True, exist_ok=True)
+    (ROOMS / f"{slug}.json").write_text(json.dumps(meta, indent=2))
+    live = live_agents()
+    for m in members:
+        if m["terminal"] in live:
+            crewlib.enqueue(m["terminal"], briefing(meta, slug, m), sender="crew", kind="room")
+    print(f"opened #{slug} with " + ", ".join(f"{m['bot']} #{m['channel']} ({m['terminal'] or 'no terminal'})" for m in members))
+
+
+def cmd_list():
+    names = rooms()
+    if not names:
+        print("No rooms yet. Make one in Herdr's Crew layout (Rooms → New room).")
+        return
+    for n in names:
+        meta = json.loads((ROOMS / f"{n}.json").read_text())
+        mine = " (you're in it)" if me_in(meta) else ""
+        people = ", ".join(f"{m['bot']} #{m.get('channel')}" for m in meta.get("members", []))
+        print(f"#{n}{mine}: {meta.get('goal') or ''}\n  members: {people}")
+
+
+def cmd_read(room, n=30):
+    slug, meta = load(room)
+    log = ROOMS / f"{slug}.jsonl"
+    print(f"#{meta.get('name', slug)}" + (f" — goal: {meta['goal']}" if meta.get("goal") else ""))
+    if not log.exists():
+        print("(nothing said yet)")
+        return
+    for line in log.read_text().splitlines()[-n:]:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        t = time.strftime("%H:%M", time.localtime(e.get("at", 0) / 1000))
+        arrow = f" → {', '.join(e['to'])}" if e.get("to") else ""
+        if e.get("kind") == "event":
+            print(f"{t} · {e.get('text', '')}")
+            continue
+        kind = " (handoff)" if e.get("kind") == "handoff" else ""
+        print(f"{t} {e.get('from', '?')}{arrow}{kind}: {e.get('text', '')}" + (f" [file: {e['file']}]" if e.get("file") else ""))
+
+
+def cmd_say(room, text, handoff_to=None, file=None):
+    slug, meta = load(room)
+    sender, channel, term = who(meta)
+    to = targets(meta, text, only=[handoff_to.lstrip("@")] if handoff_to else None)
+    if handoff_to and not to:
+        die(f"nobody called {handoff_to} in #{slug}. Members: " + ", ".join(m["bot"] for m in meta.get("members", [])))
+    # Bots can't talk each other into a loop: after BOT_RUN bot messages in a row with nothing from
+    # DeNon, messages are still posted but no longer delivered, until DeNon says something.
+    if sender != "DeNon" and to and bot_run(slug) >= BOT_RUN:
+        print(f"posted, but not delivered: the bots have sent {BOT_RUN} messages in a row, so the room waits for DeNon now.")
+        to = []
+    # The room shows the sender typing until `at`, then the message; recipients get it then too.
+    delay = typing_seconds(text)
+    entry = {"at": int((time.time() + delay) * 1000), "typing_from": int(time.time() * 1000), "from": sender, "channel": channel, "terminal": term, "text": text,
+             "kind": "handoff" if handoff_to else "say", "to": [m["bot"] for m in to]}
+    if file:
+        entry["file"] = os.path.abspath(file)
+    append(slug, entry)
+    deliver(slug, meta, sender, text, to, entry["kind"], entry.get("file"), after=delay)
+    if to or not (sender != "DeNon" and bot_run(slug) > BOT_RUN):
+        print(f"posted to #{slug}" + (f", delivered to {', '.join(m['bot'] for m in to)}" if to else ""))
+
+
+def main(argv):
+    if not argv:
+        return cmd_list()
+    cmd, rest = argv[0], argv[1:]
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__)
+    elif cmd == "read" and rest:
+        n = 30
+        if "-n" in rest:
+            i = rest.index("-n"); n = int(rest[i + 1]); rest = rest[:i] + rest[i + 2:]
+        cmd_read(rest[0], n)
+    elif cmd == "say" and len(rest) >= 2:
+        cmd_say(rest[0], " ".join(rest[1:]))
+    elif cmd == "handoff" and len(rest) >= 3:
+        file = None
+        if "--file" in rest:
+            i = rest.index("--file"); file = rest[i + 1]; rest = rest[:i] + rest[i + 2:]
+        cmd_say(rest[0], " ".join(rest[2:]), handoff_to=rest[1], file=file)
+    elif cmd == "new" and rest:
+        name, specs, goal = rest[0], [], None
+        i = 1
+        while i < len(rest):
+            if rest[i] == "--goal":
+                goal = rest[i + 1]; i += 2
+            elif rest[i] == "--with":
+                i += 1
+                while i < len(rest) and not rest[i].startswith("--"):
+                    specs.append(rest[i]); i += 1
+            else:
+                specs.append(rest[i]); i += 1
+        if len(specs) < 2:
+            die("a room needs at least two channels: --with \"Bot#channel\" \"Bot#channel\"")
+        cmd_new(name, specs, goal)
+    elif cmd == "invite" and len(rest) >= 2:
+        os.execvp("crew", ["crew", "invite", *rest])
+    elif cmd == "members" and rest:
+        _, meta = load(rest[0])
+        for m in meta.get("members", []):
+            print(f"{m['bot']} #{m.get('channel')} ({m.get('terminal') or 'no terminal'})")
+    else:
+        die(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

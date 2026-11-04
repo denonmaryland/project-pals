@@ -1,0 +1,13 @@
+[Unit]
+Description=Herdr Crew helper (crewd): message queue, routines, callbacks, memory
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/crewd
+Restart=on-failure
+RestartSec=5
+Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

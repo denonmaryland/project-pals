@@ -1,0 +1,746 @@
+#!/usr/bin/env python3
+"""botz (also crew): how a Terminal Botz bot (or you) works with the rest of the team.
+
+The team
+  crew overview [--deep]             everything at once: bots, channels (what each is on), projects
+                                     (git), memory, tasks, rooms, routines, approvals, what's stuck
+  crew bots                          the short roster
+  crew feed [--all] [-n 40]          what happened since you last looked (finished, blocked, stuck…)
+  crew peek <Bot[#ch]> [-n 60]       read a bot's screen and recent history
+
+Talking
+  crew tell <Bot[#ch]> <text> [--now]
+                                     message a bot; delivered when its turn ends (--now: right away,
+                                     for a bot that's stuck mid-turn). You hear back when it finishes.
+  crew ask <Bot[#ch]> <text> [--timeout 600]
+                                     message a bot, wait for its answer, print it
+  crew room ...                      group rooms (crew-room --help); crew invite <room> <Bot[#ch]>...
+
+Hiring
+  crew hire <Name> [--harness claude] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
+  crew channel <Bot> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
+                                     a new channel; --worktree gives it its own git branch and folder
+
+Work
+  crew task add "<title>" [--for Bot[#ch]] [--after T1,T2] [--body T] [--check "cmd"]
+  crew task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
+            | assign T Bot | cancel T | reopen T
+  crew routine add <Bot> "<when>" "<prompt>" [--name N] [--channel routines]
+                                     when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
+  crew routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
+  crew routine edit ID [--name N] [--when "…"] [--prompt "…"] [--channel C]
+  crew diff <Bot#ch> [--stat|--json] what a worktree channel changed
+  crew land <Bot#ch> [--check "cmd"] merge a worktree channel's branch into its project (needs DeNon)
+
+Memory and skills
+  crew remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about DeNon)
+  crew memory [Bot]                  what's remembered
+  crew skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
+
+Updates
+  crew version                       what's installed
+  crew update [check|apply|rollback] [--json]
+                                     check GitHub for a newer release, install it, or put the previous one back
+
+Approvals (DeNon)
+  crew approvals                     guarded commands waiting on DeNon
+  crew approve ID | crew deny ID ["note"]
+
+"Bot" matches a bot's name or the start of it ("theme" finds "Theme Plugin - Omarchy"); without
+#channel you get the one it's showing. hire, channel and invite are carried out by the Crew layout,
+so Herdr has to be open on it. crewd (herdr-crew.service) delivers messages between turns, runs
+routines and reports back; without it, messages are typed in right away.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
+from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, die, load_json, save_json,
+                     locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
+                     live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
+                     memory_text, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent)
+import crewtasks
+import crewroutines
+import crewskills
+import crewguard
+import crewupdate
+
+
+def opts(rest, flags, bools=()):
+    pos, out, i = [], {}, 0
+    while i < len(rest):
+        a = rest[i]
+        if a.startswith("--") and a[2:] in bools:
+            out[a[2:]] = True; i += 1
+        elif a.startswith("--") and a[2:] in flags:
+            if i + 1 >= len(rest):
+                die(f"{a} needs a value")
+            out[a[2:]] = rest[i + 1]; i += 2
+        elif a == "-n" and "n" in flags:
+            out["n"] = rest[i + 1]; i += 2
+        elif a.startswith("--"):
+            die(f"unknown option {a}. See crew --help")
+        else:
+            pos.append(a); i += 1
+    return pos, out
+
+
+def ago(ms):
+    d = max(0, time.time() - ms / 1000)
+    return "now" if d < 60 else f"{int(d // 60)}m ago" if d < 3600 else f"{int(d // 3600)}h ago" if d < 86400 else f"{int(d // 86400)}d ago"
+
+
+def git_line(folder):
+    if not folder or not os.path.exists(os.path.join(folder, ".git")):
+        return None
+    def g(*a):
+        r = subprocess.run(["git", "-C", folder, *a], capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    branch = g("branch", "--show-current") or "detached"
+    dirty = len([l for l in g("status", "--porcelain").splitlines() if l.strip()])
+    last = g("log", "-1", "--format=%s (%cr)")
+    return f"git {branch}, {dirty} changed file{'s' if dirty != 1 else ''}" + (f", last commit: {last}" if last else "")
+
+
+# ── the team ─────────────────────────────────────────────────────────────────────────────────
+
+def cmd_bots(spaces):
+    recs = records()
+    me, _ = whoami(spaces)
+    for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
+        r = record_of(s, recs)
+        apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
+        brain = max(set(apps), key=apps.count) if apps else "asleep (no agent running)"
+        bits = ["GOD BOT" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
+        print(f"{s['name']}  ({' · '.join(b for b in bits if b)})" + (f"\n  folder: {s['folder']}" if s.get("folder") else ""))
+        for t in s["tabs"]:
+            x = lead(t)
+            mine = "  ← you" if me == f"{s['name']}#{chan(t)}" else ""
+            print(f"  #{chan(t)}: {(x or {}).get('status') or 'idle'}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
+
+
+def cmd_overview(spaces, deep=False):
+    recs = records()
+    me, _ = whoami(spaces)
+    terms = hc_terminals()
+    stalled = load_json(DATA / "crew-health.json", {}).get("stalled", {})
+    waiting = []
+    print(f"# The Crew, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
+    for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
+        r = record_of(s, recs)
+        apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
+        brain = max(set(apps), key=apps.count) if apps else "asleep"
+        bits = ["god bot" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
+        print(f"## {s['name']} ({' · '.join(b for b in bits if b)})")
+        if s.get("folder"):
+            gl = None if s.get("machine") else git_line(s["folder"])
+            print(f"project: {s['folder']}" + (f" ({gl})" if gl else ""))
+        mem = memory_dir(s["name"]) / "MEMORY.md"
+        if (r.get("memory") or "").strip():
+            print("pinned memory: " + " ".join(r["memory"].split())[:300])
+        if mem.exists():
+            print("memory: " + " ".join(mem.read_text().split())[:300 if not deep else 1200])
+        for t in s["tabs"]:
+            x = lead(t)
+            ch = chan(t)
+            info = term_info(x["terminal"]) if x else {}
+            st = info.get("status") or {}
+            live = x and is_agent(terms.get(x["terminal"]))
+            state = st.get("state") or (x or {}).get("status") or ("idle" if live else "asleep")
+            briefs = r.get("briefs") or {}
+            brief = briefs.get(t["id"]) or briefs.get(t["name"]) or briefs.get("#" + ch)
+            wt = (r.get("worktrees") or {}).get(t["name"]) or (r.get("worktrees") or {}).get("#" + ch)
+            mine = " (you)" if me == f"{s['name']}#{ch}" else ""
+            flag = " · LOOKS STUCK" if x and x["terminal"] in stalled else ""
+            print(f"- #{ch}{mine}: {state}{flag}" + (f", on: {st['msg']}" if st.get("msg") else "")
+                  + (f" [{x['terminal']}]" if x else " [no terminal]") + (f" · branch {wt['branch']}" if wt else ""))
+            if brief:
+                print(f"    brief: {' '.join(brief.split())[:200]}")
+            if state in ("blocked", "done"):
+                waiting.append(f"{s['name']} #{ch} {'has a question' if state == 'blocked' else 'finished'}")
+            if live and not mine and (deep or state in ("working", "blocked", "done")):
+                for l in meaningful(screen(x["terminal"]))[-(8 if deep else 4):]:
+                    print(f"    | {l[:160]}")
+        print()
+    board = crewtasks.load()["tasks"]
+    open_tasks = [t for t in board if t["status"] in crewtasks.OPEN]
+    print("## Tasks")
+    print("\n".join("- " + crewtasks.line(t) for t in open_tasks) or "(none open)")
+    done_recent = [t for t in board if t["status"] == "done" and now_ms() - t["updated"] < 86400 * 1000]
+    if done_recent:
+        print("done in the last day: " + ", ".join(f"{t['id']} {t['title']}" for t in done_recent))
+    print("\n## Rooms")
+    metas = sorted(ROOMS.glob("*.json")) if ROOMS.exists() else []
+    if not metas:
+        print("(none)")
+    for m in metas:
+        meta = load_json(m, None)
+        if not meta:
+            continue
+        people = ", ".join(f"{x['bot']} #{x.get('channel')}" for x in meta.get("members", []))
+        print(f"- #{m.stem}" + (f" (goal: {meta['goal'][:120]})" if meta.get("goal") else "") + f": {people}")
+        log = m.with_suffix(".jsonl")
+        if log.exists():
+            for line in log.read_text().splitlines()[-(6 if deep else 3):]:
+                e = json.loads(line) if line.strip().startswith("{") else {}
+                print(f"    {e.get('from', '?')}: {' '.join((e.get('text') or '').split())[:160]}")
+    rs = crewroutines.load()
+    if rs:
+        print("\n## Routines")
+        for r in rs:
+            last = r.get("last") or {}
+            print(f"- {r['id']} {r['name']} · {r['bot']} #{r['channel']} · {crewroutines.describe(r['rule'])}"
+                  + (" · paused" if r.get("paused") else "") + (f" · last: {last.get('status')} {ago(last['at'] * 1000)}" if last.get("at") else ""))
+    pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
+    print("\n## Waiting on DeNon")
+    for a in pend:
+        waiting.append(f"approval {a['id']}: {a['bot']} wants to {a['why'] or a['rule']}: {a['command'][:120]}")
+    for t, v in stalled.items():
+        waiting.append(f"{v['bot']} #{v['channel']} looks stuck (working, screen unchanged since {ago(v['since'])})")
+    print("\n".join(f"- {w}" for w in waiting) or "(nothing)")
+
+
+def cmd_feed(spaces, show_all, n):
+    me, name = whoami(spaces)
+    who = me or "DeNon"
+    cursors = load_json(DATA / "crew-feed-cursors.json", {})
+    since = 0 if show_all else cursors.get(who, now_ms() - 6 * 3600 * 1000)
+    lines = FEED.read_text().splitlines() if FEED.exists() else []
+    events = [e for e in (json.loads(l) for l in lines if l.strip()) if e.get("at", 0) > since][-n:]
+    for e in events:
+        k = e["kind"]
+        where = f"{e.get('bot', '')}" + (f" #{e['channel']}" if e.get("channel") else "")
+        what = {"finished": f"{where} finished a turn", "blocked": f"{where} has a question for DeNon",
+                "stalled": f"{where} looks stuck", "task": f"task {e.get('task')} {e.get('status')}: {e.get('title', '')}",
+                "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
+                "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
+                "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}"}.get(k, k)
+        print(f"{time.strftime('%H:%M', time.localtime(e['at'] / 1000))} {what}")
+    if not events:
+        print("(nothing new)")
+    with locked("feed"):
+        cursors = load_json(DATA / "crew-feed-cursors.json", {})
+        cursors[who] = now_ms()
+        save_json(DATA / "crew-feed-cursors.json", cursors)
+
+
+def cmd_peek(spaces, spec, n):
+    space, tab = find(spec, spaces)
+    x = lead(tab)
+    if not x:
+        die(f"{space['name']} #{chan(tab)} has no terminal")
+    print(f"── {space['name']} #{chan(tab)} ({x.get('status') or 'idle'}) ──")
+    print("\n".join(l.rstrip() for l in screen(x["terminal"], n)))
+
+
+# ── talking ──────────────────────────────────────────────────────────────────────────────────
+
+def target(spaces, spec):
+    space, tab = find(spec, spaces)
+    x = lead(tab)
+    if not x:
+        die(f"{space['name']} #{chan(tab)} has no terminal")
+    if x["terminal"] == ME:
+        die("that's you")
+    if x["terminal"] not in live_agents():
+        die(f"{space['name']} #{chan(tab)} is asleep (no agent running there). Wake it by inviting it to a room, "
+            f"or give it a fresh channel: crew channel \"{space['name']}\" <name> --brief \"...\"")
+    return space, tab, x["terminal"]
+
+
+def cmd_tell(spaces, spec, text, now=False):
+    space, tab, t = target(spaces, spec)
+    me, name = whoami(spaces)
+    head = from_bot(name) if me else "[from DeNon]"
+    reply = f'\n(Answer {name} with: crew tell "{me}" "..." if it needs one.)' if me else ""
+    meta = {}
+    if me:
+        did = new_id("d-")
+        with locked("delegations"):
+            dels = load_json(DATA / "crew-delegations.json", [])
+            dels.append({"id": did, "from": ME, "from_name": name, "to": t, "text": text, "at": now_ms(),
+                         "delivered_at": None if daemon_alive() else now_ms()})
+            save_json(DATA / "crew-delegations.json", dels)
+        meta["delegation"] = did
+    enqueue(t, f"{head} {text}{reply}", sender=name, kind="tell", urgent=now, meta=meta)
+    status = (term_info(t).get("status") or {}).get("state")
+    when = "now" if now or status != "working" or not daemon_alive() else "when its turn ends"
+    print(f"told {space['name']} #{chan(tab)} ({when})" + ("; you'll hear back when it finishes" if me and daemon_alive() else ""))
+
+
+def cmd_ask(spaces, spec, text, timeout):
+    space, tab, t = target(spaces, spec)
+    deadline = time.time() + timeout
+    while (term_info(t).get("status") or {}).get("state") == "working" and time.time() < deadline:
+        time.sleep(2)
+    if (term_info(t).get("status") or {}).get("state") == "blocked":
+        die(f"{space['name']} #{chan(tab)} is waiting on DeNon's answer to a question; don't type into it")
+    before = term_info(t).get("turn", 0)
+    me, name = whoami(spaces)
+    head = from_bot(name) if me else "[from DeNon]"
+    send_now(t, f"{head} asks: {text}\n(Answer right here in your reply; {name} is reading your screen.)")
+    started = False
+    while time.time() < deadline:
+        info = term_info(t)
+        state = (info.get("status") or {}).get("state")
+        if state == "working" or info.get("turn", 0) > before:
+            started = True
+        if started and state != "working":
+            break
+        time.sleep(1.5)
+    else:
+        print(f"(still working after {timeout}s; its screen so far:)")
+    out = screen(t, 200)
+    at = max((i for i, l in enumerate(out) if f"{head} asks:" in l), default=-1)
+    answer = [l for l in meaningful(out[at + 1:]) if "Answer right here" not in l and "Worked for" not in l and "Crunched for" not in l]
+    print(f"── {space['name']} #{chan(tab)} ──")
+    print("\n".join(answer[-60:]) or "(no answer on its screen)")
+
+
+# ── hiring (carried out by the Crew layout) ─────────────────────────────────────────────────
+
+def request(op, spaces, **fields):
+    me, name = whoami(spaces)
+    REQS.mkdir(parents=True, exist_ok=True)
+    rid = f"{int(time.time())}-{new_id()}"
+    tmp = REQS / f"{rid}.tmp"
+    tmp.write_text(json.dumps({"op": op, "by": me, "byName": name, **{k: v for k, v in fields.items() if v not in (None, "", False)}}))
+    tmp.rename(REQS / f"{rid}.req.json")
+    result = REQS / f"{rid}.result.json"
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if result.exists():
+            try:
+                out = json.loads(result.read_text())
+            except ValueError:
+                time.sleep(0.2)
+                continue
+            result.unlink(missing_ok=True)
+            if not out.get("ok"):
+                die(out.get("error") or "it didn't work")
+            return out
+        time.sleep(0.4)
+    if (REQS / f"{rid}.req.json").exists():
+        (REQS / f"{rid}.req.json").unlink(missing_ok=True)
+        die("the Crew layout didn't answer. Is Herdr open on the Crew layout?")
+    die("Crew took the request but hasn't finished; check Herdr")
+
+
+def git(folder, *args, check=True):
+    r = subprocess.run(["git", "-C", folder, *args], capture_output=True, text=True, timeout=120)
+    if check and r.returncode != 0:
+        raise CrewError(f"git {' '.join(args)}: {(r.stderr or r.stdout).strip()}")
+    return r.stdout.strip()
+
+
+def make_worktree(space, name, base=None):
+    folder = space.get("folder")
+    if space.get("machine"):
+        raise CrewError("worktree channels are for bots on this computer for now")
+    if not folder:
+        raise CrewError(f"{space['name']} has no project folder")
+    repo = git(folder, "rev-parse", "--show-toplevel")
+    base = base or git(repo, "branch", "--show-current") or "HEAD"
+    branch = f"crew/{slug(name)}"
+    existing = git(repo, "branch", "--list", branch)
+    n = 2
+    while existing:
+        branch = f"crew/{slug(name)}-{n}"
+        existing = git(repo, "branch", "--list", branch)
+        n += 1
+    path = WORKTREES / slug(space["name"]) / branch.split("/", 1)[1]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    git(repo, "worktree", "add", "-b", branch, str(path), base)
+    return {"path": str(path), "branch": branch, "base": base, "repo": repo}
+
+
+def worktree_of(space, tab):
+    r = record_of(space)
+    wts = r.get("worktrees") or {}
+    wt = wts.get(tab["name"]) or wts.get("#" + chan(tab))
+    if not wt:
+        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with crew channel … --worktree)")
+    return wt
+
+
+def diff_data(wt):
+    p = wt["path"]
+    mb = git(p, "merge-base", wt["base"], "HEAD")
+    files = []
+    for l in git(p, "diff", "--numstat", mb).splitlines():
+        a, r_, f = l.split("\t", 2)
+        files.append({"path": f, "added": int(a) if a.isdigit() else 0, "removed": int(r_) if r_.isdigit() else 0})
+    untracked = [l for l in git(p, "ls-files", "--others", "--exclude-standard").splitlines() if l]
+    return {"branch": wt["branch"], "base": wt["base"], "path": p, "files": files, "untracked": untracked,
+            "commits": git(p, "log", "--oneline", f"{mb}..HEAD").splitlines(), "patch": git(p, "diff", mb),
+            "dirty": bool(git(p, "status", "--porcelain"))}
+
+
+def cmd_diff(spaces, spec, mode):
+    space, tab = find(spec, spaces)
+    d = diff_data(worktree_of(space, tab))
+    if mode == "json":
+        print(json.dumps(d))
+        return
+    print(f"{space['name']} #{chan(tab)}: {d['branch']} vs {d['base']}, {len(d['commits'])} commit(s)"
+          + (", uncommitted changes" if d["dirty"] else ""))
+    for f in d["files"]:
+        print(f"  {f['path']} +{f['added']} -{f['removed']}")
+    for f in d["untracked"]:
+        print(f"  {f} (new, not added)")
+    if mode != "stat":
+        print(d["patch"])
+
+
+def cmd_land(spaces, spec, check=None):
+    space, tab = find(spec, spaces)
+    wt = worktree_of(space, tab)
+    # A bot asking: DeNon approves first (Claude bots are held by the hook; this covers the rest).
+    if ME and is_bot_terminal(ME) and not crewguard.recently_used(ME, "land"):
+        s, t = where_of(ME, spaces)
+        held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"crew land {spec}")
+        if held:
+            die(f"held for DeNon's approval ({held['id']}); you'll be told when it's decided")
+    if git(wt["path"], "status", "--porcelain"):
+        die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
+    repo = wt["repo"]
+    with locked(f"land-{slug(repo)}"):  # one landing per project at a time: a simple merge queue
+        if git(repo, "branch", "--show-current") != wt["base"]:
+            die(f"{repo} isn't on {wt['base']}; switch it back before landing")
+        if [l for l in git(repo, "status", "--porcelain", "--untracked-files=no").splitlines() if l]:
+            die(f"{repo} has uncommitted changes of its own; commit or stash them before landing")
+        if check:
+            r = subprocess.run(["sh", "-c", check], cwd=wt["path"], capture_output=True, text=True, timeout=1800)
+            if r.returncode != 0:
+                die(f"the check failed, so nothing was landed:\n" + "\n".join((r.stdout + r.stderr).strip().splitlines()[-30:]))
+        r = subprocess.run(["git", "-C", repo, "merge", "--no-ff", wt["branch"], "-m",
+                            f"Land {wt['branch']} ({space['name']} #{chan(tab)})"], capture_output=True, text=True)
+        if r.returncode != 0:
+            subprocess.run(["git", "-C", repo, "merge", "--abort"], capture_output=True)
+            conflicts = (r.stdout + r.stderr).strip()
+            x = lead(tab)
+            if x:
+                try:
+                    enqueue(x["terminal"], f"[crew] Your branch {wt['branch']} couldn't land on {wt['base']}: it conflicts. "
+                            f"Rebase it on {wt['base']} (git rebase {wt['base']}), fix the conflicts, commit, and say when it's ready.",
+                            sender="crew", kind="land")
+                except CrewError:
+                    pass
+            die(f"couldn't land {wt['branch']}: it conflicts with {wt['base']} (merge aborted, nothing changed). "
+                f"The channel was asked to rebase.\n{conflicts[-800:]}")
+    x = lead(tab)
+    if x:
+        try:
+            enqueue(x["terminal"], f"[crew] Your branch {wt['branch']} landed on {wt['base']}.", sender="crew", kind="land")
+        except CrewError:
+            pass
+    append_jsonl(FEED, {"at": now_ms(), "kind": "landed", "bot": space["name"], "channel": chan(tab), "branch": wt["branch"]})
+    print(f"landed {wt['branch']} on {wt['base']} in {repo}")
+
+
+# ── tasks, routines, memory, skills, approvals ───────────────────────────────────────────────
+
+def cmd_task(spaces, rest):
+    me, name = whoami(spaces)
+    sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
+    if sub == "add":
+        pos, o = opts(args, ("for", "after", "body", "check"))
+        if not pos:
+            die('crew task add "<title>" [--for Bot] [--after T1,T2]')
+        deps = [d.strip() for d in (o.get("after") or "").split(",") if d.strip()]
+        t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"))
+        print(f"added {crewtasks.line(t)}")
+    elif sub in ("ls", "list"):
+        board = crewtasks.load()["tasks"]
+        show = board if "--all" in args else [t for t in board if t["status"] in crewtasks.OPEN]
+        if "--mine" in args and me:
+            show = [t for t in show if crewtasks.same(t.get("assignee") or "", me) or crewtasks.same(t.get("claimed_by") or "", me)]
+        print("\n".join(crewtasks.line(t) for t in show) or "(no open tasks)")
+    elif sub == "ready":
+        board = crewtasks.load()
+        ready = [t for t in board["tasks"] if t["status"] == "open"
+                 and all(crewtasks.get(board, d)["status"] == "done" for d in t["deps"])
+                 and (not t.get("assignee") or (me and crewtasks.same(t["assignee"], me)) or (not me))]
+        print("\n".join(crewtasks.line(t) for t in ready) or "(nothing ready for you)")
+    elif sub == "show" and args:
+        t = crewtasks.get(crewtasks.load(), args[0])
+        print(crewtasks.line(t))
+        print(f"by {t['by']}, {ago(t['created'])}" + (f"\ncheck: {t['check']}" if t.get("check") else ""))
+        if t["body"]:
+            print(t["body"])
+        for n in t["notes"]:
+            print(f"  {ago(n['at'])} {n['by']}: {n['text']}")
+        if t.get("result"):
+            print(f"result: {t['result']}")
+    elif sub == "claim" and args:
+        print("claimed " + crewtasks.line(crewtasks.update(args[0], spaces, me, name, claim=True)))
+    elif sub == "note" and len(args) >= 2:
+        crewtasks.update(args[0], spaces, me, name, note=" ".join(args[1:]))
+        print("noted")
+    elif sub == "block" and len(args) >= 2:
+        print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="blocked", note=" ".join(args[1:]))))
+    elif sub == "done" and args:
+        result = " ".join(args[1:]) or None
+        print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="done", result=result,
+                                              note=f"done: {result}" if result else None)))
+    elif sub == "assign" and len(args) >= 2:
+        print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, assignee=args[1])))
+    elif sub == "cancel" and args:
+        print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="cancelled")))
+    elif sub == "reopen" and args:
+        print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="open")))
+    else:
+        die("crew task add|ls|ready|show|claim|note|block|done|assign|cancel|reopen (see crew --help)")
+
+
+def cmd_routine(spaces, rest):
+    me, name = whoami(spaces)
+    sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
+    if sub == "add":
+        pos, o = opts(args, ("name", "channel"))
+        if len(pos) < 3:
+            die('crew routine add <Bot> "<when>" "<prompt>" [--name N] [--channel routines]')
+        space, _ = find(pos[0], spaces)
+        r = crewroutines.add(space["name"], pos[1], " ".join(pos[2:]), o.get("name"), o.get("channel", "routines"), by=name)
+        print(f"added {r['id']} {r['name']}: {space['name']} #{r['channel']}, {crewroutines.describe(r['rule'])}"
+              + ("" if daemon_alive() else "\n(crewd isn't running, so it won't fire until it is)"))
+    elif sub in ("ls", "list"):
+        rs = crewroutines.load()
+        for r in rs:
+            last = r.get("last") or {}
+            print(f"{r['id']} {r['name']} · {r['bot']} #{r['channel']} · {crewroutines.describe(r['rule'])}"
+                  + (" · paused" if r.get("paused") else "") + (" · running" if r.get("run") else "")
+                  + (f" · last {last.get('status')} {ago(last['at'] * 1000)}" + (f" ({last.get('reason') or last.get('summary', '')[:80]})" if last.get("reason") or last.get("summary") else "") if last.get("at") else ""))
+            print(f"    {r['prompt'][:160]}")
+        if not rs:
+            print("(no routines)")
+    elif sub == "log":
+        _, o = opts(args, ("n",))
+        path = DATA / "crew-routines.log.jsonl"
+        for l in (path.read_text().splitlines() if path.exists() else [])[-int(o.get("n", 20)):]:
+            e = json.loads(l)
+            print(f"{time.strftime('%a %H:%M', time.localtime(e['at'] / 1000))} {e['name']} ({e['bot']}): {e['status']}"
+                  + (f" · {e.get('reason') or e.get('summary', '')}" if e.get("reason") or e.get("summary") else ""))
+    elif sub == "edit" and args:
+        _, o = opts(args[1:], ("name", "when", "prompt", "channel"))
+        r = crewroutines.edit(args[0], o.get("name"), o.get("when"), o.get("prompt"), o.get("channel"))
+        print(f"updated {r['id']} {r['name']}: {r['bot']} #{r['channel']}, {crewroutines.describe(r['rule'])}")
+    elif sub in ("run", "pause", "resume", "rm") and args:
+        with locked("routines"):
+            rs = crewroutines.load()
+            r = next((x for x in rs if x["id"] == args[0] or x["name"].lower() == " ".join(args).lower()), None)
+            if not r:
+                die(f"no routine {args[0]}")
+            if sub == "rm":
+                rs.remove(r)
+            elif sub == "run":
+                r["force"] = True
+            else:
+                r["paused"] = sub == "pause"
+                r["next"] = crewroutines.next_run(r)
+            crewroutines.save(rs)
+        print({"rm": "removed", "run": "running it now", "pause": "paused", "resume": "resumed"}[sub] + f": {r['name']}")
+    else:
+        die("crew routine add|ls|log|run|pause|resume|rm (see crew --help)")
+
+
+def my_bot(spaces):
+    s, t = where_of(ME, spaces) if ME else (None, None)
+    return s, t
+
+
+def cmd_remember(spaces, args):
+    pos, o = opts(args, ("bot",), ("user",))
+    if not pos:
+        die('crew remember "<fact>" [--user]')
+    s, t = my_bot(spaces)
+    bot = o.get("bot") or (s["name"] if s else None)
+    if not bot and not o.get("user"):
+        die("run this from a bot's channel, or say which: --bot Name")
+    path = remember(bot or "DeNon", " ".join(pos), channel=chan(t) if t else None, user=o.get("user", False))
+    print(f"remembered ({path.relative_to(DATA)})")
+
+
+def cmd_memory(spaces, args):
+    if args:
+        space, _ = find(args[0], spaces)
+        bot = space["name"]
+    else:
+        s, _ = my_bot(spaces)
+        if not s:
+            print((MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else "(nothing about DeNon yet)")
+            return
+        space, bot = s, s["name"]
+    print(memory_text(bot, record_of(space).get("memory", ""), days=3, limit=20000) or f"(nothing remembered for {bot} yet)")
+
+
+def cmd_skill(spaces, rest):
+    sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
+    if sub in ("ls", "list"):
+        for s in crewskills.all_skills():
+            print(f"{s['name']}{' (learned)' if s['learned'] else ''}: {s['description']}")
+        if not crewskills.all_skills():
+            print("(no shared skills yet)")
+    elif sub == "show" and args:
+        f = crewskills.get(args[0])
+        if not f:
+            die(f"no skill {args[0]}")
+        print(f.read_text())
+    elif sub == "save" and args:
+        pos, o = opts(args, ("description", "file"))
+        body = Path(o["file"]).read_text() if o.get("file") else sys.stdin.read()
+        if not body.strip():
+            die("the skill's steps go on stdin or in --file")
+        try:
+            _, name = whoami(spaces or herdr_spaces())
+        except CrewError:
+            name = None
+        f = crewskills.save(pos[0], o.get("description", ""), body, by=name)
+        print(f"saved {f.parent.name}; linked for: " + (", ".join(crewskills.link(f.parent.name)) or "nothing (a skill of that name already exists there)"))
+    elif sub == "archive" and args:
+        d = crewskills.archive(args[0])
+        print(f"archived to {d}" if d else f"no skill {args[0]}")
+    else:
+        die("crew skill ls|show|save|archive (see crew --help)")
+
+
+def cmd_approvals(decide=None, rid=None, note=None):
+    if decide:
+        # Only DeNon decides: not from a bot's terminal.
+        if ME and is_bot_terminal(ME):
+            die("approvals come from DeNon (Crew's Inbox), not from a bot")
+        r = crewguard.decide(rid, decide == "approve", note)
+        print(f"{r['status']}: {r['bot']} #{r['channel']}: {r['command']}")
+        return
+    pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
+    for a in pend:
+        print(f"{a['id']} · {a['bot']} #{a['channel']} · {a['why'] or a['rule']} · {ago(a['at'])}\n    {a['command']}")
+    if not pend:
+        print("(nothing waiting)")
+
+
+def cmd_update(rest):
+    sub = next((a for a in rest if not a.startswith("--")), "check")
+    as_json = "--json" in rest
+    try:
+        if sub == "check":
+            out = crewupdate.check()
+        elif sub == "apply":
+            out = crewupdate.apply(log=(lambda *_: None) if as_json else print)
+        elif sub == "rollback":
+            out = {"ok": True, "restored": str(crewupdate.rollback())}
+        else:
+            die("crew update check | apply | rollback [--json]")
+    except CrewError as e:
+        if as_json:
+            print(json.dumps({"ok": False, "error": str(e)}))
+            sys.exit(1)
+        raise
+    if as_json:
+        print(json.dumps(out))
+    elif sub == "check":
+        if not out.get("latest"):
+            print(f"{out.get('repo')} has no releases yet (installed: {out.get('current')})")
+        elif out["available"]:
+            print(f"{out['latest']} is out (installed: {out['current']}). Update with: botz update apply\n\n{out.get('notes', '')}")
+        else:
+            print(f"up to date ({out['current']})")
+    elif sub == "apply":
+        print(out.get("message") or f"updated to {out['version']}")
+    else:
+        print(f"put back {out['restored']}")
+
+
+# ── main ─────────────────────────────────────────────────────────────────────────────────────
+
+def main(argv):
+    if not argv:
+        argv = ["bots"]
+    cmd, rest = argv[0], argv[1:]
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__); return
+    if cmd == "room":
+        os.execvp("crew-room", ["crew-room", *rest])
+    if cmd == "primer":
+        print(PRIMER); return
+    if cmd in ("approvals", "approve", "deny"):
+        return cmd_approvals(None if cmd == "approvals" else cmd, rest[0] if rest else die(f"crew {cmd} <id>"),
+                             " ".join(rest[1:]) or None) if cmd != "approvals" else cmd_approvals()
+    if cmd == "skill":
+        return cmd_skill([], rest)
+    if cmd == "version":
+        ins = crewupdate.installed()
+        print(f"{ins.get('name', 'Terminal Botz')} {ins.get('version', '?')} ({ins.get('source', '?')}, from {ins.get('repo', '?')})")
+        return
+    if cmd == "update":
+        return cmd_update(rest)
+    spaces = herdr_spaces()
+    if cmd in ("bots", "ls", "team"):
+        cmd_bots(spaces)
+    elif cmd in ("overview", "world", "everything"):
+        cmd_overview(spaces, deep="--deep" in rest)
+    elif cmd == "feed":
+        _, o = opts(rest, ("n",), ("all",))
+        cmd_feed(spaces, o.get("all", False), int(o.get("n", 40)))
+    elif cmd == "tell" and len(rest) >= 2:
+        pos, o = opts(rest, (), ("now",))
+        cmd_tell(spaces, pos[0], " ".join(pos[1:]), o.get("now", False))
+    elif cmd == "ask" and len(rest) >= 2:
+        pos, o = opts(rest, ("timeout",))
+        cmd_ask(spaces, pos[0], " ".join(pos[1:]), int(o.get("timeout", 600)))
+    elif cmd == "peek" and rest:
+        pos, o = opts(rest, ("lines", "n"))
+        cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
+    elif cmd == "hire" and rest:
+        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task"), ("god", "show"))
+        if not pos:
+            die("hire who? crew hire <Name> [--harness claude] ...")
+        if o.get("folder"):
+            o["folder"] = os.path.abspath(os.path.expanduser(o["folder"]))
+        out = request("hire", spaces, name=" ".join(pos), **o)
+        print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: crew tell \"{out['name']}\" \"...\"")
+    elif cmd == "channel" and len(rest) >= 2:
+        pos, o = opts(rest, ("brief", "category", "harness", "base"), ("worktree",))
+        extra = {}
+        if o.pop("worktree", False):
+            space, _ = find(pos[0], spaces)
+            extra["worktree"] = make_worktree(space, " ".join(pos[1:]), o.pop("base", None))
+            extra["folder"] = extra["worktree"]["path"]
+        o.pop("base", None)
+        out = request("channel", spaces, bot=pos[0], name=" ".join(pos[1:]), **o, **extra)
+        print(f"{out['bot']} now has {out['channel']}" + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
+    elif cmd == "invite" and len(rest) >= 2:
+        out = request("invite", spaces, room=rest[0], who=rest[1:])
+        if out.get("added"):
+            print(f"added {', '.join(out['added'])} to #{rest[0].lstrip('#')} (briefed)")
+            if out.get("woke"):
+                print(f"woke {', '.join(out['woke'])} in a new channel for the room (it was asleep)")
+        if out.get("skipped"):
+            print(f"already in it: {', '.join(out['skipped'])}")
+    elif cmd == "task":
+        cmd_task(spaces, rest)
+    elif cmd == "routine":
+        cmd_routine(spaces, rest)
+    elif cmd == "remember":
+        cmd_remember(spaces, rest)
+    elif cmd == "memory":
+        cmd_memory(spaces, rest)
+    elif cmd == "diff" and rest:
+        pos, o = opts(rest, (), ("stat", "json"))
+        cmd_diff(spaces, pos[0], "json" if o.get("json") else "stat" if o.get("stat") else "full")
+    elif cmd == "land" and rest:
+        pos, o = opts(rest, ("check",))
+        cmd_land(spaces, pos[0], o.get("check"))
+    else:
+        die(__doc__)
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except CrewError as e:
+        die(str(e))

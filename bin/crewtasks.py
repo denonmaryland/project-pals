@@ -1,0 +1,147 @@
+"""The Crew task board: data/crew-tasks.json. Tasks have an owner, dependencies, notes and a
+result. Claiming and finishing tell the people involved: the owner hears when a task is assigned
+or unblocked, and whoever created it hears when it's done or blocked. A task with a check command
+can only be marked done when the check passes (run in the owner's project folder)."""
+import subprocess
+import time
+
+from crewlib import (DATA, CrewError, load_json, save_json, locked, enqueue, find, lead, chan, feed, now_ms,
+                     from_bot, is_agent, hc_terminals)
+
+STORE = DATA / "crew-tasks.json"
+OPEN = ("open", "claimed", "blocked")
+
+
+def load():
+    return load_json(STORE, {"next": 1, "tasks": []})
+
+
+def get(board, tid):
+    tid = tid.upper() if tid.lower().startswith("t") else f"T{tid}"
+    t = next((x for x in board["tasks"] if x["id"] == tid), None)
+    if not t:
+        raise CrewError(f"no task {tid}")
+    return t
+
+
+def same(spec_a, spec_b):
+    """Is 'Theme Plugin - Omarchy#updates' the same owner as 'theme'?"""
+    if not spec_a or not spec_b:
+        return False
+    a_bot, _, a_ch = spec_a.lower().partition("#")
+    b_bot, _, b_ch = spec_b.lower().partition("#")
+    bot_ok = a_bot.startswith(b_bot) or b_bot.startswith(a_bot)
+    return bot_ok and (not a_ch or not b_ch or a_ch == b_ch)
+
+
+def terminal_for(spec, spaces):
+    space, tab = find(spec, spaces)
+    if "#" not in spec:
+        # A bot without a channel: its shown channel if an agent runs there, else any that has one.
+        terms = hc_terminals()
+        for t in [tab] + [x for x in space["tabs"] if x is not tab]:
+            x = lead(t)
+            if x and is_agent(terms.get(x["terminal"])):
+                return space, t, x["terminal"]
+    x = lead(tab)
+    return space, tab, (x or {}).get("terminal")
+
+
+def notify(spec, text, spaces, sender):
+    if not spec:
+        return False
+    try:
+        _, _, term = terminal_for(spec, spaces)
+        if term:
+            enqueue(term, text, sender=sender, kind="task")
+            return True
+    except CrewError:
+        pass
+    return False
+
+
+def line(t):
+    who = t.get("claimed_by") or t.get("assignee") or "anyone"
+    deps = f" after {', '.join(t['deps'])}" if t.get("deps") else ""
+    return f"{t['id']} [{t['status']}] {t['title']} · {who}{deps}"
+
+
+def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None):
+    if assignee:
+        s, tab = find(assignee, spaces)
+        assignee = f"{s['name']}#{chan(tab)}" if "#" in assignee else s["name"]
+    with locked("tasks"):
+        board = load()
+        for d in deps:
+            get(board, d)
+        t = {"id": f"T{board['next']}", "title": title, "body": body or "", "assignee": assignee, "status": "open",
+             "deps": [get(board, d)["id"] for d in deps], "by": me_name, "by_spec": me, "created": now_ms(),
+             "updated": now_ms(), "notes": [], "result": None, "check": check}
+        board["next"] += 1
+        board["tasks"].append(t)
+        save_json(STORE, board)
+    feed("task", task=t["id"], status="open", title=title, by=me_name, to=assignee)
+    blocked_by = [d for d in t["deps"] if get(load(), d)["status"] != "done"]
+    if assignee and not blocked_by:
+        notify(assignee, f"{from_bot(me_name) if me else '[from DeNon]'} New task for you: {t['id']} {title}"
+               + (f"\n{body}" if body else "") + f"\n(crew task claim {t['id']} to start; crew task done {t['id']} \"result\" when finished.)",
+               spaces, me_name)
+    return t
+
+
+def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=False, assignee=None):
+    with locked("tasks"):
+        board = load()
+        t = get(board, tid)
+        if claim:
+            if t["status"] == "done":
+                raise CrewError(f"{t['id']} is already done")
+            open_deps = [d for d in t["deps"] if get(board, d)["status"] != "done"]
+            if open_deps:
+                raise CrewError(f"{t['id']} waits on {', '.join(open_deps)}")
+            if t.get("claimed_by") and not same(t["claimed_by"], me or "DeNon") and t["status"] == "claimed":
+                raise CrewError(f"{t['id']} is already claimed by {t['claimed_by']}")
+            t["claimed_by"] = me or "DeNon"
+            t["status"] = "claimed"
+        if assignee is not None:
+            s, tab = find(assignee, spaces)
+            t["assignee"] = f"{s['name']}#{chan(tab)}" if "#" in assignee else s["name"]
+        if note:
+            t["notes"].append({"at": now_ms(), "by": me_name, "text": note})
+        if status == "done" and t.get("check"):
+            folder = None
+            owner = t.get("claimed_by") or t.get("assignee")
+            if owner and owner != "DeNon":
+                try:
+                    folder = find(owner, spaces)[0].get("folder")
+                except CrewError:
+                    pass
+            r = subprocess.run(["sh", "-c", t["check"]], cwd=folder or None, capture_output=True, text=True, timeout=900)
+            if r.returncode != 0:
+                t["notes"].append({"at": now_ms(), "by": "check", "text": f"check failed: {t['check']}"})
+                save_json(STORE, board)
+                raise CrewError(f"{t['id']} can't be done yet: its check `{t['check']}` failed:\n"
+                                + "\n".join((r.stdout + r.stderr).strip().splitlines()[-25:]))
+        if status:
+            t["status"] = status
+        if result is not None:
+            t["result"] = result
+        t["updated"] = now_ms()
+        save_json(STORE, board)
+        dependents = [x for x in board["tasks"] if t["id"] in x.get("deps", []) and x["status"] == "open"]
+        unblocked = [x for x in dependents if all(get(board, d)["status"] == "done" for d in x["deps"])]
+    if status:
+        feed("task", task=t["id"], status=status, title=t["title"], by=me_name)
+    who = from_bot(me_name) if me else "[from DeNon]"
+    creator = t.get("by_spec")
+    if status == "done":
+        if creator and not same(creator, me or ""):
+            notify(creator, f"{who} {t['id']} is done: {t['title']}" + (f"\nResult: {result}" if result else ""), spaces, me_name)
+        for x in unblocked:
+            notify(x.get("assignee"), f"[crew] {x['id']} is unblocked ({t['id']} is done): {x['title']}\n"
+                   f"(crew task claim {x['id']} to start.)", spaces, "crew")
+    elif status == "blocked" and creator and not same(creator, me or ""):
+        notify(creator, f"{who} {t['id']} is blocked: {t['title']}" + (f"\nWhy: {note}" if note else ""), spaces, me_name)
+    if assignee is not None and t["status"] == "open":
+        notify(t["assignee"], f"{who} {t['id']} is yours now: {t['title']}" + (f"\n{t['body']}" if t["body"] else ""), spaces, me_name)
+    return t

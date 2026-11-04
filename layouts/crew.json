@@ -1,0 +1,160 @@
+{
+  "id": "root",
+  "type": "row",
+  "titlebar": "none",
+  "traffic_lights": [
+    14,
+    18
+  ],
+  "preview": "layouts/crew.svg",
+  "background": "chrome",
+  "ui_font": "Adwaita Sans",
+  "terminal_padding": [
+    16,
+    14
+  ],
+  "divider": {
+    "width": 0,
+    "color": "chrome"
+  },
+  "children": [
+    {
+      "id": "sidebar",
+      "type": "block",
+      "size": {
+        "px": 300
+      },
+      "min": 56,
+      "max": 440,
+      "content": {
+        "mod": "crew-roster"
+      }
+    },
+    {
+      "id": "frame",
+      "type": "column",
+      "padding": [
+        8,
+        10
+      ],
+      "resizable": false,
+      "children": [
+        {
+          "id": "crew-tabs",
+          "type": "block",
+          "size": {
+            "px": 38
+          },
+          "content": {
+            "mod": "crew-tabs"
+          },
+          "window_drag": true
+        },
+        {
+          "id": "sheet",
+          "type": "row",
+          "radius": 18,
+          "background": "surface",
+          "border": {
+            "width": 1,
+            "color": "border"
+          },
+          "divider": {
+            "width": 1,
+            "color": "border"
+          },
+          "children": [
+            {
+              "id": "work",
+              "type": "column",
+              "resizable": false,
+              "children": [
+                {
+                  "id": "crew-header",
+                  "type": "block",
+                  "size": {
+                    "px": 52
+                  },
+                  "content": {
+                    "mod": "crew-header"
+                  },
+                  "window_drag": true
+                },
+                {
+                  "id": "center",
+                  "type": "stack",
+                  "active": "tab-view",
+                  "children": [
+                    {
+                      "id": "tab-view",
+                      "type": "block",
+                      "padding": [
+                        0,
+                        24
+                      ],
+                      "content": {
+                        "tab": "active",
+                        "pane": {
+                          "gap": 8,
+                          "radius": 12,
+                          "background": "background",
+                          "border": {
+                            "width": 1,
+                            "color": "border"
+                          },
+                          "focus": {
+                            "width": 1,
+                            "color": "accent"
+                          },
+                          "lone": true
+                        }
+                      }
+                    },
+                    {
+                      "id": "room-view",
+                      "type": "block",
+                      "content": {
+                        "mod": "crew-room"
+                      }
+                    },
+                    {
+                      "id": "chat-view",
+                      "type": "block",
+                      "content": {
+                        "mod": "crew-chat"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "crew-composer",
+                  "type": "block",
+                  "size": {
+                    "px": 86
+                  },
+                  "content": {
+                    "mod": "crew-composer"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "panel",
+              "type": "block",
+              "hidden": true,
+              "size": {
+                "px": 340
+              },
+              "min": 260,
+              "max": 520,
+              "content": {
+                "mod": "crew-side"
+              }
+            }
+          ]
+        }
+      ],
+      "gap": 6
+    }
+  ]
+}
