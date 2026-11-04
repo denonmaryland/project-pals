@@ -52,8 +52,9 @@ cp "$src/layouts/crew.json" "$home/layouts/crew.json"
 # The commands bots (and you) use. botz / botz-room are the names; crew / crew-room stay as aliases.
 mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/herdr-crew"
 for b in crew crew-room crewd crew-hook crew-statusline; do install -m 755 "$src/bin/$b" "$HOME/.local/bin/$b"; done
-ln -sf "$HOME/.local/bin/crew" "$HOME/.local/bin/botz"
-ln -sf "$HOME/.local/bin/crew-room" "$HOME/.local/bin/botz-room"
+# Relative links, so backups of them restore cleanly.
+ln -sfn crew "$HOME/.local/bin/botz"
+ln -sfn crew-room "$HOME/.local/bin/botz-room"
 install -m 644 "$src"/bin/crew*.py "$HOME/.local/lib/herdr-crew/"
 
 if [[ $helpers -eq 1 ]]; then
