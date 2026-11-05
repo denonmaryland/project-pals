@@ -26,7 +26,8 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 | Harness | Status |
 |---|---|
 | Claude Code | Tested daily: hiring, channels, hooks, the approval gate, status line and chat view |
-| Codex, Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code but not tested yet. The approval gate, hooks and status line are Claude Code only |
+| Codex | Tested as a pal. The approval gate, hooks, status line and chat view are Claude Code only |
+| Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code but not tested yet. The approval gate, hooks and status line are Claude Code only |
 
 Reports from other harnesses are welcome.
 
