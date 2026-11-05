@@ -266,7 +266,10 @@ class Crewd:
                 self.trust.pop(addr)   # answered (or gone)
                 changed = True
         for addr, t in terms.items():
-            if addr in self.trust or t.get("agent") != "claude-code" or t.get("state") != "live":
+            # Not by agent name: until Claude Code reports a status (it hasn't yet, on this question)
+            # herdr-core still names the terminal after its shell ("bash"). The question's own wording
+            # is specific enough, and only fresh terminals are read.
+            if addr in self.trust or t.get("state") != "live":
                 continue
             if (t.get("turn") or 0) > 1 or t.get("status") == "working":
                 continue   # past its start: the question only comes first
