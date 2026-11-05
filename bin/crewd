@@ -182,7 +182,9 @@ class Crewd:
 
     # ── delivery between turns ──
     def deliver(self, terms):
-        gone = [a for a in self.drafts if (terms.get(a) or {}).get("state") != "live"]
+        # A hold ends when the terminal's gone or its box is empty again (sent or cleared), even
+        # while the pal is busy, so "Waiting on" doesn't show a draft that isn't there any more.
+        gone = [a for a in self.drafts if (terms.get(a) or {}).get("state") != "live" or not input_draft(screen(a))]
         for a in gone:
             self.drafts.pop(a)
         if gone:

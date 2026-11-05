@@ -315,7 +315,9 @@ def daemon_alive():
 # in would glue it onto that draft and press Enter on both, so nothing is typed in while it's there.
 RULE = re.compile(r"^\s*[─━]{20,}\s*$")
 PROMPT_LINE = re.compile(r"^\s*❯\s?(.*)$")
-PLACEHOLDER = re.compile(r'^Try "')   # the greyed hint an empty box shows; plain text in hc read
+# Greyed hints an empty box shows (plain text in hc read): the starter tip, and the one shown while
+# a message sent mid-turn waits in Claude Code's own queue (that message is sent, not a draft).
+PLACEHOLDER = re.compile(r'^(Try "|Press up to edit queued messages)')
 
 
 def input_draft(lines):
