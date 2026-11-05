@@ -372,7 +372,8 @@ export default class CrewRoster extends View {
             .child(div().truncate().text_size(12).text_color(t.dim).child(`#${ap.channel} · ${ago(ap.at)} · ${ap.id}`))))
         .child(div().px(10).py(7).rounded(9).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
-        .child(h_flex().gap(8).justify_end()
+        // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
+        .child(h_flex().gap(8).justify_between()
           .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded_full().cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
             .on_click((_e, cx) => this.decide(ap, false, cx)).child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
           .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded_full().cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
