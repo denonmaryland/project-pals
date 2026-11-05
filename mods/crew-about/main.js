@@ -44,6 +44,12 @@ export default class CrewAbout extends View {
       const d = `${appHome()}/data`;
       try { this.ins = JSON.parse((await readTextFile(`${d}/crew-install.json`)) ?? "{}"); } catch { this.ins = {}; }
       try { this.state = JSON.parse((await readTextFile(`${d}/crew-update.json`)) ?? "{}"); } catch { this.state = {}; }
+      // Opening About asks GitHub again when the last check is over 10 minutes old (crewd checks only
+      // once a day), so a new release shows its Update button without a "Check for updates" click first.
+      if (!this.checkedOnOpen) {
+        this.checkedOnOpen = true;
+        if (!this.busy && Date.now() / 1000 - (this.state.checked ?? 0) > 10 * 60) this.run("check", ["update", "check"], cx);
+      }
       const r = await exec("sh", ["-c", 'ls "$1"/update-*.tar.gz 2>/dev/null | wc -l', "sh", `${appHome()}/.crew-backups`]).catch(() => null);
       this.backups = Number((r?.stdout ?? "0").trim()) || 0;
       cx.notify();
