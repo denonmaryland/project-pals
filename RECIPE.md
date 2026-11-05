@@ -113,6 +113,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     name otherwise), with its brain's accessory (a crown for the head pal).
   - A face shows only once the roster has drawn its art (shared `crew.art`): an image that fails
     to load once isn't retried.
+- **Demo filter (for screenshots):** `data/crew-demo.json` `{"only": ["Website", …]}` makes that
+  window's sidebar show just those pals; no file, everyone. `preview.png` was made this way in a second
+  Herdr window (`HERDR_APP_HOME` on a short path, started without the `HC_*` variables), across four
+  Omarchy themes.
+- **`pal hire --model haiku|sonnet|opus`** puts `--model` on the hired pal's command line.
 - **Models:** Hire and New channel have a **Model** row for Claude Code (Your default · Opus ·
   Sonnet · Haiku; New channel adds "Same as <pal>"). It goes on that command line as `--model`,
   never through `/model`, which would change the default for every session.

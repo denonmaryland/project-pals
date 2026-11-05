@@ -168,7 +168,8 @@ export default class CrewRoster extends View {
     const all = spaces();
     const ps = panes();
     const c = crew();
-    const rows = all.map((space) => ({ space, bot: botOf(space, c, ps) }))
+    const only = shared("crew.demo");
+    const rows = (only ? all.filter((s) => only.includes(s.name)) : all).map((space) => ({ space, bot: botOf(space, c, ps) }))
       // The head pal sits above everyone; then whoever needs you most.
       .sort((x, y) => (y.bot.god ? 1 : 0) - (x.bot.god ? 1 : 0) || (STATUS_RANK[y.space.status] ?? 0) - (STATUS_RANK[x.space.status] ?? 0) || x.space.index - y.space.index);
     const asleep = sleepers(all, c);

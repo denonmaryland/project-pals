@@ -17,7 +17,7 @@ Talking
   pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#ch]>...
 
 Hiring
-  pal hire <Name> [--harness claude] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
+  pal hire <Name> [--harness claude] [--model haiku|sonnet|opus] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
   pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
                                      a new channel; --worktree gives it its own git branch and folder
 
@@ -759,7 +759,7 @@ def main(argv):
         pos, o = opts(rest, ("lines", "n"))
         cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
     elif cmd == "hire" and rest:
-        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task"), ("god", "show"))
+        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show"))
         if not pos and o.get("god"):
             pos = [settings()["head"]]
         if not pos:
