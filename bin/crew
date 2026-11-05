@@ -114,6 +114,9 @@ def git_line(folder):
 # ── the team ─────────────────────────────────────────────────────────────────────────────────
 
 def cmd_bots(spaces):
+    if not spaces:
+        print('no pals yet: open a space in Herdr, or hire one: pal hire "Name" --folder ~/Projects/x')
+        return
     recs = records()
     me, _ = whoami(spaces)
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):

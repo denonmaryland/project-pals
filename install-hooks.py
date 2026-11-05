@@ -42,13 +42,17 @@ elif not sl:
     data["statusLine"] = {"type": "command", "command": wrapper}
     changed = True
 if changed:
-    if settings.exists():
+    existed = settings.exists()
+    if existed:
         backup_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(settings, backup_dir / f"claude-settings-{time.strftime('%Y%m%d-%H%M%S')}.json")
     settings.parent.mkdir(parents=True, exist_ok=True)
     tmp = settings.with_suffix(".crew.tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     tmp.replace(settings)
-    print("updated Project Pals's Claude Code hooks and status line (backup in %s)" % backup_dir)
+    if existed:
+        print("updated Project Pals's Claude Code hooks and status line (backup in %s)" % backup_dir)
+    else:
+        print("added Project Pals's Claude Code hooks and status line to %s" % settings)
 else:
     print("Project Pals's Claude Code hooks were already there")

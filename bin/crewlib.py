@@ -196,6 +196,8 @@ def find(spec, spaces):
              or next((s for s in spaces if norm(s["name"]).startswith(want)), None)
              or next((s for s in spaces if want and want in norm(s["name"])), None))
     if not space:
+        if not spaces:
+            raise CrewError(f"no pal called '{bot}': there are no pals yet (hire one with: pal hire \"Name\")")
         raise CrewError(f"no pal called '{bot}'. The team: " + ", ".join(s["name"] for s in spaces))
     if ch:
         tab = next((t for t in space["tabs"] if chan(t).lower() == ch.lower().lstrip("#")), None)
