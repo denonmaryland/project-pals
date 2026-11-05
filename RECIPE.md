@@ -72,9 +72,16 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
         color; pals' are on the left with a 30px face and name. It's a centered column at most
         860px wide, with "• • •" typing bubbles.
       - `chat-view`: the channel as a chat. Light markdown: bold, `code` pills, links, headings,
-        hanging-indent lists, quotes, code blocks. Tool calls fold into one line ("Ran 3
-        commands · edited x.js", which expands on click). Under it, a strip shows model ·
-        effort · context bar · 5-hour/weekly usage, with Working · Stop.
+        hanging-indent lists, quotes, code blocks. Each stretch of tool calls is a row of 28px
+        pill chips, one per kind with an icon ("Ran 3 commands", "Edited main.js"): a spinner
+        while a call has no result and the pal works, "1 failed" in the blocked color; a click
+        lists the calls (name, what, ✓ / spinner / failed plus the first lines of a failure's
+        output). A finished turn that got a reply ends with a dim footer ("3:41 PM · Worked 36s
+        · 3 tools"). Separators after a 10-minute gap or a new day: "3:41 PM", "Yesterday 9:12
+        AM", "Mon, Nov 2 · 6:30 PM". It follows the newest message until you scroll up; then a
+        round 34px ↓ button fades in at the bottom and takes you back. Scrolling to the top reads
+        300 more feed lines and keeps your place. Under it, a strip shows model · effort ·
+        context bar · 5-hour/weekly usage, with Working · Stop.
     - **Composer, 86px:** a 48px rounded card, at most 900px wide: a round +, then "Message
       #channel" (one draft per channel or room), then a round send button. Files can be dropped
       in or pasted as images.
@@ -191,6 +198,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Virtual-list rows can't hold `on_click`:** they render blank. Use the list's
   `on_item_click(key)`, or controls outside the list.
 - **No `InputState.new` during render:** create inputs in `init` or from a timer.
+- **Chat feed lines:** `you`, `bot`, `note`, `event`, `tool` (with the call's `id`) and
+  `result` (`id`, `error`, and for a failure only the first lines of output). The mod skips
+  kinds it doesn't know. Feeds written before `id`s existed show tool chips with no marks.
+- **Follow mode needs the list's range:** the wheel handler (on the list's parent) can only stop
+  following; the list's render callback restarts it when the last row is in range. Never scroll
+  to the bottom from a timer without checking that the reader is still following.
 - **The chat view must cache its layout:** laying out hundreds of messages every frame makes
   Herdr abort the render ("could not be re-rendered").
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.

@@ -91,3 +91,7 @@ GitHub release.
 ## License
 
 MIT
+
+The chat view's reading behaviour (following the newest message until you scroll up, tool chips
+with live status, turn footers, loading earlier messages in place) follows
+[flockbook](https://github.com/minchenlee/flockbook)'s chat, MIT, © 2026 Min-Chen Lee.
