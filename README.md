@@ -4,6 +4,11 @@ A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of
 spirit of Grok's bots but for any harness: Claude Code, Codex, Grok CLI, Gemini CLI, opencode,
 Hermes and more.
 
+![Project Pals in Herdr: the pals sidebar, channel tabs and a chat view](preview.png)
+
+**Linux only for now.** The helpers run as a systemd user service, so macOS (and WSL or containers
+without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
+
 Each Herdr space is a pal (a project with a brain), and each of its tabs is a channel. Pals can
 work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. On top of that you get:
 
@@ -16,15 +21,25 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 - an approval gate
 - a chat view for channels
 
+## Harnesses
+
+| Harness | Status |
+|---|---|
+| Claude Code | Tested daily: hiring, channels, hooks, the approval gate, status line and chat view |
+| Codex, Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code but not tested yet. The approval gate, hooks and status line are Claude Code only |
+
+Reports from other harnesses are welcome.
+
 ## Install
 
 ```sh
-git clone https://github.com/denonmaryland/terminal-pal && cd terminal-pal
+git clone https://github.com/denonmaryland/project-pals && cd project-pals
 ./install.sh            # or ./install.sh --no-helpers for just the layout, mods and commands
 ```
 
-Then switch Herdr to the `pals` layout (Ctrl+Shift+L). Linux only for now: the helpers use a
-systemd user service.
+Needs Linux, Herdr (open it once first), `python3` and `rsync`. Then switch Herdr to the `pals`
+layout (Ctrl+Shift+L). Without a systemd user session the install still works, but crewd is
+skipped: messages are typed in directly and routines and callbacks don't run.
 
 ## What it changes on your computer
 
