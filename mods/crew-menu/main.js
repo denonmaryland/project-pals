@@ -48,7 +48,7 @@ export default class CrewMenu extends View {
         .child(item("m-wake", null, "Wake", () => wakePal(rec)))
         .when(pinned, (el) => el.child(item("m-pin", "pin", "Unpin from the top", () => pinPal(rec, false))))
         .child(line())
-        .child(careful("m-forget", "Forget this pal", "Click again: its memory stays on disk", () => { forgetPal(rec); this.close(); }));
+        .child(careful("m-forget", "Forget this pal", "Click again to forget", () => { forgetPal(rec); this.close(); }));
     }
 
     // A room: open it, or close it (Project Pals keeps its transcript).
