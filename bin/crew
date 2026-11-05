@@ -160,7 +160,7 @@ def cmd_overview(spaces, deep=False):
     me, _ = whoami(spaces)
     terms = hc_terminals()
     health = load_json(DATA / "crew-health.json", {})
-    stalled, trust = health.get("stalled", {}), health.get("trust", {})
+    stalled, trust, drafts = health.get("stalled", {}), health.get("trust", {}), health.get("drafts", {})
     waiting = []
     print(f"# The Project Pals, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
@@ -232,6 +232,9 @@ def cmd_overview(spaces, deep=False):
     print(f"\n## Waiting on {OWNER}")
     for a in pend:
         waiting.append(f"approval {a['id']}: {a['bot']} wants to {wants_to(a['why'] or a['rule'])}: {a['command'][:120]}")
+    for v in drafts.values():
+        waiting.append(f"{v['bot']} #{v['channel']} has unsent text in its input box, so messages to it are held "
+                       f"(since {ago(v['since'])}); send or clear it")
     for v in trust.values():
         waiting.append(f"{v['bot']} #{v['channel']} is waiting for you to answer Claude Code's 'trust this folder?' question in that tab")
     for t, v in stalled.items():
@@ -251,6 +254,7 @@ def cmd_feed(spaces, show_all, n):
         where = f"{e.get('bot', '')}" + (f" #{e['channel']}" if e.get("channel") else "")
         what = {"finished": f"{where} finished a turn", "blocked": f"{where} has a question for {OWNER}",
                 "stalled": f"{where} looks stuck", "trust": f"{where} is waiting on the 'trust this folder?' question",
+                "draft": f"{where}: messages held, unsent text in its input box",
                 "task": f"task {e.get('task')} {e.get('status')}: {e.get('title', '')}",
                 "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",

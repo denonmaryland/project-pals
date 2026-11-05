@@ -202,6 +202,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   point the owner at the tab: a toast from the hire handler, a notice from `pal hire` / `pal channel`,
   and crewd's `trust` entry in the feed, the overview's "Waiting on" and a note to the head pal.
   Never answer it: trusting a folder is the owner's call, even with permissions bypassed.
+- **Never type over someone's draft:** messages are pasted into a pal's terminal and Enter is
+  pressed. If its Claude Code input box holds unsent text (the owner typing), that text would go out
+  glued to the message, so nothing is typed in while it's there: crewd keeps the messages queued,
+  lists the hold under "Waiting on", and delivers once the box is empty. Callbacks never quote
+  that unsent text, since it isn't anyone's answer.
 - **The gate sees only the line a pal types:** a script that pushes or publishes inside itself
   (a repo's `./release`) goes around the per-command rules, so release scripts have their own rule
   (`release-script`). An approval is good for one run of that exact command, and lapses

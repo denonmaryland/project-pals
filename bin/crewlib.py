@@ -310,7 +310,47 @@ def daemon_alive():
     return time.time() - beat.get("at", 0) < 20
 
 
+# Claude Code's input box: a rule, "❯ " plus whatever is typed (wrapping onto more lines), a rule.
+# Text there that hasn't been sent is someone's draft (usually the owner typing). Pasting a message
+# in would glue it onto that draft and press Enter on both, so nothing is typed in while it's there.
+RULE = re.compile(r"^\s*[─━]{20,}\s*$")
+PROMPT_LINE = re.compile(r"^\s*❯\s?(.*)$")
+PLACEHOLDER = re.compile(r'^Try "')   # the greyed hint an empty box shows; plain text in hc read
+
+
+def input_draft(lines):
+    """The unsent text in a Claude Code input box at the bottom of a screen: '' when the box is
+    empty, None when there's no such box (another harness, or a dialog in its place)."""
+    rules = [i for i, l in enumerate(lines) if RULE.match(l)]
+    if len(rules) < 2 or rules[-1] - rules[-2] < 2:
+        return None
+    box = lines[rules[-2] + 1:rules[-1]]
+    m = PROMPT_LINE.match(box[0])
+    if not m:
+        return None
+    text = " ".join([m.group(1)] + [l.strip() for l in box[1:]]).strip()
+    return "" if PLACEHOLDER.match(text) else text
+
+
+def without_input_box(lines):
+    """The screen above Claude Code's input box (and its status lines), when there is one."""
+    rules = [i for i, l in enumerate(lines) if RULE.match(l)]
+    if input_draft(lines) is None:
+        return lines
+    return lines[:rules[-2]]
+
+
+def has_draft(terminal):
+    return bool(input_draft(screen(terminal)))
+
+
+class DraftInTheWay(CrewError):
+    """The terminal's input box holds unsent text; typing in now would send it along."""
+
+
 def send_now(terminal, text):
+    if has_draft(terminal):
+        raise DraftInTheWay(f"{terminal} has unsent text in its input box (someone's typing there); not typing over it")
     r = subprocess.run(["hc", "send", terminal, text], capture_output=True, text=True, timeout=180)
     if r.returncode != 0:
         raise CrewError((r.stderr or r.stdout).strip() or "hc send failed")
