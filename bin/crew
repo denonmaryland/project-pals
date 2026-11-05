@@ -6,7 +6,8 @@ The team
                                      (git), memory, tasks, rooms, routines, approvals, what's stuck
   pal team                          the short roster
   pal feed [--all] [-n 40]          what happened since you last looked (finished, blocked, stuck…)
-  pal peek <Pal[#ch]> [-n 60]       read a pal's screen and recent history
+  pal peek <Pal[#ch]> [-n 60]       read a pal's screen and recent history, and what it's waiting on if blocked
+                                     (a prompt and its options: only the owner answers those, in its tab)
 
 Talking
   pal tell <Pal[#ch]> <text> [--now]
@@ -268,8 +269,32 @@ def cmd_peek(spaces, spec, n):
     x = lead(tab)
     if not x:
         die(f"{space['name']} #{chan(tab)} has no terminal")
-    print(f"── {space['name']} #{chan(tab)} ({x.get('status') or 'idle'}) ──")
-    print("\n".join(l.rstrip() for l in screen(x["terminal"], n)))
+    st = (term_info(x["terminal"]).get("status") or {})
+    state = st.get("state") or x.get("status") or "idle"
+    print(f"── {space['name']} #{chan(tab)} ({state}{', ' + st['kind'] if st.get('kind') else ''}) ──")
+    lines = [l.rstrip() for l in screen(x["terminal"], n)]
+    print("\n".join(lines))
+    q = waiting_question(st, screen(x["terminal"]) if state == "blocked" else lines)
+    if q:
+        print("\n" + q)
+
+
+def waiting_question(status, live):
+    """What a pal is stuck on, from Herdr's status and the live screen (not history): the trust
+    question, or a blocked prompt's message and its numbered options. None when it isn't waiting."""
+    if trust_prompt(live):
+        return (f"── waiting on Claude Code's 'trust this folder?' question. Only {OWNER} answers this one, "
+                f"in that tab. ──")
+    if status.get("state") != "blocked":
+        return None
+    opts = [l.strip().lstrip("❯›>").strip() for l in live[-25:] if re.match(r"^\s*[❯›>]?\s*\d+[.)]\s+\S", l)]
+    out = ["── blocked" + (f" on a {status['kind']} prompt" if status.get("kind") else "") + " ──"]
+    if status.get("msg"):
+        out.append(f"asks: {status['msg']}")
+    if opts:
+        out.append("options: " + " | ".join(opts))
+    out.append(f"It needs {OWNER} to answer in its tab; a message from another pal isn't {OWNER}'s answer.")
+    return "\n".join(out)
 
 
 # ── talking ──────────────────────────────────────────────────────────────────────────────────
