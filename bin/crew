@@ -254,6 +254,7 @@ def cmd_feed(spaces, show_all, n):
                 "task": f"task {e.get('task')} {e.get('status')}: {e.get('title', '')}",
                 "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
+                "approval-refused": f"approval {e.get('id')}: a {e.get('wanted')} came after it was already {e.get('status')}; nothing changed",
                 "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}"}.get(k, k)
         print(f"{time.strftime('%H:%M', time.localtime(e['at'] / 1000))} {what}")
     if not events:
@@ -675,12 +676,13 @@ def cmd_skill(spaces, rest):
         die("pal skill ls|show|save|archive (see crew --help)")
 
 
-def cmd_approvals(decide=None, rid=None, note=None):
+def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
     if decide:
         # Only the owner decides: not from a pal's terminal.
         if ME and is_bot_terminal(ME):
             die(f"approvals come from {OWNER} (the Inbox), not from a pal")
-        r = crewguard.decide(rid, decide == "approve", note)
+        via = "the Inbox" if inbox else (f"terminal {ME}" if ME else "a terminal outside Herdr")
+        r = crewguard.decide(rid, decide == "approve", note, via=via)
         print(f"{r['status']}: {r['bot']} #{r['channel']}: {r['command']}")
         return
     pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
@@ -801,8 +803,10 @@ def main(argv):
     if cmd == "primer":
         print(PRIMER); return
     if cmd in ("approvals", "approve", "deny"):
+        inbox = "--inbox" in rest   # the Inbox's buttons say so, for the record
+        rest = [a for a in rest if a != "--inbox"]
         return cmd_approvals(None if cmd == "approvals" else cmd, rest[0] if rest else die(f"crew {cmd} <id>"),
-                             " ".join(rest[1:]) or None) if cmd != "approvals" else cmd_approvals()
+                             " ".join(rest[1:]) or None, inbox) if cmd != "approvals" else cmd_approvals()
     if cmd == "skill":
         return cmd_skill([], rest)
     if cmd == "version":

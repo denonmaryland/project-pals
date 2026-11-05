@@ -124,16 +124,24 @@ def recently_used(terminal, rule, seconds=120):
                and now_ms() - r.get("used", 0) < seconds * 1000 for r in all_requests())
 
 
-def decide(rid, approve, note=None):
+def decide(rid, approve, note=None, via=None):
+    """The owner's answer. `via` says where it came from (the Inbox, a terminal), kept on the record
+    with every attempt, so a click that seems not to have counted can be traced afterwards."""
     with locked("approvals"):
         f = APPROVALS / f"{rid}.json"
         r = load_json(f, None)
         if not r:
             raise CrewError(f"no approval request {rid}")
+        want = "approve" if approve else "deny"
+        r.setdefault("attempts", []).append({"at": now_ms(), "wanted": want, "via": via, "was": r["status"]})
         if r["status"] != "pending":
-            raise CrewError(f"{rid} was already {r['status']}")
+            save_json(f, r)
+            feed("approval-refused", id=rid, bot=r["bot"], channel=r["channel"], wanted=want, status=r["status"])
+            raise CrewError(f"{rid} was already {r['status']}" + (f" ({_ago(r['decided'])})" if r.get("decided") else "")
+                            + "; nothing changed")
         r["status"] = "approved" if approve else "denied"
         r["decided"] = now_ms()
+        r["decided_via"] = via
         if note:
             r["note"] = note
         save_json(f, r)
@@ -147,6 +155,11 @@ def decide(rid, approve, note=None):
     except CrewError:
         pass
     return r
+
+
+def _ago(ms):
+    m = int((now_ms() - ms) / 60000)
+    return "just now" if m < 1 else f"{m} min ago" if m < 90 else f"{m // 60}h ago"
 
 
 def tidy():

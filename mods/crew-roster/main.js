@@ -103,7 +103,7 @@ export default class CrewRoster extends View {
   decide(a, approve, cx) {
     cx.spawn(async (cx) => {
       try {
-        await crewCli([approve ? "approve" : "deny", a.id]);
+        await crewCli([approve ? "approve" : "deny", a.id, "--inbox"]);
         notify({ title: approve ? `Approved for ${a.bot}` : `Declined for ${a.bot}`, body: a.command.slice(0, 120), level: approve ? "success" : "info", timeout: 3000 });
       } catch (e) { notify({ title: "Couldn't decide", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.refreshOps(cx);
@@ -369,7 +369,7 @@ export default class CrewRoster extends View {
           .child(mascotEl(bot, "blocked", 32, t))
           .child(v_flex().flex_1().min_w(0).gap(2)
             .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${ap.bot.split(" - ")[0]} wants to ${wantsTo(ap.why || ap.rule)}`))
-            .child(div().truncate().text_size(12).text_color(t.dim).child(`#${ap.channel} · ${ago(ap.at)}`))))
+            .child(div().truncate().text_size(12).text_color(t.dim).child(`#${ap.channel} · ${ago(ap.at)} · ${ap.id}`))))
         .child(div().px(10).py(7).rounded(9).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
         .child(h_flex().gap(8).justify_end()
