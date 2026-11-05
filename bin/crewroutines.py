@@ -1,4 +1,4 @@
-"""Routines: a prompt a bot runs on a schedule, in one of its channels (default #routines).
+"""Routines: a prompt a pal runs on a schedule, in one of its channels (default #routines).
 
 Schedules, in plain words or cron:
   weekdays 09:00 · daily 8:30 · mon,wed,fri 14:00 · weekends 10am · every 30m · every 2h 10:00-20:00 weekdays
@@ -11,7 +11,7 @@ import re
 import subprocess
 import time
 
-from crewlib import (DATA, REQS, CrewError, load_json, save_json, locked, append_jsonl, herdr_spaces, find, lead,
+from crewlib import (DATA, REQS, CrewError, OWNER, load_json, save_json, locked, append_jsonl, herdr_spaces, find, lead,
                      chan, screen, meaningful, send_now, is_agent, feed, now_ms, new_id)
 
 STORE = DATA / "crew-routines.json"
@@ -196,7 +196,7 @@ def _log(r, status, **extra):
 
 
 def start(r, terms, log, forced=False):
-    """Run a routine now in its bot's channel, unless that channel is busy."""
+    """Run a routine now in its pal's channel, unless that channel is busy."""
     try:
         spaces = herdr_spaces()
         space, _ = find(r["bot"], spaces)
@@ -206,7 +206,7 @@ def start(r, terms, log, forced=False):
     tab = next((t for t in space["tabs"] if chan(t).lower() == r["channel"].lower()), None)
     x = lead(tab) if tab else None
     if not tab or not x or not is_agent(terms.get(x["terminal"])):
-        # No channel with a running agent yet: ask Crew to open one, and run when it's there.
+        # No channel with a running agent yet: ask Project Pals to open one, and run when it's there.
         if not r.get("opening") or time.time() - r["opening"] > 300:
             r["opening"] = time.time()
             REQS.mkdir(parents=True, exist_ok=True)
@@ -221,10 +221,10 @@ def start(r, terms, log, forced=False):
     r.pop("pending", None)
     t = terms[x["terminal"]]
     if t.get("status") in ("working", "blocked"):
-        _log(r, "skipped", reason="still busy" if t.get("status") == "working" else "waiting on DeNon")
+        _log(r, "skipped", reason="still busy" if t.get("status") == "working" else f"waiting on {OWNER}")
         log(f"routine {r['name']}: skipped, #{r['channel']} is busy")
         return
-    text = (f"[routine: {r['name']}] {r['prompt']}\n\n(A scheduled routine DeNon set up. If nothing here needs DeNon's "
+    text = (f"[routine: {r['name']}] {r['prompt']}\n\n(A scheduled routine {OWNER} set up. If nothing here needs {OWNER}'s "
             f"attention, reply with just NOTHING_NEW.)")
     try:
         send_now(x["terminal"], text)
@@ -281,8 +281,8 @@ def watch(terms, log):
                 continue
             status, turn = t.get("status"), t.get("turn") or 0
             if status == "blocked":
-                _log(r, "needs DeNon", reason="it asked a question")
-                feed("routine", routine=r["name"], bot=r["bot"], status="needs DeNon")
+                _log(r, f"needs {OWNER}", reason="it asked a question")
+                feed("routine", routine=r["name"], bot=r["bot"], status=f"needs {OWNER}")
                 r["run"] = None
                 changed = True
             elif turn > run["turn"] and status != "working":
@@ -290,7 +290,7 @@ def watch(terms, log):
                 quiet = any("NOTHING_NEW" in l for l in tail[-4:])
                 summary = next((l.strip(" ●⏺") for l in reversed(tail) if "NOTHING_NEW" not in l and not l.startswith("❯")), "")
                 if quiet:
-                    # Nothing for DeNon: mark the turn seen so the Inbox stays clean.
+                    # Nothing for the owner: mark the turn seen so the Inbox stays clean.
                     subprocess.run(["hc", "label", run["terminal"], f"herdr.seen={turn}"], capture_output=True, timeout=10)
                 _log(r, "quiet" if quiet else "done", summary=summary[:200])
                 feed("routine", routine=r["name"], bot=r["bot"], status="quiet" if quiet else "done")

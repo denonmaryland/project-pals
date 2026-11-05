@@ -1,7 +1,7 @@
-// Crew room: the center of the Crew layout while a room is shown (the header names it, with its
+// Project Pals room: the center of the Project Pals layout while a room is shown (the header names it, with its
 // members' faces). The room is a group chat in a centered column: your messages on the right,
-// each bot's on the left in bubbles, the newest always in view. Bots post with the
-// `crew-room` command; everything lands in data/crew-rooms/<room>.jsonl, which this watches.
+// each pal's on the left in bubbles, the newest always in view. Pals post with the
+// `pal-room` command; everything lands in data/crew-rooms/<room>.jsonl, which this watches.
 //
 // The chat is a virtual list so it can scroll to the bottom from code. Its rows need exact
 // heights, so message text is wrapped here into fixed-height lines (each truncates rather than
@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
 import { spaces, panes, run, theme, watchFolder, appHome, shared } from "herdr";
-import { crew, botOf, rooms, roomMembers, readRoomLog, mascotEl, mood, statusWord, showTabs, roomMode, ROOM_DIR, a, WAVE } from "./crew.js";
+import { crew, botOf, rooms, roomMembers, readRoomLog, mascotEl, mood, statusWord, showTabs, roomMode, ROOM_DIR, a, WAVE, tone } from "./crew.js";
 
 const LINE = 21;      // px per text line
 const PAD_Y = 8;      // bubble padding, top and bottom
@@ -58,7 +58,7 @@ export default class CrewRoom extends View {
     this.shown = false;       // was the room view on screen last render
     this.sent = shared("crew.room.sent") ?? null;
     this.reload(cx);
-    // New lines arrive from bots (crew-room) and from the composer.
+    // New lines arrive from pals (crew-room) and from the composer.
     cx.spawn(async (cx) => {
       for (;;) {
         try { await watchFolder(`${appHome()}/${ROOM_DIR}`); } catch { return; }
@@ -123,7 +123,7 @@ export default class CrewRoom extends View {
     const rows = [];
     let prev = null;
     for (const [i, e] of said.slice(-300).entries()) {
-      // "Shepherd added Hello Lock": a quiet line in the middle, like a group chat's.
+      // "Orchestrator added Docs Site": a quiet line in the middle, like a group chat's.
       if (e.kind === "event") { rows.push({ kind: "event", key: `e-${i}`, text: e.text ?? "", h: STAMP }); prev = { at: e.at, from: null }; continue; }
       const you = e.from === "You";
       const far = !prev || e.at - prev.at > 10 * 60 * 1000;
@@ -182,13 +182,13 @@ export default class CrewRoom extends View {
   }
 
   render(cx) {
-    const t = theme();
+    const t = tone(theme());
     const room = this.room();
     const root = v_flex().id("crew-room").size_full().text_color(t.foreground)
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } });
     if (!room) return root.items_center().justify_center().child(div().text_size(14).text_color(t.dim).child("Pick a room on the left, or make one."));
     if (room.slug !== this.slug) this.reload(cx);
-    // Coming back to the room (from a bot's channel) shows the newest message.
+    // Coming back to the room (from a pal's channel) shows the newest message.
     const shown = roomMode();
     if (shown && !this.shown) this.toBottom(cx);
     this.shown = shown;
@@ -200,7 +200,7 @@ export default class CrewRoom extends View {
     const members = roomMembers(room, spaces(), panes());
     const { said, typing } = this.split(cx);
     const rows = this.rows(said, typing);
-    // Faces for everyone who posts, members or not (Shepherd drops into any room).
+    // Faces for everyone who posts, members or not (the head pal drops into any room).
     const c = crew(), ps = panes();
     const byName = new Map(spaces().map((sp) => { const bot = botOf(sp, c, ps); return [bot.name, { bot }]; }));
     for (const m of members) byName.set(m.name, m);
@@ -213,7 +213,7 @@ export default class CrewRoom extends View {
       : v_flex().flex_1().pt(40).gap(8).items_center()
           .child(div().text_size(18).font_weight(200).text_color(t.foreground).child("Nothing said yet"))
           .child(div().max_w(460).text_center().text_size(13).text_color(t.dim)
-            .child("Say something below. It goes to everyone, or just the bots you @mention."));
+            .child("Say something below. It goes to everyone, or just the pals you @mention."));
 
     return root.child(chat);
   }

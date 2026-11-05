@@ -1,11 +1,11 @@
-// Crew side: details for the shown bot (right pane, hidden until the header's panel button shows it):
+// Project Pals side: details for the shown pal (right pane, hidden until the header's panel button shows it):
 // this channel, its own branch, its other channels, tasks, routines, and what it remembers. In a
-// room: who's in it. Same look as the Crew dialogs: a small header, then quiet bordered lists.
+// room: who's in it. Same look as the Project Pals dialogs: a small header, then quiet bordered lists.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { spaces, panes, theme, run, exec, appHome, readTextFile, openOverlay, notify } from "herdr";
-import { loadOps, crewCli, taskOf, shownRoom, roomMembers, deleteRoom, showTabs, botOf, briefOf, channelName, leadPane, mascotFor, mascotEl, mood, updateBot, statusWord, statusColor, WAVE, ago, a } from "./crew.js";
+import { loadOps, crewCli, taskOf, shownRoom, roomMembers, deleteRoom, showTabs, botOf, briefOf, channelName, leadPane, mascotFor, mascotEl, mood, updateBot, statusWord, statusColor, WAVE, ago, a, tone } from "./crew.js";
 
 export default class CrewSide extends View {
   init(_props, cx) {
@@ -68,7 +68,7 @@ export default class CrewSide extends View {
     this.bot = updateBot(this.bot, (b) => ({ ...b, memory: text }));
   }
 
-  // Pieces shared with the Crew dialogs' look.
+  // Pieces shared with the Project Pals dialogs' look.
   kit(t) {
     return {
       label: (text, right) => h_flex().items_baseline().justify_between().px(4).pb(6)
@@ -129,7 +129,7 @@ export default class CrewSide extends View {
   }
 
   render() {
-    const t = theme();
+    const t = tone(theme());
     const k = this.kit(t);
     const space = spaces().find((s) => s.active);
     const tab = space?.tabs.find((x) => x.active);
@@ -146,7 +146,7 @@ export default class CrewSide extends View {
     if (bot) this.bot = bot;
     if (!bot) {
       this.botId = null;
-      return root.child(div().px(4).text_size(13).text_color(t.dim).child("Pick a bot on the left to see its details."));
+      return root.child(div().px(4).text_size(13).text_color(t.dim).child("Pick a pal on the left to see its details."));
     }
 
     const lead = tab ? leadPane(tab.id, panes()) : null;
@@ -278,7 +278,7 @@ export default class CrewSide extends View {
     const faces = h_flex().flex_none().children(members.slice(0, 3).map((m, i) => div().when(i > 0, (el) => el.ml(-12))
       .child(mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 32, t))));
     return root
-      .child(this.header(t, faces, `#${room.name}`, room.goal || `${members.length} bots`))
+      .child(this.header(t, faces, `#${room.name}`, room.goal || `${members.length} pals`))
       .child(v_flex()
         .child(k.label("Members"))
         .child(this.rows(k, members.map((m, i) => k.row(`mem-${i}`,
@@ -288,7 +288,7 @@ export default class CrewSide extends View {
           m.agent ? k.mark(m.status) : k.text("asleep", t.dim, 11.5),
           () => { if (m.space && m.tab) { showTabs(); run("space.select", { id: m.space.id }); run("tab.select", { id: m.tab.id }); } })))))
       .child(div().px(4).text_size(12).text_color(t.dim)
-        .child(`Bots talk here with crew-room say ${room.slug}, and bring others in with crew-room invite.`))
+        .child(`Pals talk here with pal-room say ${room.slug}, and bring others in with pal-room invite.`))
       .child(this.rows(k, [k.row("room-close", k.text("Close room", t.blocked, 12.5), null, () => { deleteRoom(room.id); showTabs(); })]));
   }
 }

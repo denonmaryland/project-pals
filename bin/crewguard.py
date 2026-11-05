@@ -1,19 +1,20 @@
-"""Approval boundaries. Every bot runs with permissions bypassed, so Crew adds its own gate for the
+"""Approval boundaries. Every pal runs with permissions bypassed, so Project Pals adds its own gate for the
 few things that leave the computer or can't be taken back: pushing, publishing, releasing,
-merging, deploying, posting and messaging people. A Claude Code bot's command that matches
-data/crew-policy.json is refused (PreToolUse hook) and becomes a request in Crew's Inbox; once DeNon
-approves it there, the bot is told and that exact command goes through once.
+merging, deploying, posting and messaging people. A Claude Code pal's command that matches
+data/crew-policy.json is refused (PreToolUse hook) and becomes a request in the Inbox; once the owner
+approves it there, the pal is told and that exact command goes through once.
 
-This is a guard against mistakes and against one bot talking another into something, not a
-security boundary: a bot with full permissions could still edit these files. Codex and other
+This is a guard against mistakes and against one pal talking another into something, not a
+security boundary: a pal with full permissions could still edit these files. Codex and other
 harnesses without a pre-command hook aren't gated."""
 import hashlib
 import re
 import time
 
-from crewlib import DATA, APPROVALS, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
+from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
+DEFAULTS_VERSION = 4
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -28,7 +29,7 @@ DEFAULT = {
         {"name": "message", "why": "messages people", "pattern": r"(sendmail|mutt|msmtp|mail\s+-s)\b"},
         {"name": "message-api", "why": "messages people", "anywhere": True,
          "pattern": r"api\.telegram\.org|hooks\.slack\.com|discord(app)?\.com/api/webhooks"},
-        {"name": "land", "why": "merges a channel's branch into the project", "pattern": r"\bcrew\s+land\b"},
+        {"name": "land", "why": "merges a channel's branch into the project", "pattern": r"(crew|botz|buddy|pal)\s+land\b"},
     ],
     "trusted": [],
 }
@@ -37,8 +38,14 @@ DEFAULT = {
 def policy():
     p = load_json(POLICY, None)
     if not p:
-        save_json(POLICY, DEFAULT)
-        p = DEFAULT
+        p = {**DEFAULT, "defaults_version": DEFAULTS_VERSION}
+        save_json(POLICY, p)
+    elif p.get("defaults_version", 1) < DEFAULTS_VERSION:
+        # Newer built-in rules replace the old built-in ones; rules people added stay.
+        ours = {r["name"] for r in DEFAULT["guarded"]}
+        p["guarded"] = DEFAULT["guarded"] + [r for r in p.get("guarded", []) if r.get("name") not in ours]
+        p["defaults_version"] = DEFAULTS_VERSION
+        save_json(POLICY, p)
     return p
 
 
@@ -112,7 +119,7 @@ def check(terminal, bot, channel, cmd):
 
 
 def recently_used(terminal, rule, seconds=120):
-    """Did DeNon's approval of a `rule` command from this terminal just go through?"""
+    """Did the owner's approval of a `rule` command from this terminal just go through?"""
     return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
                and now_ms() - r.get("used", 0) < seconds * 1000 for r in all_requests())
 
@@ -132,11 +139,11 @@ def decide(rid, approve, note=None):
         save_json(f, r)
     feed("approval", id=rid, bot=r["bot"], channel=r["channel"], status=r["status"])
     if approve:
-        msg = f"[crew] DeNon approved: {r['command']}\nRun that exact command again now; it'll go through once."
+        msg = f"[pal] {OWNER} approved: {r['command']}\nRun that exact command again now; it'll go through once."
     else:
-        msg = f"[crew] DeNon said no to: {r['command']}" + (f"\nTheir note: {note}" if note else "") + "\nDon't retry it; carry on without it or ask DeNon."
+        msg = f"[pal] {OWNER} said no to: {r['command']}" + (f"\nTheir note: {note}" if note else "") + f"\nDon't retry it; carry on without it or ask {OWNER}."
     try:
-        enqueue(r["terminal"], msg, sender="DeNon", kind="approval")
+        enqueue(r["terminal"], msg, sender=f"{OWNER}", kind="approval")
     except CrewError:
         pass
     return r

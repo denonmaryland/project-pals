@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Add Herdr Crew's Claude Code hooks to ~/.claude/settings.json (idempotent, backs it up first).
+"""Add Project Pals's Claude Code hooks to ~/.claude/settings.json (idempotent, backs it up first).
 They only act inside Herdr spaces; every other Claude Code session is left alone."""
 import json
+import os
 import shutil
 import sys
 import time
@@ -10,7 +11,11 @@ from pathlib import Path
 settings = Path.home() / ".claude" / "settings.json"
 backup_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else settings.parent / "backups"
 hook = str(Path.home() / ".local" / "bin" / "crew-hook")
-data = json.loads(settings.read_text()) if settings.exists() else {}
+try:
+    data = json.loads(settings.read_text()) if settings.exists() else {}
+except ValueError:
+    print(f"skipped the Claude Code hooks: {settings} isn't valid JSON (fix it, then run ./install.sh again)")
+    sys.exit(0)
 hooks = data.setdefault("hooks", {})
 want = {
     "SessionStart": {"matcher": "^(startup|resume|clear|compact)$", "hooks": [{"type": "command", "command": f"{hook} session-start", "timeout": 10}]},
@@ -26,7 +31,7 @@ for event, entry in want.items():
 # The status line goes through crew-statusline, which saves each channel's model / effort / context /
 # usage for the chat view and then runs the original command (kept in data/crew-statusline-original).
 wrapper = str(Path.home() / ".local" / "bin" / "crew-statusline")
-data_dir = Path.home() / ".config" / "herdr-app" / "data"
+data_dir = Path(os.environ.get("HERDR_APP_HOME", Path.home() / ".config" / "herdr-app")) / "data"
 sl = data.get("statusLine") or {}
 if sl.get("type") == "command" and "crew-statusline" not in sl.get("command", ""):
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -37,11 +42,13 @@ elif not sl:
     data["statusLine"] = {"type": "command", "command": wrapper}
     changed = True
 if changed:
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(settings, backup_dir / f"claude-settings-{time.strftime('%Y%m%d-%H%M%S')}.json")
+    if settings.exists():
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(settings, backup_dir / f"claude-settings-{time.strftime('%Y%m%d-%H%M%S')}.json")
+    settings.parent.mkdir(parents=True, exist_ok=True)
     tmp = settings.with_suffix(".crew.tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     tmp.replace(settings)
-    print("updated Crew's Claude Code hooks and status line (backup in %s)" % backup_dir)
+    print("updated Project Pals's Claude Code hooks and status line (backup in %s)" % backup_dir)
 else:
-    print("Crew's Claude Code hooks were already there")
+    print("Project Pals's Claude Code hooks were already there")

@@ -1,7 +1,7 @@
 #!/bin/sh
-# crew-statusline: Claude Code's status line, through Crew. Claude Code passes the status line
+# crew-statusline: Claude Code's status line, through Project Pals. Claude Code passes the status line
 # its session's facts (model, effort, context, usage, cost, session file) as JSON; inside a Herdr
-# channel this saves them for Crew's chat view, then runs your own status line command unchanged.
+# channel this saves them for Project Pals's chat view, then runs your own status line command unchanged.
 input=$(cat)
 dir="${HERDR_APP_HOME:-$HOME/.config/herdr-app}/data"
 if [ -n "$HC_TERMINAL_ID" ]; then

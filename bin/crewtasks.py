@@ -1,11 +1,11 @@
-"""The Crew task board: data/crew-tasks.json. Tasks have an owner, dependencies, notes and a
+"""The Project Pals task board: data/crew-tasks.json. Tasks have an owner, dependencies, notes and a
 result. Claiming and finishing tell the people involved: the owner hears when a task is assigned
 or unblocked, and whoever created it hears when it's done or blocked. A task with a check command
 can only be marked done when the check passes (run in the owner's project folder)."""
 import subprocess
 import time
 
-from crewlib import (DATA, CrewError, load_json, save_json, locked, enqueue, find, lead, chan, feed, now_ms,
+from crewlib import (DATA, CrewError, OWNER, load_json, save_json, locked, enqueue, find, lead, chan, feed, now_ms,
                      from_bot, is_agent, hc_terminals)
 
 STORE = DATA / "crew-tasks.json"
@@ -25,7 +25,7 @@ def get(board, tid):
 
 
 def same(spec_a, spec_b):
-    """Is 'Theme Plugin - Omarchy#updates' the same owner as 'theme'?"""
+    """Is 'Docs Site#updates' the same owner as 'theme'?"""
     if not spec_a or not spec_b:
         return False
     a_bot, _, a_ch = spec_a.lower().partition("#")
@@ -37,7 +37,7 @@ def same(spec_a, spec_b):
 def terminal_for(spec, spaces):
     space, tab = find(spec, spaces)
     if "#" not in spec:
-        # A bot without a channel: its shown channel if an agent runs there, else any that has one.
+        # A pal without a channel: its shown channel if an agent runs there, else any that has one.
         terms = hc_terminals()
         for t in [tab] + [x for x in space["tabs"] if x is not tab]:
             x = lead(t)
@@ -83,8 +83,8 @@ def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=Non
     feed("task", task=t["id"], status="open", title=title, by=me_name, to=assignee)
     blocked_by = [d for d in t["deps"] if get(load(), d)["status"] != "done"]
     if assignee and not blocked_by:
-        notify(assignee, f"{from_bot(me_name) if me else '[from DeNon]'} New task for you: {t['id']} {title}"
-               + (f"\n{body}" if body else "") + f"\n(crew task claim {t['id']} to start; crew task done {t['id']} \"result\" when finished.)",
+        notify(assignee, f"{from_bot(me_name) if me else f'[from {OWNER}]'} New task for you: {t['id']} {title}"
+               + (f"\n{body}" if body else "") + f"\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
                spaces, me_name)
     return t
 
@@ -99,9 +99,9 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
             open_deps = [d for d in t["deps"] if get(board, d)["status"] != "done"]
             if open_deps:
                 raise CrewError(f"{t['id']} waits on {', '.join(open_deps)}")
-            if t.get("claimed_by") and not same(t["claimed_by"], me or "DeNon") and t["status"] == "claimed":
+            if t.get("claimed_by") and not same(t["claimed_by"], me or f"{OWNER}") and t["status"] == "claimed":
                 raise CrewError(f"{t['id']} is already claimed by {t['claimed_by']}")
-            t["claimed_by"] = me or "DeNon"
+            t["claimed_by"] = me or f"{OWNER}"
             t["status"] = "claimed"
         if assignee is not None:
             s, tab = find(assignee, spaces)
@@ -111,7 +111,7 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
         if status == "done" and t.get("check"):
             folder = None
             owner = t.get("claimed_by") or t.get("assignee")
-            if owner and owner != "DeNon":
+            if owner and owner != f"{OWNER}":
                 try:
                     folder = find(owner, spaces)[0].get("folder")
                 except CrewError:
@@ -132,14 +132,14 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
         unblocked = [x for x in dependents if all(get(board, d)["status"] == "done" for d in x["deps"])]
     if status:
         feed("task", task=t["id"], status=status, title=t["title"], by=me_name)
-    who = from_bot(me_name) if me else "[from DeNon]"
+    who = from_bot(me_name) if me else f"[from {OWNER}]"
     creator = t.get("by_spec")
     if status == "done":
         if creator and not same(creator, me or ""):
             notify(creator, f"{who} {t['id']} is done: {t['title']}" + (f"\nResult: {result}" if result else ""), spaces, me_name)
         for x in unblocked:
-            notify(x.get("assignee"), f"[crew] {x['id']} is unblocked ({t['id']} is done): {x['title']}\n"
-                   f"(crew task claim {x['id']} to start.)", spaces, "crew")
+            notify(x.get("assignee"), f"[pal] {x['id']} is unblocked ({t['id']} is done): {x['title']}\n"
+                   f"(pal task claim {x['id']} to start.)", spaces, "crew")
     elif status == "blocked" and creator and not same(creator, me or ""):
         notify(creator, f"{who} {t['id']} is blocked: {t['title']}" + (f"\nWhy: {note}" if note else ""), spaces, me_name)
     if assignee is not None and t["status"] == "open":

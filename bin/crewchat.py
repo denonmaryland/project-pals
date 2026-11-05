@@ -1,10 +1,10 @@
 """Chat view feeds. A channel running Claude Code keeps its conversation in a session file
 (~/.claude/projects/<folder>/<session>.jsonl, tens of MB with request blobs). crewd turns each
-linked one into a small feed the Crew chat view reads: data/crew-chats/<terminal>.jsonl, one
-line per bubble ({kind: you | bot | tool | note | event, text, ...}), appended as the session grows.
+linked one into a small feed the Project Pals chat view reads: data/crew-chats/<terminal>.jsonl, one
+line per bubble ({kind: you | pal | tool | note | event, text, ...}), appended as the session grows.
 
 Links (data/crew-sessions/<terminal>.json) come from the SessionStart hook, which is told the
-session's file; channels already running when Crew was installed are matched by their
+session's file; channels already running when Project Pals was installed are matched by their
 --resume id, or by finding their recent prompts on the terminal's screen.
 
 The session file is Claude Code's own format, not a public one: anything unexpected is skipped,
@@ -17,7 +17,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from crewlib import DATA, load_json, save_json, screen, is_agent
+from crewlib import DATA, load_json, save_json, screen, is_agent, OWNER
 
 SESSIONS = DATA / "crew-sessions"
 CHATS = DATA / "crew-chats"
@@ -42,12 +42,12 @@ def links():
 
 REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 HC_TAG = re.compile(r"^\s*<hc[^>]*>\s*", re.S)
-FROM_BOT = re.compile(r"^\[from ([^,\]]+), a bot, not DeNon\]\s*(?:asks:\s*)?")
-FROM_ROOM = re.compile(r"^\[#([^\]]+)\] ([^:\n]+?)(?: \(a bot, not DeNon\))?(?: handed you this)?:\s*")
-FROM_DENON = re.compile(r"^\[from DeNon\]\s*(?:asks:\s*)?")
-CREW = re.compile(r"^\[crew\]\s*")
+FROM_BOT = re.compile(rf"^\[from ([^,\]]+), a (?:bot|buddy|pal), not {re.escape(OWNER)}\]\s*(?:asks:\s*)?")
+FROM_ROOM = re.compile(rf"^\[#([^\]]+)\] ([^:\n]+?)(?: \(a (?:bot|buddy|pal), not {re.escape(OWNER)}\))?(?: handed you this)?:\s*")
+FROM_OWNER = re.compile(rf"^\[from {re.escape(OWNER)}\]\s*(?:asks:\s*)?")
+CREW = re.compile(r"^\[(?:crew|botz|buddy|pal)\]\s*")
 ROUTINE = re.compile(r"^\[routine: ([^\]]+)\]\s*")
-TAIL_HINT = re.compile(r"\n\((?:Reply in the room|Answer [^)]*|DeNon [^)]*)[^)]*\)\s*$", re.S)
+TAIL_HINT = re.compile(rf"\n\((?:Reply in the room|Answer [^)]*|{re.escape(OWNER)} [^)]*)[^)]*\)\s*$", re.S)
 
 
 def ms(ts):
@@ -112,8 +112,8 @@ def parse_user(e, at):
             sender = f"{m.group(2).strip()} in #{m.group(1)}" if label == "room" else f"Routine: {m.group(1)}" if label == "routine" else m.group(1).strip()
             return [{"kind": "note", "from": sender, "text": text[m.end():].strip(), "at": at}]
     if CREW.match(text):
-        return [{"kind": "note", "from": "Crew", "text": CREW.sub("", text).strip(), "at": at}]
-    text = FROM_DENON.sub("", text)
+        return [{"kind": "note", "from": "Project Pals", "text": CREW.sub("", text).strip(), "at": at}]
+    text = FROM_OWNER.sub("", text)
     return [{"kind": "you", "text": text, "images": images, "at": at}]
 
 

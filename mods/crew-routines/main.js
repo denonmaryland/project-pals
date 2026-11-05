@@ -1,11 +1,11 @@
-// Routines: every bot's scheduled work in one place. See when each runs next and how the last run
+// Routines: every pal's scheduled work in one place. See when each runs next and how the last run
 // went, run one now, pause or resume it, edit it, delete it, or make a new one. crewd runs them;
 // this reads data/crew-routines.json and changes it through the crew command.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces, panes, appHome, readTextFile } from "herdr";
-import { crewCli, crew, botOf, mascotEl, mood, ago, a } from "./crew.js";
+import { crewCli, crew, botOf, mascotEl, mood, ago, a, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const EXAMPLES = ["weekdays 09:00", "every 2h 10:00-20:00", "daily 18:00", "mon,fri 4pm"];
@@ -31,7 +31,7 @@ export default class CrewRoutines extends View {
     this.channel = InputState.new({ placeholder: "routines" });
     this.prompt = TextareaState.new({ placeholder: "What should it do each time?", rows: 3 });
     this.prompt.set_auto_grow(3, 8);
-    this.pickBot = false; // the bot list is open in the form
+    this.pickBot = false; // the pal list is open in the form
     for (const s of [this.name, this.when, this.channel, this.prompt]) s.on("change", (_e, cx) => cx.notify());
     this.bot = null;
     this.handle = cx.focus_handle();
@@ -85,7 +85,7 @@ export default class CrewRoutines extends View {
   save(cx) {
     const name = this.name.value().trim(), sched = this.when.value().trim(), prompt = this.prompt.value().trim();
     const ch = this.channel.value().trim().replace(/^#/, "") || "routines";
-    if (!this.bot) return notify({ title: "Pick a bot", level: "warning", timeout: 2500 });
+    if (!this.bot) return notify({ title: "Pick a pal", level: "warning", timeout: 2500 });
     if (!sched || !prompt) return notify({ title: "It needs a schedule and something to do", level: "warning", timeout: 2500 });
     const args = this.editing === "new"
       ? ["routine", "add", this.bot, sched, prompt, "--channel", ch, ...(name ? ["--name", name] : [])]
@@ -108,7 +108,7 @@ export default class CrewRoutines extends View {
     }
   }
 
-  // Shared pieces, same look as the other Crew dialogs.
+  // Shared pieces, same look as the other Project Pals dialogs.
   kit(t) {
     const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     return {
@@ -151,7 +151,7 @@ export default class CrewRoutines extends View {
       .child(k.stop(div().px(16).pt(14).pb(6).child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground))))
       .child(k.stop(div().px(6).pb(6).child(Textarea.new(this.prompt).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
 
-    const botRow = k.row("rf-bot", "Bot", h_flex().items_center().gap(8)
+    const botRow = k.row("rf-bot", "Pal", h_flex().items_center().gap(8)
       .when(Boolean(bot), (el) => el.child(mascotEl(bot, mood(space.status, bot.awake), 20, t)))
       .child(div().text_size(13).text_color(t.muted).child(this.bot ? this.bot.split(" - ")[0] : "Pick one"))
       .when(isNew, (el) => el.child(k.chev(this.pickBot))),
@@ -182,14 +182,14 @@ export default class CrewRoutines extends View {
 
     const ready = Boolean(this.bot && this.when.value().trim() && this.prompt.value().trim());
     const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child("Skipped while the bot is busy · quiet when there's nothing new"))
+      .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child("Skipped while the pal is busy · quiet when there's nothing new"))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("rf-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click((_e, cx) => { this.editing = null; this.pickBot = false; cx.notify(); }).child("Cancel"))
         .child(k.button("rf-save", isNew ? "Add routine" : "Save", ready, (_e, cx) => this.save(cx))));
 
     return v_flex().w_full()
       .child(k.header(bot ? mascotEl(bot, "calm", 36, t) : this.clockFace(t), isNew ? "New routine" : "Edit routine",
-        isNew ? "A prompt a bot runs on a schedule" : this.bot ?? ""))
+        isNew ? "A prompt a pal runs on a schedule" : this.bot ?? ""))
       .child(v_flex().gap(12).px(24).pt(12).child(named).child(settings))
       .child(footer);
   }
@@ -203,7 +203,7 @@ export default class CrewRoutines extends View {
     const open = this.open === r.id;
     const last = r.last;
     const busy = this.busy.has(r.id);
-    const lastColor = !last ? t.dim : last.status === "failed" ? t.blocked : last.status === "skipped" || last.status === "needs DeNon" ? t.working : t.done;
+    const lastColor = !last ? t.dim : last.status === "failed" ? t.blocked : last.status === "skipped" || last.status.startsWith("needs ") ? t.working : t.done;
     const runs = open ? this.log.filter((e) => e.routine === r.id).slice(-5).reverse() : [];
     const link = (id, label, on_click, color) => div().id(id).cursor_pointer().hover((s) => s.opacity(0.75)).on_click(on_click)
       .child(div().text_size(12.5).text_color(color ?? t.muted).child(label));
@@ -239,7 +239,7 @@ export default class CrewRoutines extends View {
   }
 
   render() {
-    const t = theme();
+    const t = tone(theme());
     const root = v_flex().id("crew-routines").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().bg(t.popover).text_color(t.foreground);
     if (this.editing && this.editing !== null && (this.editing === "new" || this.routines.some((r) => r.id === this.editing))) {
@@ -251,7 +251,7 @@ export default class CrewRoutines extends View {
     const byBot = new Map();
     for (const r of this.routines) { if (!byBot.has(r.bot)) byBot.set(r.bot, []); byBot.get(r.bot).push(r); }
 
-    // One bordered list per bot, its face and name above.
+    // One bordered list per pal, its face and name above.
     const body = v_flex().id("rt-list").max_h(520).overflow_y_scrollbar().gap(14).px(24).pt(12);
     for (const [name, rs] of byBot) {
       const space = all.find((s) => s.name === name);
@@ -267,12 +267,12 @@ export default class CrewRoutines extends View {
       body.child(v_flex().py(24).items_center().gap(6)
         .child(div().text_size(14).text_color(t.muted).child("No routines yet"))
         .child(div().max_w(360).text_center().text_size(12.5).text_color(t.dim)
-          .child("A prompt a bot runs on a schedule: a morning digest, a nightly issue check, a weekly cleanup.")));
+          .child("A prompt a pal runs on a schedule: a morning digest, a nightly issue check, a weekly cleanup.")));
     }
 
     const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
       .child(div().text_size(12).text_color(t.dim)
-        .child(this.routines.length ? `${active} on${this.routines.length - active ? ` · ${this.routines.length - active} paused` : ""} · skipped while a bot is busy` : ""))
+        .child(this.routines.length ? `${active} on${this.routines.length - active ? ` · ${this.routines.length - active} paused` : ""} · skipped while a pal is busy` : ""))
       .child(k.button("rt-new", "New routine", true, (_e, cx) => { this.startNew(null); cx.notify(); }));
 
     return root

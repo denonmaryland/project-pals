@@ -1,10 +1,10 @@
-// A bot's look: any color, a body shape and an accessory, with a live preview of every mood.
-// Saving stores it on the bot's record (`look`) and draws its mascots into data/crew-mascots.
+// A pal's look: any color, a body shape and an accessory, with a live preview of every mood.
+// Saving stores it on the pal's record (`look`) and draws its mascots into data/crew-mascots.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { botOf, updateBot, resolveLook, writeArt, colorOf, a } from "./crew.js";
+import { botOf, updateBot, resolveLook, writeArt, colorOf, a, tone } from "./crew.js";
 import { SWATCHES, SHAPES, ACCESSORIES, MOODS, NAMED, lookFiles, lookPath, validHex, normHex } from "./mascot-art.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -14,7 +14,7 @@ export default class CrewLook extends View {
     const space = spaces().find((s) => s.id === props()?.space);
     this.bot = space ? botOf(space) : null;
     const b = this.bot;
-    this.draft = { color: b?.look?.color ?? NAMED[b ? colorOf(b) : "slate"] ?? "#8f96b3", shape: b?.look?.shape ?? "round", accessory: b?.look?.accessory ?? "auto" };
+    this.draft = { color: b?.look?.color ?? NAMED[b ? colorOf(b) : "slate"] ?? "#8f96b3", shape: b?.look?.shape ?? "folder", accessory: b?.look?.accessory ?? "auto" };
     this.hex = InputState.new({ placeholder: "#a28cf0", value: this.draft.color });
     this.hex.on("change", (_e, cx) => { const v = this.hex.value(); if (validHex(v)) this.set({ color: normHex(v) }, cx, false); });
     this.drawn = new Set();
@@ -22,7 +22,7 @@ export default class CrewLook extends View {
     this.draw(cx);
   }
 
-  // The look as it would be with `l` (accessory "auto" decided for this bot).
+  // The look as it would be with `l` (accessory "auto" decided for this pal).
   resolved(l = this.draft) { return resolveLook({ ...this.bot, look: l }); }
 
   set(change, cx, syncHex = true) {
@@ -52,12 +52,12 @@ export default class CrewLook extends View {
 
   save() {
     const look = this.draft;
-    writeArt(lookFiles(this.resolved(look)))
-      .then(() => {
-        updateBot(this.bot.record ?? this.bot, (b) => ({ ...b, look }));
-        notify({ title: `${this.bot.name.split(" - ")[0]} has a new look`, level: "success", timeout: 2500 });
-      })
-      .catch((e) => notify({ title: "Couldn't save the look", body: String(e.message ?? e).slice(0, 200), level: "warning" }));
+    // Store it first: closing the dialog ends this mod, and with it anything still waiting (the
+    // old order, draw then store, lost the look). Any art not drawn yet, the roster draws on its
+    // next pass (ensureLooks), and faces wait for it instead of showing a missing image.
+    updateBot(this.bot.record ?? this.bot, (b) => ({ ...b, look }));
+    writeArt(lookFiles(this.resolved(look))).catch(() => {});
+    notify({ title: `${this.bot.name.split(" - ")[0]} has a new look`, level: "success", timeout: 2500 });
     closeOverlay(props().overlay);
   }
 
@@ -71,8 +71,8 @@ export default class CrewLook extends View {
   }
 
   render() {
-    const t = theme();
-    if (!this.bot) return div().p(24).bg(t.popover).text_color(t.dim).child("That bot is gone.");
+    const t = tone(theme());
+    if (!this.bot) return div().p(24).bg(t.popover).text_color(t.dim).child("That pal is gone.");
     const look = this.resolved();
     const hair = () => div().h(1).mx(16).bg(a(t.foreground, "0c"));
     const label = (s, right) => h_flex().items_center().justify_between().px(16).pt(12).pb(8)

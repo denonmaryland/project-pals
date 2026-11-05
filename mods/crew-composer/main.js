@@ -1,4 +1,4 @@
-// Crew composer: message the shown channel, or any bot's channel with "@Bot#channel text".
+// Project Pals composer: message the shown channel, or any pal's channel with "@Pal#channel text".
 // It pastes into that channel's terminal with `hc send` (Enter included). A channel that's
 // waiting on you isn't typed into: answer its question in the terminal.
 //
@@ -9,7 +9,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, InputState, Input } from "gpui-base";
 import { spaces, theme, hc, notify, exec, appHome, openOverlay, shared, setShared } from "herdr";
-import { channelName, leadPane, a, shownRoom, roomMembers, roomTargets, appendRoomLog, deliverToRoom } from "./crew.js";
+import { owner, channelName, leadPane, a, shownRoom, roomMembers, roomTargets, appendRoomLog, deliverToRoom, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
@@ -20,6 +20,7 @@ export default class CrewComposer extends View {
     // One field per channel or room, each saying where it goes ("Message #pricing"); switching
     // keeps what you'd typed in each, like drafts.
     this.inputs = new Map();
+    this.labels = new Map(); // key → the label its field was made with
     this.fallback = this.make("Message");
     this.ensure();
     // Fields can't be made while drawing, so a light check makes one when you switch somewhere new.
@@ -52,11 +53,16 @@ export default class CrewComposer extends View {
   // Make the field for where you are now, if it's new; true when one was made.
   ensure() {
     const w = this.where();
-    if (this.inputs.has(w.key)) return false;
+    const old = this.inputs.get(w.key);
+    // Same place, same name: nothing to do. A renamed channel needs a new field, since a field's
+    // label is fixed when it's made; what you'd typed moves over.
+    if (old && this.labels.get(w.key) === w.label) return false;
     const input = this.make(w.label);
-    // Keep focus and what you'd typed in the stand-in field.
-    if (this.fallback.value()) { input.set_value(this.fallback.value()); this.fallback.set_value(""); }
+    const carry = old?.value() || this.fallback.value();
+    if (carry) input.set_value(carry);
+    this.fallback.set_value("");
     this.inputs.set(w.key, input);
+    this.labels.set(w.key, w.label);
     if (this.typing) input.focus();
     return true;
   }
@@ -102,14 +108,14 @@ export default class CrewComposer extends View {
     });
   }
 
-  // "@Scout#pricing hello" → that bot's channel; else the shown channel.
+  // "@Scout#pricing hello" → that pal's channel; else the shown channel.
   target(text) {
     const all = spaces();
     const m = text.match(/^@([^\s#]+)(?:#([^\s]+))?\s+([\s\S]+)$/);
     if (m) {
       const want = m[1].toLowerCase().replace(/[-_]/g, " ");
       const space = all.find((s) => s.name.toLowerCase() === want) ?? all.find((s) => s.name.toLowerCase().startsWith(want));
-      if (!space) return { error: `No bot called ${m[1]}` };
+      if (!space) return { error: `No pal called ${m[1]}` };
       const tab = m[2] ? space.tabs.find((x) => channelName(x).toLowerCase() === m[2].toLowerCase()) : space.tabs.find((x) => x.active) ?? space.tabs[0];
       if (!tab) return { error: `${space.name} has no #${m[2]}` };
       return { space, tab, text: m[3], who: `${space.name} #${channelName(tab)}` };
@@ -134,7 +140,7 @@ export default class CrewComposer extends View {
         await appendRoomLog(room, { at: Date.now(), from: "You", text, kind: "say", to: everyone ? [] : to.map((m) => m.name), everyone });
         // Tell the room view to load it and scroll to it right away.
         setShared("crew.room.sent", Date.now());
-        await deliverToRoom(room, to, "DeNon", text, everyone);
+        await deliverToRoom(room, to, owner(), text, everyone);
       } catch (e) {
         notify({ title: `Couldn't post to #${room.name}`, body: String(e).slice(0, 160), level: "error" });
       }
@@ -189,7 +195,7 @@ export default class CrewComposer extends View {
   }
 
   render(cx) {
-    const t = theme();
+    const t = tone(theme());
     // A file picked in the attach popup.
     const pick = shared("crew.attach.add");
     if (pick?.nonce && pick.nonce !== this.lastPick) { this.lastPick = pick.nonce; this.add(pick.paths ?? [], cx); }

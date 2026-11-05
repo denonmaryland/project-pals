@@ -1,10 +1,10 @@
-// Crew attach: a popup of recent files (Snip captures, Pictures, Downloads, Desktop) to attach
+// Project Pals attach: a popup of recent files (Snip captures, Pictures, Downloads, Desktop) to attach
 // to a message. Picking one hands it to the composer through shared("crew.attach.add").
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, exec, home, setShared } from "herdr";
-import { a, ago } from "./crew.js";
+import { a, ago, tone } from "./crew.js";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
@@ -38,7 +38,7 @@ export default class CrewAttach extends View {
   }
 
   render() {
-    const t = theme();
+    const t = tone(theme());
     const h = home();
     const where = (p) => p.replace(`${h}/.cache/snip/drag/`, "Snip · ").replace(/\/[^/]*$/, "").replace(/^Snip · [^/]+$/, "Snip").replace(h, "~");
     const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);

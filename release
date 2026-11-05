@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Publish a Terminal Botz release: everyone's About → Check for updates (and crewd's daily check)
+# Publish a Project Pals release: everyone's About → Check for updates (and crewd's daily check)
 # will see it and can update in one click.
 #
 #   ./release 0.2.0 "What changed, a few lines"
 #   ./release 0.2.0 -F notes.md
 #
-# It sets VERSION, commits, tags v0.2.0, builds dist/terminal-botz-0.2.0.tar.gz plus SHA256SUMS
+# It sets VERSION, commits, tags v0.2.0, builds dist/project-pals-0.2.0.tar.gz plus SHA256SUMS
 # (the updater refuses a download that doesn't match), pushes, and creates the GitHub release.
-# Needs: a clean tree on main, the GitHub repo in botz.json created, and gh signed in.
+# Needs: a clean tree on main, the GitHub repo in pals.json created, and gh signed in.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -16,7 +16,7 @@ version="${1:-}"; shift || true
 if [[ "${1:-}" == "-F" ]]; then notes="$(cat "$2")"; else notes="${1:-}"; fi
 [[ -n "$notes" ]] || { echo "say what changed: ./release $version \"notes\"" >&2; exit 2; }
 
-repo="$(python3 -c 'import json; print(json.load(open("botz.json"))["repo"])')"
+repo="$(python3 -c 'import json; print(json.load(open("pals.json"))["repo"])')"
 current="$(cat VERSION)"
 python3 - "$current" "$version" <<'PY' || { echo "$version isn't newer than $current" >&2; exit 2; }
 import sys
@@ -27,18 +27,36 @@ PY
 [[ -z "$(git status --porcelain)" ]] || { echo "commit or stash your changes first" >&2; exit 2; }
 gh repo view "$repo" >/dev/null 2>&1 || { echo "GitHub repo $repo doesn't exist yet. Create it first, e.g.: gh repo create $repo --public --source . --push" >&2; exit 2; }
 
-for f in install.sh VERSION botz.json layouts/crew.json; do [[ -e "$f" ]] || { echo "missing $f" >&2; exit 2; }; done
+for f in install.sh VERSION pals.json layouts/pals.json; do [[ -e "$f" ]] || { echo "missing $f" >&2; exit 2; }; done
+
+# Preflight: nothing broken goes out.
+git fetch -q origin main 2>/dev/null || true
+if git rev-parse -q --verify origin/main >/dev/null && [[ "$(git rev-parse origin/main)" != "$(git merge-base HEAD origin/main)" ]]; then
+  echo "origin/main has commits you don't; pull first" >&2; exit 2
+fi
+bash -n install.sh release || exit 2
+for f in bin/crew bin/crew-room bin/crewd bin/crew-hook bin/*.py install-hooks.py; do python3 -m py_compile "$f" || { echo "python error in $f" >&2; exit 2; }; done
+for f in layouts/*.json mods/*/mod.json pals.json; do python3 -m json.tool "$f" >/dev/null || { echo "bad JSON in $f" >&2; exit 2; }; done
+if command -v node >/dev/null; then
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  for f in lib/*.js mods/*/main.js; do cp "$f" "$tmp/x.mjs"; node --check "$tmp/x.mjs" || { echo "JS syntax error in $f" >&2; exit 2; }; done
+fi
+find . -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 
 printf '%s\n' "$version" > VERSION
 git add VERSION
 git commit -qm "Release v$version"
-git tag -a "v$version" -m "Terminal Botz $version"
+git tag -a "v$version" -m "Project Pals $version"
+# If publishing fails from here, take the local commit and tag back so a rerun works.
+undo() { echo "release failed; undoing the local commit and tag" >&2; git tag -d "v$version" >/dev/null 2>&1; git reset -q --hard HEAD~1; }
+trap 'undo' ERR
 
 mkdir -p dist
-tarball="dist/terminal-botz-$version.tar.gz"
-git archive --format=tar.gz --prefix="terminal-botz-$version/" -o "$tarball" "v$version"
-(cd dist && sha256sum "terminal-botz-$version.tar.gz" > SHA256SUMS)
+tarball="dist/project-pals-$version.tar.gz"
+git archive --format=tar.gz --prefix="project-pals-$version/" -o "$tarball" "v$version"
+(cd dist && sha256sum "project-pals-$version.tar.gz" > SHA256SUMS)
 
 git push -q origin main "v$version"
-gh release create "v$version" "$tarball" dist/SHA256SUMS --repo "$repo" --title "Terminal Botz $version" --notes "$notes"
+trap - ERR   # pushed: from here a failure leaves the tag on GitHub; rerun just the gh release command
+gh release create "v$version" "$tarball" dist/SHA256SUMS --repo "$repo" --title "Project Pals $version" --notes "$notes"
 echo "released $version: installs see it at their next check (About → Check for updates)"

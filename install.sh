@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Install Terminal Botz into the Herdr app home: its layout (crew) and the crew-* mods, plus the
-# commands bots use (botz, botz-room; crew and crew-room still work).
+# Install Project Pals into the Herdr app home: its layout (pals) and the crew-* mods, plus the
+# commands pals use (pal, pal-room; the older names buddy, botz and crew still work).
 #
 #   ./install.sh                 everything (the helpers too: see below)
 #   ./install.sh --no-helpers    only the layout, mods and commands
 #
 # Helpers: crewd (a user service that queues messages between turns, runs routines, reports back
-# and keeps memory) and Claude Code hooks + status line (crew primer and memory at session start,
+# and keeps memory) and Claude Code hooks + status line (pal primer and memory at session start,
 # the approval gate, model/context facts for the chat view). They change files outside Herdr:
 # ~/.config/systemd/user and ~/.claude/settings.json (backed up first).
 #
 # Herdr hot-reloads mods and layouts, so a running window picks this up at once. Previous copies
-# are backed up to ~/.config/herdr-app/.crew-backups/. Your bots, rooms and memory are never touched.
+# are backed up to ~/.config/herdr-app/.crew-backups/. Your pals, rooms and memory are never touched.
 set -euo pipefail
 
 src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,8 +30,7 @@ done
 version="$(cat "$src/VERSION" 2>/dev/null || echo 0.0.0)"
 
 [[ -d "$home" ]] || { echo "no Herdr app home at $home (open Herdr once first)" >&2; exit 1; }
-
-python3 "$src/gen-mascots.py" >/dev/null
+for need in rsync python3; do command -v "$need" >/dev/null || { echo "Project Pals needs $need; install it and run this again" >&2; exit 1; }; done
 
 for dir in "$src"/mods/crew-*; do
   name="$(basename "$dir")"
@@ -45,42 +44,100 @@ for dir in "$src"/mods/crew-*; do
 done
 
 mkdir -p "$home/layouts"
-if [[ -f "$home/layouts/crew.json" ]]; then mkdir -p "$backup/layouts"; cp -a "$home/layouts/crew.json" "$backup/layouts/"; fi
-cp "$src/layouts/crew.json" "$home/layouts/crew.json"
-[[ -f "$src/layouts/crew.svg" ]] && cp "$src/layouts/crew.svg" "$home/layouts/crew.svg"
+if [[ -f "$home/layouts/pals.json" ]]; then mkdir -p "$backup/layouts"; cp -a "$home/layouts/pals.json" "$backup/layouts/"; fi
+cp "$src/layouts/pals.json" "$home/layouts/pals.json"
+# Its interface font is Adwaita Sans; without it, Geist (which ships with Herdr).
+if ! fc-list 2>/dev/null | grep -qi "Adwaita Sans"; then
+  sed -i 's/"ui_font": "Adwaita Sans"/"ui_font": "Geist"/' "$home/layouts/pals.json"
+fi
+[[ -f "$src/layouts/pals.svg" ]] && cp "$src/layouts/pals.svg" "$home/layouts/pals.svg"
+# The layout used to be called crew, then buddies: move over (backing the old one up) and show the
+# new one if an old one was showing.
+was_shown=""
+for old in crew buddies; do
+  if [[ -f "$home/layouts/$old.json" ]] && grep -q '"crew-roster"' "$home/layouts/$old.json"; then
+    command -v herdr-app >/dev/null && herdr-app status 2>/dev/null | grep -q "\"layout\": \"$old\"" && was_shown=1
+    mkdir -p "$backup/layouts"; mv "$home/layouts/$old.json" "$backup/layouts/$old.json"
+    [[ -f "$home/layouts/$old.svg" ]] && mv "$home/layouts/$old.svg" "$backup/layouts/$old.svg"
+  fi
+done
 
-# The commands bots (and you) use. botz / botz-room are the names; crew / crew-room stay as aliases.
-mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/herdr-crew"
-for b in crew crew-room crewd crew-hook crew-statusline; do install -m 755 "$src/bin/$b" "$HOME/.local/bin/$b"; done
-# Relative links, so backups of them restore cleanly.
-ln -sfn crew "$HOME/.local/bin/botz"
-ln -sfn crew-room "$HOME/.local/bin/botz-room"
+# The commands pals (and you) use: pal and pal-room. buddy / botz / crew (and -room) are older names
+# for them, linked only where nothing else (CrewAI's `crew`, say) already uses the name.
+bin="$HOME/.local/bin"
+mkdir -p "$bin" "$HOME/.local/lib/herdr-crew"
+[[ -L "$bin/pal" ]] && rm -f "$bin/pal"
+[[ -L "$bin/pal-room" ]] && rm -f "$bin/pal-room"
+install -m 755 "$src/bin/crew" "$bin/pal"
+install -m 755 "$src/bin/crew-room" "$bin/pal-room"
+for b in crewd crew-hook crew-statusline; do install -m 755 "$src/bin/$b" "$bin/$b"; done
+ours() { grep -qsE "Project Pals|Project Buddies|Terminal Botz|Herdr Crew" "$1"; }
+for alias in buddy:pal buddy-room:pal-room botz:pal botz-room:pal-room crew:pal crew-room:pal-room; do
+  name="${alias%%:*}"; target="${alias##*:}"
+  if [[ ! -e "$bin/$name" && ! -L "$bin/$name" ]] || [[ -L "$bin/$name" && -z "$(readlink -e "$bin/$name")" ]] || ours "$bin/$name"; then
+    rm -f "$bin/$name"; ln -s "$target" "$bin/$name"   # relative, so backups restore cleanly
+  else
+    echo "left $bin/$name alone (it isn't Project Pals'); use $target"
+  fi
+done
 install -m 644 "$src"/bin/crew*.py "$HOME/.local/lib/herdr-crew/"
 
 if [[ $helpers -eq 1 ]]; then
-  # crewd, as a user service.
-  mkdir -p "$HOME/.config/systemd/user"
-  install -m 644 "$src/systemd/herdr-crew.service" "$HOME/.config/systemd/user/herdr-crew.service"
-  systemctl --user daemon-reload
-  systemctl --user enable herdr-crew.service >/dev/null 2>&1 || true
-  systemctl --user restart herdr-crew.service
+  # crewd, as a user service (needs a systemd user session: not in most containers or WSL).
+  if command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+    mkdir -p "$HOME/.config/systemd/user"
+    install -m 644 "$src/systemd/herdr-crew.service" "$HOME/.config/systemd/user/herdr-crew.service"
+    systemctl --user daemon-reload
+    systemctl --user enable herdr-crew.service >/dev/null 2>&1 || true
+    systemctl --user restart herdr-crew.service || echo "crewd didn't start; see: journalctl --user -u herdr-crew"
+  else
+    echo "skipped crewd: no systemd user session here (messages are typed in directly; no routines or callbacks)"
+  fi
   # Claude Code hooks and status line.
-  python3 "$src/install-hooks.py" "$home/.crew-backups/$stamp"
+  python3 "$src/install-hooks.py" "$home/.crew-backups/$stamp" || echo "skipped the Claude Code hooks (see above)"
+  # Shared skills: link any into ~/.claude/skills and ~/.codex/skills.
+  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewskills; crewskills.curate(lambda *_: None)' "$HOME/.local/lib/herdr-crew" || true
 fi
 
-# Shared skills: link any into ~/.claude/skills and ~/.codex/skills.
-python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewskills; crewskills.curate(lambda *_: None)' "$HOME/.local/lib/herdr-crew"
+# Settings: who the pals work for (your git name, else your username) and bypass (off). Set once;
+# change them in About → Settings or with: pal settings owner "Name" | bypass on|off.
+mkdir -p "$home/data"
+if [[ ! -f "$home/data/crew-settings.json" ]]; then
+  python3 -c 'import sys, json; sys.path.insert(0, sys.argv[1]); import crewlib; json.dump({"owner": crewlib._default_owner(), "bypass": False}, open(sys.argv[2], "w"), indent=2)' \
+    "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json"
+fi
+# The head pal's name became a setting (Orchestrator by default). One already hired keeps its name.
+python3 - "$home/data/crew-settings.json" "$home/shared.json" <<'PY'
+import json, sys
+path, shared = sys.argv[1:]
+s = json.load(open(path))
+if not s.get("head"):
+    try:
+        god = next((b for b in json.load(open(shared)).get("crew", {}).get("bots", []) if b.get("god")), None)
+    except (OSError, ValueError):
+        god = None
+    # Its space's live name (it may have been renamed in Herdr since), else the record's.
+    live = None
+    if god and god.get("space"):
+        try:
+            import subprocess
+            out = subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, timeout=20).stdout
+            live = next((x["name"] for x in json.loads(out).get("spaces", []) if x.get("id") == god["space"]), None)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            live = None
+    s["head"] = live or (god or {}).get("name") or "Orchestrator"
+    json.dump(s, open(path, "w"), indent=2)
+PY
 
-# The god bot's home: its standing brief, read by whatever harness runs it (AGENTS.md, CLAUDE.md).
+# The head pal's home: its standing brief (with the owner's name), read by whatever harness runs it.
 god="$home/data/crew-god"
-mkdir -p "$god"
-if [[ -f "$god/AGENTS.md" ]] && ! cmp -s "$god/AGENTS.md" "$src/god/AGENTS.md"; then mkdir -p "$backup/crew-god"; cp -a "$god/AGENTS.md" "$backup/crew-god/"; fi
-cp "$src/god/AGENTS.md" "$god/AGENTS.md"
-printf '@AGENTS.md\n' > "$god/CLAUDE.md"
+if [[ -f "$god/AGENTS.md" ]]; then mkdir -p "$backup/crew-god"; cp -a "$god/AGENTS.md" "$backup/crew-god/"; fi
+install -m 644 "$src/god/AGENTS.md" "$HOME/.local/lib/herdr-crew/god-AGENTS.md"
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_god()' "$HOME/.local/lib/herdr-crew"
 
 # What's installed, for the updater (About → Check for updates).
 mkdir -p "$home/data"
-python3 - "$src/botz.json" "$home/data/crew-install.json" "$version" "$helpers" "$from" <<'PY'
+python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$from" <<'PY'
 import json, sys, time
 manifest, out, version, helpers, source = sys.argv[1:]
 m = json.load(open(manifest))
@@ -88,14 +145,15 @@ json.dump({"name": m.get("name"), "repo": m.get("repo"), "version": version, "he
            "source": source, "installed": int(time.time())}, open(out, "w"), indent=2)
 PY
 
-echo "installed Terminal Botz $version into $home"
+echo "installed Project Pals $version into $home"
 [[ -d "$backup" ]] && echo "previous copies: $backup"
+if [[ -n "$was_shown" ]]; then herdr-app do layout.switch '{"name":"pals"}' >/dev/null 2>&1 && echo "switched Herdr to the pals layout"; fi
 
 if command -v herdr-app >/dev/null; then
   fail=0
   for dir in "$home"/mods/crew-*; do
     if ! out="$(herdr-app check "$dir" 2>&1)"; then echo "check failed: $(basename "$dir")"; echo "$out"; fail=1; fi
   done
-  [[ $fail -eq 0 ]] && echo "all Terminal Botz mods pass herdr-app check"
+  [[ $fail -eq 0 ]] && echo "all Project Pals mods pass herdr-app check"
   exit $fail
 fi

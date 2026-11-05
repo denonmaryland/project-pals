@@ -1,12 +1,12 @@
-// New room: a name, an optional goal, and which bots join (each with one of its channels).
-// Making it writes the room, shows it, and briefs every member on how to talk in it. A bot
+// New room: a name, an optional goal, and which pals join (each with one of its channels).
+// Making it writes the room, shows it, and briefs every member on how to talk in it. A pal
 // that's asleep is woken in a new channel for the room.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces, panes } from "herdr";
 import { enqueue, crew, botOf, rooms, roomSlug, newId, saveRoom, showRoom, roomMembers, writeRoomFile, briefing,
-  mascotEl, mood, channelName, leadPane, crewCli, a } from "./crew.js";
+  mascotEl, mood, channelName, leadPane, crewCli, a, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -17,15 +17,15 @@ export default class CrewRoomNew extends View {
     this.goal.set_auto_grow(2, 5);
     for (const s of [this.name, this.goal]) s.on("change", (_e, cx) => cx.notify());
     this.name.on("submit", () => this.create());
-    // Picked bots: space id → the tab (channel) that joins.
+    // Picked pals: space id → the tab (channel) that joins.
     this.picked = new Map();
     for (const key of props()?.with ?? []) { const [s, tb] = key.split("|"); this.picked.set(s, tb); }
-    this.choosing = null; // a picked bot whose channel list is open
+    this.choosing = null; // a picked pal whose channel list is open
     this.handle = cx.focus_handle();
     this.name.focus();
   }
 
-  // A bot's best channel for a room: the one it's showing if an agent runs there, else any with an agent.
+  // A pal's best channel for a room: the one it's showing if an agent runs there, else any with an agent.
   defaultTab(space, ps) {
     const live = (tab) => Boolean(leadPane(tab.id, ps)?.program?.agent);
     return space.tabs.find((x) => x.active && live(x)) ?? space.tabs.find(live) ?? space.tabs.find((x) => x.active) ?? space.tabs[0];
@@ -34,7 +34,7 @@ export default class CrewRoomNew extends View {
   create() {
     const name = this.name.value().trim().replace(/^#/, "").replace(/\s+/g, "-");
     if (!name) return notify({ title: "Name the room", level: "warning", timeout: 2500 });
-    if (this.picked.size < 2) return notify({ title: "Pick at least two bots", body: "A room is where bots work together.", level: "warning", timeout: 3000 });
+    if (this.picked.size < 2) return notify({ title: "Pick at least two pals", body: "A room is where pals work together.", level: "warning", timeout: 3000 });
     let slug = roomSlug(name), n = 2;
     const taken = new Set(rooms().map((r) => r.slug));
     while (taken.has(slug)) slug = `${roomSlug(name)}-${n++}`;
@@ -54,7 +54,7 @@ export default class CrewRoomNew extends View {
       // Asleep: wake each in a new channel for this room (the invite replaces its asleep membership).
       for (const m of sleeping) await crewCli(["invite", slug, m.space.name]).catch(() => {});
     }).catch(() => {});
-    notify({ title: `#${name} is open`, body: sleeping.length ? `Waking ${sleeping.map((m) => m.name.split(" - ")[0]).join(", ")} for it.` : `${live.length} bots briefed.`, level: "success", timeout: 3500 });
+    notify({ title: `#${name} is open`, body: sleeping.length ? `Waking ${sleeping.map((m) => m.name.split(" - ")[0]).join(", ")} for it.` : `${live.length} pals briefed.`, level: "success", timeout: 3500 });
   }
 
   key(e, cx) {
@@ -62,20 +62,21 @@ export default class CrewRoomNew extends View {
   }
 
   render() {
-    const t = theme();
+    const t = tone(theme());
     const c = crew(), ps = panes(), all = spaces();
     const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     const picked = all.filter((s) => this.picked.has(s.id));
 
-    // Header: the faces of who's coming, overlapping, or an empty circle until someone is.
+    // Header: the faces of who's coming, overlapping, or a group icon until someone is.
     const faces = picked.length
       ? h_flex().children(picked.slice(0, 4).map((s, i) => div().when(i > 0, (el) => el.ml(-12)).child(mascotEl(botOf(s, c, ps), "calm", 34, t))))
-      : div().size(34).rounded_full().border_1().border_color(a(t.foreground, "22"));
+      : div().size(34).rounded_full().bg(a(t.foreground, "0c")).flex().items_center().justify_center()
+          .child(svg(`${ICON}/users.svg`).size(17).text_color(t.dim));
     const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
       .child(div().flex_none().child(faces))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(17).font_medium().text_color(t.foreground).child("New room"))
-        .child(div().text_size(12.5).text_color(t.dim).child("A group chat where bots work together")))
+        .child(div().text_size(12.5).text_color(t.dim).child("A group chat where pals work together")))
       .child(div().id("rn-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
         .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
         .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim)));
@@ -87,9 +88,11 @@ export default class CrewRoomNew extends View {
         .child(div().flex_1().child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground)))))
       .child(stop(div().px(6).pb(6).child(Textarea.new(this.goal).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
 
-    // Who's in it: one row per bot; a picked bot shows which channel joins (click to change).
-    const list = v_flex().id("rn-bots").max_h(320).overflow_y_scrollbar().rounded(14).border_1().border_color(a(t.foreground, "10")).py(4);
-    all.forEach((space, i) => {
+    // Who's in it: one row per pal; a picked pal shows which channel joins (click to change).
+    // Awake pals first (they can join now); asleep ones after. Room for eight before it scrolls.
+    const order = [...all].sort((x, y) => Number(botOf(y, c, ps).awake) - Number(botOf(x, c, ps).awake));
+    const list = v_flex().id("rn-bots").max_h(380).overflow_y_scrollbar().rounded(14).border_1().border_color(a(t.foreground, "10")).py(4);
+    order.forEach((space, i) => {
       const bot = botOf(space, c, ps);
       const on = this.picked.has(space.id);
       const tab = on ? space.tabs.find((x) => x.id === this.picked.get(space.id)) : null;
@@ -130,7 +133,7 @@ export default class CrewRoomNew extends View {
     const ready = Boolean(name) && this.picked.size >= 2;
     const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
       .child(div().text_size(12).text_color(t.dim)
-        .child(this.picked.size < 2 ? "Pick at least two bots" : `${this.picked.size} bots`))
+        .child(this.picked.size < 2 ? "Pick at least two pals" : `${this.picked.size} pals`))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("rn-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
         .child(div().id("rn-go").px(18).py(9).rounded_full().cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
@@ -143,7 +146,9 @@ export default class CrewRoomNew extends View {
       .child(v_flex().gap(12).px(24).pt(12)
         .child(named)
         .child(div().pl(4).pt(2).text_size(12.5).text_color(t.dim).child("Who's in it"))
-        .child(list))
+        .child(list)
+        // About eight rows fit; say so when there are more, since the list scrolls without a bar.
+        .when(order.length > 8, (el) => el.child(div().pl(4).text_size(12).text_color(t.dim).child(`Scroll for ${order.length - 8} more pal${order.length - 8 === 1 ? "" : "s"}`))))
       .child(footer);
   }
 }

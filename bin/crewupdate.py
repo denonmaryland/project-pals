@@ -1,4 +1,4 @@
-"""Terminal Botz updates: check the project's GitHub releases, install a newer one, roll back.
+"""Project Pals updates: check the project's GitHub releases, install a newer one, roll back.
 
   data/crew-install.json   what's installed: version, repo, whether the helpers are, when
   data/crew-update.json    the last check: latest version, its notes, when it was checked
@@ -6,7 +6,7 @@
 
 An update only ever comes from the configured repo's releases. A release may carry its own
 tarball with a SHA256SUMS file (the release script adds both); then the download must match.
-Only Terminal Botz's own files change: bots, rooms, memory, routines, tasks and looks live in
+Only Project Pals's own files change: pals, rooms, memory, routines, tasks and looks live in
 data/ and shared.json and are never touched.
 """
 import hashlib
@@ -26,8 +26,8 @@ from crewlib import HOME, DATA, CrewError, load_json, save_json
 INSTALL = DATA / "crew-install.json"
 STATE = DATA / "crew-update.json"
 BACKUPS = HOME / ".crew-backups"
-CACHE = Path.home() / ".cache" / "terminal-botz"
-UA = {"User-Agent": "terminal-botz-updater", "Accept": "application/vnd.github+json"}
+CACHE = Path.home() / ".cache" / "project-pals"
+UA = {"User-Agent": "project-pals-updater", "Accept": "application/vnd.github+json"}
 
 
 def installed():
@@ -39,10 +39,16 @@ def vtuple(v):
     return tuple(int(x) for x in (nums + ["0", "0", "0"])[:3])
 
 
+MAX_DOWNLOAD = 64 * 1024 * 1024
+
+
 def fetch(url, timeout=20):
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+        body = r.read(MAX_DOWNLOAD + 1)
+    if len(body) > MAX_DOWNLOAD:
+        raise CrewError("the download is bigger than any Project Pals release should be; not using it")
+    return body
 
 
 def check():
@@ -74,14 +80,18 @@ def check():
 
 
 def _safe_extract(tar_path, dest):
+    """Only plain files and folders, all inside dest."""
     with tarfile.open(tar_path) as tar:
         for m in tar.getmembers():
             p = (dest / m.name).resolve()
             if not str(p).startswith(str(dest.resolve()) + os.sep) and p != dest.resolve():
                 raise CrewError(f"refusing a file outside the release: {m.name}")
-            if m.issym() or m.islnk():
-                raise CrewError(f"refusing a link in the release: {m.name}")
-        tar.extractall(dest)
+            if not (m.isfile() or m.isdir()):
+                raise CrewError(f"refusing something that isn't a plain file in the release: {m.name}")
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(dest, filter="data")
+        else:
+            tar.extractall(dest)
 
 
 def _snapshot(label):
@@ -89,8 +99,8 @@ def _snapshot(label):
     BACKUPS.mkdir(parents=True, exist_ok=True)
     path = BACKUPS / f"update-{label}-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
     home = Path.home()
-    items = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / "crew.json", HOME / "layouts" / "crew.svg"]
-    items += [home / ".local" / "bin" / n for n in ("botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-statusline")]
+    items = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
+    items += [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-statusline")]
     items += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service", HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
     with tarfile.open(path, "w:gz") as tar:
         for p in items:
@@ -102,7 +112,8 @@ def _snapshot(label):
 
 
 def backups():
-    return sorted(BACKUPS.glob("update-*.tar.gz")) if BACKUPS.exists() else []
+    """Update snapshots, oldest first (by time: names hold versions, which don't sort as text)."""
+    return sorted(BACKUPS.glob("update-*.tar.gz"), key=lambda p: p.stat().st_mtime) if BACKUPS.exists() else []
 
 
 def rollback(path=None):
@@ -111,11 +122,22 @@ def rollback(path=None):
         raise CrewError("no update backup to roll back to")
     home = Path.home()
     with tarfile.open(path) as tar:
-        for m in tar.getmembers():
+        members = tar.getmembers()
+        for m in members:
             if m.name.startswith("/") or ".." in Path(m.name).parts:
                 raise CrewError(f"odd path in backup: {m.name}")
-        tar.extractall(home)
-    subprocess.run(["systemctl", "--user", "restart", "herdr-crew.service"], capture_output=True)
+        # Mods the newer version added (not in the snapshot) go, so nothing is left half old, half new.
+        mods_rel = str((HOME / "mods").relative_to(home))
+        kept = {Path(m.name).parts[len(Path(mods_rel).parts)] for m in members
+                if m.name.startswith(mods_rel + "/") and len(Path(m.name).parts) > len(Path(mods_rel).parts)}
+        for d in (HOME / "mods").glob("crew-*"):
+            if d.name not in kept:
+                shutil.rmtree(d, ignore_errors=True)
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(home, filter="data")
+        else:
+            tar.extractall(home)
+    subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     return path
 
 
@@ -140,27 +162,36 @@ def apply(log=print, version=None):
             sums = assets.get("SHA256SUMS")
             if not sums:
                 raise CrewError("the release has a tarball but no SHA256SUMS to check it against")
-            want = next((line.split()[0] for line in fetch(sums).decode().splitlines() if line.strip().endswith(own)), None)
+            want = None
+            for line in fetch(sums).decode().splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[1].lstrip("*") == own:
+                    want = parts[0].lower()
             got = hashlib.sha256(tar_path.read_bytes()).hexdigest()
             if not want or want != got:
                 raise CrewError("the download doesn't match the release's SHA256SUMS; not installing it")
         else:
-            log("downloading the release's source")
-            tar_path.write_bytes(fetch(info["tarball"], timeout=120))
+            raise CrewError("this release has no checked download (a .tar.gz with SHA256SUMS); releases are made with ./release")
         src = work / "src"
         src.mkdir()
         _safe_extract(tar_path, src)
         roots = [p.parent for p in src.rglob("VERSION") if (p.parent / "install.sh").exists()]
         if not roots:
-            raise CrewError("the release doesn't look like Terminal Botz (no VERSION and install.sh)")
+            raise CrewError("the release doesn't look like Project Pals (no VERSION and install.sh)")
         root = min(roots, key=lambda p: len(p.parts))
         new_version = (root / "VERSION").read_text().strip()
+        if new_version != info["latest"]:
+            raise CrewError(f"the release says {info['latest']} but contains {new_version}; not installing it")
         snap = _snapshot(f"from-{installed().get('version', 'unknown')}")
         log(f"backed up the current version to {snap.name}")
         args = ["bash", str(root / "install.sh"), "--from-release"]
         if not installed().get("helpers", True):
             args.append("--no-helpers")
-        r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
+        try:
+            r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
+        except BaseException as e:
+            rollback(snap)
+            raise CrewError(f"installing {new_version} stopped ({type(e).__name__}), so the previous version was put back")
         if r.returncode != 0:
             rollback(snap)
             tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])

@@ -1,5 +1,5 @@
 [Unit]
-Description=Herdr Crew helper (crewd): message queue, routines, callbacks, memory
+Description=Project Pals helper (crewd): message queue, routines, callbacks, memory
 After=default.target
 
 [Service]

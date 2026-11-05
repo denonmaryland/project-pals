@@ -1,11 +1,11 @@
 // Review a worktree channel's branch: its files and diff against the branch it came from.
 // Click a line to comment on it; "Send to #channel" hands the notes to that channel (delivered
-// when its turn ends), and "Land" merges the branch into the project (crew land).
+// when its turn ends), and "Land" merges the branch into the project (pal land).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { crewCli, channelName, botOf, mascotEl, a } from "./crew.js";
+import { crewCli, channelName, botOf, mascotEl, a, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 20;
@@ -136,7 +136,7 @@ export default class CrewReview extends View {
   }
 
   render() {
-    const t = theme();
+    const t = tone(theme());
     const tg = this.target();
     const root = v_flex().id("crew-review").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().bg(t.popover).text_color(t.foreground);

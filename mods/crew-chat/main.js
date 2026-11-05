@@ -1,8 +1,8 @@
-// Crew chat: a channel's conversation as a chat instead of a terminal (the center's "chat-view").
+// Project Pals chat: a channel's conversation as a chat instead of a terminal (the center's "chat-view").
 // crewd keeps a small feed per channel in data/crew-chats/<terminal>.jsonl, made from Claude
-// Code's session file: your messages on the right, the bot's replies on the left (lightly
-// formatted), its tool work folded into one quiet line per stretch, notes from other bots and
-// Crew in their own bubbles. The composer still types into the terminal; the reply shows up here.
+// Code's session file: your messages on the right, the pal's replies on the left (lightly
+// formatted), its tool work folded into one quiet line per stretch, notes from other pals and
+// Project Pals in their own bubbles. The composer still types into the terminal; the reply shows up here.
 // Questions and permission prompts happen in the terminal: a card offers to open it.
 //
 // Rows need exact heights (a virtual list scrolls to the newest), so text is wrapped here into
@@ -11,7 +11,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
 import { spaces, panes, theme, watchFolder, appHome, readTextFile, hc, layout, notify } from "herdr";
-import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, a } from "./crew.js";
+import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, a, tone } from "./crew.js";
 
 const LINE = 21, CODE = 19, HEAD = 25, SPACER = 8;
 const PAD_Y = 9, NAME = 18, GAP_NEW = 14, GAP_SAME = 4, STAMP = 36, TOOL = 28, TOOL_ITEM = 21, EVENT = 32, TYPING = 54, CARD = 74;
@@ -378,7 +378,7 @@ export default class CrewChat extends View {
   }
 
   render(cx) {
-    const t = theme();
+    const t = tone(theme());
     const { space, tab, terminal } = this.target();
     const root = v_flex().id("crew-chat").size_full().text_color(t.foreground)
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } });

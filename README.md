@@ -1,12 +1,15 @@
-# Terminal Botz
+# Project Pals
 
-A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of bots, in the
-spirit of Grok Bot but for any harness: Claude Code, Codex, Grok CLI, Gemini CLI, opencode,
+A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of pals, in the
+spirit of Grok's bots but for any harness: Claude Code, Codex, Grok CLI, Gemini CLI, opencode,
 Hermes and more.
 
-Each Herdr space is a bot (a project with a brain), and each of its tabs is a channel. Bots can
-work together in rooms. A god bot, Shepherd, oversees the rest. On top of that you get:
+Each Herdr space is a pal (a project with a brain), and each of its tabs is a channel. Pals can
+work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. On top of that you get:
 
+- a sidebar of pals (folder faces that show what each is doing) and their channels as tabs:
+  pin them, color them from your theme, rename them, put a pal to sleep and wake it later
+- hire pals and add channels on any harness, with a model per pal (cheap helpers on Haiku)
 - tasks and routines
 - memory and shared skills
 - branch-per-channel review
@@ -16,19 +19,19 @@ work together in rooms. A god bot, Shepherd, oversees the rest. On top of that y
 ## Install
 
 ```sh
-git clone https://github.com/denonmaryland/terminal-botz && cd terminal-botz
+git clone https://github.com/denonmaryland/terminal-pal && cd terminal-pal
 ./install.sh            # or ./install.sh --no-helpers for just the layout, mods and commands
 ```
 
-Then switch Herdr to the `crew` layout (Ctrl+Shift+L). Linux only for now: the helpers use a
+Then switch Herdr to the `pals` layout (Ctrl+Shift+L). Linux only for now: the helpers use a
 systemd user service.
 
 ## What it changes on your computer
 
-Terminal Botz runs programs (`hc`, `git`, `claude -p`) and reads files outside Herdr's folder.
+Project Pals runs programs (`hc`, `git`, `claude -p`) and reads files outside Herdr's folder.
 
-- **Layout, mods and commands:** `~/.config/herdr-app/layouts/crew.json`, `mods/crew-*`, and
-  `~/.local/bin/botz` and friends (`crew` is an alias).
+- **Layout, mods and commands:** `~/.config/herdr-app/layouts/pals.json`, `mods/crew-*`, and
+  `~/.local/bin/pal` and friends (`crew` is an alias).
 - **Helpers (skip them with `--no-helpers`):**
   - `herdr-crew.service`, the background helper.
   - Claude Code hooks and a status-line wrapper in `~/.claude/settings.json`, backed up first.
@@ -37,16 +40,16 @@ Terminal Botz runs programs (`hc`, `git`, `claude -p`) and reads files outside H
 
 ## Updates
 
-About (the ⓘ in the sidebar) → **Check for updates** → **Update**. Terminal Botz also checks once
+About (the ⓘ in the sidebar) → **Check for updates** → **Update**. Project Pals also checks once
 a day by itself.
 
 - Updates come only from this repo's GitHub releases, and must match the release's
   `SHA256SUMS`.
-- Updates replace only Terminal Botz's own files. Your bots, rooms, memory, routines and tasks
+- Updates replace only Project Pals's own files. Your pals, rooms, memory, routines and tasks
   are never touched.
 - The previous version is kept for **Roll back**.
 
-From a terminal: `botz version`, `botz update check | apply | rollback`.
+From a terminal: `pal version`, `pal update check | apply | rollback`.
 
 ## Releasing (maintainers)
 

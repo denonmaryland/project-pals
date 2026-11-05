@@ -1,5 +1,5 @@
-"""Shared Crew skills: data/crew-skills/<name>/SKILL.md (agentskills format), linked into
-~/.claude/skills and ~/.codex/skills so every Claude Code and Codex bot can use them. Learned
+"""Shared Project Pals skills: data/crew-skills/<name>/SKILL.md (agentskills format), linked into
+~/.claude/skills and ~/.codex/skills so every Claude Code and Codex pal can use them. Learned
 skills (saved by the background review) that nobody updates for 30 days are archived, never deleted."""
 import re
 import shutil

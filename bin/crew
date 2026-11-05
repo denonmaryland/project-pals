@@ -1,68 +1,73 @@
 #!/usr/bin/env python3
-"""botz (also crew): how a Terminal Botz bot (or you) works with the rest of the team.
+"""pal (also crew): how a Project Pals pal (or you) works with the rest of the team.
 
 The team
-  crew overview [--deep]             everything at once: bots, channels (what each is on), projects
+  pal overview [--deep]             everything at once: pals, channels (what each is on), projects
                                      (git), memory, tasks, rooms, routines, approvals, what's stuck
-  crew bots                          the short roster
-  crew feed [--all] [-n 40]          what happened since you last looked (finished, blocked, stuck…)
-  crew peek <Bot[#ch]> [-n 60]       read a bot's screen and recent history
+  pal team                          the short roster
+  pal feed [--all] [-n 40]          what happened since you last looked (finished, blocked, stuck…)
+  pal peek <Pal[#ch]> [-n 60]       read a pal's screen and recent history
 
 Talking
-  crew tell <Bot[#ch]> <text> [--now]
-                                     message a bot; delivered when its turn ends (--now: right away,
-                                     for a bot that's stuck mid-turn). You hear back when it finishes.
-  crew ask <Bot[#ch]> <text> [--timeout 600]
-                                     message a bot, wait for its answer, print it
-  crew room ...                      group rooms (crew-room --help); crew invite <room> <Bot[#ch]>...
+  pal tell <Pal[#ch]> <text> [--now]
+                                     message a pal; delivered when its turn ends (--now: right away,
+                                     for a pal that's stuck mid-turn). You hear back when it finishes.
+  pal ask <Pal[#ch]> <text> [--timeout 600]
+                                     message a pal, wait for its answer, print it
+  pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#ch]>...
 
 Hiring
-  crew hire <Name> [--harness claude] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
-  crew channel <Bot> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
+  pal hire <Name> [--harness claude] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
+  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
                                      a new channel; --worktree gives it its own git branch and folder
 
 Work
-  crew task add "<title>" [--for Bot[#ch]] [--after T1,T2] [--body T] [--check "cmd"]
-  crew task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
-            | assign T Bot | cancel T | reopen T
-  crew routine add <Bot> "<when>" "<prompt>" [--name N] [--channel routines]
+  pal task add "<title>" [--for Pal[#ch]] [--after T1,T2] [--body T] [--check "cmd"]
+  pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
+            | assign T Pal | cancel T | reopen T
+  pal routine add <Pal> "<when>" "<prompt>" [--name N] [--channel routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
-  crew routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
-  crew routine edit ID [--name N] [--when "…"] [--prompt "…"] [--channel C]
-  crew diff <Bot#ch> [--stat|--json] what a worktree channel changed
-  crew land <Bot#ch> [--check "cmd"] merge a worktree channel's branch into its project (needs DeNon)
+  pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
+  pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--channel C]
+  pal diff <Pal#ch> [--stat|--json] what a worktree channel changed
+  pal land <Pal#ch> [--check "cmd"] merge a worktree channel's branch into its project (needs the owner)
 
 Memory and skills
-  crew remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about DeNon)
-  crew memory [Bot]                  what's remembered
-  crew skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
+  pal remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about the owner)
+  pal memory [Pal]                  what's remembered
+  pal skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
+
+Settings
+  pal settings                      who the pals work for, and whether new pals bypass permissions
+  pal settings owner "Name" | bypass on|off
 
 Updates
-  crew version                       what's installed
-  crew update [check|apply|rollback] [--json]
+  pal version                       what's installed
+  pal update [check|apply|rollback] [--json]
                                      check GitHub for a newer release, install it, or put the previous one back
 
-Approvals (DeNon)
-  crew approvals                     guarded commands waiting on DeNon
-  crew approve ID | crew deny ID ["note"]
+Approvals (the owner)
+  pal approvals                     guarded commands waiting on the owner
+  pal approve ID | pal deny ID ["note"]
 
-"Bot" matches a bot's name or the start of it ("theme" finds "Theme Plugin - Omarchy"); without
-#channel you get the one it's showing. hire, channel and invite are carried out by the Crew layout,
+"Pal" matches a pal's name or the start of it ("docs" finds "Docs Site"); without
+#channel you get the one it's showing. hire, channel and invite are carried out by the Project Pals layout,
 so Herdr has to be open on it. crewd (herdr-crew.service) delivers messages between turns, runs
 routines and reports back; without it, messages are typed in right away.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, die, load_json, save_json,
+from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
-                     memory_text, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent)
+                     memory_text, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed)
 import crewtasks
 import crewroutines
 import crewskills
@@ -115,7 +120,7 @@ def cmd_bots(spaces):
         r = record_of(s, recs)
         apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
         brain = max(set(apps), key=apps.count) if apps else "asleep (no agent running)"
-        bits = ["GOD BOT" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
+        bits = ["HEAD PAL" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
         print(f"{s['name']}  ({' · '.join(b for b in bits if b)})" + (f"\n  folder: {s['folder']}" if s.get("folder") else ""))
         for t in s["tabs"]:
             x = lead(t)
@@ -129,12 +134,12 @@ def cmd_overview(spaces, deep=False):
     terms = hc_terminals()
     stalled = load_json(DATA / "crew-health.json", {}).get("stalled", {})
     waiting = []
-    print(f"# The Crew, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
+    print(f"# The Project Pals, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
         r = record_of(s, recs)
         apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
         brain = max(set(apps), key=apps.count) if apps else "asleep"
-        bits = ["god bot" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
+        bits = ["head pal" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
         print(f"## {s['name']} ({' · '.join(b for b in bits if b)})")
         if s.get("folder"):
             gl = None if s.get("machine") else git_line(s["folder"])
@@ -196,9 +201,9 @@ def cmd_overview(spaces, deep=False):
             print(f"- {r['id']} {r['name']} · {r['bot']} #{r['channel']} · {crewroutines.describe(r['rule'])}"
                   + (" · paused" if r.get("paused") else "") + (f" · last: {last.get('status')} {ago(last['at'] * 1000)}" if last.get("at") else ""))
     pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
-    print("\n## Waiting on DeNon")
+    print(f"\n## Waiting on {OWNER}")
     for a in pend:
-        waiting.append(f"approval {a['id']}: {a['bot']} wants to {a['why'] or a['rule']}: {a['command'][:120]}")
+        waiting.append(f"approval {a['id']}: {a['bot']} wants to {wants_to(a['why'] or a['rule'])}: {a['command'][:120]}")
     for t, v in stalled.items():
         waiting.append(f"{v['bot']} #{v['channel']} looks stuck (working, screen unchanged since {ago(v['since'])})")
     print("\n".join(f"- {w}" for w in waiting) or "(nothing)")
@@ -206,7 +211,7 @@ def cmd_overview(spaces, deep=False):
 
 def cmd_feed(spaces, show_all, n):
     me, name = whoami(spaces)
-    who = me or "DeNon"
+    who = me or f"{OWNER}"
     cursors = load_json(DATA / "crew-feed-cursors.json", {})
     since = 0 if show_all else cursors.get(who, now_ms() - 6 * 3600 * 1000)
     lines = FEED.read_text().splitlines() if FEED.exists() else []
@@ -214,7 +219,7 @@ def cmd_feed(spaces, show_all, n):
     for e in events:
         k = e["kind"]
         where = f"{e.get('bot', '')}" + (f" #{e['channel']}" if e.get("channel") else "")
-        what = {"finished": f"{where} finished a turn", "blocked": f"{where} has a question for DeNon",
+        what = {"finished": f"{where} finished a turn", "blocked": f"{where} has a question for {OWNER}",
                 "stalled": f"{where} looks stuck", "task": f"task {e.get('task')} {e.get('status')}: {e.get('title', '')}",
                 "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
@@ -248,15 +253,15 @@ def target(spaces, spec):
         die("that's you")
     if x["terminal"] not in live_agents():
         die(f"{space['name']} #{chan(tab)} is asleep (no agent running there). Wake it by inviting it to a room, "
-            f"or give it a fresh channel: crew channel \"{space['name']}\" <name> --brief \"...\"")
+            f"or give it a fresh channel: pal channel \"{space['name']}\" <name> --brief \"...\"")
     return space, tab, x["terminal"]
 
 
 def cmd_tell(spaces, spec, text, now=False):
     space, tab, t = target(spaces, spec)
     me, name = whoami(spaces)
-    head = from_bot(name) if me else "[from DeNon]"
-    reply = f'\n(Answer {name} with: crew tell "{me}" "..." if it needs one.)' if me else ""
+    head = from_bot(name) if me else f"[from {OWNER}]"
+    reply = f'\n(Answer {name} with: pal tell "{me}" "..." if it needs one.)' if me else ""
     meta = {}
     if me:
         did = new_id("d-")
@@ -278,10 +283,10 @@ def cmd_ask(spaces, spec, text, timeout):
     while (term_info(t).get("status") or {}).get("state") == "working" and time.time() < deadline:
         time.sleep(2)
     if (term_info(t).get("status") or {}).get("state") == "blocked":
-        die(f"{space['name']} #{chan(tab)} is waiting on DeNon's answer to a question; don't type into it")
+        die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
     before = term_info(t).get("turn", 0)
     me, name = whoami(spaces)
-    head = from_bot(name) if me else "[from DeNon]"
+    head = from_bot(name) if me else f"[from {OWNER}]"
     send_now(t, f"{head} asks: {text}\n(Answer right here in your reply; {name} is reading your screen.)")
     started = False
     while time.time() < deadline:
@@ -301,7 +306,14 @@ def cmd_ask(spaces, spec, text, timeout):
     print("\n".join(answer[-60:]) or "(no answer on its screen)")
 
 
-# ── hiring (carried out by the Crew layout) ─────────────────────────────────────────────────
+# ── hiring (carried out by the Project Pals layout) ─────────────────────────────────────────────────
+
+def wants_to(why):
+    """An approval reason ("makes a release") after "wants to": its first verb in the base form."""
+    verb, _, rest = (why or "").strip().partition(" ")
+    base = verb[:-2] if re.search(r"(sh|ch|ss|x)es$", verb) else verb[:-1] if re.search(r"[^s]s$", verb) else verb
+    return f"{base} {rest}".strip()
+
 
 def request(op, spaces, **fields):
     me, name = whoami(spaces)
@@ -326,8 +338,8 @@ def request(op, spaces, **fields):
         time.sleep(0.4)
     if (REQS / f"{rid}.req.json").exists():
         (REQS / f"{rid}.req.json").unlink(missing_ok=True)
-        die("the Crew layout didn't answer. Is Herdr open on the Crew layout?")
-    die("Crew took the request but hasn't finished; check Herdr")
+        die("the Project Pals layout didn't answer. Is Herdr open on the Project Pals layout?")
+    die("Project Pals took the request but hasn't finished; check Herdr")
 
 
 def git(folder, *args, check=True):
@@ -340,7 +352,7 @@ def git(folder, *args, check=True):
 def make_worktree(space, name, base=None):
     folder = space.get("folder")
     if space.get("machine"):
-        raise CrewError("worktree channels are for bots on this computer for now")
+        raise CrewError("worktree channels are for pals on this computer for now")
     if not folder:
         raise CrewError(f"{space['name']} has no project folder")
     repo = git(folder, "rev-parse", "--show-toplevel")
@@ -363,7 +375,7 @@ def worktree_of(space, tab):
     wts = r.get("worktrees") or {}
     wt = wts.get(tab["name"]) or wts.get("#" + chan(tab))
     if not wt:
-        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with crew channel … --worktree)")
+        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with pal channel … --worktree)")
     return wt
 
 
@@ -399,12 +411,12 @@ def cmd_diff(spaces, spec, mode):
 def cmd_land(spaces, spec, check=None):
     space, tab = find(spec, spaces)
     wt = worktree_of(space, tab)
-    # A bot asking: DeNon approves first (Claude bots are held by the hook; this covers the rest).
+    # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     if ME and is_bot_terminal(ME) and not crewguard.recently_used(ME, "land"):
         s, t = where_of(ME, spaces)
-        held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"crew land {spec}")
+        held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
         if held:
-            die(f"held for DeNon's approval ({held['id']}); you'll be told when it's decided")
+            die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
     if git(wt["path"], "status", "--porcelain"):
         die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
     repo = wt["repo"]
@@ -425,7 +437,7 @@ def cmd_land(spaces, spec, check=None):
             x = lead(tab)
             if x:
                 try:
-                    enqueue(x["terminal"], f"[crew] Your branch {wt['branch']} couldn't land on {wt['base']}: it conflicts. "
+                    enqueue(x["terminal"], f"[pal] Your branch {wt['branch']} couldn't land on {wt['base']}: it conflicts. "
                             f"Rebase it on {wt['base']} (git rebase {wt['base']}), fix the conflicts, commit, and say when it's ready.",
                             sender="crew", kind="land")
                 except CrewError:
@@ -435,7 +447,7 @@ def cmd_land(spaces, spec, check=None):
     x = lead(tab)
     if x:
         try:
-            enqueue(x["terminal"], f"[crew] Your branch {wt['branch']} landed on {wt['base']}.", sender="crew", kind="land")
+            enqueue(x["terminal"], f"[pal] Your branch {wt['branch']} landed on {wt['base']}.", sender="crew", kind="land")
         except CrewError:
             pass
     append_jsonl(FEED, {"at": now_ms(), "kind": "landed", "bot": space["name"], "channel": chan(tab), "branch": wt["branch"]})
@@ -450,7 +462,7 @@ def cmd_task(spaces, rest):
     if sub == "add":
         pos, o = opts(args, ("for", "after", "body", "check"))
         if not pos:
-            die('crew task add "<title>" [--for Bot] [--after T1,T2]')
+            die('pal task add "<title>" [--for Pal] [--after T1,T2]')
         deps = [d.strip() for d in (o.get("after") or "").split(",") if d.strip()]
         t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"))
         print(f"added {crewtasks.line(t)}")
@@ -494,7 +506,7 @@ def cmd_task(spaces, rest):
     elif sub == "reopen" and args:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="open")))
     else:
-        die("crew task add|ls|ready|show|claim|note|block|done|assign|cancel|reopen (see crew --help)")
+        die("pal task add|ls|ready|show|claim|note|block|done|assign|cancel|reopen (see crew --help)")
 
 
 def cmd_routine(spaces, rest):
@@ -503,7 +515,7 @@ def cmd_routine(spaces, rest):
     if sub == "add":
         pos, o = opts(args, ("name", "channel"))
         if len(pos) < 3:
-            die('crew routine add <Bot> "<when>" "<prompt>" [--name N] [--channel routines]')
+            die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--channel routines]')
         space, _ = find(pos[0], spaces)
         r = crewroutines.add(space["name"], pos[1], " ".join(pos[2:]), o.get("name"), o.get("channel", "routines"), by=name)
         print(f"added {r['id']} {r['name']}: {space['name']} #{r['channel']}, {crewroutines.describe(r['rule'])}"
@@ -545,7 +557,7 @@ def cmd_routine(spaces, rest):
             crewroutines.save(rs)
         print({"rm": "removed", "run": "running it now", "pause": "paused", "resume": "resumed"}[sub] + f": {r['name']}")
     else:
-        die("crew routine add|ls|log|run|pause|resume|rm (see crew --help)")
+        die("pal routine add|ls|log|run|pause|resume|rm (see crew --help)")
 
 
 def my_bot(spaces):
@@ -556,12 +568,12 @@ def my_bot(spaces):
 def cmd_remember(spaces, args):
     pos, o = opts(args, ("bot",), ("user",))
     if not pos:
-        die('crew remember "<fact>" [--user]')
+        die('pal remember "<fact>" [--user]')
     s, t = my_bot(spaces)
     bot = o.get("bot") or (s["name"] if s else None)
     if not bot and not o.get("user"):
-        die("run this from a bot's channel, or say which: --bot Name")
-    path = remember(bot or "DeNon", " ".join(pos), channel=chan(t) if t else None, user=o.get("user", False))
+        die("run this from a pal's channel, or say which: --pal Name")
+    path = remember(bot or f"{OWNER}", " ".join(pos), channel=chan(t) if t else None, user=o.get("user", False))
     print(f"remembered ({path.relative_to(DATA)})")
 
 
@@ -572,7 +584,7 @@ def cmd_memory(spaces, args):
     else:
         s, _ = my_bot(spaces)
         if not s:
-            print((MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else "(nothing about DeNon yet)")
+            print((MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else f"(nothing about {OWNER} yet)")
             return
         space, bot = s, s["name"]
     print(memory_text(bot, record_of(space).get("memory", ""), days=3, limit=20000) or f"(nothing remembered for {bot} yet)")
@@ -605,14 +617,14 @@ def cmd_skill(spaces, rest):
         d = crewskills.archive(args[0])
         print(f"archived to {d}" if d else f"no skill {args[0]}")
     else:
-        die("crew skill ls|show|save|archive (see crew --help)")
+        die("pal skill ls|show|save|archive (see crew --help)")
 
 
 def cmd_approvals(decide=None, rid=None, note=None):
     if decide:
-        # Only DeNon decides: not from a bot's terminal.
+        # Only the owner decides: not from a pal's terminal.
         if ME and is_bot_terminal(ME):
-            die("approvals come from DeNon (Crew's Inbox), not from a bot")
+            die(f"approvals come from {OWNER} (the Inbox), not from a pal")
         r = crewguard.decide(rid, decide == "approve", note)
         print(f"{r['status']}: {r['bot']} #{r['channel']}: {r['command']}")
         return
@@ -623,9 +635,48 @@ def cmd_approvals(decide=None, rid=None, note=None):
         print("(nothing waiting)")
 
 
+def cmd_settings(rest):
+    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off"""
+    from crewlib import save_settings
+    if not rest:
+        st = settings()
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}")
+        return
+    if ME and is_bot_terminal(ME):
+        die("settings are the owner's to change, not a pal's")
+    key, val = rest[0], " ".join(rest[1:]).strip()
+    if key == "owner" and val:
+        st = save_settings(owner=val)
+    elif key == "bypass" and val in ("on", "off"):
+        st = save_settings(bypass=val == "on")
+    elif key == "head" and val:
+        if "#" in val or val.startswith("@"):
+            die("a pal's name can't have # in it or start with @")
+        # The layout renames its space (if one's hired); its memory and routines follow the name.
+        # Check the memory folder first, so a clash stops everything before anything is renamed.
+        prev = settings()["head"]
+        src, dest = memory_dir(prev), memory_dir(val)
+        if src.exists() and dest.exists() and src != dest:
+            die(f"there's already a memory folder for {val} ({dest}); move it aside first")
+        out = request("rename-head", herdr_spaces(), name=val)
+        # A retry after a half-done rename finds the space already renamed: the name in settings
+        # is still the old one, so its memory and routines move from there.
+        old = out.get("old")
+        renamed(old if old and old != val else prev, val)
+        st = save_settings(head=val)
+    else:
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off')
+    # crewd reads the owner's name when it starts.
+    subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
+    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'}")
+
+
 def cmd_update(rest):
     sub = next((a for a in rest if not a.startswith("--")), "check")
     as_json = "--json" in rest
+    # Installing or rolling back code is the owner's call, never a pal's.
+    if sub in ("apply", "rollback") and ME and is_bot_terminal(ME):
+        die(f"updates are {OWNER}'s to install (About → Update), not a pal's")
     try:
         if sub == "check":
             out = crewupdate.check()
@@ -634,7 +685,7 @@ def cmd_update(rest):
         elif sub == "rollback":
             out = {"ok": True, "restored": str(crewupdate.rollback())}
         else:
-            die("crew update check | apply | rollback [--json]")
+            die("pal update check | apply | rollback [--json]")
     except CrewError as e:
         if as_json:
             print(json.dumps({"ok": False, "error": str(e)}))
@@ -646,7 +697,7 @@ def cmd_update(rest):
         if not out.get("latest"):
             print(f"{out.get('repo')} has no releases yet (installed: {out.get('current')})")
         elif out["available"]:
-            print(f"{out['latest']} is out (installed: {out['current']}). Update with: botz update apply\n\n{out.get('notes', '')}")
+            print(f"{out['latest']} is out (installed: {out['current']}). Update with: pal update apply\n\n{out.get('notes', '')}")
         else:
             print(f"up to date ({out['current']})")
     elif sub == "apply":
@@ -664,7 +715,7 @@ def main(argv):
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
     if cmd == "room":
-        os.execvp("crew-room", ["crew-room", *rest])
+        os.execvp("pal-room", ["pal-room", *rest])
     if cmd == "primer":
         print(PRIMER); return
     if cmd in ("approvals", "approve", "deny"):
@@ -674,12 +725,24 @@ def main(argv):
         return cmd_skill([], rest)
     if cmd == "version":
         ins = crewupdate.installed()
-        print(f"{ins.get('name', 'Terminal Botz')} {ins.get('version', '?')} ({ins.get('source', '?')}, from {ins.get('repo', '?')})")
+        print(f"{ins.get('name', 'Project Pals')} {ins.get('version', '?')} ({ins.get('source', '?')}, from {ins.get('repo', '?')})")
         return
     if cmd == "update":
         return cmd_update(rest)
+    if cmd == "settings":
+        return cmd_settings(rest)
+    if cmd == "renamed":
+        # A pal got a new name (the app runs this when it sees one): its memory folder and the
+        # routines aimed at it follow. Not from a pal's terminal: that's the owner's to do.
+        if ME and is_bot_terminal(ME):
+            die("renaming pals is the owner's to do, not a pal's")
+        if len(rest) != 2 or not rest[1].strip():
+            die('pal renamed "Old name" "New name"')
+        renamed(rest[0], rest[1].strip())
+        print(f"{rest[0]} is now {rest[1].strip()}: its memory and routines moved")
+        return
     spaces = herdr_spaces()
-    if cmd in ("bots", "ls", "team"):
+    if cmd in ("team", "pals", "bots", "ls"):
         cmd_bots(spaces)
     elif cmd in ("overview", "world", "everything"):
         cmd_overview(spaces, deep="--deep" in rest)
@@ -697,12 +760,14 @@ def main(argv):
         cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
     elif cmd == "hire" and rest:
         pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task"), ("god", "show"))
+        if not pos and o.get("god"):
+            pos = [settings()["head"]]
         if not pos:
-            die("hire who? crew hire <Name> [--harness claude] ...")
+            die("hire who? pal hire <Name> [--harness claude] ...")
         if o.get("folder"):
             o["folder"] = os.path.abspath(os.path.expanduser(o["folder"]))
         out = request("hire", spaces, name=" ".join(pos), **o)
-        print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: crew tell \"{out['name']}\" \"...\"")
+        print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
     elif cmd == "channel" and len(rest) >= 2:
         pos, o = opts(rest, ("brief", "category", "harness", "base"), ("worktree",))
         extra = {}

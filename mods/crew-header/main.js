@@ -1,11 +1,11 @@
-// Crew header: one quiet line over the terminal. Which bot and channel this is, how it's doing,
+// Project Pals header: one quiet line over the terminal. Which pal and channel this is, how it's doing,
 // and the button that shows or hides the details panel on the right. Everything else (the
 // harness, the computer, other channels, memory) lives in that panel, out of the way.
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, theme, focused, layout, run, exec, appHome } from "herdr";
-import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, statusWord, statusColor, leadPane, chatPref, setChatPref, syncCenter, a } from "./crew.js";
+import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, statusWord, statusColor, leadPane, chatPref, setChatPref, syncCenter, a, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -36,7 +36,7 @@ export default class CrewHeader extends View {
     });
   }
 
-  // Chat or Terminal, for channels whose conversation Crew can read.
+  // Chat or Terminal, for channels whose conversation Project Pals can read.
   viewSwitch(tab, t) {
     const chat = chatPref(tab.id);
     const seg = (id, label, on, value) => div().id(id).px(10).py(3).rounded_full().cursor_pointer()
@@ -58,7 +58,7 @@ export default class CrewHeader extends View {
   }
 
   render() {
-    const t = theme();
+    const t = tone(theme());
     const all = spaces();
     const space = all.find((s) => s.active) ?? all.find((s) => s.id === focused()?.space);
     const tab = space?.tabs.find((x) => x.active);
@@ -78,13 +78,13 @@ export default class CrewHeader extends View {
           .child(div().text_size(14).font_medium().text_color(t.foreground).child(`#${room.name}`)))
         .child(this.panelButton(t));
     }
-    if (!space || !tab) return root.child(div().text_size(13).text_color(t.dim).child("No bot open. Hire one on the left."));
+    if (!space || !tab) return root.child(div().text_size(13).text_color(t.dim).child("No pal open. Hire one on the left."));
     const bot = botOf(space);
-    const status = bot.awake ? (tab.status ?? "idle") : "asleep";
+    const status = bot.awake ? (tab.status ?? "idle") : bot.starting ? "starting" : "asleep";
 
     return root
       .child(h_flex().items_center().gap(8).min_w(0)
-        .child(mascotEl(bot, mood(tab.status, bot.awake), 20, t))
+        .child(mascotEl(bot, mood(tab.status, bot.awake || bot.starting), 20, t))
         .child(div().flex_none().text_size(13.5).text_color(t.dim).child(bot.name))
         .child(sep())
         .child(div().id("crew-title").min_w(0).truncate().cursor_pointer().hover((s) => s.opacity(0.8))

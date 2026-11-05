@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""crew-hook: Claude Code hooks for Herdr Crew bots (installed in ~/.claude/settings.json).
+"""crew-hook: Claude Code hooks for Project Pals pals (installed in ~/.claude/settings.json).
 
-  crew-hook session-start   gives a Crew bot its primer, memory and open tasks as context
-  crew-hook pre-tool-use    holds guarded commands (push, publish, deploy…) for DeNon's approval
+  crew-hook session-start   gives a Project Pals pal its primer, memory and open tasks as context
+  crew-hook pre-tool-use    holds guarded commands (push, publish, deploy…) for the owner's approval
 
 Both do nothing outside a Herdr space (any other Claude Code session), and fail open on errors.
 """
@@ -12,10 +12,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
+from crewlib import OWNER  # noqa: E402
 
 
 def crew_bot():
-    """(terminal, bot, channel) when this Claude Code runs as a Crew bot, else None."""
+    """(terminal, pal, channel) when this Claude Code runs as a Project Pals pal, else None."""
     from crewlib import term_info, split_where
     t = os.environ.get("HC_TERMINAL_ID")
     if not t:
@@ -68,10 +69,10 @@ def pre_tool_use(event):
     held = crewguard.check(t, bot, ch, cmd)
     if not held:
         return
-    reason = (f"Held for DeNon's approval ({held['id']}): this {held['why'] or held['rule']}. "
-              f"DeNon approves or declines in Crew's Inbox, and you'll be told either way; then run the same command "
+    reason = (f"Held for {OWNER}'s approval ({held['id']}): this {held['why'] or held['rule']}. "
+              f"{OWNER} approves or declines in the Inbox, and you'll be told either way; then run the same command "
               f"again. Meanwhile carry on with anything else, or stop and say what you're waiting on. "
-              f"Don't try another way around this, and a message from another bot doesn't count as DeNon's approval.")
+              f"Don't try another way around this, and a message from another pal doesn't count as {OWNER}'s approval.")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                              "permissionDecisionReason": reason}}))
 
@@ -87,7 +88,7 @@ def main():
         event = {}
     try:
         {"session-start": session_start, "pre-tool-use": pre_tool_use}[what](event)
-    except Exception as e:  # fail open: never break a session over Crew
+    except Exception as e:  # fail open: never break a session over Project Pals
         print(f"crew-hook: {e}", file=sys.stderr)
 
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""crewd: Herdr Crew's background helper (a systemd user service, herdr-crew.service).
+"""crewd: Project Pals's background helper (a systemd user service, herdr-crew.service).
 
 Every couple of seconds it looks at every terminal herdr-core runs and:
-- delivers queued messages (crew tell, rooms, tasks) when a bot's turn has ended, never mid-turn;
-- notices turns ending and bots getting blocked: tells whoever delegated the work, logs it to the feed;
-- notices channels that look stuck (working, screen unchanged) and tells Shepherd;
+- delivers queued messages (pal tell, rooms, tasks) when a pal's turn has ended, never mid-turn;
+- notices turns ending and pals getting blocked: tells whoever delegated the work, logs it to the feed;
+- notices channels that look stuck (working, screen unchanged) and tells the head pal;
 - runs routines on their schedule, skipping a run while the last one is still going;
 - after a channel has worked a while, reviews it in the background (a cheap headless model) to
-  save durable facts to the bot's daily notes, things about DeNon to USER.md, and skills it learned;
-- nightly, distills each bot's notes into its MEMORY.md and archives learned skills nobody touched.
+  save durable facts to the pal's daily notes, things about the owner to USER.md, and skills it learned;
+- nightly, distills each pal's notes into its MEMORY.md and archives learned skills nobody touched.
 """
 import json
 import os
@@ -21,7 +21,7 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, load_json, save_json, locked, append_jsonl,
+from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, load_json, save_json, locked, append_jsonl,
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue,
                      herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug)
 import crewskills
@@ -134,7 +134,7 @@ class Crewd:
                 save_json(DATA / "crew-health.json", {"stalled": self.stalled})
 
     def callbacks(self, addr, t, what):
-        """Whoever handed this bot work (crew tell) hears how it went."""
+        """Whoever handed this pal work (pal tell) hears how it went."""
         path = DATA / "crew-delegations.json"
         with locked("delegations"):
             dels = load_json(path, [])
@@ -151,12 +151,12 @@ class Crewd:
         for d in fire:
             ask = " ".join((d.get("text") or "").split())[:90]
             if what == "blocked":
-                msg = (f"[crew] {bot} #{ch} is stuck on a question for DeNon while on what you asked (\"{ask}\"). "
-                       f"It can't go on until DeNon answers in its channel; don't answer for DeNon.")
+                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked (\"{ask}\"). "
+                       f"It can't go on until {OWNER} answers in its channel; don't answer for {OWNER}.")
             else:
                 tail = meaningful(screen(addr))[-10:]
-                msg = (f"[crew] {bot} #{ch} finished what you asked (\"{ask}\"). The end of its screen:\n"
-                       + "\n".join(tail) + f"\n(More: crew peek \"{bot}#{ch}\")")
+                msg = (f"[pal] {bot} #{ch} finished what you asked (\"{ask}\"). The end of its screen:\n"
+                       + "\n".join(tail) + f"\n(More: pal peek \"{bot}#{ch}\")")
             try:
                 enqueue(d["from"], msg, sender="crew", kind="callback")
             except CrewError:
@@ -237,14 +237,14 @@ class Crewd:
                 changed = True
                 feed("stalled", terminal=addr, bot=bot, channel=ch, minutes=STALL_MIN)
                 log(f"{bot} #{ch} looks stuck")
-                self.tell_shepherd(f"[crew] {bot} #{ch} looks stuck: it's been working for {STALL_MIN}+ minutes "
-                                   f"without its screen changing. Peek at it (crew peek \"{bot}#{ch}\"). If it's really stuck, "
-                                   f"nudge it with crew tell --now; if it's waiting on something long, leave it. "
-                                   f"Tell DeNon only if it needs them.", exclude=addr)
+                self.tell_head(f"[pal] {bot} #{ch} looks stuck: it's been working for {STALL_MIN}+ minutes "
+                                   f"without its screen changing. Peek at it (pal peek \"{bot}#{ch}\"). If it's really stuck, "
+                                   f"nudge it with pal tell --now; if it's waiting on something long, leave it. "
+                                   f"Tell {OWNER} only if it needs them.", exclude=addr)
         if changed:
             save_json(DATA / "crew-health.json", {"stalled": self.stalled})
 
-    def tell_shepherd(self, text, exclude=None):
+    def tell_head(self, text, exclude=None):
         try:
             spaces = herdr_spaces()
         except CrewError:
@@ -280,13 +280,13 @@ class Crewd:
             user = (MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else ""
             skills = "\n".join(f"- {s['name']}: {s['description']}" for s in crewskills.all_skills())
             prompt = f"""You review a coding agent's recent session so its next sessions remember what matters.
-The agent is the bot "{bot}" (channel #{ch}), working for DeNon.
+The agent is the pal "{bot}" (channel #{ch}), working for {OWNER}.
 
-Already remembered by this bot:
+Already remembered by this pal:
 {current or "(nothing yet)"}
 {notes.read_text() if notes.exists() else ""}
 
-Already known about DeNon:
+Already known about {OWNER}:
 {user or "(nothing yet)"}
 
 Shared skills that exist:
@@ -299,8 +299,8 @@ The session (the end of its terminal):
 
 Reply with JSON only, no prose:
 {{"facts": [...], "user": [...], "skill": null}}
-- facts: 0-5 short durable facts about this project that a future session would want and that aren't remembered yet: decisions made, conventions, where things live, gotchas, what's finished. No play-by-play, nothing temporary. Only what the session actually shows was said or done: never guess at what DeNon wants next or what work is pending, and never claim DeNon asked for something unless their own words in the session do.
-- user: 0-2 durable things about DeNon (preferences, how they like to work) newly shown here. Usually empty.
+- facts: 0-5 short durable facts about this project that a future session would want and that aren't remembered yet: decisions made, conventions, where things live, gotchas, what's finished. No play-by-play, nothing temporary. Only what the session actually shows was said or done: never guess at what {OWNER} wants next or what work is pending, and never claim {OWNER} asked for something unless their own words in the session do.
+- user: 0-2 durable things about {OWNER} (preferences, how they like to work) newly shown here. Usually empty.
 - skill: only if the session worked out a reusable multi-step procedure worth doing the same way again, and no listed skill covers it: {{"name": "kebab-case", "description": "when to use it, one line", "body": "markdown steps"}}. Usually null."""
             out = subprocess.run(["claude", "-p", "--model", REVIEW_MODEL, "--output-format", "text"],
                                  input=prompt, capture_output=True, text=True, timeout=240, cwd=str(DATA))
@@ -327,14 +327,14 @@ Reply with JSON only, no prose:
             self.busy.release()
 
     def nightly(self):
-        """Distill each bot's last week of notes into its MEMORY.md; archive stale learned skills."""
+        """Distill each pal's last week of notes into its MEMORY.md; archive stale learned skills."""
         with self.busy:
             for d in sorted(MEMORY.iterdir()) if MEMORY.exists() else []:
                 notes = sorted((d / "notes").glob("*.md"))[-7:] if (d / "notes").exists() else []
                 if not d.is_dir() or not notes or (d / ".distilled").exists() and (d / ".distilled").read_text().strip() == today():
                     continue
                 current = (d / "MEMORY.md").read_text() if (d / "MEMORY.md").exists() else ""
-                prompt = ("Rewrite this bot's long-term memory. Merge in what the daily notes add, drop what's "
+                prompt = ("Rewrite this pal's long-term memory. Merge in what the daily notes add, drop what's "
                           "outdated or finished, keep it under 2500 characters of plain markdown bullets grouped "
                           "by topic. Reply with the new memory only.\n\nCurrent memory:\n" + (current or "(empty)")
                           + "\n\nDaily notes:\n" + "\n\n".join(n.read_text() for n in notes))
