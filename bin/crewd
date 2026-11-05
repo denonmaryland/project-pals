@@ -23,7 +23,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, load_json, save_json, locked, append_jsonl,
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue,
-                     herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug)
+                     herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
+                     trust_prompt, trust_notice)
 import crewskills
 import crewroutines
 import crewchat
@@ -49,7 +50,11 @@ class Crewd:
         self.prev = {}            # terminal → status last tick
         self.last_sent = {}       # terminal → when we last typed into it
         self.shots = {}           # terminal → (screen hash, since)
-        self.stalled = load_json(DATA / "crew-health.json", {}).get("stalled", {})
+        health = load_json(DATA / "crew-health.json", {})
+        self.stalled = health.get("stalled", {})
+        self.trust = health.get("trust", {})   # terminal → {bot, channel, since}: on the folder-trust question
+        self.last_trust_check = 0
+        self.first_seen = {}   # terminal → when crewd first saw it (the trust question only comes first)
         self.reviews = load_json(DATA / "crew-reviews.json", {})   # terminal → {turn, at}
         self.busy = threading.Lock()   # one headless model run at a time
         self.last_minute = None
@@ -72,6 +77,9 @@ class Crewd:
             return
         self.transitions(terms)
         self.deliver(terms)
+        if time.time() - self.last_trust_check > 10:
+            self.last_trust_check = time.time()
+            self.trust_prompts(terms)
         if time.time() - self.last_stall_check > 60:
             self.last_stall_check = time.time()
             self.stalls(terms)
@@ -131,7 +139,7 @@ class Crewd:
                 self.callbacks(addr, t, "blocked")
             if now != "working" and addr in self.stalled:
                 self.stalled.pop(addr, None)
-                save_json(DATA / "crew-health.json", {"stalled": self.stalled})
+                self.save_health()
 
     def callbacks(self, addr, t, what):
         """Whoever handed this pal work (pal tell) hears how it went."""
@@ -242,7 +250,38 @@ class Crewd:
                                    f"nudge it with pal tell --now; if it's waiting on something long, leave it. "
                                    f"Tell {OWNER} only if it needs them.", exclude=addr)
         if changed:
-            save_json(DATA / "crew-health.json", {"stalled": self.stalled})
+            self.save_health()
+
+    def save_health(self):
+        save_json(DATA / "crew-health.json", {"stalled": self.stalled, "trust": self.trust})
+
+    # ── Claude Code's folder-trust question ──
+    def trust_prompts(self, terms):
+        """A new Claude Code channel in a folder it hasn't seen waits on 'trust this folder?' before
+        doing anything. Point the owner (and the head pal) at it once; never answer it for them."""
+        changed = False
+        for addr in list(self.trust):
+            t = terms.get(addr)
+            if not t or t.get("state") != "live" or (t.get("turn") or 0) > 1 or not trust_prompt(screen(addr)):
+                self.trust.pop(addr)   # answered (or gone)
+                changed = True
+        for addr, t in terms.items():
+            if addr in self.trust or t.get("agent") != "claude-code" or t.get("state") != "live":
+                continue
+            if (t.get("turn") or 0) > 1 or t.get("status") == "working":
+                continue   # past its start: the question only comes first
+            if time.time() - self.first_seen.setdefault(addr, time.time()) > 10 * 60:
+                continue   # been around a while: not a new channel (saves reading every idle screen)
+            if not trust_prompt(screen(addr)):
+                continue
+            bot, ch = split_where(t.get("where"))
+            self.trust[addr] = {"bot": bot, "channel": ch, "since": now_ms()}
+            changed = True
+            feed("trust", terminal=addr, bot=bot, channel=ch)
+            log(f"{bot} #{ch} is waiting on Claude Code's folder-trust question")
+            self.tell_head(f"[pal] {trust_notice(bot, ch)} Tell {OWNER}; don't answer it yourself.", exclude=addr)
+        if changed:
+            self.save_health()
 
     def tell_head(self, text, exclude=None):
         try:

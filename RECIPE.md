@@ -196,6 +196,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.
 - **Claude Code's session format isn't public:** unknown entries are skipped. Chat view and
   approvals cover Claude Code only (Codex and others stay terminal-only and un-gated).
+- **Claude Code's folder-trust question stalls new pals:** a pal or worktree channel in a folder
+  Claude Code hasn't seen waits on "Quick safety check … one you trust?". Detect it (whitespace-
+  insensitive: "Yes, I trust this folder" plus "Accessing workspace" or "Quick safety check") and
+  point the owner at the tab: a toast from the hire handler, a notice from `pal hire` / `pal channel`,
+  and crewd's `trust` entry in the feed, the overview's "Waiting on" and a note to the head pal.
+  Never answer it: trusting a folder is the owner's call, even with permissions bypassed.
 - **The approval gate isn't a security boundary:** a pal with permissions bypassed can still edit
   the files.
 

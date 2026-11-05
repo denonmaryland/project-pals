@@ -271,6 +271,26 @@ def screen(address, lines=0):
 TIMER = re.compile(r"^\s*[✻✶✳✢·*]\s+\S+ for \d|^\s*❯\s*$|\[hc\] incomplete")
 
 
+# Claude Code asks "Quick safety check: … one you trust?" the first time it runs in a folder, and
+# waits there until a person answers. Starting a pal in a new folder (or a channel on a new
+# worktree) therefore stalls on it. We only point at it; trusting a folder is the owner's call.
+# Compared with all whitespace removed: the screen may wrap lines or draw spaces as cursor moves.
+TRUST_OPTION = "Yes,Itrustthisfolder"
+TRUST_HEADINGS = ("Accessingworkspace", "Quicksafetycheck")
+
+
+def trust_prompt(lines):
+    """True when the bottom of a screen is Claude Code's folder-trust question."""
+    tail = re.sub(r"\s+", "", "".join(lines[-40:]))
+    return TRUST_OPTION in tail and any(h in tail for h in TRUST_HEADINGS)
+
+
+def trust_notice(bot, channel):
+    return (f"{bot} #{channel} is waiting on Claude Code's 'trust this folder?' question. "
+            f"Open that tab and answer it yourself (only you can decide to trust a folder); "
+            f"its first task starts after that.")
+
+
 def meaningful(lines):
     """Screen lines worth reading: no blank lines, box chrome, status bars or 'Brewed for 8s' timers."""
     return [l.rstrip()[:200] for l in lines if l.strip() and not CHROME.match(l) and not TIMER.match(l)

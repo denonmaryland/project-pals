@@ -53,6 +53,18 @@ Project Pals runs programs (`hc`, `git`, `claude -p`) and reads files outside He
 - **Memory reviews:** these send channel screens to Claude (Haiku). Nightly memory distillation
   uses Sonnet.
 
+## Hiring a pal into a new folder
+
+The first time Claude Code runs in a folder, it asks **"Quick safety check: Is this a project you
+created or one you trust?"** and waits for you. A pal hired into a folder Claude Code hasn't seen
+(or a channel on a new worktree) stops on that question, and its first task starts only after
+you answer it.
+
+Project Pals never answers it for you: trusting a folder is your call. It tells you instead:
+`pal hire` and `pal channel` print a notice, Herdr shows a toast (click it to jump to the tab), and
+`pal overview` lists it under "Waiting on" until you answer. Open the tab and pick
+**Yes, I trust this folder** (or **No, exit**).
+
 ## Updates
 
 About (the ⓘ in the sidebar) → **Check for updates** → **Update**. Project Pals also checks once

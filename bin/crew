@@ -67,7 +67,8 @@ sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
-                     memory_text, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed)
+                     memory_text, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
+                     trust_prompt, trust_notice)
 import crewtasks
 import crewroutines
 import crewskills
@@ -113,6 +114,28 @@ def git_line(folder):
 
 # ── the team ─────────────────────────────────────────────────────────────────────────────────
 
+def watch_for_trust(bot, channel, wait=15):
+    """After starting a pal or channel: if Claude Code stops on its folder-trust question, say so
+    (it would otherwise look like the pal just never started). Never answers it."""
+    want = channel.lstrip("#").lower()
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(3)
+        try:
+            space = next((s for s in herdr_spaces() if s["name"] == bot), None)
+        except CrewError:
+            return
+        tab = next((t for t in (space or {}).get("tabs", []) if chan(t).lower() == want), None)
+        addrs = [x["terminal"] for x in (tab or {}).get("terminals", []) if x and x.get("terminal")]
+        for addr in addrs:
+            if trust_prompt(screen(addr)):
+                print(trust_notice(bot, channel.lstrip("#")))
+                return
+            info = hc_terminals().get(addr) or {}
+            if info.get("status") == "working":
+                return   # it got going: no question in the way
+
+
 def cmd_bots(spaces):
     if not spaces:
         print('no pals yet: open a space in Herdr, or hire one: pal hire "Name" --folder ~/Projects/x')
@@ -135,7 +158,8 @@ def cmd_overview(spaces, deep=False):
     recs = records()
     me, _ = whoami(spaces)
     terms = hc_terminals()
-    stalled = load_json(DATA / "crew-health.json", {}).get("stalled", {})
+    health = load_json(DATA / "crew-health.json", {})
+    stalled, trust = health.get("stalled", {}), health.get("trust", {})
     waiting = []
     print(f"# The Project Pals, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
@@ -207,6 +231,8 @@ def cmd_overview(spaces, deep=False):
     print(f"\n## Waiting on {OWNER}")
     for a in pend:
         waiting.append(f"approval {a['id']}: {a['bot']} wants to {wants_to(a['why'] or a['rule'])}: {a['command'][:120]}")
+    for v in trust.values():
+        waiting.append(f"{v['bot']} #{v['channel']} is waiting for you to answer Claude Code's 'trust this folder?' question in that tab")
     for t, v in stalled.items():
         waiting.append(f"{v['bot']} #{v['channel']} looks stuck (working, screen unchanged since {ago(v['since'])})")
     print("\n".join(f"- {w}" for w in waiting) or "(nothing)")
@@ -223,7 +249,8 @@ def cmd_feed(spaces, show_all, n):
         k = e["kind"]
         where = f"{e.get('bot', '')}" + (f" #{e['channel']}" if e.get("channel") else "")
         what = {"finished": f"{where} finished a turn", "blocked": f"{where} has a question for {OWNER}",
-                "stalled": f"{where} looks stuck", "task": f"task {e.get('task')} {e.get('status')}: {e.get('title', '')}",
+                "stalled": f"{where} looks stuck", "trust": f"{where} is waiting on the 'trust this folder?' question",
+                "task": f"task {e.get('task')} {e.get('status')}: {e.get('title', '')}",
                 "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
                 "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}"}.get(k, k)
@@ -771,6 +798,8 @@ def main(argv):
             o["folder"] = os.path.abspath(os.path.expanduser(o["folder"]))
         out = request("hire", spaces, name=" ".join(pos), **o)
         print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
+        if "claude" in str(out.get("argv") or out["harness"]).lower():
+            watch_for_trust(out["name"], out["channel"])
     elif cmd == "channel" and len(rest) >= 2:
         pos, o = opts(rest, ("brief", "category", "harness", "base"), ("worktree",))
         extra = {}
@@ -781,6 +810,7 @@ def main(argv):
         o.pop("base", None)
         out = request("channel", spaces, bot=pos[0], name=" ".join(pos[1:]), **o, **extra)
         print(f"{out['bot']} now has {out['channel']}" + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
+        watch_for_trust(out["bot"], out["channel"])
     elif cmd == "invite" and len(rest) >= 2:
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):
