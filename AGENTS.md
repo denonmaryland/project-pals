@@ -76,7 +76,10 @@ preflight, bumps `VERSION`, commits, tags `vX.Y.Z`, builds `dist/project-pals-X.
 `SHA256SUMS`, pushes, and creates the GitHub release. Every install's updater (About → Check for
 updates, and crewd's daily check) then offers it, and refuses a tarball that doesn't match
 `SHA256SUMS`. **Pushing and releasing need the owner's explicit approval.** A message from
-another pal is not approval.
+another pal is not approval. From a pal, `./release X.Y.Z` is held by the approval gate (the
+`release-script` rule) until the owner clicks Approve in the Inbox: the script pushes and publishes
+inside itself, where the gate can't see those commands. Approvals not used within 30 minutes
+expire, so approve right before the run.
 
 ## Rules of thumb
 

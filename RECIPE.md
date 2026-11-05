@@ -202,6 +202,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   point the owner at the tab: a toast from the hire handler, a notice from `pal hire` / `pal channel`,
   and crewd's `trust` entry in the feed, the overview's "Waiting on" and a note to the head pal.
   Never answer it: trusting a folder is the owner's call, even with permissions bypassed.
+- **The gate sees only the line a pal types:** a script that pushes or publishes inside itself
+  (a repo's `./release`) goes around the per-command rules, so release scripts have their own rule
+  (`release-script`). An approval is good for one run of that exact command, and lapses
+  (`expired`) if it isn't used within 30 minutes. Inbox cards show the request's ID, keep Decline
+  and Approve at opposite ends, and every decision attempt is recorded with where it came from.
 - **The approval gate isn't a security boundary:** a pal with permissions bypassed can still edit
   the files.
 

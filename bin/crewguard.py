@@ -14,7 +14,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 4
+DEFAULTS_VERSION = 5
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -30,6 +30,10 @@ DEFAULT = {
         {"name": "message-api", "why": "messages people", "anywhere": True,
          "pattern": r"api\.telegram\.org|hooks\.slack\.com|discord(app)?\.com/api/webhooks"},
         {"name": "land", "why": "merges a channel's branch into the project", "pattern": r"(crew|botz|buddy|pal)\s+land\b"},
+        # A repo's own release script pushes and publishes inside itself, out of the gate's sight,
+        # so the script itself needs the click: ./release 0.2.3, bash scripts/release.sh v1.0.0, make release.
+        {"name": "release-script", "why": "runs a release script (push and publish)",
+         "pattern": r"(?:(?:ba|z)?sh\s+)?(?:\S*/)?release(?:\.sh)?\s+v?\d+\.\d+\.\d+|make\s+(?:\S+\s+)*release(?:\s|$)"},
     ],
     "trusted": [],
 }
@@ -93,6 +97,19 @@ def all_requests():
     return sorted((load_json(f, {}) for f in APPROVALS.glob("*.json")), key=lambda r: r.get("at", 0)) if APPROVALS.exists() else []
 
 
+EXPIRE_MIN = 30   # an approval not used within this long lapses; running the command again asks again
+
+
+def expire_stale():
+    """Approved but never used for EXPIRE_MIN: mark it expired, so an old yes can't be cashed in later.
+    Call it holding the approvals lock."""
+    for r in all_requests():
+        if r.get("status") == "approved" and now_ms() - r.get("decided", r.get("at", 0)) > EXPIRE_MIN * 60 * 1000:
+            r["status"], r["expired"] = "expired", now_ms()
+            save_json(APPROVALS / f"{r['id']}.json", r)
+            feed("approval", id=r["id"], bot=r.get("bot"), channel=r.get("channel"), status="expired")
+
+
 def check(terminal, bot, channel, cmd):
     """None: go ahead. Else the reason it's held."""
     if bot in policy().get("trusted", []):
@@ -102,6 +119,7 @@ def check(terminal, bot, channel, cmd):
         return None
     k = key(terminal, cmd)
     with locked("approvals"):
+        expire_stale()
         for r in all_requests():
             if r.get("key") != k:
                 continue
@@ -163,7 +181,9 @@ def _ago(ms):
 
 
 def tidy():
-    """Forget decided requests after a week."""
+    """Expire unused approvals; forget decided requests after a week."""
+    with locked("approvals"):
+        expire_stale()
     for r in all_requests():
         if r.get("status") != "pending" and now_ms() - r.get("decided", r.get("at", 0)) > 7 * 86400 * 1000:
             (APPROVALS / f"{r['id']}.json").unlink(missing_ok=True)

@@ -29,6 +29,7 @@ import crewskills
 import crewroutines
 import crewchat
 import crewupdate
+import crewguard
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
@@ -83,6 +84,10 @@ class Crewd:
         if time.time() - self.last_stall_check > 60:
             self.last_stall_check = time.time()
             self.stalls(terms)
+            try:
+                crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
+            except Exception:
+                log("approval tidy failed:\n" + traceback.format_exc())
         minute = time.strftime("%Y-%m-%d %H:%M")
         if minute != self.last_minute:
             self.last_minute = minute
