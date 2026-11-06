@@ -71,8 +71,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
       - `room-view`: the room as a group chat. Your bubbles are on the right in the accent
         color; pals' are on the left with a 30px face and name. It's a centered column at most
         860px wide, with "• • •" typing bubbles.
-      - `chat-view`: the channel as a chat. Light markdown: bold, `code` pills, links, headings,
-        hanging-indent lists, quotes, code blocks. Each stretch of tool calls is a row of 28px
+      - `chat-view`: the channel as a chat. Every message is selectable markdown (TextView, 14px):
+        links, headings, lists, quotes, inline code; code fences are rounded boxes in JetBrains
+        Mono 12.5px and tables are bordered grids, both drawn by the mod. A one-paragraph message's
+        bubble hugs its text; longer ones fill the bubble width (pals' 680px, yours 540px at most).
+        Right-click a message: Copy message, and Copy code for each code block. Each stretch of tool calls is a row of 28px
         pill chips, one per kind with an icon ("Ran 3 commands", "Edited main.js"): a spinner
         while a call has no result and the pal works, "1 failed" in the blocked color; a click
         lists the calls (name, what, ✓ / spinner / failed plus the first lines of a failure's
@@ -204,6 +207,14 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Follow mode needs the list's range:** the wheel handler (on the list's parent) can only stop
   following; the list's render callback restarts it when the last row is in range. Never scroll
   to the bottom from a timer without checking that the reader is still following.
+- **TextView heights can't be computed ahead,** and a virtual list needs them before layout. The
+  chat draws each message once off-screen (opacity 0, left -30000, 24 a frame, newest first) at
+  its bubble's text width, reads `on_size_change`, and uses that height from then on; one-paragraph
+  messages also get their one-line width measured, in a non-wrapping row. `estimate.js` (from
+  flockbook) guesses until then. Measurements are per feed line and width, cleared on a channel
+  switch or a new session.
+- **TextView ignores font weights here:** with the layout's Adwaita Sans (a variable font) and with
+  Geist, `**bold**` and headings draw at regular weight. Headings still draw larger.
 - **The chat view must cache its layout:** laying out hundreds of messages every frame makes
   Herdr abort the render ("could not be re-rendered").
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.

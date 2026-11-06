@@ -1,27 +1,33 @@
 // Project Pals chat: a channel's conversation as a chat instead of a terminal (the center's "chat-view").
 // crewd keeps a small feed per channel in data/crew-chats/<terminal>.jsonl, made from Claude
-// Code's session file: your messages on the right, the pal's replies on the left (lightly
-// formatted), its tool work folded into chips per stretch, notes from other pals and
+// Code's session file: your messages on the right, the pal's replies on the left (markdown,
+// selectable), its tool work folded into chips per stretch, notes from other pals and
 // Project Pals in their own bubbles. The composer still types into the terminal; the reply shows up here.
 // Questions and permission prompts happen in the terminal: a card offers to open it.
 //
-// Rows need exact heights (a virtual list scrolls to the newest), so text is wrapped here into
-// fixed-height lines, like the room view.
+// Rows need exact heights (a virtual list scrolls to the newest). Messages are TextView markdown
+// (markdown.js), whose height can't be computed ahead: each is drawn once off-screen to measure
+// it (measuring()), and estimate.js guesses until then. Right-click a message to copy it or a
+// code block (crew-menu).
 //
 // Reading behaviour after flockbook's chat (github.com/minchenlee/flockbook, MIT, (c) 2026 Min-Chen
 // Lee): it follows the newest message only until you scroll up, then a down-arrow button brings you
 // back; tool calls are chips that show running, done or failed; each finished turn gets a footer
 // ("3:41 PM · Worked 36s · 3 tools"); scrolling to the top reads earlier messages in place.
+// Selectable markdown with rounded code boxes and tables, and its height guesses, are adapted
+// from flockbook's mdblocks.js and estimate.js (see those files' headers).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
-import { spaces, panes, theme, watchFolder, appHome, readTextFile, hc, layout, notify } from "herdr";
+import { markdownView, plain, splitBlocks } from "./markdown.js";
+import { markdownHeight, lineWidth } from "./estimate.js";
+import { spaces, panes, theme, watchFolder, appHome, readTextFile, hc, layout, notify, openOverlay } from "herdr";
 import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, a, tone } from "./crew.js";
 
-const LINE = 21, CODE = 19, HEAD = 25, SPACER = 8;
+const LINE = 21;
 const PAD_Y = 9, NAME = 18, GAP_NEW = 14, GAP_SAME = 4, STAMP = 36, EVENT = 32, TYPING = 54, CARD = 74;
 const CHIP = 28, CHIP_GAP = 6, CALL = 24, CALL_OUT = 20, FOOTER = 24;
-const CHAR = 7.5, MONO = 7.4, COLUMN = 860, KEEP = 300;
+const COLUMN = 860, KEEP = 300, MEASURE = 24;
 
 const ICONS = "mods/crew-chat/icons", ROSTER = "mods/crew-roster/icons";
 const clock = (ms) => { const d = new Date(ms), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
@@ -38,113 +44,11 @@ function when(ms) {
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const worked = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; };
 
-// Inline markdown → styled pieces: **bold**, `code`, [links](…), *italic*. Everything else is plain.
-function spans(text) {
-  const out = [];
-  const re = /\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\[([^\]]+)\]\([^)]+\)|(?<![\w*])\*(?!\s)([^*]+?)\*(?![\w*])/g;
-  let at = 0, m;
-  while ((m = re.exec(text))) {
-    if (m.index > at) out.push({ t: text.slice(at, m.index) });
-    if (m[1] ?? m[2]) out.push({ t: m[1] ?? m[2], b: true });
-    else if (m[3]) out.push({ t: m[3], c: true });
-    else if (m[4]) out.push({ t: m[4], l: true });
-    else if (m[5]) out.push({ t: m[5], i: true });
-    at = m.index + m[0].length;
-  }
-  if (at < text.length) out.push({ t: text.slice(at) });
-  return out;
-}
-
-// Wrap styled pieces into lines of about `max` characters, keeping each word's style.
-function wrapSpans(pieces, max) {
-  const words = [];
-  for (const p of pieces) {
-    const parts = p.t.split(/(\s+)/);
-    for (const w of parts) {
-      if (!w) continue;
-      if (/^\s+$/.test(w)) { if (words.length) words[words.length - 1].space = true; continue; }
-      words.push({ ...p, t: w, space: false });
-    }
-  }
-  const lines = [];
-  let line = [], len = 0;
-  const width = (w) => w.t.length * (w.c ? 1.1 : w.b ? 1.06 : 1);
-  for (let w of words) {
-    while (width(w) > max) {           // a word longer than a line: split it
-      if (line.length) { lines.push(line); line = []; len = 0; }
-      const cut = Math.max(1, Math.floor(max / (width(w) / w.t.length)));
-      lines.push([{ ...w, t: w.t.slice(0, cut), space: false }]);
-      w = { ...w, t: w.t.slice(cut) };
-    }
-    const need = (line.length && line[line.length - 1].space ? 1 : 0) + width(w);
-    if (line.length && len + need > max) { lines.push(line); line = []; len = 0; }
-    len += (line.length && line[line.length - 1].space ? 1 : 0) + width(w);
-    line.push(w);
-  }
-  if (line.length) lines.push(line);
-  // Merge neighbouring words of the same style into one piece (spaces kept inside).
-  return (lines.length ? lines : [[{ t: "" }]]).map((ws) => {
-    const merged = [];
-    const add = (t, st) => {
-      const last = merged[merged.length - 1];
-      if (last && last.b === st.b && last.c === st.c && last.l === st.l && last.i === st.i) last.t += t;
-      else merged.push({ t, b: st.b, c: st.c, l: st.l, i: st.i });
-    };
-    ws.forEach((w, n) => {
-      const next = ws[n + 1];
-      const space = w.space && n < ws.length - 1;
-      // A space between two code words stays in the code; otherwise it's plain (no code background on it).
-      if (w.c && !(space && next?.c)) { add(w.t, w); if (space) add(" ", {}); }
-      else add(w.t + (space ? " " : ""), w);
-    });
-    return merged;
-  });
-}
-
 function findNode(node, id) {
   if (node?.id === id) return node;
   for (const c of node?.children ?? []) { const f = findNode(c, id); if (f) return f; }
   return null;
 }
-
-const BULLET_W = 16, INDENT = 16;
-
-// A message's markdown → display lines: text (styled, wrapped, with hanging indents for list
-// items), headings, quotes, code (one line each), and gaps between paragraphs.
-function lines(text, per, perCode) {
-  const out = [];
-  let code = false;
-  for (const raw of text.split("\n")) {
-    if (/^\s*```/.test(raw)) { code = !code; continue; }
-    if (code) { out.push({ k: "code", s: raw.replace(/\t/g, "  ").slice(0, perCode) || " " }); continue; }
-    const l = raw.replace(/\t/g, "  ").trimEnd();
-    if (/^\s*\|?\s*:?-{3,}[-:|\s]*$/.test(l)) continue;      // a table's divider line
-    if (!l.trim()) { if (out.length && out[out.length - 1].k !== "gap") out.push({ k: "gap" }); continue; }
-    if (/^\s*(-{3,}|\*{3,})\s*$/.test(l)) { out.push({ k: "gap" }); continue; }
-    const h = l.match(/^#{1,6}\s+(.*)/);
-    if (h) {
-      if (out.length && out[out.length - 1].k !== "gap") out.push({ k: "gap" });
-      for (const segs of wrapSpans(spans(h[1]), Math.floor(per * 0.9))) out.push({ k: "head", segs });
-      continue;
-    }
-    const q = l.match(/^\s*>\s?(.*)/);
-    if (q) { for (const segs of wrapSpans(spans(q[1]), per - 3)) out.push({ k: "quote", segs }); continue; }
-    const item = l.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)/);
-    if (item) {
-      const level = Math.min(3, Math.floor(item[1].length / 2));
-      const mark = /\d/.test(item[2]) ? item[2].replace(")", ".") : "•";
-      const indent = level * INDENT;
-      const room = per - Math.ceil((indent + BULLET_W + (mark.length > 1 ? 6 : 0)) / CHAR);
-      wrapSpans(spans(item[3]), room).forEach((segs, n) => out.push({ k: "text", segs, indent, mark: n === 0 ? mark : null, hang: true, wide: mark.length > 1 }));
-      continue;
-    }
-    for (const segs of wrapSpans(spans(l.trim()), per)) out.push({ k: "text", segs, indent: 0 });
-  }
-  while (out.length && out[out.length - 1].k === "gap") out.pop();
-  while (out.length && out[0].k === "gap") out.shift();
-  return out.length ? out : [{ k: "text", segs: [{ t: "" }], indent: 0 }];
-}
-const height = (ls) => ls.reduce((n, l) => n + (l.k === "code" ? CODE : l.k === "head" ? HEAD : l.k === "gap" ? SPACER : LINE), 0);
 
 // A stretch of tool calls as chips, one per kind ("Ran 3 commands", "Edited main.js"), in the order
 // they first happened. Each call is running (no result yet, while the pal works), done, failed, or
@@ -188,6 +92,9 @@ export default class CrewChat extends View {
     this.shown = false;
     this.follow = true;        // keep the newest message on screen; scrolling up stops it
     this.keep = KEEP;          // how many feed lines are read; scrolling to the top reads more
+    this.measured = new Map(); // "<feed line>|<text width>" → the message's drawn text height
+    this.natural = new Map();  // feed line → a one-paragraph message's width on one line
+    this.mver = 0;
     this.reload(cx);
     cx.spawn(async (cx) => {
       for (;;) {
@@ -216,6 +123,7 @@ export default class CrewChat extends View {
       if (JSON.stringify(meta) !== JSON.stringify(this.meta)) { this.meta = meta; cx.notify(); }
       const switched = terminal !== this.terminal;
       if (switched) { this.keep = KEEP; this.follow = true; }
+      if (switched || text.length < this.size) { this.measured.clear(); this.natural.clear(); }   // sizes are per feed line
       if (!switched && text.length === this.size && this.keep === this.kept) return;
       const all = text.split("\n").filter(Boolean);
       // The feed only grows: keep the messages already read (and their layout), parse just the new ones.
@@ -265,7 +173,7 @@ export default class CrewChat extends View {
   // Laying out hundreds of messages every frame is too slow for Herdr's render budget, so the
   // rows are kept until the feed, the width, the status or what's unfolded changes.
   rows(status) {
-    const key = `${this.version}|${Math.round(Math.min(this.width, COLUMN))}|${status}|${[...this.open].join(",")}`;
+    const key = `${this.version}|${this.mver}|${Math.round(Math.min(this.width, COLUMN))}|${status}|${[...this.open].join(",")}`;
     if (key === this.rowsKey) return this.rowsVal;
     this.rowsKey = key;
     this.rowsVal = this.layout(status);
@@ -276,8 +184,7 @@ export default class CrewChat extends View {
     const width = Math.min(this.width, COLUMN);
     const botMax = Math.max(260, Math.min(680, Math.round(width - 120)));
     const youMax = Math.max(220, Math.min(540, Math.round((width - 120) * 0.72)));
-    const per = (max) => Math.max(16, Math.floor((max - 28) / CHAR));
-    const perCode = Math.max(20, Math.floor((botMax - 40) / MONO));
+    const unmeasured = [];
     const busy = status === "working" || status === "blocked";
     const rows = [];
     if (this.older) rows.push({ kind: "event", key: "older", text: this.loadingOlder ? "Loading earlier messages…" : "Scroll up for earlier messages", h: EVENT });
@@ -324,50 +231,36 @@ export default class CrewChat extends View {
       const you = e.kind === "you";
       const first = far || !prev || prev.kind !== e.kind || (e.kind === "note" && prev.from !== e.from);
       const max = you ? youMax : botMax;
-      // Each message is laid out once per width (entries keep it until the feed is re-read).
-      if (!e._ls || e._lw !== max) {
-        e._ls = you || e.kind === "note" ? lines(e.text ?? "", per(max), perCode).map((l) => (l.k === "head" ? { ...l, k: "text", indent: 0 } : l)) : lines(e.text ?? "", per(max), perCode);
-        e._lw = max;
+      // The text's width: the bubble's at most, or (one short paragraph) about the text's own.
+      const text = e.text ?? "";
+      let tw = max - 28;
+      if (plain(text)) {
+        // One short paragraph: its natural one-line width, measured (guessed until then).
+        const nat = this.natural.get(e._n);
+        if (nat == null) unmeasured.push({ key: `${e._n}`, text, you, natural: true });
+        const w = nat ?? Math.ceil(lineWidth(text.trim()) * 1.06 + 12);
+        if (w < tw) tw = Math.max(16, Math.ceil(w) + 1);
       }
-      const ls = e._ls;
+      // Its height: measured off-screen once per width (see measuring() in render), guessed until then.
+      const mkey = `${e._n}|${tw}`;
+      let th = this.measured.get(mkey);
+      if (th == null) {
+        if (!e._est || e._est.w !== tw) e._est = { w: tw, h: markdownHeight(text, tw) };
+        th = e._est.h;
+        unmeasured.push({ key: mkey, text, tw, you });
+      }
       const label = e.kind === "note" ? e.from : null;
-      const h = (first ? GAP_NEW : GAP_SAME) + (label && first ? NAME : 0) + PAD_Y * 2 + height(ls) + (e.images ? LINE : 0);
-      rows.push({ kind: e.kind, key: `m-${e._n}`, e, you, first, label, ls, max, h });
+      const h = (first ? GAP_NEW : GAP_SAME) + (label && first ? NAME : 0) + PAD_Y * 2 + th + (e.images ? LINE : 0);
+      rows.push({ kind: e.kind, key: `m-${e._n}`, e, you, first, label, tw, h });
       prev = e;
     }
     // The last turn gets its footer once the pal is done with it.
     if (!busy) endTurn(prev);
+    this.unmeasured = unmeasured;
     if (status === "working") rows.push({ kind: "typing", key: "typing", h: TYPING });
     if (status === "blocked") rows.push({ kind: "blocked", key: "blocked", h: CARD });
     return rows;
   }
-
-  // One display line: styled pieces in a row, with a bullet column for list items.
-  line(l, t, you) {
-    const color = you ? t.accent_foreground : t.foreground;
-    if (l.k === "gap") return div().h(SPACER);
-    if (l.k === "code") return div().h(CODE).px(10).truncate().bg(a(you ? t.accent_foreground : t.foreground, "0c"))
-      .text_size(12.5).font_family("JetBrains Mono").text_color(color).child(l.s || " ");
-    const piece = (sg, size) => {
-      let el = div().flex_none().text_size(size).text_color(sg.l ? (you ? color : t.accent) : color).child(sg.t);
-      if (sg.b) el = el.font_medium();
-      if (sg.i) el = el.italic();
-      if (sg.c) el = el.font_family("JetBrains Mono").text_size(size - 1.5).px(4).rounded(5).bg(a(you ? t.accent_foreground : t.foreground, "14"));
-      return el;
-    };
-    if (l.k === "head") {
-      return h_flex().h(HEAD).items_end().pb(3).overflow_hidden().children(l.segs.map((sg) => piece({ ...sg, b: true }, 15)));
-    }
-    const row = h_flex().h(LINE).items_center().overflow_hidden();
-    if (l.k === "quote") return row.child(div().w(3).h(16).mr(9).rounded_full().bg(a(color, "44")))
-      .children(l.segs.map((sg) => piece(sg, 14).text_color(you ? color : t.muted)));
-    if (l.hang) {
-      const w = BULLET_W + (l.wide ? 6 : 0);
-      row.pl(l.indent).child(div().w(w).flex_none().text_size(14).text_color(you ? color : t.dim).child(l.mark ?? ""));
-    }
-    return row.children(l.segs.map((sg) => piece(sg, 14)));
-  }
-
 
   row(r, t, bot) {
     if (r.kind === "stamp") return h_flex().h(r.h).w_full().items_center().justify_center().child(div().text_size(11.5).text_color(t.dim).child(when(r.at)));
@@ -410,13 +303,14 @@ export default class CrewChat extends View {
         .child(h_flex().items_center().px(16).py(10).rounded(16).bg(a(t.blocked, "14")).border_1().border_color(a(t.blocked, "30"))
           .child(div().text_size(13.5).text_color(t.foreground).child("It's asking you something in the terminal")));
     }
-    const { e, you, first, label, ls, max } = r;
+    const { e, you, first, label, tw } = r;
     const note = r.kind === "note";
-    const bubble = v_flex().max_w(max).px(14).py(PAD_Y).rounded(18)
+    const color = you ? t.accent_foreground : t.foreground;
+    const bubble = v_flex().w(tw + 28).flex_none().px(14).py(PAD_Y).rounded(18).text_size(14).text_color(color)
       .when(you, (el) => el.bg(t.accent))
       .when(note, (el) => el.bg(a(t.foreground, "07")).border_1().border_color(a(t.foreground, "12")))
       .when(!you && !note, (el) => el.bg(a(t.foreground, "0e")))
-      .children(ls.map((l) => this.line(l, t, you)))
+      .child(markdownView(`md-${r.key}`, e.text ?? "", color, tw))
       .when(Boolean(e.images), (el) => el.child(div().h(LINE).text_size(12.5).text_color(you ? t.accent_foreground : t.dim).child(`${e.images} image${e.images > 1 ? "s" : ""}`)));
     if (you) return v_flex().h(r.h).w_full().items_end().pt(first ? GAP_NEW : GAP_SAME).px(28).child(bubble);
     const face = first && !note ? mascotEl(bot, "calm", 30, t) : div().size(30);
@@ -425,6 +319,36 @@ export default class CrewChat extends View {
       .child(v_flex().min_w(0).items_start()
         .when(Boolean(label) && first, (el) => el.child(h_flex().h(NAME).items_center().child(div().text_size(12).text_color(t.dim).child(`from ${label}`))))
         .child(bubble));
+  }
+
+  // Messages not measured yet, drawn off-screen exactly as their bubble draws them (newest first, a
+  // few at a time); each reports its real height and the list uses that from then on. TextView's
+  // height can't be computed ahead, and a wrong guess cuts a message or leaves a gap.
+  measuring(t) {
+    const todo = (this.unmeasured ?? []).slice(-MEASURE);
+    if (!todo.length) return null;
+    return v_flex().absolute().top(0).left(-30000).w(1400).items_start().opacity(0).children(todo.map((m) => {
+      const color = m.you ? t.accent_foreground : t.foreground;
+      // Its width on one line: drawn without a width, in a row that doesn't wrap.
+      if (m.natural) return h_flex().id(`measure-w-${m.key}`).flex_none().whitespace_nowrap().text_size(14)
+        .child(markdownView(`mw-${m.key}`, m.text, color, 1400))
+        .on_size_change((size, cx) => {
+          if (!(size.width > 0) || this.natural.get(Number(m.key)) === Math.ceil(size.width)) return;
+          this.natural.set(Number(m.key), Math.ceil(size.width));
+          this.mver++;
+          if (this.follow) this.pending = true;
+          cx.notify();
+        });
+      return v_flex().id(`measure-${m.key}`).w(m.tw).flex_none().text_size(14).text_color(color)
+        .child(markdownView(`mm-${m.key}`, m.text, color, m.tw))
+        .on_size_change((size, cx) => {
+          if (!(size.height > 0) || this.measured.get(m.key) === size.height) return;
+          this.measured.set(m.key, Math.ceil(size.height));
+          this.mver++;
+          if (this.follow) this.pending = true;
+          cx.notify();
+        });
+    }));
   }
 
   // The strip under the chat: which model and effort, how full the context is, how much of your
@@ -516,8 +440,16 @@ export default class CrewChat extends View {
           })
           .track_scroll(this.scroll).size_full()
           // Rows can't hold their own click handlers; the list reports which row was clicked.
-          .on_item_click((key, cx) => { if (key.startsWith("t-")) { this.open.has(key) ? this.open.delete(key) : this.open.add(key); cx.notify(); } }))
+          .on_item_click((key, cx) => { if (key.startsWith("t-")) { this.open.has(key) ? this.open.delete(key) : this.open.add(key); cx.notify(); } })
+          // Right-click a message: copy it, or a code block in it (crew-menu).
+          .on_item_secondary_click((key) => {
+            const e = key.startsWith("m-") ? this.rowsVal?.find((r) => r.key === key)?.e : null;
+            if (!e?.text) return;
+            const codes = splitBlocks(e.text).filter((b) => b.k === "code").map((b) => b.text);
+            openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "message", text: e.text, codes } });
+          }))
         .child(Scrollbar.vertical("chat-list").absolute().inset_0())
+        .when(Boolean(this.unmeasured?.length), (el) => el.child(this.measuring(t)))
         // A round ↓ while you read older messages: back to the newest, following again.
         .child(h_flex().absolute().bottom(12).left(0).right(0).justify_center()
           .child(div().id("chat-jump").size(34).flex().items_center().justify_center().rounded(17)

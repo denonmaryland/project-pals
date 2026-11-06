@@ -79,5 +79,8 @@ This compares the two as of flockbook `0a8012a` (2026-11-05) and our `v0.2.3`.
 4. Older history on scroll-up (#5).
 5. Then, separately so it can be judged on its own screenshots: selectable markdown (#4).
 
+Status: 1-4 and 6 are built (commit 7fce216). DeNon said yes to #4 on 2026-11-05; it's built too,
+with each message measured off-screen rather than trusting the height guess alone.
+
 Credit: anything copied from flockbook gets a comment naming it (MIT, © its authors) and a line in
 the README.

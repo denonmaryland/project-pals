@@ -94,4 +94,6 @@ MIT
 
 The chat view's reading behaviour (following the newest message until you scroll up, tool chips
 with live status, turn footers, loading earlier messages in place) follows
-[flockbook](https://github.com/minchenlee/flockbook)'s chat, MIT, © 2026 Min-Chen Lee.
+[flockbook](https://github.com/minchenlee/flockbook)'s chat, and its selectable markdown
+(`mods/crew-chat/markdown.js`, `estimate.js`) is adapted from flockbook's code. MIT,
+© 2026 Min-Chen Lee.

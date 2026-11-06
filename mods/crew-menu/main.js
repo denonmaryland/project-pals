@@ -4,6 +4,7 @@
 //   add a channel, put it to sleep.
 // - A sleeping pal: wake it, unpin it, or forget it (its memory folder stays on disk).
 // - A room: open it, or close it (its transcript is kept).
+// - A chat message: copy it, or one of its code blocks.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -25,7 +26,7 @@ export default class CrewMenu extends View {
 
     const item = (id, icon, label, action, color = t.foreground) => h_flex().id(id).h(32).px(10).gap(10).items_center().rounded(8).cursor_pointer()
       .hover((s) => s.bg(a(t.foreground, "0c")))
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); action(); this.close(); })
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); action(cx); this.close(); })
       .child(div().w(16).flex_none().flex().justify_center().when(Boolean(icon), (el) => el.child(svg(`${ICON}/${icon}.svg`).size(14).text_color(color === t.foreground ? t.dim : color))))
       .child(div().text_size(13).text_color(color).child(label));
     const title = (text) => div().px(10).pt(6).pb(6).truncate().text_size(12).text_color(t.dim).child(text);
@@ -37,6 +38,15 @@ export default class CrewMenu extends View {
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); if (armed && !this.armed) { this.armed = true; cx.notify(); return; } run(cx); })
       .child(div().w(16).flex_none().flex().justify_center().child(svg(`${ICON}/x.svg`).size(14).text_color(t.blocked)))
       .child(div().text_size(13).text_color(this.armed && armed ? t.blocked : t.foreground).child(this.armed && armed ? armed : label));
+
+    // A chat message (crew-chat): copy it as written, or one of its code blocks.
+    if (p.what === "message") {
+      const codes = p.codes ?? [];
+      const name = (c, i) => codes.length === 1 ? "Copy code" : `Copy code: ${c.split("\n").find((l) => l.trim())?.trim().slice(0, 24) || i + 1}`;
+      return root
+        .child(item("m-copy", "copy", "Copy message", (cx) => cx.write_to_clipboard(p.text ?? "")))
+        .children(codes.map((c, i) => item(`m-code-${i}`, "copy", name(c, i), (cx) => cx.write_to_clipboard(c))));
+    }
 
     // A sleeping pal (no space): wake, unpin, forget.
     if (p.what === "sleeper") {
