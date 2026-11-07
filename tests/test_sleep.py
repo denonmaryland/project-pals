@@ -179,6 +179,7 @@ class SleepCli(unittest.TestCase):
         sb = make_sandbox()
         child = subprocess.Popen(["sleep", "60"])
         fd1 = make_fake_proc(sb["proc"], 7001, comm="fish", children=[child.pid])
+        make_fake_proc(sb["proc"], child.pid, comm="agy")
         children_file = sb["proc"] / "7001" / "task" / "7001" / "children"
 
         def reap_when_dead():
@@ -224,6 +225,11 @@ class SleepCli(unittest.TestCase):
         r = run_crew(sb, "sleep", "--idle")
         self.assertIn("no idle pals", r.stdout)
         self.assertIsNone(server.poll())
+        # A bad name is reported and the rest still run; an empty one doesn't match every pal.
+        r = run_crew(sb, "sleep", "@", "Gone", "Web")
+        self.assertIn("@: name a pal", r.stdout)
+        self.assertIn("Gone:", r.stdout)
+        self.assertIn("Web #general", r.stdout)
 
     def test_sleep_skips_busy_blocked_and_self_and_respects_exact_vs_prefix(self):
         sb = make_sandbox()
@@ -232,6 +238,7 @@ class SleepCli(unittest.TestCase):
             cp = subprocess.Popen(["sleep", "60"])
             pids[addr] = cp
             make_fake_proc(sb["proc"], 8000 + i, comm="fish", children=[cp.pid])
+            make_fake_proc(sb["proc"], cp.pid, comm="claude")
             cfile = sb["proc"] / str(8000 + i) / "task" / str(8000 + i) / "children"
             threading.Thread(target=lambda p=cp, f=cfile: (p.wait(timeout=15), f.write_text("")), daemon=True).start()
 
