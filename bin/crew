@@ -126,8 +126,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, HOOKED, ME, SHELLS, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
-                     locked, herdr_spaces, records, record_of, chan, lead, norm, find, whoami, where_of, is_bot_terminal,
-                     live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, agent_running, screen, meaningful,
+                     locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
+                     live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, agent_running, owns_terminal, screen, meaningful,
                      enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
                      trust_prompt, trust_notice)
@@ -679,355 +679,171 @@ def cmd_land(spaces, spec, check=None):
 # ── sleeping and waking ──────────────────────────────────────────────────────────────────────
 
 PRIMER_HINT = "First run `pal primer` and `pal memory` to learn how the crew works and what you remember."
-SESSION_UUID_RE = re.compile(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
-AGENT_BINS = ("claude", "agy", "codex", "gemini", "opencode", "grok", "hermes")
-
-
-def _match_spaces(spec, spaces):
-    """'<Pal>' or '<prefix>' → matching spaces. An exact name beats a shared prefix."""
-    raw = spec.lstrip("@").strip()
-    low, nrm = raw.lower(), norm(raw)
-    exact = [s for s in spaces if s["name"].lower() == low or norm(s["name"]) == nrm]
-    if exact:
-        return exact
-    pref = [s for s in spaces if s["name"].lower().startswith(low) or (nrm and norm(s["name"]).startswith(nrm))]
-    if pref:
-        return pref
-    for k, b in records().items():
-        if k.startswith("name:") and b.get("name", "").lower() == low:
-            raise CrewError(f"{b['name']}'s space is closed; wake it from Asleep in Herdr")
-    space, _ = find(raw, spaces)
-    return [space]
-
-
-def _resolve_channel_only(ch_spec, spaces):
-    """'#channel' → (space, tab): this pal's channel if run inside a pal, else unique/active match."""
-    want = ch_spec.lstrip("#").strip().lower()
-    if not want:
-        raise CrewError("name a channel after #")
-    if ME:
-        my_s, _ = where_of(ME, spaces)
-        if my_s:
-            tab = next((t for t in my_s["tabs"] if chan(t).lower() == want), None)
-            if tab:
-                return my_s, tab
-    hits = [(s, t) for s in spaces for t in s["tabs"] if chan(t).lower() == want]
-    if len(hits) == 1:
-        return hits[0]
-    active = [(s, t) for s, t in hits if s.get("active")]
-    if len(active) == 1:
-        return active[0]
-    if hits:
-        raise CrewError(f"#{want} exists in more than one pal ({', '.join(s['name'] for s, _ in hits)}); say Pal#{want}")
-    raise CrewError(f"no channel #{want}")
 
 
 def _room_seats():
     seats = set()
     for f in ROOMS.glob("*.json") if ROOMS.exists() else ():
-        meta = load_json(f, None) or {}
-        for m in meta.get("members") or []:
-            if m.get("terminal"):
-                seats.add(m["terminal"])
+        seats |= {m.get("terminal") for m in (load_json(f, None) or {}).get("members") or [] if m.get("terminal")}
     return seats
 
 
-def _clean_base_argv(argv):
-    """Keep the agent binary and persistent flags (--model, bypass), stripping one-shot task/resume args."""
-    out, i = [], 0
-    while i < len(argv or ()):
-        a = str(argv[i])
-        if a in ("-i", "-p", "--prompt", "--print", "--resume", "-r", "--conversation"):
-            i += 2
-            continue
-        if a in ("-c", "--continue") or a.startswith(("--resume=", "--conversation=", "--prompt=", "--print=")):
-            i += 1
-            continue
-        out.append(a)
-        i += 1
-    return out
+def _targets(spec, spaces):
+    """'Pal#ch' or '#ch' → [(space, tab)]; 'Pal' → its tabs, or every pal whose name starts with it
+    (an exact name wins: 'navi-Jefe' doesn't also take 'navi-Jefe-2')."""
+    if spec.startswith("#"):
+        want = spec[1:].lower()
+        mine, _ = where_of(ME, spaces) if ME else (None, None)
+        hits = [(s, t) for s in spaces for t in s["tabs"] if chan(t).lower() == want]
+        hits = [h for h in hits if h[0] is mine] or hits
+        if len(hits) != 1:
+            raise CrewError(f"#{want}: " + (f"in {', '.join(s['name'] for s, _ in hits)}; say Pal#{want}" if hits else "no such channel"))
+        return hits
+    if "#" in spec:
+        return [find(spec, spaces)]
+    low = spec.lstrip("@").lower()
+    group = ([s for s in spaces if s["name"].lower() == low]
+             or [s for s in spaces if s["name"].lower().startswith(low)] or [find(spec, spaces)[0]])
+    return [(s, t) for s in group for t in s["tabs"]]
 
 
-def _recover_wrapper_argv(info_argv):
-    """Recover ['claude'|'agy'|..., '--model', ...] from Herdr's shell wrapper when shared.json lacks argv."""
-    raw = [str(x) for x in (info_argv or ())]
-    start = next((i for i, x in enumerate(raw) if Path(x).name.lower() in AGENT_BINS), None)
-    if start is None:
-        return None
-    out = [raw[start]]
-    i = start + 1
-    while i < len(raw):
-        a = raw[i]
-        if a in ("--dangerously-skip-permissions", "--dangerously-bypass-approvals-and-sandbox", "--yolo"):
-            if a not in out:
-                out.append(a)
-            i += 1
-        elif a in ("--model", "--effort") and i + 1 < len(raw):
-            out.extend([a, raw[i + 1]])
-            i += 2
-        elif a.startswith(("--model=", "--effort=")):
-            out.append(a)
-            i += 1
-        else:
-            i += 1
-    return out
-
-
-def _harness_kind(base_argv, rec, lk=None):
-    prog = Path(base_argv[0]).name.lower() if base_argv else ""
-    h = str((rec or {}).get("harness") or (lk or {}).get("harness") or "").lower()
-    if prog == "claude" or h in ("claude", "claude-code") or h.startswith("claude-"):
-        return "claude"
-    if prog == "agy" or h in ("antigravity", "antigravity-cli", "agy") or h.startswith("agy-"):
-        return "agy"
-    return prog or h or "other"
-
-
-def _has_turns(path, kind):
-    """True when a session transcript exists on disk and holds at least one real turn."""
-    try:
-        if not path.is_file() or path.stat().st_size == 0:
-            return False
-        with open(path, "rb") as f:
-            sample = f.read(262144)
-        if kind == "agy":
-            return b'"USER_INPUT"' in sample or b'"PLANNER_RESPONSE"' in sample
-        return b'"user"' in sample or b'"assistant"' in sample
-    except OSError:
-        return False
-
-
-def _session_for_wake(addr, kind, info):
-    """A verified session UUID for this specific terminal when one exists on disk, else None."""
-    import crewchat
-    lk = crewchat.links().get(addr) or {}
-    if lk.get("session") and lk.get("transcript"):
-        agy_lk = crewchat.is_agy_link(lk, lk["transcript"])
-        if (kind == "agy") == agy_lk:
-            p = crewchat.agy_transcript_path(lk["transcript"]) if kind == "agy" else Path(lk["transcript"])
-            if _has_turns(p, kind):
-                return str(lk["session"]).strip()
-    tail = "\n".join(screen(addr, 40)[-30:])
-    if kind == "agy":
-        m = re.search(r"--conversation=" + SESSION_UUID_RE.pattern, tail)
-        if m:
-            p = crewchat._agy_log_for_conv(m.group(1))
-            if p and _has_turns(p, "agy"):
-                return m.group(1)
-    elif kind == "claude":
-        m = re.search(r"--resume\s+" + SESSION_UUID_RE.pattern, tail)
-        if m:
-            sid = m.group(1)
-            cwd = (info or {}).get("cwd")
-            cand = crewchat.project_dir(cwd) / f"{sid}.jsonl" if cwd else None
-            if cand and _has_turns(cand, "claude"):
-                return sid
-            for p in crewchat.CLAUDE.glob(f"*/{sid}.jsonl") if crewchat.CLAUDE.exists() else ():
-                if _has_turns(p, "claude"):
-                    return sid
-    return None
-
-
-def _wake_argv(rec, addr, info):
-    """Command argv to restart a sleeping channel's agent, resuming its conversation."""
-    import crewchat
-    lk = crewchat.links().get(addr) or {}
-    base = _clean_base_argv((rec or {}).get("argv"))
-    if not base:
-        base = _recover_wrapper_argv((info or {}).get("argv"))
-    if not base:
-        h = str((rec or {}).get("harness") or lk.get("harness") or "").lower()
-        if h in ("claude", "claude-code") or h.startswith("claude-"):
-            base = ["claude"] + (["--dangerously-skip-permissions"] if settings().get("bypass") else [])
-        elif h in ("antigravity", "antigravity-cli", "agy") or h.startswith("agy-"):
-            base = ["agy"] + (["--dangerously-skip-permissions"] if settings().get("bypass") else [])
-    if not base:
-        return None
-    kind = _harness_kind(base, rec, lk)
-    sid = _session_for_wake(addr, kind, info) if kind in ("claude", "agy") else None
-    if kind == "claude":
-        return [*base, "--resume", sid] if sid else [*base, "--continue"]
-    if kind == "agy":
-        return [*base, f"--conversation={sid}"] if sid else [*base, "-c"]
-    return [*base, PRIMER_HINT]
-
-
-def _stop_tab(space, tab, terms, dry=False, force=False, warn_busy=True, warn_asleep=False):
-    """Stop one tab's agent while keeping its shell alive. Returns 'slept' | 'busy' | 'asleep'."""
-    x = lead(tab)
+def _stop_tab(space, tab, terms, dry=False, force=False, quiet=False):
+    """Stop one tab's agent and keep its shell. Returns 'slept', 'busy' or 'asleep'."""
+    say = (lambda m: None) if quiet else print
     label = f"{space['name']} #{chan(tab)}"
-    if not x or not x.get("terminal"):
-        if warn_asleep:
-            print(f"{label}: no terminal")
-        return "asleep"
-    addr = x["terminal"]
+    addr = (lead(tab) or {}).get("terminal")
+    if not addr or space.get("machine"):
+        say(f"skipping {label}: " + ("it runs on another machine" if addr else "no terminal"))
+        return "busy"
     if addr == ME:
-        if warn_asleep:
-            print(f"skipping {label}: that's this channel")
+        say(f"skipping {label}: that's this channel")
         return "busy"
     on, pid, info = agent_running(addr)
-    t = terms.get(addr) or {}
+    app = (info.get("status") or {}).get("app") or is_agent(terms.get(addr) or {})
+    if not pid or not owns_terminal(pid, addr):
+        say(f"skipping {label}: can't find its shell here")
+        return "busy"
     if not on:
-        if not dry and pid and shell_is_bare(pid) and (is_agent(t) or (info.get("status") or {}).get("app")):
-            clear_osc_status(pid)
+        if not dry and app and shell_is_bare(pid):
+            clear_osc_status(pid)   # agy leaves its status behind when it exits
             (HOOKED / addr).unlink(missing_ok=True)
-        if warn_asleep:
-            print(f"{label}: already asleep")
+        say(f"{label}: already asleep")
         return "asleep"
-    st = (info.get("status") or {}).get("state") or t.get("status")
+    if not app:
+        say(f"skipping {label}: what runs there isn't an agent")
+        return "busy"
+    st = (info.get("status") or {}).get("state")
     if st in ("working", "blocked") and not force:
-        if warn_busy:
-            print(f"skipping {label} ({st}); pass --force to stop it anyway")
+        say(f"skipping {label} ({st}); pass --force to stop it anyway")
         return "busy"
-    if proc_comm(pid) not in SHELLS:
-        if warn_busy:
-            print(f"skipping {label}: terminal has no shell wrapper")
-        return "busy"
-    agent_name = (info.get("status") or {}).get("app") or t.get("agent") or "agent"
     if dry:
-        print(f"would sleep {label} ({agent_name}, {addr})")
+        print(f"would sleep {label} ({app}, {addr})")
         return "slept"
-    for cpid in child_pids(pid):
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.kill(cpid, signal.SIGTERM)
-    deadline = time.time() + 3.0
-    while time.time() < deadline and child_pids(pid):
-        time.sleep(0.05)
-    if shell_is_bare(pid):
-        clear_osc_status(pid)
-        (HOOKED / addr).unlink(missing_ok=True)
-    print(f"slept {label} ({agent_name}, {addr})")
+    for sig, wait in ((signal.SIGTERM, 3.0), (signal.SIGKILL, 1.0)):
+        for cpid in child_pids(pid):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(cpid, sig)
+        deadline = time.time() + wait
+        while time.time() < deadline and child_pids(pid):
+            time.sleep(0.05)
+        if not child_pids(pid):
+            break
+    else:
+        print(f"couldn't stop {label}: its agent is still running")
+        return "busy"
+    clear_osc_status(pid)
+    (HOOKED / addr).unlink(missing_ok=True)
+    print(f"slept {label} ({app}, {addr})")
     return "slept"
 
 
 def cmd_sleep(spaces, rest):
-    if any(a in ("-h", "--help") for a in rest):
-        print("usage: pal sleep <Pal[#ch]|#ch>... | --idle [--force] [-n]"); return
+    pos, o = opts([a for a in rest if a != "-n"], (), ("idle", "force"))
     dry = "-n" in rest
-    rest = [a for a in rest if a != "-n"]
-    pos, o = opts(rest, (), ("idle", "force", "dry-run"))
-    dry = dry or o.get("dry-run", False)
-    force = o.get("force", False)
-    idle_only = o.get("idle", False)
-    if not pos and not idle_only:
+    if not pos and not o.get("idle"):
         die("pal sleep <Pal[#ch]|#ch>... | --idle [--force] [-n]")
     terms = hc_terminals()
-    seen = set()
-    if idle_only:
-        slept = 0
-        for s in spaces:
-            for tab in s["tabs"]:
-                x = lead(tab)
-                addr = x.get("terminal") if x else None
-                if addr and addr in seen:
-                    continue
-                if addr:
-                    seen.add(addr)
-                if _stop_tab(s, tab, terms, dry=dry, force=False, warn_busy=False, warn_asleep=False) == "slept":
-                    slept += 1
-        if not pos and not slept:
-            print("no idle pals to put to sleep")
-    for spec in pos:
-        if spec.startswith("#"):
-            s, tab = _resolve_channel_only(spec, spaces)
-            addr = (lead(tab) or {}).get("terminal")
-            if addr and addr in seen:
-                continue
-            if addr:
-                seen.add(addr)
-            _stop_tab(s, tab, terms, dry=dry, force=force, warn_busy=True, warn_asleep=True)
-        elif "#" in spec.lstrip("@"):
-            s, tab = find(spec, spaces)
-            addr = (lead(tab) or {}).get("terminal")
-            if addr and addr in seen:
-                continue
-            if addr:
-                seen.add(addr)
-            _stop_tab(s, tab, terms, dry=dry, force=force, warn_busy=True, warn_asleep=True)
-        else:
-            for s in _match_spaces(spec, spaces):
-                outcomes = []
-                for tab in s["tabs"]:
-                    addr = (lead(tab) or {}).get("terminal")
-                    if addr and addr in seen:
-                        continue
-                    if addr:
-                        seen.add(addr)
-                    outcomes.append(_stop_tab(s, tab, terms, dry=dry, force=force, warn_busy=True, warn_asleep=False))
-                if outcomes and all(r == "asleep" for r in outcomes):
-                    print(f"{s['name']}: already asleep")
+    named = [p for spec in pos for p in _targets(spec, spaces)]
+    swept = [(s, t) for s in spaces for t in s["tabs"]] if o.get("idle") else []
+    seen, slept = set(), 0
+    # --idle sweeps every tab: it never forces, and says nothing about the tabs it leaves alone.
+    for (s, t), loud in [(p, True) for p in named] + [(p, False) for p in swept]:
+        addr = (lead(t) or {}).get("terminal")
+        if addr in seen:
+            continue
+        seen.add(addr)
+        slept += _stop_tab(s, t, terms, dry, loud and o.get("force"), quiet=not loud) == "slept"
+    if o.get("idle") and not slept:
+        print("no idle pals to put to sleep")
 
 
-def _send_wake(space, tab, addr, rec, info, dry=False):
-    label = f"{space['name']} #{chan(tab)}"
-    cmd = _wake_argv(rec, addr, info)
-    if not cmd:
-        print(f"skipping {label}: no agent command recorded for {space['name']}")
-        return False
-    line = shlex.join(cmd)
-    if dry:
-        print(f"would wake {label} ({addr}): {line}")
-        return True
-    # Strip HC_* so hc send types the raw shell command instead of wrapping it in <hc from=...>.
-    raw_env = {k: v for k, v in os.environ.items() if not k.startswith("HC_")}
-    subprocess.run(["hc", "keys", addr, "ctrl+c"], env=raw_env, capture_output=True, timeout=10)
-    r = subprocess.run(["hc", "send", "--force", addr, line], env=raw_env, capture_output=True, text=True, timeout=30)
-    if r.returncode != 0:
-        raise CrewError((r.stderr or r.stdout).strip() or f"couldn't wake {label}")
-    print(f"woke {label} ({addr}): {line}")
-    return True
+def _wake_argv(rec, addr):
+    """The pal's own command, resuming this tab's conversation when its session file is known.
+    Without one it starts fresh: '--continue' would pick the folder's latest conversation, which
+    may be another channel's."""
+    import crewchat
+    base, i = [], 0
+    argv = [str(a) for a in (rec or {}).get("argv") or []]
+    while i < len(argv):   # drop one-shot prompt/resume flags, keep --model, bypass and the like
+        a = argv[i]
+        if a in ("-i", "-p", "--prompt", "--print", "--resume", "-r", "--conversation"):
+            i += 2
+            continue
+        if a not in ("-c", "--continue") and not a.startswith(("--resume=", "--conversation=", "--prompt=", "--print=")):
+            base.append(a)
+        i += 1
+    if not base:
+        return None
+    lk = crewchat.links().get(addr) or {}
+    sid, prog = lk.get("session"), Path(base[0]).name
+    if sid and lk.get("transcript") and Path(lk["transcript"]).exists():
+        if prog == "claude":
+            return [*base, "--resume", sid]
+        if prog == "agy":
+            return [*base, f"--conversation={sid}"]
+    return [*base, PRIMER_HINT]
 
 
 def cmd_wake(spaces, rest):
-    if any(a in ("-h", "--help") for a in rest):
-        print("usage: pal wake <Pal[#ch]|#ch>... [-n]"); return
+    pos = [a for a in rest if a != "-n"]
     dry = "-n" in rest
-    rest = [a for a in rest if a != "-n"]
-    pos, o = opts(rest, (), ("dry-run",))
-    dry = dry or o.get("dry-run", False)
     if not pos:
         die("pal wake <Pal[#ch]|#ch>... [-n]")
-    recs = records()
-    seats = _room_seats()
-    seen = set()
+    recs, seats = records(), _room_seats()
+    raw_env = {k: v for k, v in os.environ.items() if not k.startswith("HC_")}   # so hc send doesn't wrap it in <hc from=…>
     for spec in pos:
-        if spec.startswith("#") or "#" in spec.lstrip("@"):
-            s, tab = _resolve_channel_only(spec, spaces) if spec.startswith("#") else find(spec, spaces)
-            x = lead(tab)
-            if not x or not x.get("terminal"):
-                print(f"{s['name']} #{chan(tab)}: no terminal")
+        pairs = _targets(spec, spaces)
+        asleep = []
+        for s, t in pairs:
+            addr = (lead(t) or {}).get("terminal")
+            if addr and not s.get("machine") and not agent_running(addr)[0]:
+                asleep.append((s, t, addr))
+        if "#" not in spec:
+            # A whole pal: its room seats, else one tab (the active one), unless it's already up.
+            picked = []
+            for sp in {id(p[0]): p[0] for p in pairs}.values():
+                xs = [x for x in asleep if x[0] is sp]
+                if len(xs) < sum(1 for p in pairs if p[0] is sp):
+                    print(f"{sp['name']}: already awake")
+                elif xs:
+                    picked += [x for x in xs if x[2] in seats] or [next((x for x in xs if x[1].get("active")), xs[0])]
+            asleep = picked
+        elif not asleep:
+            print(f"{spec}: already awake (or on another machine)")
+        for s, t, addr in asleep:
+            label = f"{s['name']} #{chan(t)}"
+            cmd = _wake_argv(record_of(s, recs), addr)
+            if not cmd:
+                print(f"skipping {label}: no agent command recorded for {s['name']}")
                 continue
-            addr = x["terminal"]
-            if addr in seen:
+            line = shlex.join(cmd)
+            if dry:
+                print(f"would wake {label} ({addr}): {line}")
                 continue
-            seen.add(addr)
-            on, _, info = agent_running(addr)
-            if on:
-                print(f"{s['name']} #{chan(tab)}: already awake")
-                continue
-            _send_wake(s, tab, addr, record_of(s, recs), info, dry=dry)
-        else:
-            for s in _match_spaces(spec, spaces):
-                rec = record_of(s, recs)
-                tabs = [(t, lead(t)["terminal"]) for t in s["tabs"] if lead(t) and lead(t).get("terminal")]
-                if not tabs:
-                    print(f"{s['name']}: no terminal")
-                    continue
-                states = [(t, addr, *agent_running(addr)) for t, addr in tabs]
-                awake_any = any(on for _, _, on, _, _ in states)
-                asleep = [(t, addr, info) for t, addr, on, _, info in states if not on]
-                to_wake = [x for x in asleep if x[1] in seats]
-                if not to_wake:
-                    if awake_any:
-                        print(f"{s['name']}: already awake")
-                        continue
-                    active = next((x for x in asleep if x[0].get("active")), None)
-                    to_wake = [active or asleep[0]]
-                for tab, addr, info in to_wake:
-                    if addr in seen:
-                        continue
-                    seen.add(addr)
-                    _send_wake(s, tab, addr, rec, info, dry=dry)
+            subprocess.run(["hc", "keys", addr, "ctrl+c"], env=raw_env, capture_output=True, timeout=10)
+            r = subprocess.run(["hc", "send", "--force", addr, line], env=raw_env, capture_output=True, text=True, timeout=30)
+            print(f"woke {label} ({addr}): {line}" if r.returncode == 0
+                  else f"couldn't wake {label}: {(r.stderr or r.stdout).strip() or 'hc send failed'}")
 
 
 # ── tasks, routines, memory, skills, approvals ───────────────────────────────────────────────

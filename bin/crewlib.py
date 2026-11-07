@@ -441,6 +441,19 @@ def clear_osc_status(pid, proc_dir=None):
         return False
 
 
+def owns_terminal(pid, address, proc_dir=None):
+    """pid is this machine's shell for that terminal. A remote pal's pid names some other process
+    here, and nothing may be killed or written to on its account."""
+    proc = _proc_root(proc_dir)
+    if proc != Path("/proc"):
+        return True   # a test's fake /proc
+    try:
+        env = (proc / str(pid) / "environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return f"HC_TERMINAL_ID={address}".encode() in env
+
+
 def agent_running(address, info=None, proc_dir=None):
     """(running, pid, info) checked against the real process tree rather than stuck hc status."""
     info = term_info(address) if info is None else info

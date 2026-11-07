@@ -78,7 +78,7 @@ export default class CrewMenu extends View {
     if (p.what === "room") {
       const room = rooms().find((r) => r.id === p.room);
       if (!room) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That room is gone."));
-      const names = roomMembers(room).map((m) => m.name);
+      const names = roomMembers(room).map((m) => (m.channel ? `${m.name}#${m.channel}` : m.name));   // its seats, not every tab
       return root
         .child(title(`#${room.name}`))
         .child(item("m-open", null, "Open", () => showRoom(room.id)))
