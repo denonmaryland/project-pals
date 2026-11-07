@@ -391,7 +391,7 @@ def from_bot(name):
 # ── memory ───────────────────────────────────────────────────────────────────────────────────
 
 def renamed(old, new):
-    """A pal got a new name: carry its memory folder and the routines aimed at it along."""
+    """A pal got a new name: carry its memory folder, the routines aimed at it and its room seats along."""
     if not old or old == new:
         return
     src, dest = memory_dir(old), memory_dir(new)
@@ -413,6 +413,14 @@ def renamed(old, new):
             save_json(store, items)
 
 
+    # Rooms keep each member's name too (pal-room members, @mentions): follow the rename there.
+    for path in ROOMS.glob("*.json") if ROOMS.exists() else []:
+        meta = load_json(path, None)
+        seats = [m for m in (meta or {}).get("members") or [] if str(m.get("bot") or "").lower() == old.lower()]
+        for m in seats:
+            m["bot"] = new
+        if seats:
+            save_json(path, meta)
 def memory_dir(bot_name):
     return MEMORY / slug(bot_name)
 
