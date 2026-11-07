@@ -202,6 +202,29 @@ class SleepCli(unittest.TestCase):
         self.assertEqual(child.returncode, -signal.SIGTERM)
         self.assertEqual(fd1.read_bytes(), b"\x1b]7501;state=clear\x07")
 
+    def test_sleep_leaves_non_agents_and_remote_pals_alone(self):
+        # A dev server in a pal's tab isn't an agent; a remote pal's pid means nothing on this machine.
+        sb = make_sandbox()
+        server = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(server.kill)
+        make_fake_proc(sb["proc"], 7101, comm="fish", children=[server.pid])
+        make_fake_proc(sb["proc"], 7102, comm="fish", children=[server.pid])
+        tab = lambda tid, t: {"id": tid, "name": "#general", "terminals": [{"terminal": t}]}
+        sb["state"].write_text(json.dumps({
+            "spaces": [{"id": "s1", "name": "Web", "tabs": [tab("a", "t1")]},
+                       {"id": "s2", "name": "Far", "machine": "nas", "tabs": [tab("b", "t2")]}],
+            "terminals": [{"address": "t1", "state": "live", "agent": "fish", "status": None, "where": "Web / #general"},
+                          {"address": "t2", "state": "live", "agent": "claude", "status": "idle", "where": "Far / #general"}],
+            "info": {"t1": {"state": "live", "pid": 7101, "status": None},
+                     "t2": {"state": "live", "pid": 7102, "status": {"app": "claude", "state": "idle"}}},
+        }))
+        r = run_crew(sb, "sleep", "Web", "Far")
+        self.assertIn("isn't an agent", r.stdout)
+        self.assertIn("another machine", r.stdout)
+        r = run_crew(sb, "sleep", "--idle")
+        self.assertIn("no idle pals", r.stdout)
+        self.assertIsNone(server.poll())
+
     def test_sleep_skips_busy_blocked_and_self_and_respects_exact_vs_prefix(self):
         sb = make_sandbox()
         pids = {}
@@ -348,8 +371,9 @@ class WakeCli(unittest.TestCase):
             self.assertEqual(c["hc_env"], {})
 
         sent = {c["args"][2]: c["args"][3] for c in calls if c["args"][:2] == ["send", "--force"]}
-        self.assertEqual(sent["t1"], "claude --dangerously-skip-permissions --model opus --continue")
-        self.assertEqual(sent["t2"], "agy --dangerously-skip-permissions --model gemini-4-argon-high -c")
+        # No session file of its own: a fresh start, not the folder's latest conversation (another channel's).
+        self.assertTrue(sent["t1"].startswith("claude --dangerously-skip-permissions --model opus 'First run"))
+        self.assertTrue(sent["t2"].startswith("agy --dangerously-skip-permissions --model gemini-4-argon-high 'First run"))
         self.assertEqual(sent["t3"], "claude --model sonnet --resume 33333333-3333-3333-3333-333333333333")
         # Whole-pal wake on MultiAgy wakes its room seat (t5) with its own conversation UUID, not t4.
         self.assertNotIn("t4", sent)
