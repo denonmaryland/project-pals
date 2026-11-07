@@ -205,8 +205,9 @@ export default class CrewSide extends View {
         const mins = Math.round((cost.total_duration_ms ?? 0) / 60000);
         const dur = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
         const lines = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
+        const hasLines = cost.total_lines_added != null || cost.total_lines_removed != null;
         cards.push(this.stat(t, "st-session", "This session", dur, null,
-          [`+${lines(cost.total_lines_added)} −${lines(cost.total_lines_removed)}`, cost.total_cost_usd != null && `$${cost.total_cost_usd.toFixed(2)}`].filter(Boolean).join(" · ")));
+          [hasLines && `+${lines(cost.total_lines_added)} −${lines(cost.total_lines_removed)}`, cost.total_cost_usd != null && `$${cost.total_cost_usd.toFixed(2)}`].filter(Boolean).join(" · ")));
       }
       if (rl.five_hour && rl.seven_day) {
         const pct = Math.round(rl.seven_day.used_percentage ?? 0);

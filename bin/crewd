@@ -13,6 +13,7 @@ Every couple of seconds it looks at every terminal herdr-core runs and:
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,8 +21,9 @@ import time
 import traceback
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, load_json, save_json, locked, append_jsonl,
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
+from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
                      herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
                      trust_prompt, trust_notice, input_draft, DraftInTheWay)
@@ -38,7 +40,66 @@ REVIEW_GAP = 30 * 60    # and at most this often per channel
 DISTILL_AT = "03:30"
 REVIEW_MODEL = os.environ.get("CREW_REVIEW_MODEL", "haiku")
 DISTILL_MODEL = os.environ.get("CREW_DISTILL_MODEL", "sonnet")
+AGY_REVIEW_MODEL = os.environ.get("CREW_AGY_REVIEW_MODEL", "gemini-3.8-flash-low")
+AGY_DISTILL_MODEL = os.environ.get("CREW_AGY_DISTILL_MODEL", "gemini-3.8-flash-high")
 LOG = DATA / "crewd.log"
+
+
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def run_headless(prompt, kind="review", timeout=240):
+    """Run a background prompt through Claude Code (`claude -p`) or Antigravity CLI (`agy -p`).
+    Controlled by CREW_LLM / settings.llm ('auto' tries claude then falls back to agy)."""
+    pref = (os.environ.get("CREW_LLM") or settings().get("llm") or "auto").strip().lower()
+    if pref in ("agy", "antigravity", "antigravity-cli"):
+        order = ["agy"]
+    elif pref == "claude":
+        order = ["claude"]
+    else:
+        order = ["claude", "agy"]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HC_")}
+    last = subprocess.CompletedProcess([], 1, "", "no headless model installed")
+    for backend in order:
+        if backend == "claude" and shutil.which("claude"):
+            model = REVIEW_MODEL if kind == "review" else DISTILL_MODEL
+            try:
+                last = subprocess.run(
+                    ["claude", "-p", "--model", model, "--output-format", "text"],
+                    input=prompt, capture_output=True, text=True, timeout=timeout, cwd=str(DATA), env=env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as e:
+                last = subprocess.CompletedProcess(["claude"], 1, "", str(e))
+                continue
+            if last.returncode == 0 and last.stdout.strip():
+                return last
+        elif backend == "agy" and shutil.which("agy"):
+            model = AGY_REVIEW_MODEL if kind == "review" else AGY_DISTILL_MODEL
+            # Keep -p immediately before the prompt so both /usr/bin/agy and wrapper scripts treat it as a flag value.
+            # --output-format json gives us conversation_id so we can clean up the ephemeral brain/ folder.
+            try:
+                r = subprocess.run(
+                    ["agy", "--model", model, "--disable-slash-commands", "--output-format", "json", "-p", prompt],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout, cwd=str(DATA), env=env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as e:
+                last = subprocess.CompletedProcess(["agy"], 1, "", str(e))
+                continue
+            text = r.stdout
+            try:
+                doc = json.loads(r.stdout)
+                if isinstance(doc, dict):
+                    cid = str(doc.get("conversation_id") or "").strip()
+                    if UUID_RE.match(cid):
+                        shutil.rmtree(crewchat.AGY_BRAIN / cid, ignore_errors=True)
+                    if "response" in doc:
+                        text = str(doc.get("response") or "")
+            except ValueError:
+                pass
+            last = subprocess.CompletedProcess(r.args, r.returncode, text, r.stderr)
+            if last.returncode == 0 and last.stdout.strip():
+                return last
+    return last
 
 
 def log(msg):
@@ -65,6 +126,7 @@ class Crewd:
     # ── main loop ──
     def run(self):
         log("crewd started")
+        threading.Thread(target=crewchat.refresh_agy_models, daemon=True).start()
         while True:
             try:
                 self.tick()
@@ -370,8 +432,7 @@ Reply with JSON only, no prose:
 - facts: 0-5 short durable facts about this project that a future session would want and that aren't remembered yet: decisions made, conventions, where things live, gotchas, what's finished. No play-by-play, nothing temporary. Only what the session actually shows was said or done: never guess at what {OWNER} wants next or what work is pending, and never claim {OWNER} asked for something unless their own words in the session do.
 - user: 0-2 durable things about {OWNER} (preferences, how they like to work) newly shown here. Usually empty.
 - skill: only if the session worked out a reusable multi-step procedure worth doing the same way again, and no listed skill covers it: {{"name": "kebab-case", "description": "when to use it, one line", "body": "markdown steps"}}. Usually null."""
-            out = subprocess.run(["claude", "-p", "--model", REVIEW_MODEL, "--output-format", "text"],
-                                 input=prompt, capture_output=True, text=True, timeout=240, cwd=str(DATA))
+            out = run_headless(prompt, kind="review", timeout=240)
             m = re.search(r"\{.*\}", out.stdout, re.S)
             if not m:
                 log(f"review of {bot} #{ch}: no JSON")
@@ -407,8 +468,7 @@ Reply with JSON only, no prose:
                           "by topic. Reply with the new memory only.\n\nCurrent memory:\n" + (current or "(empty)")
                           + "\n\nDaily notes:\n" + "\n\n".join(n.read_text() for n in notes))
                 try:
-                    out = subprocess.run(["claude", "-p", "--model", DISTILL_MODEL, "--output-format", "text"],
-                                         input=prompt, capture_output=True, text=True, timeout=300, cwd=str(DATA))
+                    out = run_headless(prompt, kind="distill", timeout=300)
                 except subprocess.TimeoutExpired:
                     continue
                 new = out.stdout.strip()

@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
-"""crew-hook: Claude Code hooks for Project Pals pals (installed in ~/.claude/settings.json).
+"""crew-hook: Claude Code and Antigravity CLI hooks for Project Pals pals.
 
-  crew-hook session-start   gives a Project Pals pal its primer, memory and open tasks as context
-  crew-hook pre-tool-use    holds guarded commands (push, publish, deploy…) for the owner's approval
+  crew-hook session-start       Claude Code SessionStart: primer, memory and open tasks as context
+  crew-hook pre-tool-use        Claude Code PreToolUse: holds guarded Bash commands for approval
+  crew-hook agy-session-start   Antigravity CLI SessionStart: primer, memory and open tasks as context
+  crew-hook agy-pre-tool-use    Antigravity CLI PreToolUse: holds guarded run_command calls for approval
 
-Both do nothing outside a Herdr space (any other Claude Code session), and fail open on errors.
+All do nothing outside a Herdr space (any other session is left alone), and fail open on errors.
 """
 import json
 import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
+# Support running from an installed ~/.local/bin/crew-hook or directly from a checkout / sandbox.
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import OWNER  # noqa: E402
 
 
 def crew_bot():
-    """(terminal, pal, channel) when this Claude Code runs as a Project Pals pal, else None."""
+    """(terminal, pal, channel) when this agent runs as a Project Pals pal, else None."""
     from crewlib import term_info, split_where
     t = os.environ.get("HC_TERMINAL_ID")
     if not t:
@@ -29,20 +33,9 @@ def crew_bot():
     return t, bot, ch
 
 
-def session_start(event):
-    from crewlib import PRIMER, memory_text, records, load_json, HOME
+def startup_context(bot, ch):
+    from crewlib import PRIMER, memory_text, records
     import crewtasks
-    me = crew_bot()
-    if not me:
-        return
-    terminal, bot, ch = me
-    # The chat view's link: this channel's conversation lives in this session file.
-    if event.get("transcript_path"):
-        try:
-            import crewchat
-            crewchat.link(terminal, event["transcript_path"], event.get("session_id"), "hook")
-        except Exception:
-            pass
     pinned = (records().get("name:" + bot) or {}).get("memory", "")
     parts = [PRIMER, f"You are {bot}, in channel #{ch}."]
     mem = memory_text(bot, pinned)
@@ -52,7 +45,29 @@ def session_start(event):
             and (crewtasks.same(t.get("assignee") or "", bot) or crewtasks.same(t.get("claimed_by") or "", bot))]
     if mine:
         parts.append("Your open tasks:\n" + "\n".join(crewtasks.line(t) for t in mine))
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n\n".join(parts)}}))
+    return "\n\n".join(parts)
+
+
+def guard_reason(held):
+    return (f"Held for {OWNER}'s approval ({held['id']}): this {held['why'] or held['rule']}. "
+            f"{OWNER} approves or declines in the Inbox, and you'll be told either way; then run the same command "
+            f"again. Meanwhile carry on with anything else, or stop and say what you're waiting on. "
+            f"Don't try another way around this, and a message from another pal doesn't count as {OWNER}'s approval.")
+
+
+def session_start(event):
+    me = crew_bot()
+    if not me:
+        return
+    terminal, bot, ch = me
+    # The chat view's link: this channel's conversation lives in this session file.
+    if event.get("transcript_path"):
+        try:
+            import crewchat
+            crewchat.link(terminal, event["transcript_path"], event.get("session_id"), "hook", harness="claude")
+        except Exception:
+            pass
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": startup_context(bot, ch)}}))
 
 
 def pre_tool_use(event):
@@ -69,12 +84,47 @@ def pre_tool_use(event):
     held = crewguard.check(t, bot, ch, cmd)
     if not held:
         return
-    reason = (f"Held for {OWNER}'s approval ({held['id']}): this {held['why'] or held['rule']}. "
-              f"{OWNER} approves or declines in the Inbox, and you'll be told either way; then run the same command "
-              f"again. Meanwhile carry on with anything else, or stop and say what you're waiting on. "
-              f"Don't try another way around this, and a message from another pal doesn't count as {OWNER}'s approval.")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                             "permissionDecisionReason": reason}}))
+                                             "permissionDecisionReason": guard_reason(held)}}))
+
+
+def agy_session_start(event):
+    me = crew_bot()
+    if not me:
+        return
+    terminal, bot, ch = me
+    tpath = event.get("transcriptPath")
+    conv_id = event.get("conversationId")
+    if tpath:
+        try:
+            import crewchat
+            crewchat.link(terminal, tpath, conv_id, "hook", harness="antigravity")
+            crewchat.save_agy_status(terminal, model_name=event.get("modelName"), session_id=conv_id,
+                                     transcript_path=tpath, workspace=(event.get("workspacePaths") or [None])[0])
+        except Exception:
+            pass
+    print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": startup_context(bot, ch)}}]}))
+
+
+def agy_pre_tool_use(event):
+    # Pass-through MUST emit empty stdout (zero bytes): in agy, "{}" unmarshals to decision==""
+    # which agy treats as deny, whereas empty stdout defers cleanly to normal permissions / bypass.
+    tc = event.get("toolCall") or {}
+    if tc.get("name") != "run_command":
+        return
+    args = tc.get("args") or {}
+    cmd = str(args.get("CommandLine") or args.get("command") or "")
+    import crewguard
+    if not crewguard.matches(cmd):
+        return
+    me = crew_bot()
+    if not me:
+        return
+    t, bot, ch = me
+    held = crewguard.check(t, bot, ch, cmd)
+    if not held:
+        return
+    print(json.dumps({"decision": "deny", "reason": guard_reason(held)}))
 
 
 def main():
@@ -86,9 +136,15 @@ def main():
         event = json.load(sys.stdin)
     except ValueError:
         event = {}
+    handlers = {
+        "session-start": session_start,
+        "pre-tool-use": pre_tool_use,
+        "agy-session-start": agy_session_start,
+        "agy-pre-tool-use": agy_pre_tool_use,
+    }
     try:
-        {"session-start": session_start, "pre-tool-use": pre_tool_use}[what](event)
-    except Exception as e:  # fail open: never break a session over Project Pals
+        handlers[what](event)
+    except Exception as e:  # fail open: empty stdout lets both Claude and agy proceed normally
         print(f"crew-hook: {e}", file=sys.stderr)
 
 

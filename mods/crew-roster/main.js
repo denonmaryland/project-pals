@@ -259,7 +259,8 @@ export default class CrewRoster extends View {
     if (!ag) return "";
     const title = (ag.title ?? "").replace(/^[^\p{L}\p{N}\[(]+/u, "").trim();
     const ch = channelName({ name: ag.tab_name });
-    const boring = !title || /^(claude|claude code|codex|grok|gemini|opencode|bash|zsh)$/i.test(title);
+    const boring = !title || /^(claude|claude code|antigravity|antigravity cli|agy|codex|grok|gemini|opencode|hermes|bash|zsh|fish)$/i.test(title)
+      || /\s[-—]\s*(agy|antigravity|fish|bash|zsh)$/i.test(title);
     const what = boring ? statusWord(ag.status ?? "idle") : title;
     return space.tabs.length > 1 ? `[${ch}] ${what}` : what;
   }

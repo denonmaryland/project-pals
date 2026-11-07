@@ -18,8 +18,8 @@ Talking
   pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#ch]>...
 
 Hiring
-  pal hire <Name> [--harness claude] [--model haiku|sonnet|opus] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
-  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
+  pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
+  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
                                      a new channel; --worktree gives it its own git branch and folder
 
 Work
@@ -39,8 +39,8 @@ Memory and skills
   pal skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
 
 Settings
-  pal settings                      who the pals work for, and whether new pals bypass permissions
-  pal settings owner "Name" | bypass on|off
+  pal settings                      who the pals work for, head pal, bypass, and background LLM
+  pal settings owner "Name" | head "Name" | bypass on|off | llm auto|claude|agy
 
 Updates
   pal version                       what's installed
@@ -64,7 +64,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
@@ -697,11 +698,11 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
 
 
 def cmd_settings(rest):
-    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off"""
+    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off | pal settings llm auto|claude|agy"""
     from crewlib import save_settings
     if not rest:
         st = settings()
-        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}")
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
         return
     if ME and is_bot_terminal(ME):
         die("settings are the owner's to change, not a pal's")
@@ -710,6 +711,8 @@ def cmd_settings(rest):
         st = save_settings(owner=val)
     elif key == "bypass" and val in ("on", "off"):
         st = save_settings(bypass=val == "on")
+    elif key == "llm" and val in ("auto", "claude", "agy"):
+        st = save_settings(llm=val)
     elif key == "head" and val:
         if "#" in val or val.startswith("@"):
             die("a pal's name can't have # in it or start with @")
@@ -726,10 +729,10 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings llm auto|claude|agy')
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
-    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'}")
+    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'} · llm: {st.get('llm', 'auto')}")
 
 
 UPDATE_LOG = DATA / "crew-update.log"
@@ -861,7 +864,7 @@ def main(argv):
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
     elif cmd == "channel" and len(rest) >= 2:
-        pos, o = opts(rest, ("brief", "category", "harness", "base"), ("worktree",))
+        pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
         extra = {}
         if o.pop("worktree", False):
             space, _ = find(pos[0], spaces)
@@ -870,7 +873,8 @@ def main(argv):
         o.pop("base", None)
         out = request("channel", spaces, bot=pos[0], name=" ".join(pos[1:]), **o, **extra)
         print(f"{out['bot']} now has {out['channel']}" + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
-        watch_for_trust(out["bot"], out["channel"])
+        if "claude" in str(out.get("argv") or o.get("harness") or "").lower():
+            watch_for_trust(out["bot"], out["channel"])
     elif cmd == "invite" and len(rest) >= 2:
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):

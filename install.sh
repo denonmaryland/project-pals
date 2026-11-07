@@ -2,13 +2,15 @@
 # Install Project Pals into the Herdr app home: its layout (pals) and the crew-* mods, plus the
 # commands pals use (pal, pal-room; the older names buddy, botz and crew still work).
 #
-#   ./install.sh                 everything (the helpers too: see below)
-#   ./install.sh --no-helpers    only the layout, mods and commands
+#   ./install.sh                    everything (the helpers too: see below)
+#   ./install.sh --no-claude-hooks  helpers + Antigravity CLI hooks, leaving ~/.claude/settings.json alone
+#   ./install.sh --no-agy-hooks     helpers + Claude Code hooks, leaving ~/.gemini/config/hooks.json alone
+#   ./install.sh --no-helpers       only the layout, mods and commands
 #
 # Helpers: crewd (a user service that queues messages between turns, runs routines, reports back
-# and keeps memory) and Claude Code hooks + status line (pal primer and memory at session start,
-# the approval gate, model/context facts for the chat view). They change files outside Herdr:
-# ~/.config/systemd/user and ~/.claude/settings.json (backed up first).
+# and keeps memory) plus Claude Code and Antigravity CLI hooks (pal primer and memory at session
+# start, the approval gate, model/context facts for the chat view). They change files outside Herdr:
+# ~/.config/systemd/user, ~/.claude/settings.json and ~/.gemini/config/hooks.json (backed up first).
 #
 # Herdr hot-reloads mods and layouts, so a running window picks this up at once. Previous copies
 # are backed up to ~/.config/herdr-app/.crew-backups/. Your pals, rooms and memory are never touched.
@@ -19,10 +21,14 @@ home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 stamp="$(date +%Y%m%d-%H%M%S)"
 backup="$home/.crew-backups/$stamp"
 helpers=1
+claude_hooks=1
+agy_hooks=1
 from="local"
 for arg in "$@"; do
   case "$arg" in
-    --no-helpers) helpers=0 ;;
+    --no-helpers) helpers=0; claude_hooks=0; agy_hooks=0 ;;
+    --no-claude-hooks) claude_hooks=0 ;;
+    --no-agy-hooks) agy_hooks=0 ;;
     --from-release) from="release" ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -93,10 +99,13 @@ if [[ $helpers -eq 1 ]]; then
   else
     echo "skipped crewd: no systemd user session here (messages are typed in directly; no routines or callbacks)"
   fi
-  # Claude Code hooks and status line.
-  python3 "$src/install-hooks.py" "$home/.crew-backups/$stamp" || echo "skipped the Claude Code hooks (see above)"
-  # Shared skills: link any into ~/.claude/skills and ~/.codex/skills.
-  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewskills; crewskills.curate(lambda *_: None)' "$HOME/.local/lib/herdr-crew" || true
+  # Claude Code and Antigravity CLI hooks (plus Claude's status line).
+  hook_flags=()
+  [[ $claude_hooks -eq 0 ]] && hook_flags+=(--no-claude)
+  [[ $agy_hooks -eq 0 ]] && hook_flags+=(--no-agy)
+  python3 "$src/install-hooks.py" ${hook_flags[@]+"${hook_flags[@]}"} "$home/.crew-backups/$stamp" || echo "skipped the agent hooks (see above)"
+  # Shared skills: link any into ~/.claude/skills, ~/.codex/skills and ~/.gemini/config/skills.
+  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewskills, crewchat; crewskills.curate(lambda *_: None); crewchat.refresh_agy_models()' "$HOME/.local/lib/herdr-crew" || true
 fi
 
 # Settings: who the pals work for (your git name, else your username) and bypass (off). Set once;
@@ -137,11 +146,12 @@ python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib
 
 # What's installed, for the updater (About → Check for updates).
 mkdir -p "$home/data"
-python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$from" <<'PY'
+python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$claude_hooks" "$agy_hooks" "$from" <<'PY'
 import json, sys, time
-manifest, out, version, helpers, source = sys.argv[1:]
+manifest, out, version, helpers, claude_hooks, agy_hooks, source = sys.argv[1:]
 m = json.load(open(manifest))
 json.dump({"name": m.get("name"), "repo": m.get("repo"), "version": version, "helpers": helpers == "1",
+           "claude_hooks": claude_hooks == "1", "agy_hooks": agy_hooks == "1",
            "source": source, "installed": int(time.time())}, open(out, "w"), indent=2)
 PY
 
