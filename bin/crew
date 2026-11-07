@@ -341,24 +341,53 @@ def cmd_tell(spaces, spec, text, now=False):
 def cmd_ask(spaces, spec, text, timeout):
     space, tab, t = target(spaces, spec)
     deadline = time.time() + timeout
-    while (term_info(t).get("status") or {}).get("state") == "working" and time.time() < deadline:
-        time.sleep(2)
-    if (term_info(t).get("status") or {}).get("state") == "blocked":
-        die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
-    before = term_info(t).get("turn", 0)
     me, name = whoami(spaces)
     head = from_bot(name) if me else f"[from {OWNER}]"
     import crewchat
-    linked = t in crewchat.links()
-    sent_at = now_ms()
-    send_now(t, f"{head} asks: {text}" + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
+    from crewlib import QUEUE, hooked
+    status = lambda: (term_info(t).get("status") or {}).get("state")
     started = False
+    midturn = status() == "working" and hooked(t) and daemon_alive()
+    if midturn:
+        # Busy, with delivery hooks: they hand it the question mid-turn, so ask now instead of
+        # waiting the whole turn out; its answer starts once the hook has taken the message.
+        before = term_info(t).get("turn", 0)
+        item = enqueue(t, f"{head} asks: {text}\n(Answer it in your next message, then carry on.)",
+                       sender=name, kind="ask")
+        f = QUEUE / t / f"{item['at']}-{item['id']}.json"
+        sent_at = now_ms()
+        while (f.exists() or f.with_name(f.name + ".taken").exists()) and time.time() < deadline:
+            sent_at = now_ms()   # last moment it was still waiting: its answer comes after this
+            time.sleep(0.1)
+        if f.exists():   # never handed over (a draft in the way, or it's blocked): don't leave it behind
+            from crewlib import claim_queue, finish_claimed
+            finish_claimed(claim_queue(t, only=[f]))
+            die(f"{space['name']} #{chan(tab)} didn't take the question within {timeout}s; nothing was sent")
+    else:
+        while status() == "working" and time.time() < deadline:
+            time.sleep(2)
+        if status() == "blocked":
+            die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
+        before = term_info(t).get("turn", 0)
+        linked = t in crewchat.links()
+        sent_at = now_ms()
+        send_now(t, f"{head} asks: {text}" + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
+    last, still, idle = None, 0, 0
     while time.time() < deadline:
         info = term_info(t)
         state = (info.get("status") or {}).get("state")
         if state == "working" or info.get("turn", 0) > before:
             started = True
-        if started and state != "working":
+        if midturn:
+            # It answers and carries on with its own work: return once the answer stops growing
+            # (or its turn ends), not when the whole turn does.
+            reply = crewchat.replies_since(t, sent_at)
+            still = still + 1 if reply and reply == last else 0
+            last = reply
+            idle = idle + 1 if state != "working" else 0
+            if still >= 4 or (idle >= 2 and reply) or idle >= 4:
+                break
+        elif started and state != "working":
             break
         time.sleep(1.5)
     else:

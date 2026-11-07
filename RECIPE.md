@@ -215,6 +215,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   mid-turn or as its turn ends without typing; crewd still types to idle pals. Queue files are
   claimed by renaming them to `.taken`, so crewd and a hook never deliver the same one. Replies for
   `pal ask` and callbacks come from the pal's session file, the screen only when it has none.
+  `pal ask` to a busy pal with hooks doesn't wait its turn out: the question goes in mid-turn and
+  the answer comes back as soon as it's written.
+- **agy gets its primer back after compacting:** agy drops everything before a compaction's
+  `CHECKPOINT` entry, the SessionStart primer included, so `agy-pre-invocation` watches the session
+  file (only the bytes added since the last call) and injects the primer again once per compaction.
 - **The gate sees only the line a pal types:** a script that pushes or publishes inside itself
   (a repo's `./release`) goes around the per-command rules, so release scripts have their own rule
   (`release-script`). An approval is good for one run of that exact command, and lapses

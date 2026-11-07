@@ -8,7 +8,8 @@
   crew-hook stop                Claude Code Stop: messages that came in during the turn keep it going
   crew-hook post-tool-use       Claude Code PostToolUse: hands over messages mid-turn, between tools
   crew-hook agy-stop            Antigravity CLI Stop: the same as stop
-  crew-hook agy-pre-invocation  Antigravity CLI PreInvocation: hands over messages before each model call
+  crew-hook agy-pre-invocation  Antigravity CLI PreInvocation: hands over messages before each model call,
+                                and the primer again after agy compacts the conversation
 
 The message hooks take the pal's queue (the one crewd types from) so nothing is typed over the
 input box; crewd still types to idle pals.
@@ -212,8 +213,39 @@ def agy_stop(event):
         print(json.dumps({"decision": "continue", "reason": text}))
 
 
+def compacted(terminal, tpath):
+    """True once for each compaction agy wrote to its session file since the last call. It drops
+    everything before its CHECKPOINT entry, the SessionStart primer included. Reads only what was
+    appended since last time: this runs before every model call."""
+    from crewlib import DATA, load_json, save_json
+    seen_file = DATA / "crew-agy-seen" / f"{terminal}.json"
+    seen = load_json(seen_file, {})
+    try:
+        size = os.path.getsize(tpath)
+    except OSError:
+        return False
+    start = seen.get("offset", size) if seen.get("path") == tpath and seen.get("offset", 0) <= size else size
+    if start == size and seen.get("path") == tpath:
+        return False
+    with open(tpath, "rb") as f:
+        f.seek(start)
+        new = f.read(size - start)
+    new = new[:new.rfind(b"\n") + 1]   # whole lines only; a half-written one waits for next time
+    seen_file.parent.mkdir(parents=True, exist_ok=True)
+    save_json(seen_file, {"path": tpath, "offset": start + len(new)})
+    return b'"type":"CHECKPOINT"' in new or b'"type": "CHECKPOINT"' in new
+
+
 def agy_pre_invocation(event):
     text = inbox(event, "antigravity")
+    t, tpath = os.environ.get("HC_TERMINAL_ID"), event.get("transcriptPath")
+    try:   # the messages are already off the queue: whatever happens here, they still go out
+        if t and tpath and interactive_agent() and compacted(t, tpath):
+            me = crew_bot()
+            if me:
+                text = startup_context(me[1], me[2]) + ("\n\n" + text if text else "")
+    except Exception:
+        pass
     if text:
         print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": text}}]}))
 

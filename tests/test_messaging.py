@@ -118,6 +118,28 @@ class Hooks(unittest.TestCase):
         self.assertEqual(crewchat.links()["tLk"]["transcript"], str(f))
 
 
+class AgyCompaction(unittest.TestCase):
+    def test_each_checkpoint_is_seen_once(self):
+        loader = importlib.machinery.SourceFileLoader("crew_hook", str(REPO / "bin" / "crew-hook"))
+        h = importlib.util.module_from_spec(importlib.util.spec_from_loader("crew_hook", loader))
+        loader.exec_module(h)
+        f = T / "agy-compact" / "transcript.jsonl"
+        f.parent.mkdir()
+
+        def add(e):
+            with f.open("a") as w:
+                w.write(json.dumps(e, separators=(",", ":")) + "\n")
+        add({"type": "CHECKPOINT", "content": "# Resuming from a compaction"})   # before the pal was watched
+        self.assertFalse(h.compacted("tK", str(f)))
+        add({"type": "PLANNER_RESPONSE", "content": "hola"})
+        self.assertFalse(h.compacted("tK", str(f)))
+        add({"type": "CHECKPOINT", "content": "# Resuming from a compaction"})
+        with f.open("a") as w:
+            w.write('{"type":"PLANNER_RESP')   # half-written line: left for next time
+        self.assertTrue(h.compacted("tK", str(f)))
+        self.assertFalse(h.compacted("tK", str(f)))
+
+
 class Queue(unittest.TestCase):
     def test_a_claim_is_exclusive_and_can_be_undone(self):
         queue("tC", "x")
