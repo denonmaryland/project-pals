@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, mascot, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone } from "./crew.js";
+import { botOf, updateBot, mascot, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone } from "./crew.js";
 
 export default class CrewDuplicate extends View {
   init(_props, cx) {
@@ -58,6 +58,7 @@ export default class CrewDuplicate extends View {
       const args = ["channel", space.name, name.slice(1), "--worktree", "--category", category];
       if (brief) args.push("--brief", brief);
       if (this.harness) args.push("--harness", this.harness.key);
+      if (this.model !== undefined) args.push("--model", this.model ?? "");
       // Stay open (saying so) until the branch is made: a dialog that closes first ends this mod,
       // and the notice with it.
       this.busy = true;
@@ -69,9 +70,10 @@ export default class CrewDuplicate extends View {
       return;
     }
     // The pal's brain: as it was hired, else what runs in it now; none: a shell.
+    const brainKey = this.harness?.key ?? bot.harness;
     let argv = this.harness ? withBypass(this.harness.key, this.harness.run) : (bot.record?.argv ?? (this.same ? withBypass(this.same.key, this.same.run) : undefined));
     // A model picked here goes on this channel's own command line ("Your default" drops the pal's).
-    if (this.model !== undefined && argv && (this.harness?.key ?? bot.harness) === "claude") argv = withModel(argv, "claude", this.model);
+    if (this.model !== undefined && argv && modelsFor(brainKey, argv)) argv = withModel(argv, brainKey, this.model);
     updateBot(bot.record ?? bot, (b) => ({
       ...b,
       categories: { ...(b.categories ?? {}), [name]: category },
@@ -79,9 +81,10 @@ export default class CrewDuplicate extends View {
       brains: this.harness ? { ...(b.brains ?? {}), [name]: this.harness.key } : (b.brains ?? {}),
     }));
     const memory = (bot.memory ?? "").trim();
-    const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
+    const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, primerHint(argv, brainKey), memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
+    const spec = launchSpec(brainKey, argv, argv ? task : "");
     closeOverlay(props().overlay);
-    run("tab.new", { space: space.id, name, argv: argv || undefined, folder: bot.folder || undefined, task: argv ? (task || undefined) : undefined });
+    run("tab.new", { space: space.id, name, argv: spec.argv, folder: bot.folder || undefined, task: spec.task });
   }
 
   key(e, cx) {
@@ -131,7 +134,7 @@ export default class CrewDuplicate extends View {
     const current = this.harness ?? this.same;
     const brainName = this.harness ? this.harness.name : `${bot.harnessName ?? "Shell"} (same as ${bot.name.split(" - ")[0]})`;
     const brainRow = row("dup-brain", "Brain", h_flex().items_center().gap(8)
-      .when(Boolean(current), (el) => el.child(image(mascot(current.key, "calm")).size(20)))
+      .when(Boolean(current), (el) => el.child(image(mascot(current.key, "calm", undefined, current.run)).size(20)))
       .child(div().text_size(13).text_color(t.muted).child(brainName))
       .child(svg(`mods/crew-roster/icons/${this.pickBrain ? "chevron-down" : "chevron-right"}.svg`).size(11).text_color(t.dim)),
       (_e, cx) => { this.pickBrain = !this.pickBrain; cx.notify(); });
@@ -139,26 +142,29 @@ export default class CrewDuplicate extends View {
       ...this.agents.filter((x) => x.key !== bot.harness).map((x) => ({ key: x.key, name: x.name, sub: "", ag: x }))];
     const brainList = v_flex().px(8).pb(8).children(options.map((o, i) => {
       const on = (this.harness?.key ?? null) === o.key;
+      const runArgv = o.ag?.run ?? bot.record?.argv ?? this.same?.run;
       return h_flex().id(`brain-${i}`).items_center().gap(10).px(10).py(7).rounded(10).cursor_pointer()
         .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
-        .on_click((_e, cx) => { this.harness = o.ag; this.pickBrain = false; cx.notify(); })
-        .child(image(mascot(o.key ?? bot.harness, "calm")).size(22))
+        .on_click((_e, cx) => { this.harness = o.ag; this.model = undefined; this.pickModel = false; this.pickBrain = false; cx.notify(); })
+        .child(image(mascot(o.key ?? bot.harness, "calm", undefined, runArgv)).size(22))
         .child(div().flex_1().text_size(13).text_color(t.foreground).child(o.name))
         .when(Boolean(o.sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(o.sub)))
         .when(on, (el) => el.child(svg("mods/crew-roster/icons/check.svg").size(13).text_color(t.accent)));
     }));
 
-    // Claude Code channels can run on another model than the pal (a cheap helper channel, say).
+    // Claude Code and Antigravity CLI channels can run on another model than the pal.
     const brainKey = this.harness?.key ?? bot.harness;
-    const palModel = modelOf(bot.record?.argv);
-    const modelName = (k) => MODELS.find((m) => m.key === k)?.name ?? k;
+    const brainRun = this.harness ? this.harness.run : (bot.record?.argv ?? this.same?.run);
+    const models = modelsFor(brainKey, brainRun);
+    const palModel = !this.harness ? modelOf(bot.record?.argv) : null;
+    const modelName = (k) => (models ?? []).find((m) => m.key === k)?.name ?? k ?? "Your default";
     const modelLabel = this.model === undefined ? `Same as ${bot.name.split(" - ")[0]}${palModel ? ` (${modelName(palModel)})` : ""}` : modelName(this.model);
-    const modelRow = brainKey === "claude" ? row("dup-model", "Model", h_flex().items_center().gap(8)
+    const modelRow = models ? row("dup-model", "Model", h_flex().items_center().gap(8)
       .child(div().text_size(13).text_color(t.muted).child(modelLabel))
       .child(svg(`mods/crew-roster/icons/${this.pickModel ? "chevron-down" : "chevron-right"}.svg`).size(11).text_color(t.dim)),
       (_e, cx) => { this.pickModel = !this.pickModel; cx.notify(); }) : null;
-    const modelOpts = [{ key: undefined, name: `Same as ${bot.name.split(" - ")[0]}`, sub: palModel ? modelName(palModel) : "" }, ...MODELS];
-    const modelList = v_flex().px(8).pb(8).children(modelOpts.map((m, i) => {
+    const modelOpts = models ? [{ key: undefined, name: `Same as ${bot.name.split(" - ")[0]}`, sub: palModel ? modelName(palModel) : "" }, ...models] : [];
+    const modelList = models ? v_flex().id("dup-models").max_h(190).overflow_y_scrollbar().px(8).pb(8).children(modelOpts.map((m, i) => {
       const on = this.model === m.key;
       return h_flex().id(`model-${i}`).items_center().gap(10).px(10).py(7).rounded(10).cursor_pointer()
         .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
@@ -166,7 +172,7 @@ export default class CrewDuplicate extends View {
         .child(div().flex_1().text_size(13).text_color(t.foreground).child(m.name))
         .when(Boolean(m.sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(m.sub)))
         .when(on, (el) => el.child(svg("mods/crew-roster/icons/check.svg").size(13).text_color(t.accent)));
-    }));
+    })) : null;
 
     const toggle = div().w(36).h(22).p(2).rounded_full().bg(this.ownBranch ? t.accent : a(t.foreground, "22")).flex().items_center()
       .when(this.ownBranch, (el) => el.justify_end()).child(div().size(18).rounded_full().bg(t.popover));

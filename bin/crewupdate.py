@@ -185,8 +185,14 @@ def apply(log=print, version=None):
         snap = _snapshot(f"from-{installed().get('version', 'unknown')}")
         log(f"backed up the current version to {snap.name}")
         args = ["bash", str(root / "install.sh"), "--from-release"]
-        if not installed().get("helpers", True):
+        ins_now = installed()
+        if not ins_now.get("helpers", True):
             args.append("--no-helpers")
+        else:
+            if not ins_now.get("claude_hooks", True):
+                args.append("--no-claude-hooks")
+            if not ins_now.get("agy_hooks", True):
+                args.append("--no-agy-hooks")
         try:
             r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
         except BaseException as e:

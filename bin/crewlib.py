@@ -8,7 +8,7 @@ Everything lives under ~/.config/herdr-app/data (HERDR_APP_HOME picks another ho
   crew-routines.json             scheduled prompts; crew-routines.log.jsonl their runs
   crew-tasks.json                the task board
   crew-memory/                   USER.md (the owner, shared) and <pal>/MEMORY.md + notes/<day>.md
-  crew-skills/<name>/SKILL.md    shared skills, linked into ~/.claude/skills and ~/.codex/skills
+  crew-skills/<name>/SKILL.md    shared skills, linked into ~/.claude/skills, ~/.codex/skills and ~/.gemini/config/skills
   crew-approvals/<id>.json       guarded commands waiting on the owner
   crew-policy.json               what needs the owner's approval, and which pals are trusted
   crew-health.json               channels that look stuck
@@ -38,7 +38,8 @@ WORKTREES = DATA / "crew-worktrees"
 ME = os.environ.get("HC_TERMINAL_ID", "")
 SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu", "nushell", "elvish", "xonsh", "pwsh"}
 CHROME = re.compile(r"^[\s─━│┃╭╮╰╯┌┐└┘├┤┬┴┼═║>❯›·•✻✶✳✢⏺⎿…\-_=]*$")
-NOISE = ("bypass permissions", "? for shortcuts", "Update available", " ctx ", "esc to interrupt")
+NOISE = ("bypass permissions", "? for shortcuts", "Update available", " ctx ", "esc to interrupt",
+         "ctrl+o to expand", "Resume with -c", "agy --conversation=")
 
 
 class CrewError(Exception):
@@ -87,7 +88,7 @@ DEFAULT_HEAD = "Orchestrator"   # the head pal's name until the owner picks one
 def settings():
     s = load_json(SETTINGS, {})
     return {**s, "owner": (s.get("owner") or "").strip() or _default_owner(), "bypass": bool(s.get("bypass", False)),
-            "head": (s.get("head") or "").strip() or DEFAULT_HEAD}
+            "head": (s.get("head") or "").strip() or DEFAULT_HEAD, "llm": (s.get("llm") or "auto").strip().lower()}
 
 
 @contextlib.contextmanager
@@ -268,7 +269,7 @@ def screen(address, lines=0):
         return []
 
 
-TIMER = re.compile(r"^\s*[✻✶✳✢·*]\s+\S+ for \d|^\s*❯\s*$|\[hc\] incomplete")
+TIMER = re.compile(r"^\s*[✻✶✳✢·*]\s+\S+ for \d|^\s*[❯>]\s*$|\[hc\] incomplete")
 
 
 # Claude Code asks "Quick safety check: … one you trust?" the first time it runs in a folder, and
@@ -310,16 +311,17 @@ def daemon_alive():
     return time.time() - beat.get("at", 0) < 20
 
 
-# Claude Code's input box: a rule, "❯ " plus whatever is typed (wrapping onto more lines), a rule.
-# Text there that hasn't been sent is someone's draft (usually the owner typing). Pasting a message
-# in would glue it onto that draft and press Enter on both, so nothing is typed in while it's there.
+# Agent input box (Claude Code "❯ " or Antigravity CLI "> "): a rule, the prompt plus whatever is
+# typed (wrapping onto more lines), and a rule. Text there that hasn't been sent is someone's draft
+# (usually the owner typing). Pasting a message in would glue it onto that draft and press Enter on
+# both, so nothing is typed in while it's there.
 RULE = re.compile(r"^\s*[─━]{20,}\s*$")
-PROMPT_LINE = re.compile(r"^\s*❯\s?(.*)$")
-PLACEHOLDER = re.compile(r'^Try "')   # the greyed hint an empty box shows; plain text in hc read
+PROMPT_LINE = re.compile(r"^\s*[❯>]\s?(.*)$")
+PLACEHOLDER = re.compile(r'^(?:Try "|Type a message|Ask anything|Enter a prompt)')   # greyed empty-box hint; plain text in hc read
 
 
 def input_draft(lines):
-    """The unsent text in a Claude Code input box at the bottom of a screen: '' when the box is
+    """The unsent text in an agent input box at the bottom of a screen: '' when the box is
     empty, None when there's no such box (another harness, or a dialog in its place)."""
     rules = [i for i, l in enumerate(lines) if RULE.match(l)]
     if len(rules) < 2 or rules[-1] - rules[-2] < 2:
@@ -333,7 +335,7 @@ def input_draft(lines):
 
 
 def without_input_box(lines):
-    """The screen above Claude Code's input box (and its status lines), when there is one."""
+    """The screen above the agent's input box (and its status lines), when there is one."""
     rules = [i for i, l in enumerate(lines) if RULE.match(l)]
     if input_draft(lines) is None:
         return lines
@@ -411,8 +413,6 @@ def renamed(old, new):
                 hit = True
         if hit:
             save_json(store, items)
-
-
     # Rooms keep each member's name too (pal-room members, @mentions): follow the rename there.
     for path in ROOMS.glob("*.json") if ROOMS.exists() else []:
         meta = load_json(path, None)
@@ -421,6 +421,8 @@ def renamed(old, new):
             m["bot"] = new
         if seats:
             save_json(path, meta)
+
+
 def memory_dir(bot_name):
     return MEMORY / slug(bot_name)
 

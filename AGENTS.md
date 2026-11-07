@@ -11,11 +11,11 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 |---|---|
 | `mods/crew-*/` | Herdr mods (`mod.json` + `main.js`, plus icons). One per sidebar, header, menu, chat view, etc. |
 | `lib/` | Shared JS (`crew.js`, `mascot-art.js`). **Not imported from a shared place:** `install.sh` copies both files into every mod folder. Edit them here, never the copies in an installed mod. |
-| `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code hooks, `crew-statusline` the status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
+| `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code and Antigravity CLI hooks, `crew-statusline` the Claude status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
 | `god/AGENTS.md` | The head pal's standing brief, a template (`{{HEAD}}`, `{{OWNER}}`) rendered into `~/.config/herdr-app/data/crew-god/`. |
 | `layouts/pals.json`, `pals.svg` | The `pals` Herdr layout and its icon. |
 | `systemd/herdr-crew.service` | The user unit that runs `crewd`. |
-| `install.sh`, `install-hooks.py` | The installer. The hooks script edits `~/.claude/settings.json` (it backs it up first). |
+| `install.sh`, `install-hooks.py` | The installer. The hooks script edits `~/.claude/settings.json` and `~/.gemini/config/hooks.json` (backing them up first). |
 | `release` | The release script (see below). |
 | `pals.json`, `VERSION` | The manifest (name, GitHub repo, layout) and the current version, both read by the updater. |
 | `docs/` | Longer notes, e.g. `mac-support.md`. |

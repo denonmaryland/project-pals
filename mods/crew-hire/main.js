@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, machines, notify, pickFolder } from "herdr";
-import { crew, saveCrew, newId, mascot, ROLES, COMPANY, a, withBypass, MODELS, withModel, tone } from "./crew.js";
+import { crew, saveCrew, newId, mascot, ROLES, companyOf, a, withBypass, modelsFor, withModel, launchSpec, primerHint, isClaude, tone } from "./crew.js";
 import { spaces } from "herdr";
 
 export default class CrewHire extends View {
@@ -60,11 +60,14 @@ export default class CrewHire extends View {
       categories: { [channel]: "General" }, briefs: brief ? { [channel]: brief } : {}, memory: "", hired: Date.now(),
     };
     saveCrew({ ...c, bots: [...c.bots, bot] });
+    const hint = primerHint(bot.argv, this.harness.key);
+    const prompt = [brief && `You are ${name}, my ${this.role.toLowerCase()}. ${brief}`, hint].filter(Boolean).join("\n\n");
+    const spec = launchSpec(this.harness.key, bot.argv, prompt);
     closeOverlay(props().overlay);
     run("space.new", {
-      name, tab: channel, argv: bot.argv, machine: this.machine ?? "",
+      name, tab: channel, argv: spec.argv, machine: this.machine ?? "",
       folder: folder || undefined,
-      task: brief ? `You are ${name}, my ${this.role.toLowerCase()}. ${brief}` : undefined,
+      task: spec.task,
     });
     // Link the record to its new space so renaming the space later keeps its memory.
     const made = spaces().find((s) => s.name === name && (s.machine ?? null) === this.machine);
@@ -97,10 +100,12 @@ export default class CrewHire extends View {
 
     const name = this.name.value().trim();
     const h = this.harness;
+    const models = h ? modelsFor(h.key, h.run) : null;
+    const comp = h ? companyOf(h.key, h.run) : "";
 
     // Header: the pal-to-be's face changes with the brain you pick.
     const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
-      .child(image(mascot(h?.key, name ? "done" : "calm")).w(38).h(38).flex_none())
+      .child(image(mascot(h?.key, name ? "done" : "calm", undefined, h?.run)).w(38).h(38).flex_none())
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(17).font_medium().text_color(t.foreground).child("Hire a pal"))
         .child(div().text_size(12.5).text_color(t.dim).child("Any harness, any company, on any of your computers")))
@@ -120,23 +125,28 @@ export default class CrewHire extends View {
       option(`role-${i}`, this.role === r, null, r, null, (_e, cx) => { this.role = r; this.picking = null; cx.notify(); })));
 
     const brainRow = row("hire-brain", "Brain", h_flex().items_center().gap(8)
-      .when(Boolean(h), (el) => el.child(image(mascot(h.key, "calm")).w(20).h(20)))
+      .when(Boolean(h), (el) => el.child(image(mascot(h.key, "calm", undefined, h.run)).w(20).h(20)))
       .child(div().text_size(13).text_color(t.muted).child(this.loading ? "Looking…" : h ? h.name : "None installed"))
-      .when(Boolean(h && COMPANY[h.key]), (el) => el.child(div().text_size(12).text_color(t.dim).child(COMPANY[h.key])))
+      .when(Boolean(comp), (el) => el.child(div().text_size(12).text_color(t.dim).child(comp)))
       .child(chev(this.picking === "brain")), pick("brain"));
     const installed = this.agents.filter((x) => x.installed);
-    // Claude Code can start on a chosen model (cheap helpers on Haiku, say). Only on its own command
-    // line: `/model` inside Claude Code would change your default for every session.
-    const modelRow = h?.key === "claude" ? row("hire-model", "Model", h_flex().items_center().gap(8)
-      .child(div().text_size(13).text_color(t.muted).child(MODELS.find((m) => m.key === this.model)?.name ?? "Your default"))
+    // Claude Code and Antigravity CLI can start on a chosen model (cheap helpers on Haiku / Flash, say).
+    // Passed on the pal's own command line so your global default never changes.
+    const modelRow = models ? row("hire-model", "Model", h_flex().items_center().gap(8)
+      .child(div().text_size(13).text_color(t.muted).child(models.find((m) => m.key === this.model)?.name ?? "Your default"))
       .child(chev(this.picking === "model")), pick("model")) : null;
-    const modelList = v_flex().px(8).pb(8).children(MODELS.map((m, i) =>
-      option(`model-${i}`, this.model === m.key, null, m.name, m.sub, (_e, cx) => { this.model = m.key; this.picking = null; cx.notify(); })));
+    const modelList = models ? v_flex().id("hire-models").max_h(190).overflow_y_scrollbar().px(8).pb(8).children(models.map((m, i) =>
+      option(`model-${i}`, this.model === m.key, null, m.name, m.sub, (_e, cx) => { this.model = m.key; this.picking = null; cx.notify(); }))) : null;
     const missing = this.agents.filter((x) => !x.installed);
     // A long list scrolls inside the dialog, so the Hire button never goes off the bottom.
     const brainList = v_flex().id("hire-brains").max_h(150).overflow_y_scrollbar().px(8).pb(8)
-      .children(installed.map((ag, i) => option(`brain-${i}`, h?.key === ag.key, image(mascot(ag.key, "calm")).w(22).h(22),
-        ag.name, COMPANY[ag.key] ?? "", (_e, cx) => { this.harness = ag; this.picking = null; cx.notify(); })))
+      .children(installed.map((ag, i) => option(`brain-${i}`, h?.key === ag.key, image(mascot(ag.key, "calm", undefined, ag.run)).w(22).h(22),
+        ag.name, companyOf(ag.key, ag.run), (_e, cx) => {
+          this.harness = ag;
+          if (!modelsFor(ag.key, ag.run)?.some((m) => m.key === this.model)) this.model = null;
+          this.picking = null;
+          cx.notify();
+        })))
       .when(missing.length > 0, (el) => el.child(div().px(10).pt(6).text_size(12).text_color(t.dim)
         .child(`Not installed here: ${missing.map((x) => x.name).join(", ")}`)));
 
@@ -168,14 +178,15 @@ export default class CrewHire extends View {
       .child(hair()).child(folderRow)
       .child(hair()).child(channelRow);
     // Claude Code asks once whether to trust a folder it hasn't opened; say so up front.
-    const trustNote = h?.key === "claude" && this.folder.value().trim()
+    const trustNote = isClaude(h?.key, h?.run) && this.folder.value().trim()
       ? div().px(4).text_size(12).text_color(t.dim).child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its channel.")
       : null;
 
     const ready = Boolean(name && h);
+    const pickedModel = models && this.model ? models.find((m) => m.key === this.model)?.name ?? this.model : null;
     const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
       .child(div().min_w(0).truncate().text_size(12).text_color(t.dim)
-        .child(`${this.role} · ${h?.name ?? "no brain"}${h?.key === "claude" && this.model ? ` (${MODELS.find((m) => m.key === this.model).name})` : ""} · ${this.machine ?? "this computer"}`))
+        .child(`${this.role} · ${h?.name ?? "no brain"}${pickedModel ? ` (${pickedModel})` : ""} · ${this.machine ?? "this computer"}`))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("hire-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
         .child(div().id("hire-go").px(18).py(9).rounded_full().cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))

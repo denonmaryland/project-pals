@@ -1,7 +1,7 @@
 # Project Pals
 
-Your coding agents as a crew of pals. Any harness works: Claude Code, Codex, Grok CLI, Gemini CLI,
-opencode, Hermes, Copilot, Cursor, pi.
+Your coding agents as a crew of pals. Any harness works: Claude Code, Antigravity CLI (`agy`),
+Codex, Grok CLI, Gemini CLI, opencode, Hermes, Copilot, Cursor, pi.
 
 Every Herdr space is a pal (a project with a brain), and each of its tabs is a channel, a clone
 working on one thing. Pals have living mascot faces that show what they're doing. You can watch
@@ -117,10 +117,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   window's sidebar show just those pals; no file, everyone. `preview.png` was made this way in a second
   Herdr window (`HERDR_APP_HOME` on a short path, started without the `HC_*` variables), across four
   Omarchy themes.
-- **`pal hire --model haiku|sonnet|opus`** puts `--model` on the hired pal's command line.
+- **`pal hire --model <model>`** puts `--model` on the hired pal's command line.
 - **Models:** Hire and New channel have a **Model** row for Claude Code (Your default · Opus ·
-  Sonnet · Haiku; New channel adds "Same as <pal>"). It goes on that command line as `--model`,
-  never through `/model`, which would change the default for every session.
+  Sonnet · Haiku) and Antigravity CLI (Your default · Gemini 4 Argon · Gemini 3.8 Flash · Claude
+  Opus/Sonnet · GPT-OSS; New channel adds "Same as <pal>"). It goes on that command line as `--model`,
+  never through `/model`, which would change the default for every session. Antigravity CLI initial
+  tasks are passed via `-i <prompt>` rather than positional args so interactive sessions stay alive.
 - **Hire / Add channel / invite:** a pal or you runs `pal hire|channel|invite`. That drops a
   request in `data/crew-requests/`, which the roster carries out with `space.new` / `tab.new`
   and answers with `<id>.result.json`. Your view stays where it was.
@@ -135,10 +137,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Whoever handed out work is told when it's done.
   - Stuck channels (15 minutes of an unchanged screen) get flagged.
   - Routines run on schedule; a reply of NOTHING_NEW stays quiet.
-  - A cheap model reviews channels to save memory notes, distilled nightly.
-  - Chat feeds are built from Claude Code session files.
+  - A cheap model (`claude -p` or `agy -p`, selected via `pal settings llm`) reviews channels to save memory notes, distilled nightly.
+  - Chat feeds and session stats are built from Claude Code (`~/.claude/projects/…`) and Antigravity CLI (`~/.gemini/antigravity-cli/brain/…`) session files.
   - It checks for updates once a day.
-- **Approvals:** with the Claude Code hook, these are held for the owner's approval in the
+- **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
 - **Updates:** About → Check for updates → Update. Downloads the latest release of the repo in
@@ -183,9 +185,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   channel screens to the API.
 - **The helpers change your setup:**
   - They add a systemd user service, `herdr-crew.service`.
-  - They edit `~/.claude/settings.json`: SessionStart and PreToolUse hooks, and the status line
-    command is wrapped by `crew-statusline`, which keeps the original in
-    `data/crew-statusline-original`. The file is backed up first.
+  - They edit `~/.claude/settings.json` (SessionStart and PreToolUse hooks, plus the `crew-statusline` wrapper)
+    and `~/.gemini/config/hooks.json` (`project-pals` SessionStart and PreToolUse `run_command` hooks).
+    Existing files are backed up first.
   - `./install.sh --no-helpers` skips all of that.
 - **Linux only** for the helpers (systemd).
 - **Virtual-list rows can't hold `on_click`:** they render blank. Use the list's
@@ -194,8 +196,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **The chat view must cache its layout:** laying out hundreds of messages every frame makes
   Herdr abort the render ("could not be re-rendered").
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.
-- **Claude Code's session format isn't public:** unknown entries are skipped. Chat view and
-  approvals cover Claude Code only (Codex and others stay terminal-only and un-gated).
+- **Session formats aren't public:** unknown entries are skipped. Chat view and
+  approvals cover Claude Code and Antigravity CLI (Codex and others stay terminal-only and un-gated).
 - **Claude Code's folder-trust question stalls new pals:** a pal or worktree channel in a folder
   Claude Code hasn't seen waits on "Quick safety check … one you trust?". Detect it (whitespace-
   insensitive: "Yes, I trust this folder" plus "Accessing workspace" or "Quick safety check") and
