@@ -140,7 +140,7 @@ export default class CrewHeader extends View {
       // A room: its members' pets overlapping and the room's name, centred, in the chip's style.
       const members = roomMembers(room);
       const faces = h_flex().children(members.slice(0, 5).map((m, i) => div().when(i > 0, (el) => el.ml(-7))
-        .child(mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 28, t))));
+        .child(mascotEl(m.bot, mood(m.status, m.agent), 28, t))));
       return root.justify_center()
         .child(h_flex().id("room-pill").h(30).items_center().gap(8).pl(4).pr(10).rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid)
           .child(faces)

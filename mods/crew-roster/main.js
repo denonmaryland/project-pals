@@ -554,11 +554,13 @@ export default class CrewRoster extends View {
       const members = roomMembers(room);
       const on = shown?.id === room.id;
       const busy = members.some((m) => m.status === "working");
+      const up = members.filter((m) => m.agent).length;
       list.child(v_flex().id(`room-${room.id}`).gap(8).px(12).py(11).rounded(8).cursor_pointer()
+        .when(!up && members.length > 0, (el) => el.opacity(0.55))
         .when(on, (el) => el.bg(a(t.accent, "1f")).border_1().border_color(a(t.accent, "2e")))
         .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "08"))))
         .on_click(() => showRoom(room.id))
-        // Right-click: open or close it.
+        // Right-click: open, sleep/wake its pals, or close it.
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "room", room: room.id } }); })
         .child(h_flex().items_center().justify_between()
           .child(h_flex().items_baseline().gap(3)
@@ -566,8 +568,9 @@ export default class CrewRoster extends View {
             .child(div().text_size(15).when(on, (el) => el.font_medium()).text_color(t.foreground).child(room.name)))
           .when(busy, (el) => el.child(svg(WAVE).w(26).h(8).text_color(t.working))))
         .child(h_flex().items_center().gap(8)
-          .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 18, t))))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} topic${members.length === 1 ? "" : "s"}`)))
+          .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, m.agent), 18, t))))
+          .child(div().truncate().text_size(12).text_color(t.dim)
+            .child(!members.length ? "0 topics" : up ? `${up} of ${members.length} awake` : "all asleep · zzz")))
         .when(Boolean(room.goal), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(room.goal))));
     }
     if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put topics from different pals together, so they can hand each other work."));

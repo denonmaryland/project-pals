@@ -41,6 +41,7 @@ APPROVALS = DATA / "crew-approvals"
 WORKTREES = DATA / "crew-worktrees"
 ME = os.environ.get("HC_TERMINAL_ID", "")
 SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu", "nushell", "elvish", "xonsh", "pwsh"}
+OSC_CLEAR = b"\x1b]7501;state=clear\x07"
 CHROME = re.compile(r"^[\s─━│┃╭╮╰╯┌┐└┘├┤┬┴┼═║>❯›·•✻✶✳✢⏺⎿…\-_=]*$")
 NOISE = ("bypass permissions", "? for shortcuts", "Update available", " ctx ", "esc to interrupt",
          "ctrl+o to expand", "Resume with -c", "agy --conversation=")
@@ -362,6 +363,96 @@ def term_info(address):
         return json.loads(r.stdout) if r.returncode == 0 else {}
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return {}
+
+
+def _proc_root(proc_dir=None):
+    return Path(proc_dir or os.environ.get("CREW_PROC") or "/proc")
+
+
+def proc_comm(pid, proc_dir=None):
+    """The short command name of pid ('fish', 'claude', 'agy'), or '' when gone."""
+    if not pid:
+        return ""
+    proc = _proc_root(proc_dir)
+    if proc.exists():
+        try:
+            return (proc / str(pid) / "comm").read_text().strip()
+        except OSError:
+            return ""
+    if proc != Path("/proc"):
+        return ""
+    try:
+        r = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, timeout=5)
+        return Path(r.stdout.strip()).name if r.returncode == 0 and r.stdout.strip() else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def child_pids(pid, proc_dir=None):
+    """Direct child PIDs of pid (fast /proc read on Linux, pgrep -P fallback elsewhere)."""
+    if not pid:
+        return []
+    proc = _proc_root(proc_dir)
+    if proc.exists():
+        pdir = proc / str(pid)
+        if not pdir.exists():
+            return []
+        tdir = pdir / "task"
+        if tdir.is_dir():
+            files = list(tdir.glob("*/children"))
+            if files:
+                out = []
+                for f in files:
+                    with contextlib.suppress(OSError):
+                        out.extend(int(x) for x in f.read_text().split() if x.isdigit())
+                return out
+        if proc != Path("/proc"):
+            return []
+    elif proc != Path("/proc"):
+        return []
+    try:
+        r = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True, timeout=5)
+        return [int(x) for x in r.stdout.split() if x.isdigit()] if r.returncode == 0 else []
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def shell_is_bare(pid, proc_dir=None):
+    """True when pid is an interactive shell with no child processes running inside it."""
+    return bool(pid) and proc_comm(pid, proc_dir) in SHELLS and not child_pids(pid, proc_dir)
+
+
+def clear_osc_status(pid, proc_dir=None):
+    """Write OSC 7501 state=clear to a shell's pty stdout so herdr-core drops stale agent state."""
+    if not pid:
+        return False
+    proc = _proc_root(proc_dir)
+    fd1 = proc / str(pid) / "fd" / "1"
+    try:
+        if proc == Path("/proc") and not os.readlink(fd1).startswith("/dev/pts/"):
+            return False
+        fd = os.open(fd1, os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            os.write(fd, OSC_CLEAR)
+        finally:
+            os.close(fd)
+        return True
+    except OSError:
+        return False
+
+
+def agent_running(address, info=None, proc_dir=None):
+    """(running, pid, info) checked against the real process tree rather than stuck hc status."""
+    info = term_info(address) if info is None else info
+    if not info or info.get("state") != "live":
+        return False, None, info or {}
+    pid = info.get("pid")
+    if not pid:
+        return False, None, info
+    comm = proc_comm(pid, proc_dir)
+    if comm in SHELLS:
+        return bool(child_pids(pid, proc_dir)), pid, info
+    return bool(comm), pid, info
 
 
 def screen(address, lines=0):

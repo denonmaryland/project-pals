@@ -23,11 +23,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
-                     hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
-                     herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
-                     trust_prompt, trust_notice, input_draft, DraftInTheWay, batch_text, claim_queue,
-                     unclaim, finish_claimed, hooked, tidy_queue, mod_alive)
+from crewlib import (DATA, QUEUE, MEMORY, SKILLS, HOOKED, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
+                     hc_terminals, is_agent, term_info, proc_comm, shell_is_bare, clear_osc_status, screen, meaningful,
+                     split_where, send_now, feed, enqueue, without_input_box, herdr_spaces, find, record_of, records, lead,
+                     chan, memory_dir, remember, today, now_ms, slug, trust_prompt, trust_notice, input_draft, DraftInTheWay,
+                     batch_text, claim_queue, unclaim, finish_claimed, hooked, tidy_queue, mod_alive)
 import crewskills
 import crewroutines
 import crewupdate
@@ -113,6 +113,7 @@ def log(msg):
 class Crewd:
     def __init__(self):
         self.prev = {}            # terminal → status last tick
+        self.shell_pids = {}      # terminal → root shell pid
         self.last_sent = {}       # terminal → when we last typed into it
         self.shots = {}           # terminal → (screen hash, since)
         health = load_json(DATA / "crew-health.json", {})
@@ -143,6 +144,7 @@ class Crewd:
         terms = hc_terminals()
         if not terms:
             return
+        self.reap_osc(terms)
         self.transitions(terms)
         self.deliver(terms)
         self.desk_triage()
@@ -181,6 +183,25 @@ class Crewd:
                 log(f"update available: {info['latest']} (installed {info.get('current')})")
         except Exception as e:
             log(f"update check failed: {e}")
+
+    def reap_osc(self, terms):
+        """Antigravity CLI exits without OSC 7501 state=clear, leaving herdr-core stuck on
+        'antigravity / idle'. When an agent terminal's shell has no children left, clear its pty."""
+        for gone in [a for a in self.shell_pids if a not in terms]:
+            self.shell_pids.pop(gone, None)
+        for addr, t in terms.items():
+            if not is_agent(t):
+                continue
+            pid = self.shell_pids.get(addr)
+            if not pid or not proc_comm(pid):
+                pid = term_info(addr).get("pid")
+                if pid:
+                    self.shell_pids[addr] = pid
+            if pid and shell_is_bare(pid):
+                clear_osc_status(pid)
+                (HOOKED / addr).unlink(missing_ok=True)
+                t["agent"] = proc_comm(pid)
+                t["status"] = None
 
     # ── turns ending ──
     def transitions(self, terms):
@@ -337,6 +358,8 @@ class Crewd:
                     for f, _ in items:
                         f.unlink(missing_ok=True)
                 continue
+            if not is_agent(t):
+                continue   # asleep (bare shell): hold messages until its agent wakes up
             due = [(f, m) for f, m in items if m.get("not_before", 0) <= now_ms()]
             if not due:
                 continue
