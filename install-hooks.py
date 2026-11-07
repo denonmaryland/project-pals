@@ -37,6 +37,9 @@ def install_claude():
     want = {
         "SessionStart": {"matcher": "^(startup|resume|clear|compact)$", "hooks": [{"type": "command", "command": f"{hook} session-start", "timeout": 10}]},
         "PreToolUse": {"matcher": "Bash", "hooks": [{"type": "command", "command": f"{hook} pre-tool-use", "timeout": 10}]},
+        # Messages from other pals: handed over between tools and as a turn ends, instead of typed in.
+        "PostToolUse": {"matcher": ".*", "hooks": [{"type": "command", "command": f"{hook} post-tool-use", "timeout": 10}]},
+        "Stop": {"hooks": [{"type": "command", "command": f"{hook} stop", "timeout": 10}]},
     }
     changed = False
     for event, entry in want.items():
@@ -77,23 +80,19 @@ def install_agy():
     if not isinstance(data, dict):
         print(f"skipped the Antigravity CLI hooks: {hooks_file} isn't a JSON object")
         return
-    want_start = [{"type": "command", "command": f"{hook} agy-session-start", "timeout": 10}]
-    want_pre = [{"matcher": "run_command", "hooks": [{"type": "command", "command": f"{hook} agy-pre-tool-use", "timeout": 10}]}]
+    want = {
+        "SessionStart": [{"type": "command", "command": f"{hook} agy-session-start", "timeout": 10}],
+        "PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": f"{hook} agy-pre-tool-use", "timeout": 10}]}],
+        # Messages from other pals: handed over before each model call and as a turn ends, instead of typed in.
+        "PreInvocation": [{"type": "command", "command": f"{hook} agy-pre-invocation", "timeout": 10}],
+        "Stop": [{"type": "command", "command": f"{hook} agy-stop", "timeout": 10}],
+    }
     cur = data.get("project-pals")
-    has_start = isinstance(cur, dict) and any(
-        isinstance(h, dict) and "crew-hook" in h.get("command", "") and "agy-session-start" in h.get("command", "")
-        for h in cur.get("SessionStart", [])
-    )
-    has_pre = isinstance(cur, dict) and any(
-        isinstance(g, dict) and any(isinstance(h, dict) and "crew-hook" in h.get("command", "") and "agy-pre-tool-use" in h.get("command", "")
-                                    for h in g.get("hooks", []))
-        for g in cur.get("PreToolUse", [])
-    )
-    if has_start and has_pre:
+    cur = cur if isinstance(cur, dict) else {}
+    if all(cur.get(k) == v for k, v in want.items()):
         print("Project Pals's Antigravity CLI hooks were already there")
         return
-    keep = {k: v for k, v in (cur.items() if isinstance(cur, dict) else ()) if k not in ("SessionStart", "PreToolUse")}
-    data["project-pals"] = {**keep, "SessionStart": want_start, "PreToolUse": want_pre}
+    data["project-pals"] = {**cur, **want}
     if write_with_backup(hooks_file, data, "agy-hooks"):
         print("updated Project Pals's Antigravity CLI hooks (backup in %s)" % backup_dir)
     else:

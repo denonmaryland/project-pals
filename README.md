@@ -26,7 +26,7 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 | Harness | Status |
 |---|---|
 | Claude Code | Native: hiring, channels, model picker, hooks, the approval gate, status line and chat view |
-| Antigravity CLI (`agy`) | Native: hiring, channels, model picker, `-i` startup prompt, hooks (`SessionStart` + `PreToolUse`), the approval gate, shared skills, session stats and chat view |
+| Antigravity CLI (`agy`) | Native: hiring, channels, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate, shared skills, session stats and chat view |
 | Codex | Tested as a pal. Shared skills work; the approval gate, hooks and chat view are Claude Code and Antigravity CLI only |
 | Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code as terminal pals. Hooks, the approval gate and chat view are Claude Code and Antigravity CLI only |
 

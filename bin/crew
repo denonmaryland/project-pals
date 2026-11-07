@@ -348,7 +348,10 @@ def cmd_ask(spaces, spec, text, timeout):
     before = term_info(t).get("turn", 0)
     me, name = whoami(spaces)
     head = from_bot(name) if me else f"[from {OWNER}]"
-    send_now(t, f"{head} asks: {text}\n(Answer right here in your reply; {name} is reading your screen.)")
+    import crewchat
+    linked = t in crewchat.links()
+    sent_at = now_ms()
+    send_now(t, f"{head} asks: {text}" + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
     started = False
     while time.time() < deadline:
         info = term_info(t)
@@ -360,6 +363,11 @@ def cmd_ask(spaces, spec, text, timeout):
         time.sleep(1.5)
     else:
         print(f"(still working after {timeout}s; its screen so far:)")
+    reply = crewchat.replies_since(t, sent_at)   # the hooks may have linked it during this turn
+    if reply:
+        print(f"── {space['name']} #{chan(tab)} ──")
+        print(reply)
+        return
     out = screen(t, 200)
     at = max((i for i, l in enumerate(out) if f"{head} asks:" in l), default=-1)
     answer = [l for l in meaningful(out[at + 1:]) if "Answer right here" not in l and "Worked for" not in l and "Crunched for" not in l]

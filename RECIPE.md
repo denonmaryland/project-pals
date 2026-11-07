@@ -185,8 +185,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   channel screens to the API.
 - **The helpers change your setup:**
   - They add a systemd user service, `herdr-crew.service`.
-  - They edit `~/.claude/settings.json` (SessionStart and PreToolUse hooks, plus the `crew-statusline` wrapper)
-    and `~/.gemini/config/hooks.json` (`project-pals` SessionStart and PreToolUse `run_command` hooks).
+  - They edit `~/.claude/settings.json` (SessionStart, PreToolUse, PostToolUse and Stop hooks, plus the
+    `crew-statusline` wrapper) and `~/.gemini/config/hooks.json` (`project-pals` SessionStart, PreToolUse
+    `run_command`, PreInvocation and Stop hooks).
     Existing files are backed up first.
   - `./install.sh --no-helpers` skips all of that.
 - **Linux only** for the helpers (systemd).
@@ -209,6 +210,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   glued to the message, so nothing is typed in while it's there: crewd keeps the messages queued,
   lists the hold under "Waiting on", and delivers once the box is empty. Callbacks never quote
   that unsent text, since it isn't anyone's answer.
+- **Hooks deliver to busy pals:** a Claude Code or agy pal with the hooks installed takes its own
+  queue (`crew-hook stop` / `post-tool-use`, `agy-stop` / `agy-pre-invocation`), so messages reach it
+  mid-turn or as its turn ends without typing; crewd still types to idle pals. Queue files are
+  claimed by renaming them to `.taken`, so crewd and a hook never deliver the same one. Replies for
+  `pal ask` and callbacks come from the pal's session file, the screen only when it has none.
 - **The gate sees only the line a pal types:** a script that pushes or publishes inside itself
   (a repo's `./release`) goes around the per-command rules, so release scripts have their own rule
   (`release-script`). An approval is good for one run of that exact command, and lapses

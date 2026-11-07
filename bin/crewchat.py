@@ -402,6 +402,28 @@ def parse_agy(line, state=None):
     return out
 
 
+def replies_since(terminal, since_ms):
+    """What this channel said (its reply text, not tool calls) after since_ms, read from its
+    session file; None when it has no linked session (callers fall back to its screen)."""
+    lk = links().get(terminal)
+    if not lk or not lk.get("transcript"):
+        return None
+    raw = Path(lk["transcript"])
+    agy = is_agy_link(lk, raw)
+    path = agy_transcript_path(raw) if agy else raw
+    if not path.exists():
+        return None
+    parse = parse_agy if agy else parse_claude
+    out = []
+    with open(path, "rb") as f:
+        f.seek(max(0, path.stat().st_size - CHUNK))   # shortcut: only the last 16 MB of a session is searched
+        for line in f:
+            for b in parse(line.decode("utf-8", "replace")):
+                if b.get("kind") == "bot" and b.get("at", 0) > since_ms:
+                    out.append(b["text"])
+    return "\n\n".join(out)
+
+
 # ── keeping feeds current ─────────────────────────────────────────────────────────────────────
 
 STATUS = DATA / "crew-status"

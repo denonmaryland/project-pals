@@ -5,6 +5,13 @@
   crew-hook pre-tool-use        Claude Code PreToolUse: holds guarded Bash commands for approval
   crew-hook agy-session-start   Antigravity CLI SessionStart: primer, memory and open tasks as context
   crew-hook agy-pre-tool-use    Antigravity CLI PreToolUse: holds guarded run_command calls for approval
+  crew-hook stop                Claude Code Stop: messages that came in during the turn keep it going
+  crew-hook post-tool-use       Claude Code PostToolUse: hands over messages mid-turn, between tools
+  crew-hook agy-stop            Antigravity CLI Stop: the same as stop
+  crew-hook agy-pre-invocation  Antigravity CLI PreInvocation: hands over messages before each model call
+
+The message hooks take the pal's queue (the one crewd types from) so nothing is typed over the
+input box; crewd still types to idle pals.
 
 All do nothing outside a Herdr space (any other session is left alone), and fail open on errors.
 """
@@ -127,6 +134,54 @@ def agy_pre_tool_use(event):
     print(json.dumps({"decision": "deny", "reason": guard_reason(held)}))
 
 
+def inbox(event, harness="claude"):
+    """This pal's waiting messages as one text (taken off the queue), or None. Kept cheap: the
+    agy PreInvocation hook runs before every model call."""
+    t = os.environ.get("HC_TERMINAL_ID")
+    if not t:
+        return None
+    from crewlib import mark_hooked, take_queue
+    mark_hooked(t)
+    # Every event names the session file: link channels that started before the hooks were installed.
+    tpath = event.get("transcript_path") or event.get("transcriptPath")
+    if tpath:
+        try:
+            import crewchat
+            crewchat.link(t, tpath, event.get("session_id") or event.get("conversationId"), "hook", harness=harness)
+        except Exception:
+            pass
+    return take_queue(t)
+
+
+def stop(event):
+    if event.get("stop_hook_active"):
+        return   # already carrying on because of this hook: let the turn end
+    text = inbox(event)
+    if text:
+        print(json.dumps({"decision": "block", "reason": text}))
+
+
+def post_tool_use(event):
+    text = inbox(event)
+    if text:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+
+
+def agy_stop(event):
+    # Stdout stays empty when there's nothing to say (agy reads "{}" as a decision).
+    if event.get("terminationReason") != "NO_TOOL_CALL":
+        return   # canceled, errored or out of budget: don't push it on
+    text = inbox(event, "antigravity")
+    if text:
+        print(json.dumps({"decision": "continue", "reason": text}))
+
+
+def agy_pre_invocation(event):
+    text = inbox(event, "antigravity")
+    if text:
+        print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": text}}]}))
+
+
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else ""
     if what in ("-h", "--help", ""):
@@ -141,6 +196,10 @@ def main():
         "pre-tool-use": pre_tool_use,
         "agy-session-start": agy_session_start,
         "agy-pre-tool-use": agy_pre_tool_use,
+        "stop": stop,
+        "post-tool-use": post_tool_use,
+        "agy-stop": agy_stop,
+        "agy-pre-invocation": agy_pre_invocation,
     }
     try:
         handlers[what](event)

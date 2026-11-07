@@ -26,7 +26,8 @@ sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() /
 from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
                      herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
-                     trust_prompt, trust_notice, input_draft, DraftInTheWay)
+                     trust_prompt, trust_notice, input_draft, DraftInTheWay, batch_text, claim_queue,
+                     unclaim, finish_claimed, hooked)
 import crewskills
 import crewroutines
 import crewchat
@@ -231,10 +232,13 @@ class Crewd:
                        f"It can't go on until {OWNER} answers in its channel; don't answer for {OWNER}.")
             else:
                 lines = screen(addr)
-                tail = meaningful(without_input_box(lines))[-10:]
+                reply = crewchat.replies_since(addr, d["delivered_at"])
+                if reply:
+                    said = "Its reply:\n" + (reply if len(reply) <= 1500 else "…" + reply[-1500:])
+                else:
+                    said = "The end of its screen:\n" + "\n".join(meaningful(without_input_box(lines))[-10:])
                 draft = input_draft(lines)
-                msg = (f"[pal] {bot} #{ch} finished what you asked (\"{ask}\"). The end of its screen:\n"
-                       + "\n".join(tail)
+                msg = (f"[pal] {bot} #{ch} finished what you asked (\"{ask}\"). {said}"
                        + ("\n(Its input box has unsent text: someone is typing there. It hasn't been sent, so it isn't anyone's answer.)" if draft else "")
                        + f"\n(More: pal peek \"{bot}#{ch}\")")
             try:
@@ -276,41 +280,34 @@ class Crewd:
             urgent = [x for x in due if x[1].get("urgent")]
             idle = is_agent(t) and t.get("status") not in ("working", "blocked")
             recently = time.time() - self.last_sent.get(addr, 0) < 6
+            if not idle and hooked(addr):
+                continue   # its hooks hand these over mid-turn or as its turn ends, without typing
             batch = urgent if (urgent and not idle) else (due if idle and not recently else [])
             if not batch:
                 continue
-            text = batch[0][1]["text"] if len(batch) == 1 else \
-                "Messages that came in while you were busy:\n\n" + "\n\n".join(m["text"] for _, m in batch)
+            claimed = claim_queue(addr, only=[f for f, _ in batch])
+            if not claimed:
+                continue   # a hook took them first
             try:
-                send_now(addr, text)
+                send_now(addr, batch_text([m for _, m in claimed]))
             except DraftInTheWay:
+                unclaim(claimed)
                 # Someone's typing in that box: keep the messages until it's sent or cleared.
                 if addr not in self.drafts:
                     bot, ch = split_where(t.get("where"))
                     self.drafts[addr] = {"bot": bot, "channel": ch, "since": now_ms()}
-                    feed("draft", terminal=addr, bot=bot, channel=ch, held=len(batch))
-                    log(f"holding {len(batch)} message(s) for {bot} #{ch}: unsent text in its input box")
+                    feed("draft", terminal=addr, bot=bot, channel=ch, held=len(claimed))
+                    log(f"holding {len(claimed)} message(s) for {bot} #{ch}: unsent text in its input box")
                     self.save_health()
                 continue
             except CrewError as e:
+                unclaim(claimed)
                 log(f"couldn't deliver to {addr}: {e}")
                 continue
             if self.drafts.pop(addr, None) is not None:
                 self.save_health()
             self.last_sent[addr] = time.time()
-            for f, m in batch:
-                f.unlink(missing_ok=True)
-                if m.get("delegation"):
-                    self.delivered(m["delegation"])
-
-    def delivered(self, did):
-        path = DATA / "crew-delegations.json"
-        with locked("delegations"):
-            dels = load_json(path, [])
-            for d in dels:
-                if d.get("id") == did:
-                    d["delivered_at"] = now_ms()
-            save_json(path, dels)
+            finish_claimed(claimed)
 
     # ── stuck channels ──
     def stalls(self, terms):

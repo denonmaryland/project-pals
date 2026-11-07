@@ -381,6 +381,93 @@ def enqueue(terminal, text, sender=None, kind="msg", not_before=0.0, urgent=Fals
     return item
 
 
+def batch_text(msgs):
+    """One message as is; several as one block, oldest first."""
+    if len(msgs) == 1:
+        return msgs[0]["text"]
+    return "Messages that came in while you were busy:\n\n" + "\n\n".join(m["text"] for m in msgs)
+
+
+def claim_queue(terminal, only=None):
+    """Take this terminal's due messages off the queue: [(claimed path, message)], oldest first.
+    Each file is renamed before it's read, so crewd and a hook never both deliver the same one;
+    `only` (paths) limits it to those. Put them back with unclaim(), or drop them with
+    finish_claimed() once they've been delivered."""
+    d = QUEUE / terminal
+    if not d.is_dir():
+        return []
+    out = []
+    for f in sorted(only if only is not None else d.glob("*.json")):
+        taken = f.with_name(f.name + ".taken")
+        try:
+            f.rename(taken)
+            m = json.loads(taken.read_text())
+        except FileNotFoundError:
+            continue   # someone else took it
+        except (OSError, ValueError):
+            taken.unlink(missing_ok=True)
+            continue
+        if m.get("not_before", 0) > now_ms():
+            taken.rename(f)
+            continue
+        out.append((taken, m))
+    return out
+
+
+def unclaim(claimed):
+    for taken, _ in claimed:
+        try:
+            taken.rename(taken.with_name(taken.name[:-len(".taken")]))
+        except OSError:
+            pass
+
+
+def finish_claimed(claimed):
+    for taken, m in claimed:
+        taken.unlink(missing_ok=True)
+        if m.get("delegation"):
+            mark_delivered(m["delegation"])
+
+
+def mark_delivered(did):
+    """A pal tell reached its pal: the sender hears back when that pal's turn ends."""
+    path = DATA / "crew-delegations.json"
+    with locked("delegations"):
+        dels = load_json(path, [])
+        for d in dels:
+            if d.get("id") == did:
+                d["delivered_at"] = now_ms()
+        save_json(path, dels)
+
+
+def take_queue(terminal):
+    """For a hook: this terminal's due messages as one text (now delivered), or None."""
+    claimed = claim_queue(terminal)
+    if not claimed:
+        return None
+    finish_claimed(claimed)
+    return batch_text([m for _, m in claimed])
+
+
+HOOKED = DATA / "crew-hooked"
+
+
+def mark_hooked(terminal):
+    """A delivery hook ran in this terminal: crewd leaves its mid-turn messages to the hooks."""
+    try:
+        HOOKED.mkdir(parents=True, exist_ok=True)
+        (HOOKED / terminal).touch()
+    except OSError:
+        pass
+
+
+def hooked(terminal, within=600):
+    try:
+        return time.time() - (HOOKED / terminal).stat().st_mtime < within
+    except OSError:
+        return False
+
+
 def feed(kind, **fields):
     append_jsonl(FEED, {"at": now_ms(), "kind": kind, **fields})
 
