@@ -277,14 +277,14 @@ export default class CrewSide extends View {
   roomSide(room, root, t, k) {
     const members = roomMembers(room);
     const faces = h_flex().flex_none().children(members.slice(0, 3).map((m, i) => div().when(i > 0, (el) => el.ml(-12))
-      .child(mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 32, t))));
+      .child(mascotEl(m.bot, mood(m.status, m.agent), 32, t))));
     return root
       .child(this.header(t, faces, `#${room.name}`, room.goal || `${members.length} pals`))
       .child(v_flex()
         .child(k.label("Members"))
         .child(this.rows(k, members.map((m, i) => k.row(`mem-${i}`,
           h_flex().items_center().gap(10).min_w(0)
-            .child(mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 26, t))
+            .child(mascotEl(m.bot, mood(m.status, m.agent), 26, t))
             .child(v_flex().min_w(0).gap(1).child(k.text(m.name, t.foreground, 13)).child(k.text(`#${m.channel}`, t.dim, 11.5))),
           m.agent ? k.mark(m.status) : k.text("asleep", t.dim, 11.5),
           () => { if (m.space && m.tab) { showTabs(); run("space.select", { id: m.space.id }); run("tab.select", { id: m.tab.id }); } })))))

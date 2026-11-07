@@ -1,18 +1,27 @@
 // Project Pals menu: what a right-click offers, as a small popup at the pointer.
 // - A tab: pin it, color it (from the theme's own colors, so it follows the theme), rename, close.
 // - A pal: pin it to the top, rename it (its memory and routines follow the name), change its look,
-//   add a channel, put it to sleep.
+//   add a channel, stop/start its agent (freeing RAM while keeping its tabs), or close its space.
 // - A sleeping pal: wake it, unpin it, or forget it (its memory folder stays on disk).
-// - A room: open it, or close it (its transcript is kept).
+// - A room: open it, sleep or wake everyone in it, or close it (its transcript is kept).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
+import { theme, props, closeOverlay, openOverlay, spaces, run, exec, notify, home } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
-  crew, wakePal, forgetPal, rememberModel, rooms, showRoom, deleteRoom, showTabs } from "./crew.js";
+  crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+
+// Stop or wake pals' agents in their existing tabs (so rooms keep their seats). One detached call:
+// closing the popup on click would cut an in-view loop short.
+function power(mode, names) {
+  const who = [...new Set(names.filter(Boolean))];
+  if (!who.length) return;
+  exec("sh", ["-c", 'pal="$1"; shift; nohup "$pal" "$@" >/dev/null 2>&1 </dev/null &', "sh", `${home()}/.local/bin/pal`, mode, ...who]).catch(() => {});
+  notify({ title: mode === "sleep" ? "Putting pals to sleep" : "Waking pals", body: who.join(", "), level: "success", timeout: 3000 });
+}
 
 export default class CrewMenu extends View {
   close() { closeOverlay(props()?.overlay); }
@@ -51,13 +60,17 @@ export default class CrewMenu extends View {
         .child(careful("m-forget", "Forget this pal", "Click again to forget", () => { forgetPal(rec); this.close(); }));
     }
 
-    // A room: open it, or close it (Project Pals keeps its transcript).
+    // A room: open it, sleep or wake its pals, or close it (Project Pals keeps its transcript).
     if (p.what === "room") {
       const room = rooms().find((r) => r.id === p.room);
       if (!room) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That room is gone."));
+      const names = roomMembers(room).map((m) => m.name);
       return root
         .child(title(`#${room.name}`))
         .child(item("m-open", null, "Open", () => showRoom(room.id)))
+        .when(names.length > 0, (el) => el
+          .child(item("m-room-sleep", null, "Sleep all (free RAM)", () => power("sleep", names)))
+          .child(item("m-room-wake", null, "Wake all", () => power("wake", names))))
         .child(line())
         .child(careful("m-close-room", "Close room", "Click again to close it", () => { deleteRoom(room.id); showTabs(); this.close(); }));
     }
@@ -100,6 +113,9 @@ export default class CrewMenu extends View {
       .child(item("m-rename", null, "Rename", () => run("space.rename", { id: space.id })))
       .child(item("m-look", null, "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
       .child(item("m-add", "plus", "New channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })))
+      .child(bot.awake
+        ? item("m-power", null, "Sleep (free RAM)", () => power("sleep", [space.name]))
+        : item("m-power", null, "Wake", () => power("wake", [space.name])))
       // Put to sleep: closes its space (every channel stops; Herdr asks first); it waits under Asleep
       // and a click wakes it.
       .child(line())

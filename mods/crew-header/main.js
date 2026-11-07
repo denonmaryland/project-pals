@@ -70,7 +70,7 @@ export default class CrewHeader extends View {
       // A room: one centered pill, its members' faces overlapping, and the room's name.
       const members = roomMembers(room);
       const faces = h_flex().children(members.slice(0, 5).map((m, i) => div().when(i > 0, (el) => el.ml(-7))
-        .child(mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 22, t))));
+        .child(mascotEl(m.bot, mood(m.status, m.agent), 22, t))));
       return root.relative()
         .child(div().w(30))
         .child(h_flex().id("room-pill").items_center().gap(9).pl(6).pr(14).py(5).rounded_full().bg(a(t.foreground, "0c"))
