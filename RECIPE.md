@@ -132,6 +132,19 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     delay (1.5s + 45ms per character, capped at 9s).
   - After 12 pal messages in a row, room messages stop being delivered until the owner posts.
   - Inviting an asleep pal wakes it in a new `#room` channel.
+- **Sleep and wake (free RAM, keep the tabs):**
+  - `pal sleep <Pal|Pal#ch|#ch>` or `--idle` stops the agent process in a tab and keeps its shell,
+    tab and room seats; the menus have Sleep / Wake for a pal and Sleep all / Wake all for a room
+    (its seats only). Working or blocked pals are skipped without `--force`.
+  - Only a known agent process directly under the tab's shell is signalled (TERM, then KILL), and
+    only when that shell's environment names the terminal: a dev server or editor in the tab, or a
+    remote pal's pid, is never touched.
+  - `pal wake` types the pal's own command back into its shell, resuming the tab's linked session
+    (`claude --resume <id>`, `agy --conversation=<id>`), or starting fresh with the primer hint
+    when there is none: `--continue` could pick another channel's conversation in the same folder.
+  - agy doesn't clear its Herdr status (OSC 7501) when it exits, so a dead agy tab looked awake.
+    Sleep, and crewd for any agent tab whose shell has no children left, write
+    `\e]7501;state=clear\a` to the shell's terminal. Queued messages wait until the pal wakes.
 - **Helper (crewd, optional):**
   - Messages wait for a pal's turn to end.
   - Whoever handed out work is told when it's done.
