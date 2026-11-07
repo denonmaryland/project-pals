@@ -401,6 +401,7 @@ def claim_queue(terminal, only=None):
         taken = f.with_name(f.name + ".taken")
         try:
             f.rename(taken)
+            os.utime(taken)   # tidy_queue counts from the claim, not from when it was queued
             m = json.loads(taken.read_text())
         except FileNotFoundError:
             continue   # someone else took it
@@ -422,21 +423,23 @@ def unclaim(claimed):
             pass
 
 
-def finish_claimed(claimed):
+def finish_claimed(claimed, by_hook=False):
     for taken, m in claimed:
         taken.unlink(missing_ok=True)
         if m.get("delegation"):
-            mark_delivered(m["delegation"])
+            mark_delivered(m["delegation"], by_hook)
 
 
-def mark_delivered(did):
-    """A pal tell reached its pal: the sender hears back when that pal's turn ends."""
+def mark_delivered(did, by_hook=False):
+    """A pal tell reached its pal: the sender hears back when that pal's turn ends. by_hook: handed
+    over inside a running turn, so the next turn end is its answer however soon it comes."""
     path = DATA / "crew-delegations.json"
     with locked("delegations"):
         dels = load_json(path, [])
         for d in dels:
             if d.get("id") == did:
                 d["delivered_at"] = now_ms()
+                d["by_hook"] = by_hook
         save_json(path, dels)
 
 
@@ -445,7 +448,7 @@ def take_queue(terminal):
     claimed = claim_queue(terminal)
     if not claimed:
         return None
-    finish_claimed(claimed)
+    finish_claimed(claimed, by_hook=True)
     return batch_text([m for _, m in claimed])
 
 
@@ -461,11 +464,29 @@ def mark_hooked(terminal):
         pass
 
 
-def hooked(terminal, within=600):
+def hooked(terminal, within=24 * 3600):
+    # Long on purpose: if the hooks are gone, a busy pal's messages just wait until it's idle.
     try:
         return time.time() - (HOOKED / terminal).stat().st_mtime < within
     except OSError:
         return False
+
+
+def tidy_queue(live, stale=120):
+    """Put back messages a crashed crewd or hook claimed but never delivered (at least once beats
+    lost), and forget hook marks of terminals that are gone. live: the terminals still there."""
+    if QUEUE.exists():
+        for d in QUEUE.iterdir():
+            for taken in d.glob("*.taken") if d.is_dir() else ():
+                try:
+                    if time.time() - taken.stat().st_mtime > stale:
+                        unclaim([(taken, None)])
+                except OSError:
+                    pass
+    if HOOKED.exists():
+        for f in HOOKED.iterdir():
+            if f.name not in live:
+                f.unlink(missing_ok=True)
 
 
 def feed(kind, **fields):

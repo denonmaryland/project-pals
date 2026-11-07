@@ -67,6 +67,10 @@ def session_start(event):
     if not me:
         return
     terminal, bot, ch = me
+    if not interactive_agent():
+        return   # a `claude -p` the pal started: not the pal's session, primer or link
+    from crewlib import mark_hooked
+    mark_hooked(terminal)
     # The chat view's link: this channel's conversation lives in this session file.
     if event.get("transcript_path"):
         try:
@@ -100,6 +104,10 @@ def agy_session_start(event):
     if not me:
         return
     terminal, bot, ch = me
+    if not interactive_agent():
+        return   # an `agy -p` the pal started: not the pal's session, primer or link
+    from crewlib import mark_hooked
+    mark_hooked(terminal)
     tpath = event.get("transcriptPath")
     conv_id = event.get("conversationId")
     if tpath:
@@ -134,11 +142,39 @@ def agy_pre_tool_use(event):
     print(json.dumps({"decision": "deny", "reason": guard_reason(held)}))
 
 
+HEADLESS = {"-p", "--print", "--prompt"}   # claude and agy, run for one answer
+SHELLS = {"sh", "bash", "dash", "zsh", "fish", "python3", "python", "crew-hook", "env", "timeout"}
+
+
+def interactive_agent():
+    """True when the agent running this hook reads a terminal: the pal itself, not a `claude -p` /
+    `agy -p` it started, which inherits HC_TERMINAL_ID and must not take the pal's messages."""
+    if os.environ.get("CREW_HOOK_INTERACTIVE") in ("0", "1"):   # tests
+        return os.environ["CREW_HOOK_INTERACTIVE"] == "1"
+    pid = os.getppid()
+    try:
+        while pid > 1:
+            with open(f"/proc/{pid}/stat") as f:
+                stat = f.read()
+            comm = stat[stat.index("(") + 1:stat.rindex(")")]
+            if comm not in SHELLS:
+                # agy's run_command gives children a terminal of their own, so check the flags too.
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    args = f.read().decode("utf-8", "replace").split("\0")
+                if HEADLESS & set(args) or any(a.startswith("--print=") for a in args):
+                    return False
+                return os.readlink(f"/proc/{pid}/fd/0").startswith("/dev/pts/")
+            pid = int(stat[stat.rindex(")") + 2:].split()[1])
+    except (OSError, ValueError):
+        pass
+    return False
+
+
 def inbox(event, harness="claude"):
     """This pal's waiting messages as one text (taken off the queue), or None. Kept cheap: the
     agy PreInvocation hook runs before every model call."""
     t = os.environ.get("HC_TERMINAL_ID")
-    if not t:
+    if not t or not interactive_agent():
         return None
     from crewlib import mark_hooked, take_queue
     mark_hooked(t)

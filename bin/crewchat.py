@@ -414,12 +414,17 @@ def replies_since(terminal, since_ms):
     if not path.exists():
         return None
     parse = parse_agy if agy else parse_claude
+    if agy:
+        since_ms -= since_ms % 1000   # agy stamps whole seconds, at the start of the reply
     out = []
     with open(path, "rb") as f:
-        f.seek(max(0, path.stat().st_size - CHUNK))   # shortcut: only the last 16 MB of a session is searched
+        start = max(0, path.stat().st_size - CHUNK)   # shortcut: only the last 16 MB of a session is searched
+        f.seek(start)
+        if start:
+            f.readline()   # the first line is cut
         for line in f:
             for b in parse(line.decode("utf-8", "replace")):
-                if b.get("kind") == "bot" and b.get("at", 0) > since_ms:
+                if b.get("kind") == "bot" and b.get("at", 0) >= since_ms:
                     out.append(b["text"])
     return "\n\n".join(out)
 

@@ -34,8 +34,11 @@ CrewAI's `crew` alone, for example). Don't remove these aliases or the old-layou
 
 ## Testing
 
-There's no unit test suite. Check changes like this:
+Check changes like this:
 
+0. **Tests:** `python3 -m unittest discover tests` covers messaging (the queue, the delivery hooks,
+   replies from session files, callbacks, the hook installer). It runs in a throwaway HOME and data
+   folder with fake `hc` / `herdr-app` / `systemctl`, so it's safe anywhere; `./release` runs it too.
 1. **Syntax and mods:** the `./release` preflight does `bash -n` on the scripts, `py_compile` on
    the Python, `json.tool` on the JSON and `node --check` on the JS. `herdr-app check <installed mod folder>`
    loads a mod once and reports errors. `install.sh` runs it on every mod at the end.

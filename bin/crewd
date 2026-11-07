@@ -27,7 +27,7 @@ from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, lo
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
                      herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
                      trust_prompt, trust_notice, input_draft, DraftInTheWay, batch_text, claim_queue,
-                     unclaim, finish_claimed, hooked)
+                     unclaim, finish_claimed, hooked, tidy_queue)
 import crewskills
 import crewroutines
 import crewchat
@@ -148,6 +148,7 @@ class Crewd:
         if time.time() - self.last_stall_check > 60:
             self.last_stall_check = time.time()
             self.stalls(terms)
+            tidy_queue(set(terms))
             try:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
             except Exception:
@@ -217,7 +218,7 @@ class Crewd:
             dels = load_json(path, [])
             keep, fire = [], []
             for d in dels:
-                if d.get("to") == addr and d.get("delivered_at") and now_ms() - d["delivered_at"] > 2500:
+                if d.get("to") == addr and d.get("delivered_at") and (d.get("by_hook") or now_ms() - d["delivered_at"] > 2500):
                     fire.append(d)
                 elif now_ms() - d.get("at", 0) < 24 * 3600 * 1000:
                     keep.append(d)
@@ -225,24 +226,28 @@ class Crewd:
                 keep += fire  # still open: it'll finish later
             save_json(path, keep)
         bot, ch = split_where(t.get("where"))
+        # One note per sender: several things asked of the same turn share one reply.
+        by_sender = {}
         for d in fire:
-            ask = " ".join((d.get("text") or "").split())[:90]
+            by_sender.setdefault(d["from"], []).append(d)
+        lines = screen(addr) if what != "blocked" and by_sender else []
+        for sender, ds in by_sender.items():
+            ask = "; ".join('"' + " ".join((d.get("text") or "").split())[:90] + '"' for d in ds)
             if what == "blocked":
-                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked (\"{ask}\"). "
+                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked ({ask}). "
                        f"It can't go on until {OWNER} answers in its channel; don't answer for {OWNER}.")
             else:
-                lines = screen(addr)
-                reply = crewchat.replies_since(addr, d["delivered_at"])
+                reply = crewchat.replies_since(addr, min(d["delivered_at"] for d in ds))
                 if reply:
                     said = "Its reply:\n" + (reply if len(reply) <= 1500 else "…" + reply[-1500:])
                 else:
                     said = "The end of its screen:\n" + "\n".join(meaningful(without_input_box(lines))[-10:])
                 draft = input_draft(lines)
-                msg = (f"[pal] {bot} #{ch} finished what you asked (\"{ask}\"). {said}"
+                msg = (f"[pal] {bot} #{ch} finished what you asked ({ask}). {said}"
                        + ("\n(Its input box has unsent text: someone is typing there. It hasn't been sent, so it isn't anyone's answer.)" if draft else "")
                        + f"\n(More: pal peek \"{bot}#{ch}\")")
             try:
-                enqueue(d["from"], msg, sender="crew", kind="callback")
+                enqueue(sender, msg, sender="crew", kind="callback")
             except CrewError:
                 pass
 
