@@ -21,6 +21,10 @@ plus a tool for the project's `AGENTS.md` / `CLAUDE.md`.
   (DeNon removed that from Focus on purpose): closed, the terminal has the full width.
   Section 5 designs it.
 - **The ways in** are those four. Which shortcut key is still a pick (P2).
+- **The pal's profile is a dashboard** (DeNon, relayed by Orca, after the panel decision). It has:
+  the pal's live channels; a task board of what its channels are on and heading for; and a
+  **mini terminal on the pal's real, live session**, so DeNon can prompt the pal from there.
+  Identity, mission and brain, the AGENTS.md tool and Memory stay. Section 1b designs it.
 
 **To pick.** ★ is my recommendation; the sections below say why. P10–P12 are three
 recommendations of Orca's that DeNon hasn't approved; they're options here, not yeses.
@@ -38,6 +42,9 @@ recommendations of Orca's that DeNon hasn't approved; they're options here, not 
 | P10 | **Review changes** in a worktree channel's right-click | yes · no | yes |
 | P11 | **The pal's memory** in its profile (pinned note, MEMORY.md, recent notes, Remember) | yes · no | yes |
 | P12 | **"N need you"** in the status bar | yes · no | yes |
+| P13 | How the dashboard gets its room | **A** the panel's two sizes: Side (420, beside the terminal) and **Full** (it takes over the work area until closed) · **B** one wide panel (720) beside the terminal · **C** everything inside the 420 panel | **A**, the dashboard opening Full |
+| P14 | Which channel the mini terminal shows first | the channel you were looking at · the lead channel · the most recently active | the one you were looking at |
+| P15 | The task board's columns | **Now · Next · Blocked · Done** (tasks plus each channel's live activity) · the board's own statuses (Open · Claimed · Blocked · Done) | Now · Next · Blocked · Done |
 
 ## 0. What's already there
 
@@ -85,7 +92,8 @@ older versions that read only `CLAUDE.md`, and it's the one place Claude-only li
 
 ### What it holds
 
-Top to bottom, in the panel's **Profile** tab (420 px wide, so everything is one column):
+What the profile knows about the pal. In Full it's the dashboard's header strip and left
+column (section 1b); in Side (420 px) it's the compact Profile tab, one column, top to bottom:
 
 1. **Identity band.** The pet (96 px wide, over the soft aura, its live state) on the left; the
    name (16/600 #EDEDED), the role (one line, #C8C8C8, click to edit: the record's `role`) and
@@ -130,6 +138,134 @@ Top to bottom, in the panel's **Profile** tab (420 px wide, so everything is one
 ### How you open it
 
 DeNon's four ways in. Opening and closing are section 5.
+
+## 1b. The profile as a dashboard
+
+DeNon's ask: each pal's profile is a **dashboard** of its channels, what they're doing and
+heading for, and a live terminal to prompt the pal. The Profile tab becomes that dashboard.
+The identity, facts and Memory above are its left column.
+
+### Where it gets its room (P13)
+
+A board of four columns and a terminal you can actually use (Claude Code wants 60+ columns)
+need about 1,100 px. The 420 px panel can't hold that, and a fixed 720 px panel would leave the
+channel's terminal 416 px wide at 1440, which is too narrow to use.
+
+| | **A · Two sizes, dashboard Full** ★ | **B · One wide panel** | **C · All in 420** |
+|---|---|---|---|
+| Shape | the panel has **Side** (420, beside the terminal) and **Full** (it takes the whole work area; the sidebar stays) | the panel is 720 px, pushing the terminal | the dashboard stacked in the 420 panel |
+| At 1440 wide | Full: 1,136 px for the dashboard; Side: 716 px left for the terminal | 416 px left for the terminal | 716 px for the terminal |
+| The mini terminal | 780 × 300 px, about 90 columns | 720 px, but the channel terminal is squeezed beside it | 420 px, about 48 columns: Claude Code wraps badly |
+| The task board | four columns side by side | four narrow columns | four stacked lists |
+
+**Why A.** It keeps DeNon's panel: one place, the same triggers, the same close, and the terminal
+at full width when it's closed. It also gives the dashboard the room it needs only while it's
+open. **Full** hides the `work` column (`layout.hide {id: "work"}`) and lets the panel fill the row;
+**Side** shows it again at the remembered width. So it's a takeover of the work area, but owned by
+the panel, and closing it brings back exactly the channel you were on.
+
+- **The Profile tab opens Full.** Mission, Brain and AGENTS.md open in Side, beside the terminal,
+  which is how you'd read a mission or fix a CLAUDE.md while watching the pal work.
+- **A ⤢ / ⤡ button** in the panel's header switches any tab between Side and Full, and each tab
+  remembers its own size. (This replaces the AGENTS.md tab's Wider button.)
+- **The Profile tab in Side** is a compact dashboard: identity, the channel list, the Now column as
+  a list, and **Open dashboard ⤢**. No mini terminal: at 420 px it's not worth it (C's problem).
+
+### The dashboard, in Full
+
+```
+┌ sidebar 304 ┬─ 52: [pet] Project Pals - Herdr Mod  Profile ‖ Mission · Brain · AGENTS.md        ⤡ Side   × ┐
+│             ├─ 72: pet · name · role · ● Working 4m │ Claude Code · opus · ~/Projects/project-pals │ Mission … ┤
+│ hero        ├─ left 340 ────────────┬─ right ──────────────────────────────────────────────────────────────┤
+│             │ CHANNELS            4 │ TASK BOARD · toward: Profiles proposal, then the release notes        │
+│             │ ● #profiles   4m      │ NOW 2          NEXT 1          BLOCKED 1          DONE · 7 DAYS 5    │
+│ pal list    │   Writing the panel…  │ ┌──────────┐  ┌──────────┐    ┌──────────┐       ┌──────────┐       │
+│             │   crew/profiles  [Rev]│ │#profiles │  │T15 Write │    │#integrate│       │T13 Inbox │       │
+│             │ ● #integrate  asks 2m │ │activity  │  │release … │    │asks you: │       │spacing …  │       │
+│             │ ○ #cli-mods   idle 4h │ └──────────┘  └──────────┘    └──────────┘       └──────────┘       │
+│             │ ◌ #general    no agent│ ── TERMINAL · #profiles ▾ · live · Claude Code ─── Open channel ↗ ──  │
+│             │ MEMORY (P11)          │ the pal's real terminal (Herdr terminal block), 300 px, type here      │
+│             │ pinned · 3 notes · …  │                                                                        │
+└─────────────┴───────────────────────┴────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Header strip (72 px):** the pet (60 × 47), the name, role and state; then the facts on one
+  line (brain · folder · machine · hired); then the mission's statement with "Done when 0 of 2".
+  Clicking that opens the Mission tab.
+- **Channels (left, 340 px):** every channel of the pal, one 52 px row each. A row shows:
+  - the live state: a blue dot for working, amber for asks you, mint for done, grey for idle, and
+    a hollow dot (#56565A) for no agent;
+  - `#name`, and the time in that state ("4m");
+  - what it's on: the agent's terminal title, as in the pal rows today;
+  - its branch, or `worktree · <branch>`, with Review on worktree channels (P10).
+
+  Clicking a row points the mini terminal at that channel. **Open channel ↗**, on hover, closes
+  the dashboard and shows the channel in the main area.
+- **Memory (left, under Channels, P11):** the pinned note and the latest 3 notes, with
+  Remember… and "All memory", which opens it in Side.
+- **Task board (right, top, P15):** four columns. The header says what the board is heading
+  for, the mission's **Focus**, so the board reads relative to this project.
+  - **Now:** tasks this pal has claimed, plus a card for each **working channel** that has no
+    claimed task, showing its live activity (the terminal title). Most work never reaches the task
+    board: today the board has 13 done, 1 cancelled and none open, while this pal has 4
+    channels. So without activity cards, Now would usually be empty.
+  - **Next:** open tasks assigned to this pal. Ready ones come first; ones waiting on others show
+    "after T3".
+  - **Blocked:** blocked tasks with their reason, plus channels that ask you or look stuck
+    (crewd's 15-minute check). Each card says what it needs from DeNon.
+  - **Done · 7 days:** done tasks with their result line, newest first.
+  - Every card carries its channel chip: tasks claimed as `Pal#channel` (all of this pal's do,
+    e.g. `Project Pals - Herdr Mod#release-prep`) link to that channel, and an activity card *is* a
+    channel. Clicking a chip points the mini terminal there; clicking a task expands it (details,
+    notes, Mark done, Reopen), as the sidebar's Tasks list does.
+  - Cards are 64 px, r6, #161617 with a #1E1E20 hairline; a column scrolls past 4 cards.
+- **The mini terminal (right, bottom, 300 px, its top edge draggable, P14):**
+  - It's the **real session**: a Herdr terminal block showing the channel's own agent terminal
+    (the one `lead()` picks), not a copy or a log. Click it and type, and the keys go to that
+    session exactly as they would in the main area; its scrollback is the terminal's own.
+  - A 32 px bar over it: `TERMINAL · #profiles ▾` (a picker of the pal's channels), a live dot,
+    the program (Claude Code), what it's doing ("working 4m"), and **Open channel ↗**.
+  - It starts on the channel you were looking at when you opened the dashboard (P14), else the
+    lead channel.
+  - A channel with no agent shows "#general has no agent running", with a **Wake** button (the
+    sidebar's wake), instead of an empty terminal.
+
+### How the mini terminal is built (to verify in the build)
+
+Herdr can't put a terminal inside a mod's own drawing. A live terminal only shows in a layout block
+(`{ "terminal": "t7" }` or `{ "agent": "focused" }`). So in Full, the panel is a small layout
+tree, not one mod:
+
+```
+profile (column)                      ← the panel; Side = 420 px, Full = fills the row (work hidden)
+├ profile-head    mod crew-profile {part: "head"}      52 px: name, tabs, ⤢, ×
+└ profile-body    stack
+  ├ profile-dash  column                               the dashboard (Full)
+  │ ├ dash-top    mod crew-profile {part: "top"}       72 px
+  │ └ dash-main   row
+  │   ├ dash-left mod crew-profile {part: "left"}      340 px: channels, memory
+  │   └ dash-right column
+  │     ├ dash-board mod crew-profile {part: "board"}  the task board
+  │     ├ dash-tbar  mod crew-profile {part: "tbar"}   32 px: the terminal's bar
+  │     └ dash-term  { "agent": "focused" }            300 px: the live session
+  └ profile-doc   mod crew-profile {part: "doc"}       Side, and the other tabs
+```
+
+- **Pointing it at a channel:** ★ `{ "agent": "focused" }` plus `agent.focus {terminal}`. Herdr
+  documents that this block shows "the one chosen with `agent.focus`". The pals layout has no
+  other agent block, so nothing else moves. To verify: that `agent.focus` doesn't also
+  switch the shown tab. Fallback: `layout.set` rewriting only `dash-term`'s
+  `{ "terminal": "<address>" }` (pals.json is our own layout, so this is allowed).
+- **One session, one size.** A terminal has one size. If it were visible in the main area and the
+  mini terminal at once, the two views would fight. Full hides the `work` column, so the
+  dashboard's view is the only visible one. Closing the dashboard gives the terminal back
+  its main-area size, and Claude Code redraws. To verify: a hidden block doesn't keep sizing the
+  terminal.
+- **Esc in the mini terminal is the program's** (it interrupts Claude Code), as in the main area.
+  The panel closes with ×, the trigger again, Ctrl+Shift+I, or Esc when the keyboard is
+  on the dashboard's own parts, never from inside the terminal.
+- **Several mod blocks, one mod:** `crew-profile` copies are told their `part` by props and share
+  state through shared `crew.panel`, the same way the roster and header share `crew.*` today.
 
 ## 2. The mission
 
@@ -277,8 +413,7 @@ It's the panel's **AGENTS.md** tab, the third part of the mission profile.
   project file and what it imports ("~/.claude/CLAUDE.md 25 + CLAUDE.md → @AGENTS.md 90 = 115
   lines"). The global file is read-only here.
 - **View** renders the markdown. **Edit** opens the code editor (`EditorState`, markdown, line
-  numbers) in the panel. **Wider** (⤢) widens the panel to half the window while you edit or
-  review, and it goes back to its width after Write or Cancel.
+  numbers) in the panel. ⤢ makes the panel Full while you edit or review a long file.
 
 ### Lint
 
@@ -368,7 +503,10 @@ closed                                          open (push, P9 ★)
 
 ### Its size and place
 
-- **Width:** 420 px by default. Drag its left edge between 360 and 640; the width is remembered in
+- **Two sizes (P13):** **Side**, beside the terminal, and **Full**, which hides the `work` column so
+  the panel fills the row until it closes or goes back to Side (section 1b). The Profile tab
+  (the dashboard) opens Full; the other tabs open Side. ⤢ / ⤡ in the header switches.
+- **Side width:** 420 px by default. Drag its left edge between 360 and 640; the width is remembered in
   `crew-settings.json` (`focus.panelPx`, beside the sidebar's `focus.sidebarPx`).
   At 1440 px wide, that leaves the terminal 716 px (about 85 columns of JetBrains Mono 14).
 - **Height:** from the top of the window to the status bar, so its 52 px header lines up with
@@ -387,7 +525,8 @@ closed                                          open (push, P9 ★)
 ### Inside the panel
 
 - **Header (52 px, #0E0E0F, a hairline under it):** the pet chip (30 × 24, the pal's live
-  state), the pal's name (14/600 #EDEDED, truncated), and a 28 px × button on the right.
+  state), the pal's name (14/600 #EDEDED, truncated), and two 28 px buttons on the right: ⤢ / ⤡
+  (Full / Side) and ×. In Full, the tabs sit in this header row instead of a strip under it.
 - **Tabs (36 px):** four rectangular tabs in one strip, radius 4, the shown one #232324 on a
   #2C2C2F hairline: **Profile** ‖ **Mission · Brain · AGENTS.md**. A 1 px divider and 8 px
   of space separate the two groups, so the strip is also the Pal / Mission switch: Profile is the pal's
@@ -396,8 +535,8 @@ closed                                          open (push, P9 ★)
 - **Tabs, not one long page.** Stacking all four in 420 px would be a very long scroll, and the
   editor and the diff need the panel's full height. Inside each tab the sections are stacked,
   16 px in, split by hairlines, with 10 px uppercase mono labels (#6A6A6C).
-  - **Profile:** identity, facts, stats (2 × 2), channels, memory (P11), routines, then the
-    actions Tell, + Channel, Customize look, Sleep (section 1).
+  - **Profile:** the dashboard (section 1b). In Side it's the compact version: identity, facts,
+    stats (2 × 2), the channels, Now as a list, memory (P11), routines, and Open dashboard ⤢.
   - **Mission:** the mission card (statement, goals, done-when, focus), then the last 3 change-log
     lines and the last 2 decisions, with "All in Brain →" (section 2).
   - **Brain:** the brain files as rows (Decisions 12, Change log 48, Map → AGENTS.md,
@@ -470,7 +609,7 @@ Internal names stay `crew` (AGENTS.md): new data sits beside the old.
 | Data | per-pal brain setting | the record's `brainIn: "pal" \| "project"` |
 | Data | AGENTS-file backups | `data/crew-backups/agents-files/<slug>/` |
 | Data | proposals (mission, agents files) | `data/crew-proposals/<id>.json` + the staged text |
-| Shared | the panel | `crew.panel` `{open, tab: "profile" \| "mission" \| "brain" \| "agents", file}` (the pal is the shown one) |
+| Shared | the panel | `crew.panel` `{open, tab: "profile" \| "mission" \| "brain" \| "agents", size: {tab: "side" \| "full"}, term, file}` (the pal is the shown one; `term` is the mini terminal's channel) |
 | Settings | the panel's width | `crew-settings.json` `focus.panelPx` |
 | Shared | the need-you count (P12) | `crew.needs` |
 | CLI | mission | `pal mission [show] [<pal>]`, `focus "…"`, `tick "…"`, `propose -F f` |
@@ -479,9 +618,9 @@ Internal names stay `crew` (AGENTS.md): new data sits beside the old.
 | Gate | rules | `agents-apply` (`pal agents apply`), `agents-file` (Edit/Write on AGENTS.md / CLAUDE.md, P6) |
 | Hook | SessionStart | the mission block (section 2) |
 | crewd | helpers | a change-log line per task done; the stale-Focus note in the nightly distill |
-| Mod | new | `crew-profile` (the panel: header, tabs, all four tabs; `"focusable": true`) |
+| Mod | new | `crew-profile` (the panel: header, tabs, all four tabs, and the dashboard's parts by `props.part`; `"focusable": true`) |
 | Mod | changed | `crew-roster` (name click, Profile action, menu items, `crew-roster.profile`, hides the panel at start, `crew.needs`), `crew-menu` (Profile, Mission, Review changes), `crew-status` (need you, P12) |
-| Layout | changed | `layouts/pals.json`: the hidden `profile` block in `body` |
+| Layout | changed | `layouts/pals.json`: the hidden `profile` column in `body`, with the dashboard tree and its `dash-term` agent block (section 1b) |
 | Keys | added if free | `"ctrl-shift-i": "crew-roster.profile"` (P2) |
 
 ## 8. Build order, once DeNon picks
@@ -491,13 +630,17 @@ Each step works by itself and gets installed and checked before the next.
 1. **The panel and the Profile tab:** the `profile` block, `crew-profile` (header, tabs, the
    Profile tab), the four ways in, open/close/toggle, Esc and focus, the remembered width, and
    Memory if P11 is a yes. About 2 days.
-2. **The small ones, if DeNon says yes:** Review changes in the menu (P10) and "N need you"
+2. **The dashboard:** Full / Side, the layout tree with `dash-term`, the channels column, the
+   task board with activity cards and channel chips, the mini terminal and its picker. Verify
+   `agent.focus` and the one-size question first, on a sandbox window (the
+   `herdr-sandbox-live-test` skill), never DeNon's. About 3 days.
+3. **The small ones, if DeNon says yes:** Review changes in the menu (P10) and "N need you"
    (P12, `crew.needs`). About half a day; they don't depend on step 1.
-3. **Mission and brain:** the files, `pal mission` / `pal brain`, the primer block, the Mission
+4. **Mission and brain:** the files, `pal mission` / `pal brain`, the primer block, the Mission
    and Brain tabs (mission card, file list, viewer and editor, hash-checked). About 2 days.
-4. **The AGENTS.md tab:** `pal agents lint`, View, Edit → Review → Write with backup, Wider, the
+5. **The AGENTS.md tab:** `pal agents lint`, View, Edit → Review → Write with backup, Full, the
    three fixes, restore. About 2 days.
-5. **Proposals and gates:** `pal mission propose`, `pal agents propose`, the Inbox cards, the
+6. **Proposals and gates:** `pal mission propose`, `pal agents propose`, the Inbox cards, the
    `agents-apply` / `agents-file` rules; the deep check; adopting `_Brain/`. About 1.5 days.
 
 Each step is checked the AGENTS.md way: the preflight, `herdr-app check` on every mod, an
@@ -544,6 +687,16 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
   Esc with the panel focused closes it, and the terminal gets its full width back.
 - Esc pressed in the terminal while the panel is open goes to the program, and the panel stays.
 - Switching pals with the panel open shows the new pal's profile on the same tab.
+- The Profile tab opens Full: the sidebar stays, the work area is the dashboard, and closing it
+  brings back the same channel at full width.
+- The dashboard's channels show each channel's live state within a second of it changing, and
+  a task claimed as `Pal#channel` shows that channel's chip.
+- A working channel with no task shows as a Now card with its terminal title.
+- Typing "hi" + Enter into the mini terminal sends it to that channel's real Claude Code session:
+  the same message shows in the main area after closing the dashboard, and `hc read` on that
+  terminal shows it.
+- Picking another channel in the mini terminal's bar (or clicking its row or chip) shows that
+  channel's live session, and Esc inside it reaches the program, not the panel.
 - A dragged width (say 500) is still 500 after closing and reopening, and after a restart, where
   the panel starts hidden.
 - The Profile tab shows the record's brain, folder, machine, branch, pet and hire facts, and the
@@ -565,14 +718,15 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
 ## The board
 
 `PROFILE · Pal + Mission`, for the Design system page in Paper. **Paper's app wasn't running**
-(its MCP at 127.0.0.1:29979 refused the connection, twice), so the board is drawn here as
+(its MCP at 127.0.0.1:29979 refused the connection), so the board is drawn here as
 `docs/profiles/board.html`, with a capture at `docs/profiles/board.png`. These are the frames I'll
 draw in Paper once the app is open:
 
-1. **Closed → open:** the Focus window with the panel closed (terminal full width), then the same
-   window with the panel open on Profile, with the four triggers marked.
-2. **The four tabs:** Profile, Mission, Brain and AGENTS.md side by side at the panel's 420 px,
-   with the AGENTS.md tab showing the CLAUDE.md pointer fix in review.
-3. **Proposals awaiting DeNon (P10–P12):** the channel menu with Review changes, the pal menu
-   with Profile / Mission, the hero's quick actions with Profile, and the status bar with
-   "2 need you".
+1. **Closed → open (Side):** the Focus window with the panel closed (the terminal at full width), then
+   the same window with the panel open beside the terminal, with the four triggers marked.
+2. **The dashboard (Full):** the Profile tab taking over the work area: the header strip, channels
+   and memory, the task board (Now · Next · Blocked · Done) and the live mini terminal.
+3. **The other tabs at 420 px (Side):** the compact Profile, Mission, Brain, and AGENTS.md with the
+   CLAUDE.md pointer fix in review.
+4. **Ways in, and proposals awaiting DeNon (P10–P12):** the pal menu, the quick actions, the
+   channel menu with Review changes, and the status bar with "2 need you".
