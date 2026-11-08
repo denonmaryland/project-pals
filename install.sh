@@ -134,6 +134,10 @@ done
 # for them, linked only where nothing else (CrewAI's `crew`, say) already uses the name.
 bin="$HOME/.local/bin"
 mkdir -p "$bin" "$HOME/.local/lib/herdr-crew"
+# What crewd runs (itself and the modules it imports), before this install: a running crewd keeps the
+# old code until it restarts.
+crewd_code() { { cat "$bin/crewd" "$HOME/.local/lib/herdr-crew/"crew*.py 2>/dev/null || true; } | cksum; }
+crewd_before="$(crewd_code)"
 [[ -L "$bin/pal" ]] && rm -f "$bin/pal"
 [[ -L "$bin/pal-room" ]] && rm -f "$bin/pal-room"
 install -m 755 "$src/bin/crew" "$bin/pal"
@@ -168,6 +172,12 @@ if [[ $helpers -eq 1 ]]; then
   python3 "$src/install-hooks.py" "$home/.crew-backups/$stamp" || echo "skipped the Claude Code hooks (see above)"
   # Shared skills: link any into ~/.claude/skills and ~/.codex/skills.
   python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewskills; crewskills.curate(lambda *_: None)' "$HOME/.local/lib/herdr-crew" || true
+elif [[ "$(crewd_code)" != "$crewd_before" ]] && command -v systemctl >/dev/null \
+     && systemctl --user is-active --quiet herdr-crew.service 2>/dev/null; then
+  # --no-helpers leaves systemd alone, so the running crewd still has the old code (its routines,
+  # nightly dream, notebook nudges). Say so, loudly, with the one command that fixes it.
+  echo "NOTE: crewd's code changed, but it's still running the old version (--no-helpers doesn't restart it)."
+  echo "      Restart it to load the new code:  systemctl --user restart herdr-crew.service"
 fi
 
 # Settings: who the pals work for (your git name, else your username) and bypass (off). Set once;
