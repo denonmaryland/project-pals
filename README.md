@@ -4,7 +4,7 @@ A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of
 spirit of Grok's bots but for any harness: Claude Code, Codex, Grok CLI, Gemini CLI, opencode,
 Hermes and more.
 
-![Project Pals in Herdr: the pals sidebar, channel tabs and a channel](preview.png)
+![Project Pals in Herdr: the pals sidebar with pocket pets, a pal's channels and its terminal](preview.png)
 
 **Linux only for now.** The helpers run as a systemd user service, so macOS (and WSL or containers
 without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
@@ -12,13 +12,19 @@ without a systemd user session) aren't supported yet. See [docs/mac-support.md](
 Each Herdr space is a pal (a project with a brain), and each of its tabs is a channel. Pals can
 work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. On top of that you get:
 
-- a sidebar of pals (folder faces that show what each is doing) and their channels as tabs:
-  pin them, color them from your theme, rename them, put a pal to sleep and wake it later
-- hire pals and add channels on any harness, with a model per pal (cheap helpers on Haiku)
-- tasks and routines
-- memory and shared skills
-- branch-per-channel review
-- an approval gate
+- **Pocket pets:** every pal is a little LED critter whose pose shows what it's doing (working,
+  needs you, done, PR open, merged, stuck, asleep). Pick its species, colour, what it wears and its
+  eyes.
+- **Terminal-first:** a channel is its agent's own terminal. Split it right or down, and answer the
+  agent's questions right there.
+- **A sidebar built for scanning:** the shown pal up top with its channels and quick actions, then
+  every pal with its state in colour. Group pals into folders ("Personal", "Business"), pin them,
+  and drag them into any order. Pin and reorder channels too.
+- **Profiles:** a panel per pal with its mission, brain, memory, channels and tasks.
+- **Tasks:** give a pal a task (with screenshots attached); it picks it up when its current turn
+  ends. Routines run on a schedule.
+- Hire pals and add channels on any harness, with a model per pal (cheap helpers on Haiku).
+- Memory and shared skills, branch-per-channel review, and an approval gate.
 
 ## Harnesses
 

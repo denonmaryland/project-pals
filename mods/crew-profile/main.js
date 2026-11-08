@@ -99,20 +99,21 @@ export default class CrewProfile extends View {
         this.mem = m;
         this.memFor = name;
         this.loadingFor = null;
-        // The pinned note's box shows the record's note, unless you're typing in it.
-        if (first || (!quiet && !this.pinnedDirty)) this.pinned.set_value(m.pinned ?? "");
+        // The pinned note's box shows the record's note, unless you're typing in it. It belongs to
+        // this pal's record from here on (review H4: a blur after switching pals saves to the right one).
+        if (first || (!quiet && !this.pinnedDirty)) { this.pinned.set_value(m.pinned ?? ""); this.pinnedFor = this.shown()?.bot.record?.id ?? null; }
       } catch { if (!quiet) this.mem = null; this.loadingFor = null; this.memFor = name; }
       cx.notify();
     });
   }
 
   savePinned(cx) {
-    const s = this.shown();
-    if (!s?.bot.record) return;
+    const rec = crew().bots.find((b) => b.id === this.pinnedFor);
+    if (!rec) return;
     const text = this.pinned.value().trim();
-    if (text === (s.bot.record.memory ?? "").trim()) return;
-    updateBot(s.bot.record, (b) => ({ ...b, memory: text }));
-    notify({ title: `Pinned for ${s.bot.name}`, body: text ? "Every new session starts with it." : "Pinned note cleared.", level: "success", timeout: 2000 });
+    if (text === (rec.memory ?? "").trim()) return;
+    updateBot(rec, (b) => ({ ...b, memory: text }));
+    notify({ title: `Pinned for ${rec.name}`, body: text ? "Every new session starts with it." : "Pinned note cleared.", level: "success", timeout: 2000 });
     this.loadMemory(cx);
   }
 
@@ -131,9 +132,10 @@ export default class CrewProfile extends View {
   saveRole(cx) {
     if (!this.editingRole) return;
     this.editingRole = false;
-    const s = this.shown();
+    // The record the role was opened for, not whoever is shown by now (review H4).
+    const rec = crew().bots.find((b) => b.id === this.roleFor);
     const role = this.role.value().trim();
-    if (s?.bot.record && role !== (s.bot.record.role ?? "")) updateBot(s.bot.record, (b) => ({ ...b, role: role || undefined }));
+    if (rec && role !== (rec.role ?? "")) updateBot(rec, (b) => ({ ...b, role: role || undefined }));
     cx.notify();
   }
 
@@ -269,7 +271,7 @@ export default class CrewProfile extends View {
         .child(Input.new(this.role).w_full().text_size(12).text_color(d.fg1))
       : div().id("pf-role").text_size(12).line_height("16px").text_color(bot.role ? d.body : d.fg3).cursor_pointer()
         .hover((s) => s.text_color(d.fg1)).tooltip("Click to change")
-        .on_click((_e, cx) => { if (!bot.record) return; this.role.set_value(bot.role ?? ""); this.editingRole = true; this.role.focus(); cx.notify(); })
+        .on_click((_e, cx) => { if (!bot.record) return; this.role.set_value(bot.role ?? ""); this.roleFor = bot.record.id; this.editingRole = true; this.role.focus(); cx.notify(); })
         .child(bot.role || "Add a role");
     return h_flex().flex_none().items_center().gap(14).pt(16).pb(14)
       .child(pet)

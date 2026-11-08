@@ -41,6 +41,9 @@ if command -v node >/dev/null; then
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   for f in lib/*.js mods/*/main.js; do cp "$f" "$tmp/x.mjs"; node --check "$tmp/x.mjs" || { echo "JS syntax error in $f" >&2; exit 2; }; done
 fi
+# The regression tests (tests/): throwaway CREW_DATA and homes, nothing real is touched.
+python3 -m unittest discover -s tests -q || { echo "tests failed" >&2; exit 2; }
+if command -v node >/dev/null; then for t in tests/*.mjs; do [ -f "$t" ] && { node "$t" || { echo "test failed: $t" >&2; exit 2; }; }; done; fi
 find . -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 
 printf '%s\n' "$version" > VERSION

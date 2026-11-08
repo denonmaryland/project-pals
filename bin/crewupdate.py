@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import io
 import tarfile
 import tempfile
 import time
@@ -94,6 +95,93 @@ def _safe_extract(tar_path, dest):
             tar.extractall(dest)
 
 
+# ─── Project Pals' own settings in files the person also edits (Codex review M6) ─────────────────
+# An install adds or changes a few entries in keys.json (ctrl-shift-i, the old ctrl-shift-m) and in
+# ~/.claude/settings.json (Project Pals' hook entries and its status-line wrapper). A snapshot
+# records them as they were (absence included); Roll back puts back only those, and only where the
+# current value is still Project Pals' own, so the person's later edits stay.
+MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-m")
+CONFIG_MEMBER = ".crew-config-snapshot.json"
+
+
+def _claude_settings():
+    return Path.home() / ".claude" / "settings.json"
+
+
+def config_state():
+    keys = load_json(HOME / "keys.json", None)
+    g = keys.get("global", {}) if isinstance(keys, dict) else {}
+    st = load_json(_claude_settings(), None)
+    hooks = (st or {}).get("hooks", {}) if isinstance(st, dict) else {}
+    ours = {ev: [e.get("matcher") for e in hooks.get(ev, []) if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
+            for ev in ("SessionStart", "PreToolUse")}
+    sl = (st or {}).get("statusLine") if isinstance(st, dict) else None
+    return {"keys_file": keys is not None, "keys": {k: g.get(k) for k in MANAGED_KEYS},
+            "settings_file": st is not None, "hooks": ours,
+            "statusline_wrapped": bool(sl and "crew-statusline" in str(sl.get("command", "")))}
+
+
+def restore_config(snap, log=print):
+    """Put back Project Pals' entries as they were in `snap` (config_state() at snapshot time)."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    changed = []
+    kp = HOME / "keys.json"
+    keys = load_json(kp, None)
+    if isinstance(keys, dict) and snap.get("keys_file"):
+        g = keys.setdefault("global", {})
+        before = json.dumps(keys, sort_keys=True)
+        for k, was in (snap.get("keys") or {}).items():
+            now = g.get(k)
+            if now == was:
+                continue
+            # Only an entry Project Pals set: a crew-roster action, or one it removed (absent now).
+            if now is None or str(now).startswith("crew-roster."):
+                if was is None:
+                    g.pop(k, None)
+                else:
+                    g[k] = was
+                changed.append(f"keys.json {k}: {now!r} -> {was!r}")
+            else:
+                log(f"left keys.json {k} as it is ({now!r}): it was changed since")
+        if json.dumps(keys, sort_keys=True) != before:
+            BACKUPS.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(kp, BACKUPS / f"rollback-{stamp}-keys.json")
+            save_json(kp, keys)
+    sp = _claude_settings()
+    st = load_json(sp, None)
+    if isinstance(st, dict):
+        before = json.dumps(st, sort_keys=True)
+        hooks = st.setdefault("hooks", {})
+        for ev, was in (snap.get("hooks") or {}).items():
+            entries = hooks.get(ev, [])
+            ours = [e for e in entries if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
+            if not was:
+                # Not there before this install: take Project Pals' entries out again.
+                if ours:
+                    hooks[ev] = [e for e in entries if e not in ours]
+                    changed.append(f"settings.json {ev}: removed Project Pals' hook")
+            else:
+                for e, m in zip(ours, was):
+                    if e.get("matcher") != m:
+                        changed.append(f"settings.json {ev} matcher: {e.get('matcher')!r} -> {m!r}")
+                        e["matcher"] = m
+        sl = st.get("statusLine")
+        if not snap.get("statusline_wrapped") and sl and "crew-statusline" in str(sl.get("command", "")):
+            orig = (DATA / "crew-statusline-original")
+            if orig.exists():
+                st["statusLine"] = {**sl, "command": orig.read_text().strip()}
+            else:
+                st.pop("statusLine", None)
+            changed.append("settings.json statusLine: back to the original")
+        if json.dumps(st, sort_keys=True) != before:
+            BACKUPS.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(sp, BACKUPS / f"rollback-{stamp}-claude-settings.json")
+            tmp = sp.with_suffix(".crew.tmp")
+            tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False) + "\n")
+            tmp.replace(sp)
+    return changed
+
+
 def _snapshot(label):
     """Everything an update replaces, in one tarball, so it can be put back."""
     BACKUPS.mkdir(parents=True, exist_ok=True)
@@ -108,6 +196,11 @@ def _snapshot(label):
                 # Stored relative to $HOME, without the generated mascots (they're redrawn on install).
                 tar.add(p, arcname=str(p.relative_to(home)),
                         filter=lambda ti: None if "/mascots/" in ti.name and ti.name.endswith(".svg") else ti)
+        # Project Pals' entries in keys.json and ~/.claude/settings.json, as they are now (review M6).
+        data = json.dumps(config_state()).encode()
+        info = tarfile.TarInfo(CONFIG_MEMBER)
+        info.size, info.mtime = len(data), int(time.time())
+        tar.addfile(info, io.BytesIO(data))
     return path
 
 
@@ -126,6 +219,14 @@ def rollback(path=None):
         for m in members:
             if m.name.startswith("/") or ".." in Path(m.name).parts:
                 raise CrewError(f"odd path in backup: {m.name}")
+        snap = None
+        cfg = next((m for m in members if m.name == CONFIG_MEMBER), None)
+        if cfg:
+            try:
+                snap = json.loads(tar.extractfile(cfg).read())
+            except ValueError:
+                snap = None
+            members = [m for m in members if m.name != CONFIG_MEMBER]
         # Mods the newer version added (not in the snapshot) go, so nothing is left half old, half new.
         mods_rel = str((HOME / "mods").relative_to(home))
         kept = {Path(m.name).parts[len(Path(mods_rel).parts)] for m in members
@@ -134,9 +235,12 @@ def rollback(path=None):
             if d.name not in kept:
                 shutil.rmtree(d, ignore_errors=True)
         if hasattr(tarfile, "data_filter"):
-            tar.extractall(home, filter="data")
+            tar.extractall(home, members=members, filter="data")
         else:
-            tar.extractall(home)
+            tar.extractall(home, members=members)
+    if snap:
+        for line in restore_config(snap):
+            print(line)
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     return path
 

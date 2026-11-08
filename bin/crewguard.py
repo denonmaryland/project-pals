@@ -8,13 +8,14 @@ This is a guard against mistakes and against one pal talking another into someth
 security boundary: a pal with full permissions could still edit these files. Codex and other
 harnesses without a pre-command hook aren't gated."""
 import hashlib
+import os
 import re
 import time
 
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 6
+DEFAULTS_VERSION = 7
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -39,9 +40,14 @@ DEFAULT = {
         # (crew-hook turns it into "edit <path>"), and so is a shell write to one. The smooth way:
         # pal agents propose <file> --file new.md, which goes to the Inbox with its diff.
         {"name": "agents-file", "why": "edits the project's AGENTS.md or CLAUDE.md (propose it instead: pal agents propose)",
-         "pattern": r"^edit\s+.*(AGENTS|CLAUDE)\.md$"},
-        {"name": "agents-file-shell", "why": "writes the project's AGENTS.md or CLAUDE.md (propose it instead: pal agents propose)", "anywhere": True,
-         "pattern": r"(>>?|\btee\b(\s+-a)?)\s*['\"]?[^\s'\"|;&]*(AGENTS|CLAUDE)\.md\b|\bsed\s+(-\w+\s+)*-i\S*\s.*(AGENTS|CLAUDE)\.md\b|\b(mv|cp)\s+.*\s['\"]?[^\s'\"]*(AGENTS|CLAUDE)\.md['\"]?\s*$"},
+         "pattern": r"^edit\s+.*(AGENTS|CLAUDE)\.md(\s|$)"},
+        # Shell writes to one: redirects (both heredoc orders, quoted paths with spaces), tee, sed/perl
+        # -i, cp / mv / install / ln / rsync onto it, dd of= (review H3). A parse, not a regex.
+        {"name": "agents-file-shell", "why": "writes the project's AGENTS.md or CLAUDE.md (propose it instead: pal agents propose)",
+         "check": "agent-file-writes", "pattern": r"$^"},
+        # The owner's one-time click tokens (data/crew-clicks): a pal writing one would be forging a
+        # click (review H1).
+        {"name": "owner-click", "why": "writes one of the owner's click tokens", "anywhere": True, "pattern": r"crew-clicks"},
     ],
     "trusted": [],
 }
@@ -61,7 +67,9 @@ def policy():
     return p
 
 
-HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n.*?\n\s*\1\s*(?:\n|$)", re.S)
+# A heredoc: keep its header line (`cat <<'EOF' > AGENTS.md` writes AGENTS.md), drop its body.
+HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n.*?\n\s*\2\s*(?=\n|$)", re.S)
+heredoc_free = lambda cmd: HEREDOC.sub(lambda m: m.group(1) + m.group(3), cmd)
 SPLIT = re.compile(r"\n|;|&&|\|\||\||\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
 INNER = re.compile(r"""\b(?:sh|bash|zsh|eval)\s+(?:-\w+\s+)*-c\s+(['"])(.*?)\1""", re.S)
 LEAD = re.compile(r"^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+|\w+=\S*\s+)*")
@@ -70,7 +78,7 @@ LEAD = re.compile(r"^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+
 def commands(cmd):
     """The commands a shell line runs: each segment's start, including inside sh -c '...', but not
     heredoc bodies (text being written to a file isn't a command)."""
-    text = HEREDOC.sub("\n", cmd)
+    text = heredoc_free(cmd)
     out = []
     for inner in INNER.findall(text):
         out += commands(inner[1])
@@ -81,10 +89,86 @@ def commands(cmd):
     return out
 
 
+AGENT_FILE = re.compile(r"(^|/)(AGENTS|CLAUDE)\.md$")
+REDIRECT = {">", ">>", ">|", "&>", "&>>", ">&"}
+SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "|&", ";;"}
+COPIERS = {"cp", "mv", "install", "ln", "rsync"}
+
+
+def write_targets(cmd):
+    """The files a shell line writes to, as far as a plain parse can tell: redirect targets, tee's
+    files, sed / perl -i files, cp / mv / install / ln / rsync destinations, dd of=. Inside sh -c '…'
+    too. Heredoc bodies are dropped but their header lines are kept."""
+    import shlex
+    text = heredoc_free(cmd)
+    out = []
+    for inner in INNER.findall(text):
+        out += write_targets(inner[1])
+    for line in text.splitlines():
+        lex = shlex.shlex(line, posix=True, punctuation_chars=";&|()<>")
+        lex.whitespace_split = True
+        try:
+            toks = list(lex)
+        except ValueError:          # an unbalanced quote: fall back to plain words
+            toks = line.split()
+        cmds, cur = [], []
+        for tk in toks:
+            if tk in SEPARATORS:
+                if cur:
+                    cmds.append(cur)
+                cur = []
+            else:
+                cur.append(tk)
+        if cur:
+            cmds.append(cur)
+        for words in cmds:
+            i = 0
+            while i < len(words):           # redirections, anywhere in the command
+                w = words[i]
+                if w in REDIRECT or re.fullmatch(r"\d+>>?|\d*>\|", w):
+                    if i + 1 < len(words) and words[i + 1] != "&":
+                        out.append(words[i + 1])
+                    i += 2
+                    continue
+                if w == "<<" or w == "<<-":  # a heredoc marker isn't a file
+                    i += 2
+                    continue
+                i += 1
+            plain = [w for w in words if w not in REDIRECT and not re.fullmatch(r"\d+>>?|\d*>\|", w)]
+            while plain and (re.fullmatch(r"\w+=\S*", plain[0]) or plain[0] in ("sudo", "env", "command", "exec", "nohup", "time")):
+                plain = plain[1:]
+            if not plain:
+                continue
+            name, args = os.path.basename(plain[0]), plain[1:]
+            files = [a for a in args if not a.startswith("-")]
+            if name == "tee":
+                out += files
+            elif name in ("sed", "perl") and any(a.startswith("-i") or a == "--in-place" or (name == "perl" and re.fullmatch(r"-\w*i\w*", a)) for a in args):
+                out += files
+            elif name in COPIERS and files:
+                out.append(files[-1])
+            elif name == "dd":
+                out += [a[3:] for a in args if a.startswith("of=")]
+            elif name in ("truncate", "touch") and files:
+                out += files
+    return out
+
+
+def writes_agent_file(cmd):
+    return any(AGENT_FILE.search(os.path.normpath(t.strip("'\""))) for t in write_targets(cmd))
+
+
+CHECKS = {"agent-file-writes": writes_agent_file}
+
+
 def matches(cmd):
     segs = commands(cmd)
-    flat = HEREDOC.sub("\n", cmd)
+    flat = heredoc_free(cmd)
     for rule in policy().get("guarded", []):
+        if rule.get("check"):
+            if CHECKS.get(rule["check"], lambda _c: False)(cmd):
+                return rule
+            continue
         try:
             pat = re.compile(rule["pattern"])
         except re.error:
@@ -118,7 +202,7 @@ def expire_stale():
             feed("approval", id=r["id"], bot=r.get("bot"), channel=r.get("channel"), status="expired")
 
 
-def check(terminal, bot, channel, cmd):
+def check(terminal, bot, channel, cmd, extra=None):
     """None: go ahead. Else the reason it's held."""
     if bot in policy().get("trusted", []):
         return None
@@ -138,7 +222,7 @@ def check(terminal, bot, channel, cmd):
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending"}
+             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {})}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r

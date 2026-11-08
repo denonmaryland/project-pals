@@ -89,7 +89,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
+from crewlib import (owner_gate, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
@@ -710,10 +710,31 @@ def cmd_memory(spaces, args):
 
 # ─── Mission, brain, agent files, proposals (docs/profiles/proposal.md) ─────────────────────────
 
-def is_owner(spaces):
-    """Run by the owner (the Herdr app, or a terminal that isn't a pal's), not by a pal."""
-    s, _ = my_bot(spaces)
-    return s is None
+ARGV = []   # this run's arguments, as the owner's click token must match them (owner_gate)
+
+
+def owner_args():
+    """ARGV without the --click token itself."""
+    out, skip = [], False
+    for a in ARGV:
+        if skip:
+            skip = False
+            continue
+        if a == "--click":
+            skip = True
+            continue
+        out.append(a)
+    return out
+
+
+def click_of():
+    return ARGV[ARGV.index("--click") + 1] if "--click" in ARGV and ARGV.index("--click") + 1 < len(ARGV) else None
+
+
+def require_owner(what):
+    """An owner decision: the app's one-time click token, or a person typing yes at a terminal outside
+    Herdr. A pal (or a missing / unknown terminal ID) is refused (review H1)."""
+    return owner_gate(owner_args(), click_of(), what)
 
 
 def pal_of(spaces, spec=None):
@@ -780,8 +801,7 @@ def cmd_mission(spaces, rest):
         brain_log(space, rec, name, f"{'done' if item['done'] else 'reopened'}: {item['text']}", chan(t) if t else None)
         print(f"{'[x]' if item['done'] else '[ ]'} {item['text']}")
     elif sub == "set":
-        if not is_owner(spaces):
-            die(f"the mission is {OWNER}'s to write; propose one instead: pal mission propose --file F")
+        require_owner("Rewrite the mission")
         text = file_opt(o)
         cur = crewbrain.read(d, "mission.md")
         if o.get("expect") and crewbrain.sha(cur) != o["expect"]:
@@ -856,8 +876,7 @@ def cmd_brain(spaces, rest):
             die('pal brain note <topic> "text"')
         print("added to " + crewbrain.note(d, pos[0], " ".join(pos[1:])))
     elif sub == "where":
-        if not is_owner(spaces):
-            die(f"where a pal's brain lives is {OWNER}'s call")
+        require_owner("Move a brain")
         to = pos[1] if len(pos) > 1 else None
         if to not in ("pal", "project"):
             die("pal brain where <Pal> pal|project")
@@ -865,8 +884,7 @@ def cmd_brain(spaces, rest):
         set_record(spaces, space, brainIn=to)
         print(f"{name}'s brain is now in {dst}" + (f" (copied {len(copied)} file(s) from {src}; nothing deleted)" if copied else ""))
     elif sub == "write":
-        if not is_owner(spaces):
-            die(f"only {OWNER} edits brain files wholesale; use pal brain log / decide / note, or pal mission focus")
+        require_owner("Rewrite a brain file")
         f = pos[1] if len(pos) > 1 else None
         if not f or "/" in f.replace("notes/", "", 1) or not f.endswith(".md"):
             die("pal brain write <Pal> <file.md> --file F --expect SHA")
@@ -890,7 +908,7 @@ def cmd_agents(spaces, rest):
     import crewagents, crewbrain
     sub = rest[0] if rest else "show"
     args = rest[1:]
-    pos, o = opts(args, ("pal", "from", "expect", "note", "file", "proposal"), ("json", "deep"))
+    pos, o = opts(args, ("pal", "from", "expect", "note", "file", "proposal", "folder", "staged-sha"), ("json", "deep"))
     if sub in ("show", "lint"):
         space, rec, name = pal_of(spaces, pos[0] if pos else o.get("pal"))
         folder = folder_of(space, rec)
@@ -912,13 +930,17 @@ def cmd_agents(spaces, rest):
         for x in out.get("deep", []):
             print(f"  [deep] {x.get('why', '')}: \"{x.get('quote_a', '')}\" vs \"{x.get('quote_b', '')}\"")
     elif sub == "apply":
-        if not is_owner(spaces):
-            die(f"a project's AGENTS.md / CLAUDE.md changes only with {OWNER}'s click; propose it instead: pal agents propose <file> --file F")
+        require_owner("Write a project's AGENTS.md / CLAUDE.md")
         if len(pos) < 2 or not o.get("from") or not o.get("expect"):
             die("pal agents apply <Pal> <file> --from STAGED --expect SHA [--note N] [--proposal ID]")
         space, rec, name = pal_of(spaces, pos[0])
         folder = folder_of(space, rec)
+        # Bound to the folder and the exact staged text the owner reviewed (review H4).
+        if o.get("folder") and os.path.realpath(os.path.expanduser(o["folder"])) != os.path.realpath(folder):
+            die(f"that review was for {o['folder']}, but {name}'s folder is {folder}; review it again")
         text = open(os.path.expanduser(o["from"])).read()
+        if o.get("staged-sha") and crewagents.sha(text) != o["staged-sha"]:
+            die("the staged text changed after the review; review it again")
         out = crewagents.apply(name, folder, pos[1], text, o["expect"], o.get("note"))
         brain_log(space, rec, name, f"{out['file']}: {o.get('note') or ('created' if out['created'] else 'edited')} ({OWNER})")
         if o.get("proposal"):
@@ -978,8 +1000,7 @@ def cmd_proposals(spaces, rest):
     elif sub == "show" and pos:
         print(json.dumps(crewproposals.get(pos[0])))
     elif sub in ("accept", "decline") and pos:
-        if not is_owner(spaces):
-            die(f"proposals are {OWNER}'s to decide, in the Inbox")
+        require_owner("Decide a proposal")
         p = crewproposals.get(pos[0])
         if p["status"] != "pending":
             die(f"{p['id']} is already {p['status']}")
@@ -1229,10 +1250,9 @@ def cmd_skill(spaces, rest):
 
 def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
     if decide:
-        # Only the owner decides: not from a pal's terminal.
-        if ME and is_bot_terminal(ME):
-            die(f"approvals come from {OWNER} (the Inbox), not from a pal")
-        via = "the Inbox" if inbox else (f"terminal {ME}" if ME else "a terminal outside Herdr")
+        # Only the owner decides: the Inbox's click, or a person at a terminal outside Herdr (review H1).
+        how = require_owner(f"{decide.capitalize()} a held command")
+        via = "the Inbox" if how == "the app" else "a terminal outside Herdr"
         r = crewguard.decide(rid, decide == "approve", note, via=via)
         print(f"{r['status']}: {r['bot']} #{r['channel']}: {r['command']}")
         return
@@ -1344,10 +1364,13 @@ def cmd_update(rest):
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
 def main(argv):
+    global ARGV
     if not argv:
         argv = ["bots"]
     # -F is --file (pal mission propose -F draft.md).
     argv = ["--file" if a == "-F" else a for a in argv]
+    ARGV = list(argv)
+    argv = owner_args()   # the click token is checked by require_owner, not parsed as an option
     cmd, rest = argv[0], argv[1:]
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return

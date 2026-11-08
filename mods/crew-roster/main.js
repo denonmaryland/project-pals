@@ -10,7 +10,7 @@ import {
   crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
-  loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
+  loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, openProposalPanel } from "./crew.js";
@@ -137,7 +137,7 @@ export default class CrewRoster extends View {
   decide(a, approve, cx) {
     cx.spawn(async (cx) => {
       try {
-        await crewCli([approve ? "approve" : "deny", a.id, "--inbox"]);
+        await ownerCli([approve ? "approve" : "deny", a.id, "--inbox"]);
         notify({ title: approve ? `Approved for ${a.bot}` : `Declined for ${a.bot}`, body: a.command.slice(0, 120), level: approve ? "success" : "info", timeout: 3000 });
       } catch (e) { notify({ title: "Couldn't decide", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.refreshOps(cx);
@@ -318,6 +318,12 @@ export default class CrewRoster extends View {
             .child(div().truncate().text_size(12).text_color(t.dim).child(`#${ap.channel} · ${ago(ap.at)} · ${ap.id}`))))
         .child(div().px(10).py(7).rounded(6).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
+        // An AGENTS.md / CLAUDE.md edit: the exact change it would make, in full (review H2). Approving
+        // lets exactly this edit, to this version of the file, through once.
+        .when(Boolean(ap.diff), (el) => el.child(v_flex().id(`ap-diff-${ap.id}`).max_h(280).overflow_y_scrollbar().px(10).py(6).rounded(6).bg(a(t.canvas, "aa"))
+          .children(ap.diff.split("\n").map((line, i) => div().id(`ap-dl-${ap.id}-${i}`).text_size(11.5).font_family("JetBrains Mono")
+            .text_color(line.startsWith("+") && !line.startsWith("+++") ? t.working ?? t.ansi2 : line.startsWith("-") && !line.startsWith("---") ? t.blocked : t.muted)
+            .child(line || " ")))))
         // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
         .child(h_flex().gap(8).justify_between()
           .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
@@ -343,7 +349,7 @@ export default class CrewRoster extends View {
           .child(`Dream ${pr.meta.pattern}: ${pr.meta.summary} · ${pr.meta.count}x, ${pr.meta.pals?.length ?? 0} pal(s), ~${pr.meta.minutes}m lost`)))
         .child(h_flex().gap(8).justify_between()
           .child(div().id(`pr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-            .on_click((_e, cx) => cx.spawn(async (cx) => { try { await crewCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
+            .on_click((_e, cx) => cx.spawn(async (cx) => { try { await ownerCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
             .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
           .child(div().id(`pr-view-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
             .on_click(() => { if (f) this.go(f.space, null); openProposalPanel(pr); })
