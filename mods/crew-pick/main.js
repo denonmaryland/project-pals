@@ -1,5 +1,5 @@
-// Project Pals channel dropdown: opened from the pal chip (Focus header and Pro tab strip) and from
-// Focus's "# channel ▾". The shown pal's channels, one 32 px row each: "# name", what it's on (its
+// Project Pals channel dropdown: opened from the header's pal chip and its "# channel ▾", and the
+// hero's "+N". The shown pal's channels, one 32 px row each: "# name", what it's on (its
 // terminal title, else its state), a state mark (blue dot working, amber dot
 // needs you, green check done) and when it last changed; the current channel is marked. "+ New
 // channel" at the foot. Drawn in the design system: an r4 #161617 popover with a 1 px hairline and

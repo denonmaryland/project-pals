@@ -1,5 +1,9 @@
 # Layouts: Focus and Pro
 
+> **2026-11-08: Pro was removed.** DeNon made Focus the only layout: the pal rail, the list column,
+> the tab strip, the inspector, the `Focus | Pro` switch, Ctrl+Shift+M and Settings › Layout are
+> gone. Everything below about Pro and switching is history; RECIPE.md describes what ships.
+
 Status: design proposal (2026-11-08). Nothing here is wired in. Paper boards are on the
 **Design system** page of the pixel-study file:
 

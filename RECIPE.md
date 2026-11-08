@@ -121,8 +121,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   sidebar list (bare, no box or line: 75x59 in 68px rows over a soft radial aura that fades to
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
   under it instead of the edge loader; the name, then `[channel]`, then what it's on, each on its own
-  line; half-opacity while the pal is closed or idle-hidden), the Pro pal rail (44x34) and banner (a wide
-  box, 130 tall), the pal chip (30x24 in Focus, 25x20 in Pro), rooms, dialogs.
+  line; half-opacity while the pal is closed or idle-hidden), the header's pal chip (30x24), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
@@ -179,18 +178,17 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
   recent install, not an older release update.
 
-### Layout modes: Focus (default) and Pro
+### The layout: Focus
 
-One layout, two densities; switching only shows, hides and resizes nodes (nothing re-orders, and
-drafts stay put). Anything new is drawn in the design-system look: 1px hairlines, radius 3/4/6/8,
+One shape, Focus: DeNon removed the Pro view (pal rail, list column, tab strip, inspector and the
+switch) on 2026-11-08. Anything new is drawn in the design-system look: 1px hairlines, radius 3/4/6/8,
 rectangular segments and tags.
 
 - **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
   rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
   previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
   below #808082 (its pet dims instead). The list ends with 24px of padding.
-- **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
-  above), no tab strip.
+- **Focus:** the sidebar at 304px (the hero pal and the pal list, as above), no tab strip.
   - **The hero** (hero v2 "2 · Floor", DeNon 2026-11-08): no box. The shown pal's pet and its
     laptop at 90% of the sidebar's width, centred (273x214 at 304; the critter about 165px), drawn on the
     sidebar itself over the same soft aura (its own "open" tiles, `-o.svg`), standing on a floor: a 6% white hairline 12px
@@ -210,48 +208,39 @@ rectangular segments and tags.
     asks first). No state pill, no species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
   the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
-  Grok Bot). Tasks, Changes and Branch are Pro's.
-- **Pro:** a 60px **pal rail** (faces in sidebar order, state dots, + to hire, settings), a 264px
-  list column (the shown pal as a banner card, its channels with what each is on, Channels ·
-  Rooms · Tasks · Inbox, and "Across pals": who else is working or needs you), the channel tabs
-  above the sheet, and the **inspector** open at 320px with Run / Tasks / Memory tabs and Fold.
-- **Switching:** Ctrl+Shift+M (`crew-roster.mode`), the status bar's `Focus | Pro` segment, Pro's
-  Fold, About › Settings › Layout (two picture tiles), or
-  `pal settings layout focus|pro` from your own shell (the window follows within 3 seconds).
-- **Status bar** (28px, under everything): working count (Pro adds needs-you), the shown channel's
-  5-hour and weekly usage, in Pro its branch with ahead/behind, the shortcut, the mode switch and
-  the installed version.
+  Grok Bot).
+- **Status bar** (24px, under everything): the working count, the shown channel's 5-hour and
+  weekly usage, and the installed version.
 - **The terminal sits in the app** (DeNon, 2026-11-08): no card around it. The pals layout sets
   its own `colors.background` to the column's #0B0B0C (this layout only, not the person's theme),
   so a terminal's default background is the column itself; programs' own coloured cells keep
   theirs. No frame around a lone pane (`lone: false`; split panes keep their hairline and focus
   border); the block is padded 8/16 and terminals 8/8, so text lines up with the header's.
-- **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal in both modes; you type in it
+- **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal; you type in it
   directly, and you answer its permission prompts and questions there too (no prompt card:
   DeNon removed it on 2026-11-08, since it repeated the terminal's question and covered it). The
   composer shows only under a room.
 - **Splits:** Herdr's own (Ctrl+Shift+O right, Ctrl+Shift+E down, Ctrl+Shift+X close, Ctrl+Shift+Z
-  zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the Focus header and
-  Pro's tab strip, and the right-click on a terminal (`crew-termmenu`, the layout's
+  zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the header, and the right-click on a terminal (`crew-termmenu`, the layout's
   `terminal_menu`: split, zoom, copy, paste, right-click routing, close; "Close pane (ends
   Claude Code)" in red on the agent's pane). A new pane is a shell in the channel's folder and
   belongs to that channel; the channel's agent stays its lead pane (state, "no agent" and `pal tell`
   all read the agent's pane).
-- **Remembered** in `data/crew-settings.json`: `layoutMode`, `focus.sidebarPx`, `pro.listPx`,
-  `pro.inspectorPx` and `pro.inspectorTab`. Each mode keeps its own drag widths.
+- **Remembered** in `data/crew-settings.json`: `focus.sidebarPx` (the dragged sidebar width).
+  Pro's old keys (`layoutMode`, `pro`) are dropped the next time the settings are written.
 
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
   - Stack `center` has the children `tab-view` and `room-view`. `showRoom` / `showTabs` switch it
     and show or hide `crew-composer`.
-  - The `panel` block starts hidden and is toggled with `layout.toggle {id: "panel"}`.
 - **Mods:**
-  - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-tabs`, `crew-header`,
-    `crew-room`, `crew-composer` (rooms), `crew-side`.
+  - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
+    `crew-composer` (rooms), `crew-status`. Removed with Pro: `crew-palrail`, `crew-tabs`,
+    `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
-    `crew-attach`.
+    `crew-attach`, `crew-tell` (props `space`, `tab`).
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
   - Every mod gets `lib/crew.js` (the shared model), `lib/mascot-art.js` and `lib/pets.js` copied in.
 - **Herdr functions:**
@@ -333,6 +322,6 @@ rectangular segments and tags.
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.
-- On a fresh setup the pals layout opens in Focus; Ctrl+Shift+M flips to Pro and back, and the
-  mode and each mode's widths come back after a restart. The installer binds Ctrl+Shift+M only when
-  it's free in every keys.json section (keys.json is backed up first).
+- The pals layout is Focus only: no pal rail, tab strip, inspector or mode switch, and nothing
+  answers Ctrl+Shift+M. The installer removes an old `"ctrl-shift-m": "crew-roster.mode"` from
+  keys.json's `global` map, and only that exact binding (keys.json is backed up first).

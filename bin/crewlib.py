@@ -109,6 +109,9 @@ HEAD = settings()["head"]
 def save_settings(**changes):
     s = load_json(SETTINGS, {})
     s.update({k: v for k, v in changes.items() if v is not None})
+    # The removed Pro view's settings (2026-11-08).
+    s.pop("layoutMode", None)
+    s.pop("pro", None)
     save_json(SETTINGS, s)
     render_god()
     return settings()

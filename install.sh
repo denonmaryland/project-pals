@@ -35,7 +35,7 @@ for need in rsync python3; do command -v "$need" >/dev/null || { echo "Project P
 # About › Roll back puts back the newest update snapshot (.crew-backups/update-*.tar.gz). The
 # updater takes one before it installs a release (and runs this with --from-release); take one here
 # too, so Roll back undoes THIS install. Without it, Roll back after a local install skipped past it
-# to whatever release the updater last replaced (on 2026-11-08 that put 0.2.1 back over Focus/Pro).
+# to whatever release the updater last replaced (on 2026-11-08 that put 0.2.1 back over the new build).
 # Only over an existing install (a fresh one has nothing to go back to); the last 5 are kept.
 if [[ "$from" == "local" && -d "$home/mods/crew-roster" ]]; then
   HERDR_APP_HOME="$home" python3 - "$src/bin" <<'PY' || echo "couldn't snapshot the current install for Roll back; continuing" >&2
@@ -62,7 +62,7 @@ for dir in "$src"/mods/crew-*; do
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-for gone in crew-rail crew-chat crew-prompt; do
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
@@ -76,34 +76,25 @@ if ! fc-list 2>/dev/null | grep -qi "Adwaita Sans"; then
   sed -i 's/"ui_font": "Adwaita Sans"/"ui_font": "Geist"/' "$home/layouts/pals.json"
 fi
 [[ -f "$src/layouts/pals.svg" ]] && cp "$src/layouts/pals.svg" "$home/layouts/pals.svg"
-# Ctrl+Shift+M switches Focus ⇄ Pro (crew-roster.mode). It goes in keys.json's global map, so Herdr
-# takes it before a terminal sees it, but only when the key is free in every section and nothing is
-# bound to the mode yet: a key you already use is never changed. keys.json is backed up first.
-# (Any edit makes the file yours: Herdr stops adding its new default shortcuts to it.)
-if [[ -f "$home/keys.json" ]]; then
+# Pro was removed (2026-11-08), and with it the Focus ⇄ Pro switch. Older installs bound
+# ctrl-shift-m to crew-roster.mode in keys.json's global map: take that one binding out, and only
+# when it's exactly ours (that key, that action, in "global"). keys.json is backed up first; any
+# other binding, or the same action on another key, is left alone.
+if [[ -f "$home/keys.json" ]] && grep -q '"crew-roster.mode"' "$home/keys.json"; then
   mkdir -p "$backup"; cp -a "$home/keys.json" "$backup/keys.json"
-  python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it); bind ctrl-shift-m to crew-roster.mode yourself"
+  python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it)"
 import json, os, sys
 path = sys.argv[1]
 keys = json.load(open(path))
-want, action = "ctrl-shift-m", "crew-roster.mode"
-same = lambda k: sorted(k.lower().split("-")) == sorted(want.split("-"))
-used = [(sec, k) for sec, m in keys.items() if isinstance(m, dict) for k in m if same(k)]
-bound = [k for m in keys.values() if isinstance(m, dict) for k, v in m.items() if v == action]
-if bound:
-    print(f"Focus/Pro switch: already on {bound[0]}")
-elif used:
-    print(f"Focus/Pro switch: {want} is taken ({used[0][0]} → {keys[used[0][0]][used[0][1]]}), so it has no key; bind {action} to one in keys.json")
-else:
-    keys.setdefault("global", {})[want] = action
+g = keys.get("global")
+if isinstance(g, dict) and g.get("ctrl-shift-m") == "crew-roster.mode":
+    del g["ctrl-shift-m"]
     tmp = path + ".crew-tmp"
     with open(tmp, "w") as f:
         json.dump(keys, f, indent=2)
     os.replace(tmp, path)
-    print(f"Focus/Pro switch: bound {want} in keys.json (backup in the install's .crew-backups folder)")
+    print("removed the old Focus/Pro shortcut (ctrl-shift-m) from keys.json (backup in the install's .crew-backups folder)")
 PY
-else
-  echo "Focus/Pro switch: no keys.json yet, so no shortcut; switch from the status bar, or bind ctrl-shift-m to crew-roster.mode"
 fi
 # The layout used to be called crew, then buddies: move over (backing the old one up) and show the
 # new one if an old one was showing.

@@ -1,4 +1,4 @@
-// Project Pals header (Focus; Pro hides it and uses the tab strip), drawn to the "MODE · Focus"
+// Project Pals header, drawn to the "MODE · Focus"
 // board: a "# channel ▾" picker on the left, the pal's chip centred, its branch on the right. In a
 // room: the room's members. Under it is the channel's terminal (terminal-first, DeNon 2026-11-08).
 
@@ -47,7 +47,7 @@ export default class CrewHeader extends View {
       .when(!tabHasAgent(tab), (el) => el.child(noAgentTag(d)));
     return root
       .child(h_flex().flex_1().flex_basis(0).min_w(0).items_center().child(picker))
-      .child(palChip(bot, tab, d, "focus"))
+      .child(palChip(bot, tab, d))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
         .when(Boolean(lead?.branch), (el) => el.child(div().min_w(0).h(22).px(6).flex().items_center().rounded(d.r.xs).bg(d.raised)
           .child(div().truncate().text_size(11).font_family(d.mono).text_color(d.fg2).child(lead.branch))))
