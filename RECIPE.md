@@ -227,13 +227,17 @@ rectangular segments and tags.
     Pin / Unpin and Move up / Move down (within its group). Pinning and moving move Herdr's own tabs
     (`tab.move`), so the order survives restarts and the pal chip's channel dropdown lists the same.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (one flat #1B1B1E face, a 6% white
+    clicks, so there is no hover pin either. Then three quick actions as subtle "pebbles" (one flat #1B1B1E face, a 6% white
     hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest
     shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
     `pebble()` in crew.js): + Channel (new channel
-    dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
-    pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
-    asks first). No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel
+    dialog), Tasks with this pal's open count, and an icon-only moon (put to sleep; Herdr
+    asks first). Tasks (Tell merged into it: DeNon, "a Tell is really a task") opens `crew-tasks`:
+    "Add a task…" on top (Enter adds a real task on the shared board, `pal task add "…" --for <pal>`,
+    marked from the owner, and the pal is told when its turn ends), then that pal's open tasks
+    (working first, then blocked, then open; a tick finishes one, a click on its title shows its
+    details, notes and who asked), and "All tasks on the board →". Quick questions go in the
+    terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel
   dropdown, crew-pick, with New channel) and the split buttons on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
   or prints the branch when you have no status line of your own); no
@@ -275,7 +279,7 @@ rectangular segments and tags.
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
-    `crew-attach`, `crew-tell` (props `space`, `tab`).
+    `crew-attach`, `crew-tasks` (props `space`). The installer retires the old `crew-tell`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
   - Every mod gets `lib/crew.js` (the shared model), `lib/mascot-art.js` and `lib/pets.js` copied in.
 - **Herdr functions:**

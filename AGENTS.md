@@ -61,7 +61,9 @@ There's no unit test suite. Check changes like this:
    Cover a fresh install, a second install over it, `--no-helpers`, and an existing
    `~/.claude/settings.json` that already has a `statusLine`.
 3. **Data sandbox:** `CREW_DATA=/some/dir` points the Python side at another data folder, so you
-   can try `pal task`, `pal remember` and so on without touching real pals.
+   can try `pal task`, `pal remember` and so on without touching the real board or memory. It does
+   NOT stop delivery: a task assigned to a real pal (`--for <Pal>`) or a `pal tell` still reaches that
+   pal's live terminal. Assign test tasks to nobody, or to yourself and expect the message.
 4. **In the app:** after installing for real (only with the owner's OK), Herdr hot-reloads mods
    and layouts. `herdr-app status` shows errors and `herdr-app shot` saves a screenshot.
 

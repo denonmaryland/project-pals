@@ -62,7 +62,7 @@ for dir in "$src"/mods/crew-*; do
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side; do
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi

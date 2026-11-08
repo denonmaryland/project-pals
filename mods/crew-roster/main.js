@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble } from "./crew.js";
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -607,16 +607,16 @@ export default class CrewRoster extends View {
       .tooltip(`${bot.name} · ${label}`));
     // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
     const btn = (id, icon, text, action, extra) => pebble(d, { id, icon, label: text, extra, onClick: action, grow: Boolean(text) });
-    const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)
-      && String(x.claimed_by || x.assignee || "").split("#")[0].split(" - ")[0] === bot.name).length;
+    const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
-        .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })))
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null))
+        // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
+        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
+        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 460, props: { space: space.id } }), mine || null))
         .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
 
