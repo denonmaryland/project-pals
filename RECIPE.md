@@ -202,7 +202,8 @@ rectangular segments and tags.
     Under the floor, the pal's channels at full width: a header ("Channels", the count, and a
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
     rows (`#`, the name, a blue/amber dot, a green check or when it last changed; the shown one
-    #232324), up to six, then scrolling. Then four r4 quick actions: + Channel (new channel
+    #232324), up to four (the box hugs fewer), then scrolling; the shown channel is scrolled into view
+    when it changes. Then four r4 quick actions: + Channel (new channel
     dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
     pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
     asks first). No state pill, no species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's

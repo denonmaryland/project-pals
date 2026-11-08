@@ -4,7 +4,7 @@
 // blocked). Inbox tab: every channel that needs you, across all pals and machines.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input } from "gpui-base";
+import { v_flex, h_flex, InputState, Input, Scrollbar, VirtualListScrollHandle, v_virtual_list } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
   crew, botOf, sleepers, mascotFor, mascotEl, mood, channelName, harnessName, ago, a,
@@ -94,6 +94,8 @@ export default class CrewRoster extends View {
     this.chSearch = InputState.new({ placeholder: "Search channels" });
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
+    this.chScroll = VirtualListScrollHandle.new();
+    this.chShownKey = null;
     // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -641,15 +643,18 @@ export default class CrewRoster extends View {
           .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
           .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
     }
-    const rows = v_flex().id("hero-ch-list").px(8).gap(2).max_h(6 * 30).overflow_y_scrollbar();
-    for (const tab of list) {
+    // Up to four rows show (DeNon: "at most 4"); more scroll. A virtual list with a scroll handle, so
+    // the shown channel is scrolled into view when it changes (not on every render, so a scroll you
+    // made stays put). With four or fewer the box hugs its rows. Its rows can't carry handlers (Herdr
+    // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
+    // on_item_secondary_click, by the channel's tab id.
+    const ROW = 30;   // a 28 px row and its 2 px gap
+    const row = (tab) => {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      rows.child(h_flex().id(`hero-ch-${tab.id}`).h(28).flex_none().px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      return div().h(ROW).pb(2).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
-        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
@@ -657,9 +662,27 @@ export default class CrewRoster extends View {
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
           : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
+    };
+    const box = v_flex().px(8);
+    if (!list.length) {
+      if (q) box.child(div().h(28).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+      return v_flex().pt(4).child(head).child(box);
     }
-    if (q && !list.length) rows.child(div().h(28).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
-    return v_flex().pt(4).child(head).child(rows);
+    const act = list.findIndex((x) => x.active);
+    const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
+    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
+    const n = list.length, h = Math.min(n, 4) * ROW;
+    box.child(div().relative().h(h)
+      .child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
+        const out = [];
+        for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
+        return out;
+      }).track_scroll(this.chScroll)
+        .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
+        .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
+        .h(h).w_full())
+      .when(n > 4, (el) => el.child(Scrollbar.vertical("hero-ch-list").absolute().top(0).right(-6).w(6).h(h))));
+    return v_flex().pt(4).child(head).child(box);
   }
 
   // Put a pal to sleep (the hero's moon; the same as its menu's): keep its record (folder, brain,
