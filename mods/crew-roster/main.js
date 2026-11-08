@@ -759,7 +759,7 @@ export default class CrewRoster extends View {
     const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.banner(shown, t, d));
-    const list = v_flex().id("pro-list").flex_1().min_h(0).overflow_y_scrollbar().py(6).px(8).gap(1);
+    const list = v_flex().id("pro-list").flex_1().min_h(0).overflow_y_scrollbar().pt(6).pb(24).px(8).gap(2);
     if (this.view() !== "bots") root.child(this.otherView(list, rows, waiting, t, d));
     else {
       if (shown) this.channelList(list, shown, t, d);
@@ -781,11 +781,11 @@ export default class CrewRoster extends View {
     const model = bot.awake ? this.modelWord(tab) : null;
     return v_flex().id(`banner-${space.id}`).flex_none().border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(div().id("banner-art").flex_none().flex().justify_center().pt(12).px(12).cursor_pointer()
+      .child(div().id("banner-art").flex_none().flex().justify_center().pt(12).px(16).cursor_pointer()
         .on_click(() => this.look(space))
-        .child(p && petReady(p) ? petEl(p, state, Math.max(160, Math.round((this.width ?? 304) - 24 - 1)), 130, { back: d.bg1 })
+        .child(p && petReady(p) ? petEl(p, state, Math.max(160, Math.round((this.width ?? 304) - 32 - 1)), 130, { back: d.bg1 })
           : div().h(130).flex().items_center().child(mascotEl(bot, m, 72, t))))
-      .child(v_flex().gap(6).pt(10).px(12).pb(12)
+      .child(v_flex().gap(6).pt(10).px(16).pb(12)
         .child(h_flex().items_center().gap(8)
           .child(div().flex_1().min_w(0).truncate().text_size(15).line_height("18px").font_weight(600).text_color(d.fg1).child(bot.name))
           .child(stateTag(state, d, !bot.awake)))
@@ -799,7 +799,7 @@ export default class CrewRoster extends View {
   // The shown pal's channels: "# name" with a dot (working, needs you), a check (done) or a day,
   // and what each is on under it.
   channelList(list, { space, bot }, t, d) {
-    list.child(h_flex().h(28).flex_none().items_center().px(6)
+    list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Channels"))
       .child(div().id("pro-ch-add").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("New channel")
         .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
@@ -838,7 +838,7 @@ export default class CrewRoster extends View {
       .sort((x, y) => (STATUS_RANK[y.space.status] ?? 0) - (STATUS_RANK[x.space.status] ?? 0));
     const nWork = rows.filter((r) => r.space.status === "working").length;
     const nStuck = rows.filter((r) => r.space.status === "blocked").length + Object.keys(this.ops.stalled).length;
-    return v_flex().flex_none().gap(6).py(10).px(12).border_t_1().border_color(d.line)
+    return v_flex().flex_none().gap(6).py(10).px(16).border_t_1().border_color(d.line)
       .child(h_flex().items_center().gap(6)
         .child(div().flex_1().text_size(12).line_height("16px").font_weight(500).text_color(d.fg3).child("Across pals"))
         .child(div().text_size(12).line_height("16px").text_color(d.fg3).child([nWork && `${nWork} working`, nStuck && `${nStuck} stuck`].filter(Boolean).join(" · ") || "all quiet")))
