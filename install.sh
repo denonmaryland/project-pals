@@ -32,6 +32,23 @@ version="$(cat "$src/VERSION" 2>/dev/null || echo 0.0.0)"
 [[ -d "$home" ]] || { echo "no Herdr app home at $home (open Herdr once first)" >&2; exit 1; }
 for need in rsync python3; do command -v "$need" >/dev/null || { echo "Project Pals needs $need; install it and run this again" >&2; exit 1; }; done
 
+# About › Roll back puts back the newest update snapshot (.crew-backups/update-*.tar.gz). The
+# updater takes one before it installs a release (and runs this with --from-release); take one here
+# too, so Roll back undoes THIS install. Without it, Roll back after a local install skipped past it
+# to whatever release the updater last replaced (on 2026-11-08 that put 0.2.1 back over Focus/Pro).
+# Only over an existing install (a fresh one has nothing to go back to); the last 5 are kept.
+if [[ "$from" == "local" && -d "$home/mods/crew-roster" ]]; then
+  HERDR_APP_HOME="$home" python3 - "$src/bin" <<'PY' || echo "couldn't snapshot the current install for Roll back; continuing" >&2
+import sys
+sys.path.insert(0, sys.argv[1])
+import crewupdate
+crewupdate._snapshot(f"from-{crewupdate.installed().get('version', 'unknown')}-local")
+local = [p for p in crewupdate.backups() if "-local-" in p.name]
+for p in local[:-5]:
+    p.unlink(missing_ok=True)
+PY
+fi
+
 for dir in "$src"/mods/crew-*; do
   name="$(basename "$dir")"
   dest="$home/mods/$name"

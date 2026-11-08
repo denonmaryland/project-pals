@@ -186,6 +186,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Updates:** About → Check for updates → Update. Downloads the latest release of the repo in
   `pal.json`, checks it against `SHA256SUMS`, snapshots the installed files, runs `install.sh`,
   and restores the snapshot if any mod fails `herdr-app check`. Roll back is offered.
+  A local `./install.sh` over an existing install takes the same kind of snapshot first
+  (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
+  recent install, not an older release update.
 
 ### Layout modes: Focus (default) and Pro
 
