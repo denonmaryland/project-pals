@@ -184,10 +184,18 @@ One shape, Focus: DeNon removed the Pro view (pal rail, list column, tab strip, 
 switch) on 2026-11-08. Anything new is drawn in the design-system look: 1px hairlines, radius 3/4/6/8,
 rectangular segments and tags.
 
-- **Pal order:** the head pal first, then pinned pals (pin order), then the rest by who needs you,
-  until you arrange them: right-click a pal → Move up / Move down (within its group; unpinned pals
-  on this computer only), which moves Herdr's spaces (`space.move`) and from then on keeps Herdr's
-  order (`crew.marks.palsArranged`).
+- **Pal groups and order** (DeNon, 2026-11-08, like Grok Bot's): the head pal on top, then named
+  groups ("Personal", "Business", …) under small grey headers (11px #6A6A6C name, #56565A count),
+  then "Unassigned" (where new pals land); with no groups made, no headers at all. Inside a group:
+  pinned pals first (pin order), then your order, else who needs you most. **Drag** a pal (press,
+  move 5px): it dims and a 2px blue line shows where it lands (above or below the row under the
+  pointer; on a header, first in that group; an empty group shows "Drag a pal here"), release
+  drops it, leaving the list cancels. Right-click a pal: Pin, Move up / Move down, and a Group
+  section (each group, Unassigned, New group…). Right-click a group header: Rename…, Move up /
+  down, New group…, Delete group (its pals go to Unassigned). The gear menu has New group… too.
+  Saved in shared `crew.marks` (`groups`, `pals[bot].group/order/pin`, `arranged`), so it
+  survives restarts; Herdr's own space order isn't touched. The channel list can't drag: it's a
+  virtual list, whose rows can't take their own mouse handlers in Herdr.
 - **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
   rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
   previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
@@ -258,7 +266,7 @@ rectangular segments and tags.
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
     `crew-composer` (rooms), `crew-status`. Popups: `crew-appmenu` (the gear), `crew-termmenu`. Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
-  - Dialogs: `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
+  - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
     `crew-attach`, `crew-tell` (props `space`, `tab`).
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.

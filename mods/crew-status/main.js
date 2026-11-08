@@ -47,7 +47,7 @@ export default class CrewStatus extends View {
     items.push(div().id("crew-gear").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
       .tooltip("Menu: settings, themes, layouts, hire, routines")
       .hover((s) => s.bg(d.hover))
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 392 }); })
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 424 }); })
       .child(svg("mods/crew-roster/icons/settings.svg").size(12).text_color(d.fg2)), sep());
     items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
     if (usage) items.push(sep(), text(usage, d.fg3));

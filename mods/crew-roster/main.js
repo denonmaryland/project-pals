@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned } from "./crew.js";
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -231,7 +231,7 @@ export default class CrewRoster extends View {
           .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
           .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked))))))
       .child(icon("rail-hire", "plus", () => this.hire()))
-      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 392 })));
+      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 424 })));
   }
 
   brand(t) {
@@ -486,7 +486,10 @@ export default class CrewRoster extends View {
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.heroCard(shown, t, d, w));
-    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().px(8).pt(8).pb(24).gap(2);
+    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().px(8).pt(8).pb(24).gap(2)
+      // A pal drag ends on release anywhere in the list, and is dropped if the pointer leaves it.
+      .on_mouse_up("left", (_e, cx) => this.drop(cx))
+      .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
     if (this.view() !== "bots") return root.child(this.otherView(list, rows, waiting, t, d));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
@@ -494,7 +497,15 @@ export default class CrewRoster extends View {
         .hover((s) => s.bg(d.hover)).on_click(() => run("app.palette"))
         .child(svg(`${ICON}/ds-search.svg`).size(13).text_color(d.iconDim))));
     if (!rows.length && !asleep.length) list.child(this.empty(t));
-    list.children(live.map((r) => this.palRow(r, t, d)));
+    // The head pal, then each group under a small grey header (only once you've made a group), then
+    // Unassigned. Empty groups still show, as somewhere to drop a pal.
+    const grouped = palGroups().length > 0;
+    for (const sec of palSections(live)) {
+      const gid = sec.group === undefined ? undefined : sec.group?.id ?? null;
+      if (grouped && sec.group !== undefined) list.child(this.groupHeader(sec.group, sec.rows.length, d));
+      list.children(sec.rows.map((r) => this.palRow(r, t, d, gid)));
+      if (grouped && sec.group && !sec.rows.length) list.child(this.groupDrop(sec.group.id, d));
+    }
     if (nHidden) {
       list.child(h_flex().id("asleep-toggle").h(40).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
         .hover((s) => s.bg(d.hover))
@@ -716,6 +727,55 @@ export default class CrewRoster extends View {
     cx.spawn(async () => { try { await rememberModel(space); } catch {} run("space.close", { id: space.id }); });
   }
 
+  // ── Dragging pals and groups ────────────────────────────────────────────────────────────────
+  // The pointer moved over a row or a group header while the button is down (this.drag is set by
+  // the row's press): past 5 px it's a drag; `target` is where it would land (null: nowhere).
+  dragOver(e, cx, target) {
+    const dg = this.drag;
+    if (!dg) return;
+    if (!dg.active) { if (Math.abs(e.position.y - dg.y0) < 5) return; dg.active = true; }
+    if (JSON.stringify(target) !== JSON.stringify(dg.over)) { dg.over = target; cx.notify(); }
+  }
+  // Released: put the pal where the line was (before the row under it, or after; a header: first in
+  // that group), in that group.
+  drop(cx) {
+    const dg = this.drag;
+    this.drag = null;
+    if (!dg?.active || !dg.over) { if (dg) cx.notify(); return; }
+    const bot = spaces().map((sp) => botOf(sp)).find((b) => b.id === dg.id);
+    const o = dg.over;
+    if (bot && o.id !== bot.id) {
+      const rows = spaces().map((sp) => ({ space: sp, bot: botOf(sp) }));
+      const sec = palSections(rows).find((x) => (x.group?.id ?? null) === (o.gid ?? null));
+      const ids = (sec?.rows ?? []).map((r) => r.bot.id).filter((id) => id !== bot.id);
+      let before = null;
+      if (o.header) before = ids[0] ?? null;
+      else { const k = ids.indexOf(o.id); before = k < 0 ? null : (o.after ? ids[k + 1] ?? null : ids[k]); }
+      placePal(bot, o.gid ?? null, before);
+    }
+    cx.notify();
+  }
+  // A group's header: its name (Unassigned for pals with none) and count, small and grey; a drop
+  // target (first in the group); right-click for Rename / Move / Delete / New group.
+  groupHeader(g, n, d) {
+    const gid = g?.id ?? null;
+    const over = this.drag?.active && this.drag.over?.header && (this.drag.over.gid ?? null) === gid;
+    return h_flex().id(`grp-${gid ?? "none"}`).h(28).mt(6).flex_none().items_center().gap(6).pl(8).pr(8).rounded(d.r.sm)
+      .when(Boolean(over), (el) => el.bg(d.hover))
+      .on_mouse_move((e, cx) => this.dragOver(e, cx, { header: true, gid }))
+      .when(Boolean(g), (el) => el.on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "group", group: gid } }); }))
+      .child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(g ? g.name : "Unassigned"))
+      .child(div().text_size(11).line_height("14px").text_color(d.fg4).child(String(n)));
+  }
+  // An empty group: somewhere to drop.
+  groupDrop(gid, d) {
+    const over = this.drag?.active && this.drag.over?.header && this.drag.over.gid === gid;
+    return h_flex().id(`grp-drop-${gid}`).h(32).flex_none().items_center().pl(8).rounded(d.r.sm)
+      .when(Boolean(over), (el) => el.bg(d.hover))
+      .on_mouse_move((e, cx) => this.dragOver(e, cx, { header: true, gid }))
+      .child(div().text_size(12).line_height("16px").text_color(d.fg4).child("Drag a pal here, or right-click one → Group"));
+  }
+
   // A pal row's pet: bare on the sidebar (its open tiles, no box or hairline) over a soft aura, with a small still
   // pool of the state's colour under it, as the hero's floor has (asks you breathes). No edge loader:
   // the paw taps and the bits rise while it works, and the row's dot says so too.
@@ -736,7 +796,7 @@ export default class CrewRoster extends View {
   }
 
   // A Focus pal row: 68 px, r6, the pet bare at 75x59 (DeNon 2026-11-08; dimmed while it's closed), name + time + dot, "[channel] what it's on".
-  palRow({ space, bot }, t, d) {
+  palRow({ space, bot }, t, d, gid = undefined) {
     const st = space.status;
     const on = space.active;
     const awake = bot.awake || bot.starting;
@@ -747,10 +807,21 @@ export default class CrewRoster extends View {
     // never drops below #808082 (its pet dims instead).
     const nameColor = awake ? d.fg1 : d.fg2;
     const whatColor = awake ? d.body : d.fg2;
-    return h_flex().id(`bot-${space.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
+    // Dragging (pals in the groups, not the head pal or hidden ones): press, move 5 px, and a 2 px
+    // line shows where it will land (above or below the row under the pointer); release drops it.
+    const draggable = gid !== undefined && !bot.god;
+    const dg = this.drag?.active ? this.drag : null;
+    const over = dg?.over && dg.over.id === bot.id ? dg.over : null;
+    return h_flex().id(`bot-${space.id}`).relative().h(ROW_H).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
       .when(on, (el) => el.bg(d.sel))
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { this.open(space); cx.notify(); })
+      .when(Boolean(dg) && dg.id === bot.id, (el) => el.opacity(0.45))
+      .when(draggable, (el) => el
+        .on_mouse_down("left", (e) => { this.drag = { id: bot.id, gid, y0: e.position.y, active: false, over: null }; })
+        .on_mouse_move((e, cx) => this.dragOver(e, cx, { id: bot.id, gid, after: e.local_position.y > e.bounds.height / 2 })))
+      .when(!draggable && gid === undefined && bot.god, (el) => el.on_mouse_move((e, cx) => this.dragOver(e, cx, null)))
+      .when(Boolean(over), (el) => el.child(div().absolute().left(6).right(6).h(2).rounded(1).bg(d.info).when(over.after, (x) => x.bottom(0)).when(!over.after, (x) => x.top(0))))
+      .on_click((_e, cx) => { if (this.drag?.active) return; this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(this.rowPet(bot, mood(st, awake), t)))
       .child(v_flex().flex_1().min_w(0).gap(2)

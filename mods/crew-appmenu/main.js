@@ -29,6 +29,7 @@ export default class CrewAppMenu extends View {
     return [
       { label: "Hire a pal…", icon: "plus", key: shortcut("crew-roster.hire"), go: dialog("crew-hire", 520, { modal: true }) },
       { label: "New room…", icon: "users", go: dialog("crew-room-new", 520, { modal: true }) },
+      { label: "New group…", icon: "plus", go: dialog("crew-group", 400, { props: { mode: "new" } }) },
       { sep: true },
       { label: "Inbox", icon: "ds-check", go: view("you") },
       { label: "Rooms", icon: "users", go: view("rooms") },

@@ -11,7 +11,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
-  canMoveChannel, moveChannel, canMovePal, movePal,
+  canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
   crew, wakePal, forgetPal, rememberModel, rooms, showRoom, deleteRoom, showTabs } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -105,6 +105,21 @@ export default class CrewMenu extends View {
         .child(item("m-close", "x", "Close channel", () => run("tab.close", { id: tab.id }), t.blocked));
     }
 
+    // A group's header: rename it, move it, delete it (its pals go back to Unassigned), or make another.
+    if (p.what === "group") {
+      const g = palGroups().find((x) => x.id === p.group);
+      if (!g) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That group is gone."));
+      const gs = palGroups();
+      const i = gs.findIndex((x) => x.id === g.id);
+      return root
+        .child(title(g.name))
+        .child(item("m-grename", null, "Rename…", () => openOverlay({ mod: "crew-group", kind: "dialog", width: 400, props: { mode: "rename", group: g.id } })))
+        .child(moves("m-gmove", (dir) => i + dir >= 0 && i + dir < gs.length, (dir) => moveGroup(g.id, dir)))
+        .child(item("m-gnew", "plus", "New group…", () => openOverlay({ mod: "crew-group", kind: "dialog", width: 400, props: { mode: "new" } })))
+        .child(line())
+        .child(careful("m-gdelete", "Delete group", "Click again: its pals go to Unassigned", () => { deleteGroup(g.id); this.close(); }));
+    }
+
     // A pal.
     const bot = botOf(space);
     const pinned = palPinned(bot);
@@ -116,6 +131,15 @@ export default class CrewMenu extends View {
       .child(item("m-rename", null, "Rename", () => run("space.rename", { id: space.id })))
       .child(item("m-look", null, "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
       .child(item("m-add", "plus", "New channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })))
+      // Its group: one row per group (the current one checked), Unassigned, and a new one.
+      .when(!bot.god, (el) => {
+        const cur = groupOf(bot);
+        el.child(line()).child(div().px(10).pt(4).pb(2).text_size(12).text_color(t.dim).child("Group"));
+        for (const g of [...palGroups(), { id: null, name: "Unassigned" }]) {
+          el.child(item(`m-grp-${g.id ?? "none"}`, cur === g.id ? "check" : null, g.name, () => { if (cur !== g.id) setPalGroup(bot, g.id); }));
+        }
+        return el.child(item("m-grp-new", "plus", "New group…", () => openOverlay({ mod: "crew-group", kind: "dialog", width: 400, props: { mode: "new", bot: bot.id } })));
+      })
       // Put to sleep: closes its space (every channel stops; Herdr asks first); it waits under Asleep
       // and a click wakes it.
       .child(line())
