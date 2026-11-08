@@ -7,6 +7,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, EditorState, Editor, TextView, InputState, Input } from "gpui-base";
 import { exec, appHome, writeTextFile, readTextFile, notify, shared, setShared } from "herdr";
 import { targetOf, followShown, stillTarget } from "./bind.js";
+import { parseLogLine } from "./loglines.js";
 import { crewCli, ownerCli, openPanel, panelState, panelTab, setPanelSize, panelFull, pebble } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -229,13 +230,12 @@ function check(d, item, onClick) {
 
 function logRows(d, lines, n) {
   return v_flex().children(lines.slice(0, n).map((l, i) => {
-    const m = l.match(/^(\d{4})-(\d\d)-(\d\d)(?:\s+(#\S+))?(?:\s+\(([^)]*)\))?(?:\s+·\s+([^:]+))?:\s*([\s\S]*)$/);
-    const when = m ? `${m[2]}-${m[3]}` : "";
-    const who = m ? (m[4] ?? m[5] ?? m[6] ?? "") : "";
-    return h_flex().min_h(28).items_center().gap(10).when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
-      .child(div().w(36).flex_none().text_size(10).font_family(d.mono).text_color(d.fg3).child(when))
-      .when(Boolean(who), (el) => el.child(div().w(76).flex_none().truncate().text_size(10).font_family(d.mono).text_color(d.fg2).child(who)))
-      .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(d.body).child(m ? m[7] : l));
+    const { when, who, text } = parseLogLine(l);
+    // Top-aligned, so a wrapped line keeps its date and name level with its first line.
+    return h_flex().min_h(28).py(6).items_start().gap(10).when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
+      .when(Boolean(when), (el) => el.child(div().w(36).flex_none().text_size(10).line_height("16px").font_family(d.mono).text_color(d.fg3).child(when)))
+      .when(Boolean(who), (el) => el.child(div().w(76).flex_none().truncate().text_size(10).line_height("16px").font_family(d.mono).text_color(d.fg2).child(who)))
+      .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(d.body).child(text));
   }));
 }
 
