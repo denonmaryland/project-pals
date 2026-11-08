@@ -4,7 +4,7 @@
 // width back. It always shows the shown pal. Two sizes: Side (beside the terminal, 420 px by
 // default, 360-640, remembered) and Full (the work area). See docs/profiles/proposal.md.
 //
-// Tabs, in two groups: the agent (Profile) ‖ its project (Mission, Brain, AGENTS.md, from stage 2).
+// Tabs, in two groups: the agent (Profile) ‖ its project (Mission, Brain, AGENTS.md: project.js).
 // Profile: identity, facts, stats, channels (Review on worktree channels), memory, routines, actions.
 
 import { View, div, svg, image } from "gpui-kit";
@@ -12,13 +12,14 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView } 
 import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay, nextCommand, shared } from "herdr";
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskOf, updateBot,
-  ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
+  ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
   tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS,
 } from "./crew.js";
+import { initProject, ensureProject, loadAgents, missionTab, brainTab, agentsTab, agentsBadge, badgeTag } from "./project.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
-const TABS = [["profile", "Profile"]];
+const TABS = [["profile", "Profile"], ["|"], ["mission", "Mission"], ["brain", "Brain"], ["agents", "AGENTS.md"]];
 const STATE_DOT = (d) => ({ work: d.info, ask: d.warn, stuck: d.warn, done: d.ok, pr: d.ok, merged: "#A78BFA", closing: d.err });
 
 export default class CrewProfile extends View {
@@ -49,6 +50,15 @@ export default class CrewProfile extends View {
       if (st.at && st.at !== this.seenAt && this.isOpen()) { this.seenAt = st.at; this.h.focus(); this.loadMemory(cx, true); }
       const s = this.shown();
       if (s && this.isOpen() && this.memFor !== s.bot.name && !this.loadingFor) { this.loadingFor = s.bot.name; this.loadMemory(cx, true); }
+    });
+    // Mission, Brain and AGENTS.md (project.js): their data, editors and timers.
+    initProject(this, cx);
+    // What the shown tab needs, and the AGENTS.md tab's lint badge for the shown pal.
+    cx.timer.every(400, (cx) => {
+      const s = this.shown();
+      if (!s || !this.isOpen()) return;
+      ensureProject(this, cx, s.bot);
+      if (this.agentsFor !== s.bot.name && !this.agentsLoading) loadAgents(this, cx, true);
     });
     // pane.go sends "focus" when it moves onto the panel.
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "focus") this.h.focus(); cx.notify(); } });
@@ -131,14 +141,25 @@ export default class CrewProfile extends View {
     const s = this.shown();
     const root = v_flex().id("crew-profile").size_full().bg(d.bg1).border_l_1().border_color(d.line)
       .track_focus(this.h)
-      .on_key_down((e, cx) => { if (e.key === "escape" && !this.editingRole) { cx.stop_propagation(); closePanel(); } });
+      // Esc: out of an edit or a review first, else close the panel.
+      .on_key_down((e, cx) => {
+        if (e.key !== "escape" || this.editingRole) return;
+        cx.stop_propagation();
+        if (this.edit || this.review) { this.edit = null; this.review = null; cx.notify(); return; }
+        closePanel();
+      });
     if (!s) return root.child(div().p(16).text_size(13).text_color(d.fg3).child("No pal shown."));
     const { space, bot } = s;
     const full = panelFull();
+    const tab = panelTab();
+    const scroll = (el) => div().id(`pf-scroll-${tab}`).flex_1().min_h(0).overflow_y_scrollbar().child(full ? div().max_w(980).child(el) : el);
     return root
       .child(this.header(space, bot, d, full))
-      .child(this.tabs(d))
-      .child(this.profileTab(space, bot, t, d, full));
+      .child(this.tabs(d, bot))
+      .child(tab === "mission" ? scroll(missionTab(this, space, bot, d, full))
+        : tab === "brain" ? scroll(brainTab(this, space, bot, d, full))
+        : tab === "agents" ? scroll(agentsTab(this, space, bot, d, full))
+        : this.profileTab(space, bot, t, d, full));
   }
 
   // 52 px: the pet chip, the name, ⤢ / ⤡ and ×.
@@ -156,15 +177,18 @@ export default class CrewProfile extends View {
   }
 
   // 36 px: rectangular tabs; the pal's on the left of the divider, its project's on the right.
-  tabs(d) {
+  tabs(d, bot) {
     const cur = panelTab();
     const strip = h_flex().h(36).flex_none().items_center().gap(2).px(12).border_b_1().border_color(d.line);
+    const badge = agentsBadge(this, bot);
     for (const [key, label] of TABS) {
       if (key === "|") { strip.child(div().w(1).h(16).mx(6).bg(d.lineMid)); continue; }
-      const on = cur === key || TABS.length === 1;
-      strip.child(div().id(`pf-tab-${key}`).h(26).px(10).flex().items_center().rounded(d.r.sm).border_1()
+      const on = cur === key;
+      strip.child(h_flex().id(`pf-tab-${key}`).h(26).px(10).gap(6).items_center().rounded(d.r.sm).border_1()
         .border_color(on ? d.lineMid : "#00000000").when(on, (el) => el.bg(d.sel))
-        .text_size(12).font_weight(500).text_color(on ? d.fg1 : d.fg2).child(label));
+        .when(!on, (el) => el.cursor_pointer().hover((s) => s.text_color(d.fg1)).on_click((_e, cx) => { this.edit = null; this.review = null; openPanel(key); cx.notify(); }))
+        .text_size(12).font_weight(500).text_color(on ? d.fg1 : d.fg2).child(label)
+        .when(key === "agents" && Boolean(badge), (el) => el.child(badgeTag(d, badge[1], badge[0]))));
     }
     return strip;
   }

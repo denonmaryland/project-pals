@@ -19,12 +19,19 @@ except ValueError:
 hooks = data.setdefault("hooks", {})
 want = {
     "SessionStart": {"matcher": "^(startup|resume|clear|compact)$", "hooks": [{"type": "command", "command": f"{hook} session-start", "timeout": 10}]},
-    "PreToolUse": {"matcher": "Bash", "hooks": [{"type": "command", "command": f"{hook} pre-tool-use", "timeout": 10}]},
+    # Bash for guarded commands; the edit tools so a pal's edit of AGENTS.md / CLAUDE.md is held too.
+    "PreToolUse": {"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": f"{hook} pre-tool-use", "timeout": 10}]},
 }
 changed = False
 for event, entry in want.items():
     entries = hooks.setdefault(event, [])
-    if any("crew-hook" in h.get("command", "") for e in entries for h in e.get("hooks", [])):
+    ours = [e for e in entries if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
+    if ours:
+        # An older install's entry: bring its matcher up to date (Bash → Bash|Edit|Write|…).
+        for e in ours:
+            if e.get("matcher") != entry["matcher"]:
+                e["matcher"] = entry["matcher"]
+                changed = True
         continue
     entries.append(entry)
     changed = True

@@ -129,6 +129,7 @@ export default class CrewMenu extends View {
       .child(title(bot.name))
       // Its profile: the right-side panel (DeNon 2026-11-08).
       .child(item("m-profile", "ds-user", "Profile", () => togglePanel("profile")))
+      .child(item("m-mission", "ds-mission", "Mission", () => togglePanel("mission")))
       .child(line())
       .when(!bot.god, (el) => el.child(item("m-pin", "pin", pinned ? "Unpin from the top" : "Pin to the top", () => pinPal(bot, !pinned)))
         .child(moves("m-move", (dir) => canMovePal(space, dir), (dir) => movePal(space, dir))))

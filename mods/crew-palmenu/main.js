@@ -1,7 +1,7 @@
 // Project Pals pal menu: opened from the header's pal chip (its ▾). Everything about THE AGENT and
 // THAT PROJECT, not its channels (the hero lists those): its profile, memory and tasks; its project's
 // review and folder; and the pal's actions. Each opens the right-side panel's tab, or the dialog it
-// names. Mission, Brain, Notebook and AGENTS.md join as their tabs are built. Drawn like crew-pick:
+// names. Notebook joins in stage 4. Drawn like crew-pick:
 // an r4 #161617 popover, a 1 px hairline, 30 px rows. Keys: ↑/↓ move, Enter opens, Esc closes.
 
 import { View, div, svg } from "gpui-kit";
@@ -51,6 +51,9 @@ export default class CrewPalMenu extends View {
       ["The pal", "memory", "ds-memory", "Memory", null, panel("profile", "memory")],
       ["The pal", "tasks", "ds-tasks", "Tasks", this.open ? `${this.open} open` : null, () => setShared("crew.view", "tasks")],
     ];
+    out.push(["The project", "mission", "ds-mission", "Mission", null, panel("mission")]);
+    out.push(["The project", "brain", "ds-brain", "Brain", null, panel("brain")]);
+    out.push(["The project", "agents", "ds-agents", "AGENTS.md", null, panel("agents")]);
     if (wt) out.push(["The project", "review", "ds-review", "Review changes", wt.branch ?? `#${channelName(tab)}`, () => openReview(space, tab)]);
     if (bot.folder ?? space.folder) out.push(["The project", "folder", "ds-folder", "Open folder", null, () => exec("xdg-open", [bot.folder ?? space.folder]).catch(() => {})]);
     out.push(["", "tell", "ds-tell", "Tell…", null, () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: tab?.id } })]);

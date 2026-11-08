@@ -14,7 +14,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 5
+DEFAULTS_VERSION = 6
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -34,6 +34,14 @@ DEFAULT = {
         # so the script itself needs the click: ./release 0.2.3, bash scripts/release.sh v1.0.0, make release.
         {"name": "release-script", "why": "runs a release script (push and publish)",
          "pattern": r"(?:(?:ba|z)?sh\s+)?(?:\S*/)?release(?:\.sh)?\s+v?\d+\.\d+\.\d+|make\s+(?:\S+\s+)*release(?:\s|$)"},
+        # A project's agent instructions change only with the owner's click (the profile panel's
+        # AGENTS.md tab; DeNon 2026-11-08, P6). A pal's Edit/Write on AGENTS.md or CLAUDE.md is held
+        # (crew-hook turns it into "edit <path>"), and so is a shell write to one. The smooth way:
+        # pal agents propose <file> --file new.md, which goes to the Inbox with its diff.
+        {"name": "agents-file", "why": "edits the project's AGENTS.md or CLAUDE.md (propose it instead: pal agents propose)",
+         "pattern": r"^edit\s+.*(AGENTS|CLAUDE)\.md$"},
+        {"name": "agents-file-shell", "why": "writes the project's AGENTS.md or CLAUDE.md (propose it instead: pal agents propose)", "anywhere": True,
+         "pattern": r"(>>?|\btee\b(\s+-a)?)\s*['\"]?[^\s'\"|;&]*(AGENTS|CLAUDE)\.md\b|\bsed\s+(-\w+\s+)*-i\S*\s.*(AGENTS|CLAUDE)\.md\b|\b(mv|cp)\s+.*\s['\"]?[^\s'\"]*(AGENTS|CLAUDE)\.md['\"]?\s*$"},
     ],
     "trusted": [],
 }

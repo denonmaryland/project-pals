@@ -13,7 +13,7 @@ import {
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal,
-  togglePanel, panelOpen, panelTab, needsOf } from "./crew.js";
+  togglePanel, panelOpen, panelTab, needsOf, openProposalPanel } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -77,12 +77,12 @@ export default class CrewRoster extends View {
     draw(cx);
     cx.timer.every(5000, (cx) => draw(cx));
     // Tasks, approvals, routines and stuck channels (kept by crewd and the crew command).
-    this.ops = { approvals: [], tasks: [], routines: [], stalled: {}, daemon: true };
+    this.ops = { approvals: [], proposals: [], tasks: [], routines: [], stalled: {}, daemon: true };
     const ops = (cx) => cx.spawn(async (cx) => {
       try { this.ops = await loadOps(); } catch {}
       // What needs DeNon, for the status bar's "N need you" (published only when it changes).
       const n = needsOf(spaces(), this.ops), was = shared("crew.needs");
-      if (!was || was.count !== n.count || was.approvals !== n.approvals) setShared("crew.needs", n);
+      if (!was || was.count !== n.count || was.approvals !== n.approvals || was.proposals !== n.proposals) setShared("crew.needs", n);
       cx.notify();
     });
     ops(cx);
@@ -210,7 +210,7 @@ export default class CrewRoster extends View {
     // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
-    const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length;
+    const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0);
     if (narrow()) return this.rail(rows, waiting, t, extra);
     return this.focusColumn(rows, asleep, waiting, t, extra);
   }
@@ -297,7 +297,8 @@ export default class CrewRoster extends View {
   inbox(waiting, t) {
     const list = v_flex().gap(4);
     const { approvals, stalled } = this.ops;
-    const total = waiting.length + approvals.length + Object.keys(stalled).length;
+    const proposals = this.ops.proposals ?? [];
+    const total = waiting.length + approvals.length + Object.keys(stalled).length + proposals.length;
     list.child(h_flex().items_baseline().gap(8).px(8).pb(10)
       .child(div().text_size(44).font_weight(200).text_color(t.foreground).child(String(total)))
       .child(div().text_size(14).text_color(t.muted).child("ready for you")));
@@ -323,6 +324,27 @@ export default class CrewRoster extends View {
             .on_click((_e, cx) => this.decide(ap, false, cx)).child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
           .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
             .on_click((_e, cx) => this.decide(ap, true, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve")))));
+    }
+    // Proposals: a change a pal wants made to its mission or its project's AGENTS.md / CLAUDE.md.
+    // View opens the profile panel on it (the diff, then Write / Accept); Decline tells the pal.
+    for (const pr of proposals) {
+      const f = this.locate(pr.pal);
+      const bot = f ? botOf(f.space) : { name: pr.pal, harness: null };
+      const what = pr.kind === "mission" ? "its mission" : pr.file;
+      list.child(v_flex().id(`pr-${pr.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.accent, "10")).border_1().border_color(a(t.accent, "30"))
+        .child(h_flex().items_center().gap(11)
+          .child(mascotEl(bot, "idle", 32, t))
+          .child(v_flex().flex_1().min_w(0).gap(2)
+            .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${pr.by.split(" - ")[0]} proposes a change to ${what}`))
+            .child(div().truncate().text_size(12).text_color(t.dim).child(`${pr.pal.split(" - ")[0]} · ${ago(pr.at)} · ${pr.id}`))))
+        .when(Boolean(pr.note), (el) => el.child(div().text_size(12).text_color(t.muted).child(pr.note)))
+        .child(h_flex().gap(8).justify_between()
+          .child(div().id(`pr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
+            .on_click((_e, cx) => cx.spawn(async (cx) => { try { await crewCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
+            .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
+          .child(div().id(`pr-view-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
+            .on_click(() => { if (f) this.go(f.space, null); openProposalPanel(pr); })
+            .child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("View")))));
     }
     // Channels that have been "working" with an unchanged screen for a while.
     for (const [term, st] of Object.entries(stalled)) {

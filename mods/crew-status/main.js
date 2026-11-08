@@ -56,7 +56,7 @@ export default class CrewStatus extends View {
     if (needs?.count > 0) {
       const urgent = needs.approvals > 0;
       items.push(sep(), h_flex().id("crew-needs").flex_none().items_center().gap(6).cursor_pointer()
-        .tooltip([needs.asks && `${needs.asks} asking`, needs.approvals && `${needs.approvals} waiting for your OK`, needs.stuck && `${needs.stuck} stuck`].filter(Boolean).join(" · "))
+        .tooltip([needs.asks && `${needs.asks} asking`, needs.approvals && `${needs.approvals} waiting for your OK`, needs.stuck && `${needs.stuck} stuck`, needs.proposals && `${needs.proposals} proposal${needs.proposals === 1 ? "" : "s"}`].filter(Boolean).join(" · "))
         .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); setShared("crew.view", "you"); })
         .child(dot(urgent ? d.err : d.warn)).child(text(`${needs.count} need${needs.count === 1 ? "s" : ""} you`, urgent ? d.err : d.warnText)));
     }

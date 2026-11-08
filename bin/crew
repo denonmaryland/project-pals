@@ -33,6 +33,16 @@ Work
   pal diff <Pal#ch> [--stat|--json] what a worktree channel changed
   pal land <Pal#ch> [--check "cmd"] merge a worktree channel's branch into its project (needs the owner)
 
+Mission, brain and agent files (the profile panel shows them all)
+  pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
+  pal mission focus "…" | tick "goal" [--undo]          keep your focus current, tick a goal
+  pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to the Inbox
+  pal brain [ls] [Pal] [--json] | show [Pal] [file]     the pal's brain (mission, decisions, change log, map, notes)
+  pal brain log "what changed" | decide "what" --why "why" | note <topic> "…"
+  pal agents show|lint [Pal] [--json] [--deep]          the project's AGENTS.md / CLAUDE.md: what loads, what to fix
+  pal agents propose <file> -F new.md [--note "why"]    a change to AGENTS.md / CLAUDE.md, for the owner to apply
+  pal proposals | pal proposal show|accept|decline ID   proposals waiting on the owner (accept/decline: the owner)
+
 Memory and skills
   pal remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about the owner)
   pal memory [Pal] [--json]         what's remembered (--json: what a session starts with, for the profile panel)
@@ -259,7 +269,8 @@ def cmd_feed(spaces, show_all, n):
                 "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
                 "approval-refused": f"approval {e.get('id')}: a {e.get('wanted')} came after it was already {e.get('status')}; nothing changed",
-                "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}"}.get(k, k)
+                "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}",
+                "proposal": f"proposal {e.get('id')} ({e.get('what')}, {e.get('bot')}): {e.get('status')}"}.get(k, k)
         print(f"{time.strftime('%H:%M', time.localtime(e['at'] / 1000))} {what}")
     if not events:
         print("(nothing new)")
@@ -557,8 +568,16 @@ def cmd_task(spaces, rest):
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="blocked", note=" ".join(args[1:]))))
     elif sub == "done" and args:
         result = " ".join(args[1:]) or None
-        print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="done", result=result,
-                                              note=f"done: {result}" if result else None)))
+        t = crewtasks.update(args[0], spaces, me, name, status="done", result=result, note=f"done: {result}" if result else None)
+        print(crewtasks.line(t))
+        # One line in the owning pal's brain change log (who claimed it, else who it was for).
+        who = t.get("claimed_by") or t.get("assignee")
+        if who:
+            try:
+                sp, tb = find(who, spaces)
+                brain_log(sp, record_of(sp), sp["name"], f"{t['id']} done: {result or t.get('title', '')}", chan(tb) if "#" in who else None)
+            except CrewError:
+                pass
     elif sub == "assign" and len(args) >= 2:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, assignee=args[1])))
     elif sub == "cancel" and args:
@@ -676,6 +695,302 @@ def cmd_memory(spaces, args):
             return
         space, bot = s, s["name"]
     print(memory_text(bot, record_of(space).get("memory", ""), days=3, limit=20000) or f"(nothing remembered for {bot} yet)")
+
+
+# ─── Mission, brain, agent files, proposals (docs/profiles/proposal.md) ─────────────────────────
+
+def is_owner(spaces):
+    """Run by the owner (the Herdr app, or a terminal that isn't a pal's), not by a pal."""
+    s, _ = my_bot(spaces)
+    return s is None
+
+
+def pal_of(spaces, spec=None):
+    """(space, record, name) for `spec`, else the pal running this."""
+    if spec:
+        space, _ = find(spec, spaces)
+    else:
+        space, _ = my_bot(spaces)
+        if not space:
+            die("run this from a pal's channel, or say which: --pal Name")
+    return space, record_of(space), space["name"]
+
+
+def folder_of(space, record):
+    f = record.get("folder") or space.get("folder")
+    if not f:
+        die(f"{space['name']} has no project folder")
+    return os.path.expanduser(f)
+
+
+def file_opt(o):
+    path = o.get("file")
+    if not path:
+        die("give the text with --file F (or -F F)")
+    return sys.stdin.read() if path == "-" else open(os.path.expanduser(path)).read()
+
+
+def brain_log(space, record, name, text, channel=None, by=None):
+    import crewbrain
+    try:
+        return crewbrain.log(crewbrain.brain_dir(name, {**record, "folder": record.get("folder") or space.get("folder")}), text, channel, by)
+    except OSError:
+        return None
+
+
+def cmd_mission(spaces, rest):
+    import crewbrain
+    sub = rest[0] if rest and rest[0] in ("focus", "tick", "set", "propose", "show") else "show"
+    args = rest[1:] if rest and rest[0] == sub else rest
+    pos, o = opts(args, ("pal", "file", "expect", "note"), ("json", "undo"))
+    _, t = my_bot(spaces)
+    if sub == "show":
+        space, rec, name = pal_of(spaces, pos[0] if pos else o.get("pal"))
+        d = crewbrain.brain_dir(name, {**rec, "folder": folder_of(space, rec) if (rec.get("folder") or space.get("folder")) else None})
+        text = crewbrain.read(d, "mission.md")
+        if o.get("json"):
+            print(json.dumps({"pal": name, "dir": str(d), "text": text, "sha": crewbrain.sha(text), **crewbrain.parse_mission(text)}))
+        else:
+            print(text or f"(no mission yet for {name}: {OWNER} writes it in the profile panel, or a pal proposes one with pal mission propose --file F)")
+        return
+    space, rec, name = pal_of(spaces, o.get("pal") or (pos[0] if sub == "set" and pos else None))
+    rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+    d = crewbrain.brain_dir(name, rec)
+    if sub == "focus":
+        if not pos:
+            die('pal mission focus "what you\'re on now"')
+        crewbrain.set_focus(d, " ".join(pos))
+        brain_log(space, rec, name, f"focus: {' '.join(pos)}", chan(t) if t else None)
+        print(f"{name}'s focus: {' '.join(pos)}")
+    elif sub == "tick":
+        if not pos:
+            die('pal mission tick "goal or done-when text" [--undo]')
+        item = crewbrain.tick(d, " ".join(pos), done=False if o.get("undo") else None)
+        brain_log(space, rec, name, f"{'done' if item['done'] else 'reopened'}: {item['text']}", chan(t) if t else None)
+        print(f"{'[x]' if item['done'] else '[ ]'} {item['text']}")
+    elif sub == "set":
+        if not is_owner(spaces):
+            die(f"the mission is {OWNER}'s to write; propose one instead: pal mission propose --file F")
+        text = file_opt(o)
+        cur = crewbrain.read(d, "mission.md")
+        if o.get("expect") and crewbrain.sha(cur) != o["expect"]:
+            die("the mission changed since you opened it; look again")
+        crewbrain.write(d, "mission.md", text)
+        brain_log(space, rec, name, "mission updated", by=OWNER)
+        print(f"wrote {d / 'mission.md'}")
+    elif sub == "propose":
+        import crewproposals
+        text = file_opt(o)
+        cur = crewbrain.read(d, "mission.md")
+        p = crewproposals.propose("mission", name, f"{name}#{chan(t)}" if t else OWNER, text, "mission.md", crewbrain.sha(cur), o.get("note"))
+        print(f"proposed ({p['id']}): {OWNER} sees it in the Inbox and accepts or declines it; you'll hear which")
+
+
+def cmd_brain(spaces, rest):
+    import crewbrain
+    sub = rest[0] if rest else "ls"
+    args = rest[1:]
+    pos, o = opts(args, ("pal", "why", "by", "file", "expect"), ("json",))
+    _, t = my_bot(spaces)
+    ch = chan(t) if t else None
+    spec, fname = o.get("pal"), None
+    looks_file = lambda x: x.endswith(".md") or x.startswith("notes/") or x in ("mission", "decisions", "changelog", "map")
+    if sub == "show" and len(pos) >= 2:
+        spec, fname = spec or pos[0], pos[1]
+    elif sub == "show" and pos:
+        if looks_file(pos[0]):
+            fname = pos[0]
+        else:
+            spec = spec or pos[0]
+    elif sub in ("ls", "where", "write") and pos:
+        spec = spec or pos[0]
+    space, rec, name = pal_of(spaces, spec)
+    rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+    d = crewbrain.brain_dir(name, rec)
+    if sub == "ls":
+        import crewagents
+        agents = crewagents.read(os.path.join(rec["folder"], "AGENTS.md")) if rec.get("folder") else None
+        has_map = bool(agents and re.search(r"^#+\s*(Layout|File map|Files|Map|Structure)\b", agents, re.M | re.I))
+        info = crewbrain.summary(name, rec, has_map)
+        # An init-project-brain brain in the project, adopted in place (edits go through the
+        # agent-files writer, with the owner's click).
+        pb = os.path.join(rec["folder"], "_Brain", "PROJECT_BRAIN.md") if rec.get("folder") else None
+        info["project_brain"] = "_Brain/PROJECT_BRAIN.md" if pb and os.path.exists(pb) else None
+        if o.get("json"):
+            print(json.dumps(info))
+            return
+        m = info["mission"]
+        print(f"{name}'s brain ({info['where']}): {info['dir']}")
+        print(f"  mission: {m['statement'] or '(none yet)'}" + (f"\n  focus: {m['focus']}" if m["focus"] else ""))
+        print(f"  decisions: {len(info['decisions'])} · change log: {len(info['changelog'])} · notes: {len(info['notes'])}"
+              + (" · map: AGENTS.md has one" if has_map else ""))
+    elif sub == "show":
+        f = fname or "mission.md"
+        f = f if f.endswith(".md") else f + ".md"
+        text = crewbrain.read(d, f)
+        if o.get("json"):
+            print(json.dumps({"file": f, "text": text, "sha": crewbrain.sha(text), "dir": str(d)}))
+        else:
+            print(text or f"(no {f} in {d})")
+    elif sub == "log":
+        if not pos:
+            die('pal brain log "what changed"')
+        print(crewbrain.log(d, " ".join(pos), ch, o.get("by")))
+    elif sub == "decide":
+        if not pos:
+            die('pal brain decide "what" --why "why" [--by Who]')
+        print(crewbrain.decide(d, " ".join(pos), o.get("why"), o.get("by") or (name if t else OWNER)))
+    elif sub == "note":
+        if len(pos) < 2:
+            die('pal brain note <topic> "text"')
+        print("added to " + crewbrain.note(d, pos[0], " ".join(pos[1:])))
+    elif sub == "where":
+        if not is_owner(spaces):
+            die(f"where a pal's brain lives is {OWNER}'s call")
+        to = pos[1] if len(pos) > 1 else None
+        if to not in ("pal", "project"):
+            die("pal brain where <Pal> pal|project")
+        src, dst, copied = crewbrain.move(name, rec, to)
+        set_record(spaces, space, brainIn=to)
+        print(f"{name}'s brain is now in {dst}" + (f" (copied {len(copied)} file(s) from {src}; nothing deleted)" if copied else ""))
+    elif sub == "write":
+        if not is_owner(spaces):
+            die(f"only {OWNER} edits brain files wholesale; use pal brain log / decide / note, or pal mission focus")
+        f = pos[1] if len(pos) > 1 else None
+        if not f or "/" in f.replace("notes/", "", 1) or not f.endswith(".md"):
+            die("pal brain write <Pal> <file.md> --file F --expect SHA")
+        text = file_opt(o)
+        cur = crewbrain.read(d, f)
+        if crewbrain.sha(cur) != (o.get("expect") or "none"):
+            die(f"{f} changed since you opened it; look again")
+        crewbrain.write(d, f, text)
+        print(f"wrote {d / f}")
+    else:
+        die("pal brain ls | show [Pal] [file] | log \"…\" | decide \"…\" --why \"…\" | note <topic> \"…\" | where <Pal> pal|project")
+
+
+def set_record(spaces, space, **fields):
+    """Change a pal's record (shared.json's crew.bots) the way the app does: through a request, so
+    the roster writes it (only the app writes shared.json)."""
+    request("record", spaces, space=space["id"], fields=fields)
+
+
+def cmd_agents(spaces, rest):
+    import crewagents, crewbrain
+    sub = rest[0] if rest else "show"
+    args = rest[1:]
+    pos, o = opts(args, ("pal", "from", "expect", "note", "file", "proposal"), ("json", "deep"))
+    if sub in ("show", "lint"):
+        space, rec, name = pal_of(spaces, pos[0] if pos else o.get("pal"))
+        folder = folder_of(space, rec)
+        out = crewagents.lint(folder)
+        if o.get("deep"):
+            out["deep"] = crewagents.deep(folder, crewbrain.brain_dir(name, {**rec, "folder": folder}))
+        if sub == "show":
+            out["texts"] = {f["file"]: crewagents.read(os.path.join(folder, f["file"])) for f in out["files"] if f["exists"]}
+        if o.get("json"):
+            print(json.dumps(out))
+            return
+        print(f"{name}: {folder}")
+        print("  Claude Code loads: " + " + ".join(f"{p['file']} {p['lines']}" for p in out["loads"]["parts"]) + f" = {out['loads']['total']} lines")
+        for f in out["files"]:
+            if f["exists"]:
+                print(f"  {f['file']}: {f['lines']} lines")
+        for l in out["lint"] or [{"level": "ok", "id": "-", "file": "", "msg": f"nothing to fix ({out['paths_checked']} paths checked)"}]:
+            print(f"  [{l['level']}] {l['id']} {l['file']}: {l['msg']}")
+        for x in out.get("deep", []):
+            print(f"  [deep] {x.get('why', '')}: \"{x.get('quote_a', '')}\" vs \"{x.get('quote_b', '')}\"")
+    elif sub == "apply":
+        if not is_owner(spaces):
+            die(f"a project's AGENTS.md / CLAUDE.md changes only with {OWNER}'s click; propose it instead: pal agents propose <file> --file F")
+        if len(pos) < 2 or not o.get("from") or not o.get("expect"):
+            die("pal agents apply <Pal> <file> --from STAGED --expect SHA [--note N] [--proposal ID]")
+        space, rec, name = pal_of(spaces, pos[0])
+        folder = folder_of(space, rec)
+        text = open(os.path.expanduser(o["from"])).read()
+        out = crewagents.apply(name, folder, pos[1], text, o["expect"], o.get("note"))
+        brain_log(space, rec, name, f"{out['file']}: {o.get('note') or ('created' if out['created'] else 'edited')} ({OWNER})")
+        if o.get("proposal"):
+            import crewproposals
+            crewproposals.decide(o["proposal"], "accepted", via="profile panel")
+            tell_proposer(spaces, o["proposal"], True)
+        print(json.dumps(out) if o.get("json") else f"wrote {out['path']} (backup: {out['backup']}). Not committed.")
+    elif sub == "propose":
+        import crewproposals
+        if not pos:
+            die("pal agents propose <file> --file F [--note \"why\"] [--pal P]")
+        space, rec, name = pal_of(spaces, o.get("pal"))
+        folder = folder_of(space, rec)
+        rel = pos[0][2:] if pos[0].startswith("./") else pos[0]
+        if not crewagents.WRITABLE.match(rel) or ".." in rel.split("/"):
+            die(f"{rel}: only AGENTS.md, CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, _Brain/PROJECT_BRAIN.md or .pals/*.md")
+        _, t = my_bot(spaces)
+        cur = crewagents.read(os.path.join(folder, rel))
+        p = crewproposals.propose("agents", name, f"{name}#{chan(t)}" if t else OWNER, file_opt(o), rel, crewagents.sha(cur), o.get("note"))
+        print(f"proposed ({p['id']}): {OWNER} sees the diff in the Inbox and applies or declines it; you'll hear which")
+    elif sub == "backups":
+        space, rec, name = pal_of(spaces, pos[0] if pos else o.get("pal"))
+        bs = crewagents.backups(name, pos[1] if len(pos) > 1 else None)
+        print(json.dumps(bs) if o.get("json") else "\n".join(f"{b['at']} {b['file']}{' (did not exist)' if b['absent'] else ''}" for b in bs) or "(no backups)")
+    else:
+        die("pal agents show|lint [Pal] [--json] [--deep] | propose <file> --file F | apply (the owner) | backups [Pal] [file]")
+
+
+def tell_proposer(spaces, pid, accepted, why=None):
+    import crewproposals
+    p = crewproposals.get(pid)
+    by = p.get("by") or ""
+    if "#" not in by:
+        return
+    what = "your mission proposal" if p["kind"] == "mission" else f"your {p.get('file') or 'file'} proposal"
+    try:
+        target = find(by, spaces)[1]
+        lt = lead(target)
+        if lt:
+            enqueue(lt["terminal"], f"{OWNER} {'accepted' if accepted else 'declined'} {what} ({pid})." + (f" Why: {why}" if why else ""), sender=OWNER)
+    except CrewError:
+        pass
+
+
+def cmd_proposals(spaces, rest):
+    import crewproposals, crewbrain
+    sub = rest[0] if rest else "ls"
+    pos, o = opts(rest[1:], ("note",), ("json",))
+    if sub == "ls":
+        ps = crewproposals.all_("pending")
+        print(json.dumps(ps) if o.get("json") else "\n".join(f"{p['id']} {p['kind']} {p['pal']}: {p.get('file') or ''} from {p['by']}" for p in ps) or "(no proposals waiting)")
+    elif sub == "show" and pos:
+        print(json.dumps(crewproposals.get(pos[0])))
+    elif sub in ("accept", "decline") and pos:
+        if not is_owner(spaces):
+            die(f"proposals are {OWNER}'s to decide, in the Inbox")
+        p = crewproposals.get(pos[0])
+        if p["status"] != "pending":
+            die(f"{p['id']} is already {p['status']}")
+        if sub == "decline":
+            crewproposals.decide(p["id"], "declined", " ".join(pos[1:]) or o.get("note"), via="cli")
+            tell_proposer(spaces, p["id"], False, " ".join(pos[1:]) or o.get("note"))
+            print(f"declined {p['id']}")
+            return
+        space, rec, name = pal_of(spaces, p["pal"])
+        rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+        if p["kind"] == "mission":
+            d = crewbrain.brain_dir(name, rec)
+            if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
+                die("the mission changed since this was proposed; open it in the profile panel and compare")
+            crewbrain.write(d, "mission.md", p["text"])
+            brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=OWNER)
+        elif p["kind"] == "agents":
+            import crewagents
+            out = crewagents.apply(name, folder_of(space, rec), p["file"], p["text"], p.get("base") or "none", p.get("note"))
+            brain_log(space, rec, name, f"{out['file']}: {p.get('note') or 'edited'} (from {p['by']}'s proposal, {OWNER})")
+        else:
+            die(f"accept {p['kind']} proposals in the Inbox")
+        crewproposals.decide(p["id"], "accepted", via="cli")
+        tell_proposer(spaces, p["id"], True)
+        print(f"accepted {p['id']}")
+    else:
+        die("pal proposals [ls] [--json] | pal proposal show|accept|decline ID [\"why\"]")
 
 
 def cmd_skill(spaces, rest):
@@ -827,6 +1142,8 @@ def cmd_update(rest):
 def main(argv):
     if not argv:
         argv = ["bots"]
+    # -F is --file (pal mission propose -F draft.md).
+    argv = ["--file" if a == "-F" else a for a in argv]
     cmd, rest = argv[0], argv[1:]
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
@@ -911,6 +1228,14 @@ def main(argv):
         cmd_task(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
+    elif cmd == "mission":
+        cmd_mission(spaces, rest)
+    elif cmd == "brain":
+        cmd_brain(spaces, rest)
+    elif cmd == "agents":
+        cmd_agents(spaces, rest)
+    elif cmd in ("proposals", "proposal"):
+        cmd_proposals(spaces, rest)
     elif cmd == "remember":
         cmd_remember(spaces, rest)
     elif cmd == "memory":

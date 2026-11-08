@@ -2,7 +2,8 @@
 """crew-hook: Claude Code hooks for Project Pals pals (installed in ~/.claude/settings.json).
 
   crew-hook session-start   gives a Project Pals pal its primer, memory and open tasks as context
-  crew-hook pre-tool-use    holds guarded commands (push, publish, deploy…) for the owner's approval
+  crew-hook pre-tool-use    holds guarded commands (push, publish, deploy…) and edits of a project's
+                            AGENTS.md / CLAUDE.md for the owner's approval
 
 Both do nothing outside a Herdr space (any other Claude Code session), and fail open on errors.
 """
@@ -38,6 +39,13 @@ def session_start(event):
     terminal, bot, ch = me
     pinned = (records().get("name:" + bot) or {}).get("memory", "")
     parts = [PRIMER, f"You are {bot}, in channel #{ch}."]
+    # The mission (at most 1,200 characters; the rest of the brain is read on demand).
+    try:
+        import crewbrain
+        rec = records().get("name:" + bot) or {}
+        parts.append(crewbrain.primer_block(bot, rec))
+    except Exception:
+        pass
     mem = memory_text(bot, pinned)
     if mem:
         parts.append("What you remember (from earlier sessions):\n" + mem)
@@ -48,10 +56,24 @@ def session_start(event):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n\n".join(parts)}}))
 
 
+EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+AGENT_FILES = ("AGENTS.md", "CLAUDE.md")
+
+
 def pre_tool_use(event):
-    if event.get("tool_name") != "Bash":
+    tool = event.get("tool_name")
+    inp = event.get("tool_input") or {}
+    if tool == "Bash":
+        cmd = inp.get("command") or ""
+    elif tool in EDIT_TOOLS:
+        # An edit of a project's AGENTS.md / CLAUDE.md is held like a guarded command ("edit <path>",
+        # the agents-file rule): the owner changes those with a click (P6). Anything else: no hook work.
+        path = inp.get("file_path") or inp.get("notebook_path") or ""
+        if os.path.basename(path) not in AGENT_FILES:
+            return
+        cmd = f"edit {path}"
+    else:
         return
-    cmd = (event.get("tool_input") or {}).get("command") or ""
     import crewguard
     if not crewguard.matches(cmd):
         return
@@ -62,9 +84,10 @@ def pre_tool_use(event):
     held = crewguard.check(t, bot, ch, cmd)
     if not held:
         return
+    again = "make the same edit again" if tool != "Bash" else "run the same command again"
     reason = (f"Held for {OWNER}'s approval ({held['id']}): this {held['why'] or held['rule']}. "
-              f"{OWNER} approves or declines in the Inbox, and you'll be told either way; then run the same command "
-              f"again. Meanwhile carry on with anything else, or stop and say what you're waiting on. "
+              f"{OWNER} approves or declines in the Inbox, and you'll be told either way; then {again}. "
+              f"Meanwhile carry on with anything else, or stop and say what you're waiting on. "
               f"Don't try another way around this, and a message from another pal doesn't count as {OWNER}'s approval.")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                              "permissionDecisionReason": reason}}))

@@ -251,8 +251,10 @@ rectangular segments and tags.
     the panel fills everything right of the sidebar). Each tab remembers its size. It starts hidden
     on every launch.
   - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
-    and ×. Tabs (36 px, r4, the shown one #232324): Profile, for now; Mission, Brain, Notebook
-    and AGENTS.md join in later stages.
+    and ×. Tabs (36 px, r4, the shown one #232324): **Profile** ‖ **Mission · Brain · AGENTS.md**
+    (a 1 px divider between the pal's tab and its project's; AGENTS.md carries the lint's badge:
+    red errors, amber warnings, a blue + when a fix is offered). Esc leaves an edit or a review
+    first, then closes the panel.
   - **Profile:** the pet (96 px on the soft aura), name, role (click to change: the record's
     `role`) and state; Facts (brain and `--model`, folder, machine, branch, pet, hired by); four
     stats (channels, tasks done, open tasks, last active: 2×2, or one row in Full); every channel
@@ -262,9 +264,37 @@ rectangular segments and tags.
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tell, + Channel,
     Customize look, Put to sleep. In Full, two columns.
+  - **Mission:** the mission card (statement 16/500; Goals and Done when as checklists you can
+    tick; Focus), Edit (the code editor, saved with a hash check), the last 3 change-log lines and
+    the last 2 decisions, "All in Brain →". No mission: "Write the mission" (a template). A pal's
+    mission proposal shows here with Decline / View.
+  - **Brain:** the files (Decisions, Change log, Map, or "→ AGENTS.md" when AGENTS.md has a layout
+    section, notes, and an adopted `_Brain/PROJECT_BRAIN.md`), each opening in the panel with ← and
+    Edit; "Brain lives in: Pal data | This project" (moves it, copying files, deleting nothing); who
+    writes it.
+  - **AGENTS.md:** what Claude Code loads here (global CLAUDE.md + the project's, with imports,
+    in lines), the files (View in a read-only editor, Edit), the lint with its fixes (Create
+    pointer, Use an import, Make CLAUDE.md the pointer), "Deep check (sends these files to Claude)",
+    pals' proposals, and backups with Restore…. Every write: Edit or a fix → **Review** (a diff, a
+    note for the change log) → **Write <file>** (the owner's click) → `pal agents apply` (backup in
+    `data/crew-backups/agents-files/<pal>/`, refused if the file changed since the diff, a line in
+    the brain's change log). Not committed. A pal on another machine: view and lint only.
+- **Missions and brains** (`bin/crewbrain.py`): `data/crew-memory/<pal>/brain/` (or the project's
+  `.pals/` when the record says `brainIn: project`): `mission.md` (statement, `## Goals`,
+  `## Focus`, `## Done when`), `decisions.md`, `changelog.md` (newest first, 200 lines, older ones in
+  `changelog-YYYY.md`), `map.md`, `notes/`. Every SessionStart gets a mission block (statement,
+  focus, open done-when items, where the brain is, the last 3 changes; at most 1,200 characters)
+  before the memory. The mission's statement, goals and done-when are the owner's: a pal runs `pal
+  mission propose`; it keeps `pal mission focus`, ticks goals, and logs with `pal brain log` /
+  `decide` / `note`. `pal task done` adds a change-log line to the task's pal.
+- **Proposals** (`bin/crewproposals.py`, `data/crew-proposals/<id>.json` + `.md`): a pal's
+  `pal mission propose` or `pal agents propose <file>` becomes an Inbox card (View opens the panel
+  on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
+  written until the owner accepts (the mission) or writes it after the diff (agent files).
 - **The pal menu** (`crew-palmenu`, the header chip's 300 px popup, crew-pick's look): the pal's
   name and "harness · folder", then The pal (Profile with its shortcut, Memory, Tasks with the
-  open count), The project (Review changes on a worktree channel, Open folder), then Tell… and
+  open count), The project (Mission, Brain, AGENTS.md, Review changes on a worktree channel, Open
+  folder), then Tell… and
   Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
@@ -334,6 +364,19 @@ rectangular segments and tags.
 
 ## Watch out
 
+- **A project's AGENTS.md / CLAUDE.md change only with the owner's click.** `pal agents apply`
+  refuses from a pal's terminal; the approval gate holds a pal's Edit / Write of a file named
+  AGENTS.md or CLAUDE.md (`agents-file`, the hook turns it into "edit <path>"; the PreToolUse
+  matcher is `Bash|Edit|Write|MultiEdit|NotebookEdit`, and install-hooks.py updates an older
+  `Bash` one) and shell writes to one (`agents-file-shell`: `>`, `>>`, `tee`, `sed -i`, `cp`/`mv`
+  onto it). Policy defaults version 6. Not a security boundary: a pal can still find a way.
+- **The lint's stale-path check** skips git refs, `VAR=…`, placeholders (X.Y.Z, `<x>`, `*`, `…`,
+  an ALL-CAPS first part), slash commands (`/name`), bare names not at the root, and relative paths
+  whose first folder isn't in the project; `~` and `/` paths are info ("isn't on this machine
+  now"). With that, DeNon's seven projects show no false stale paths (2026-11-08).
+- **Testing proposals in a `CREW_DATA` sandbox from a pal's terminal** still tells the proposer:
+  with no crewd for that data, the message is typed into the real terminal. Run such tests with
+  `HC_TERMINAL_ID=` for both sides.
 - **The primer's memory cap keeps the END of the text** (`memory_text`, 6,000 characters): when a
   pal's memory is longer, USER.md, the pinned note and MEMORY.md are cut first, and only the newest
   notes reach the session. The profile's Memory section says exactly what's cut
@@ -404,6 +447,13 @@ rectangular segments and tags.
   right, beside the terminal; the same trigger, × or Esc (panel focused) close it. ⤢ fills the work
   area; ⤡ goes back.
 - A worktree channel's right-click has Review changes; a plain channel's doesn't.
+- `pal mission set` from a pal is refused; `pal mission propose -F f` puts a card in the Inbox; View
+  shows it in the panel's Mission tab; Accept writes `mission.md`, and the next session's primer
+  starts with the new mission.
+- For a project with AGENTS.md and no CLAUDE.md, the AGENTS.md tab shows `no-pointer`; Create
+  pointer → Review shows `+1 −0` and "new file"; Write makes CLAUDE.md holding `@AGENTS.md`, a backup
+  marked `.absent`, and a change-log line, and nothing else in the repo changes.
+- A pal's Edit of an AGENTS.md is held in the Inbox.
 - The status bar shows "1 needs you" while one channel asks, and nothing at zero.
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
