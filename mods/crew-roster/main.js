@@ -663,11 +663,16 @@ export default class CrewRoster extends View {
     // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
     // on_item_secondary_click, by the channel's tab id.
     // ROW: a 28 px row and its 2 px gap.
+    // The scroll area runs to the sidebar's edge and Herdr draws its thumb about 8-16 px in from that
+    // edge whatever box the Scrollbar is given (seen on DeNon's screen), so the rows end 11 px in (a
+    // short list: the same right edge as everything else) or 18 px in while the list overflows (a
+    // gutter: the thumb never covers a time, pin or dot).
+    const over = list.length > ROWS;
     const row = (tab) => {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      return div().h(ROW).pb(2).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      return div().h(ROW).pb(2).pr(over ? 18 : 11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
@@ -687,12 +692,11 @@ export default class CrewRoster extends View {
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
     if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
     // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
-    // there's more. The scrollbar stays drawn while the list overflows, in the 8 px margin right of
-    // the rows (not over them: the times, pins and dots keep the same right edge as a short list's).
+    // there's more. The scrollbar stays drawn while the list overflows, in the rows' gutter.
     const n = list.length, h = n > ROWS ? ROWS * ROW + 12 : n * ROW;
     box.child(div().relative().h(h).w_full()
       .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
-      .child(div().px(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
+      .child(div().pl(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
         this.chRange = [range.start, range.end]; this.chEndKey = listKey;
         const out = [];
         for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
@@ -701,7 +705,7 @@ export default class CrewRoster extends View {
         .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
         .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
         .h(h).w_full()))
-      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(1).w(6).h(h))));
+      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(0).w(16).h(h))));
     return v_flex().pt(4).child(head).child(box);
   }
 
