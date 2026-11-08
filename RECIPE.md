@@ -185,6 +185,10 @@ One layout, two densities; switching only shows, hides and resizes nodes (nothin
 drafts stay put). Anything new is drawn in the design-system look: 1px hairlines, radius 3/4/6/8,
 rectangular segments and tags.
 
+- **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
+  rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
+  previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
+  below #808082 (its pet dims instead). The list ends with 24px of padding.
 - **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
   above), no tab strip.
   - **The hero** (hero v2 "2 · Floor", DeNon 2026-11-08): no box. The shown pal's pet and its

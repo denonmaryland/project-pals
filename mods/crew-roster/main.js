@@ -15,6 +15,8 @@ import {
   petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+// Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
+// buttons sit 8 px in from both sides.
 // Focus pal rows: the pet 75 wide, bare (no box), in a 68 px row (DeNon 2026-11-08: twice the old
 // 46, then 15% back down).
 const ROW_PET = 75, ROW_H = 68;
@@ -504,9 +506,9 @@ export default class CrewRoster extends View {
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.heroCard(shown, t, d, w));
-    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(2);
+    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().px(8).pt(8).pb(24).gap(2);
     if (this.view() !== "bots") return root.child(this.otherView(list, rows, waiting, t, d));
-    list.child(h_flex().h(28).flex_none().items_center().px(6)
+    list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
       .child(div().id("pals-search").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("Search")
         .hover((s) => s.bg(d.hover)).on_click(() => run("app.palette"))
@@ -514,12 +516,12 @@ export default class CrewRoster extends View {
     if (!rows.length && !asleep.length) list.child(this.empty(t));
     list.children(live.map((r) => this.palRow(r, t, d)));
     if (nHidden) {
-      list.child(h_flex().id("asleep-toggle").h(36).flex_none().items_center().gap(10).pl(6).pr(8).rounded(d.r.md).cursor_pointer()
+      list.child(h_flex().id("asleep-toggle").h(40).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { localStorage.setItem("asleep-open", showHidden ? "0" : "1"); cx.notify(); })
         .child(div().w(ROW_PET).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(15).text_color(d.icon)))
         .child(div().flex_1().text_size(13).text_color(d.fg2).child("Hidden pals"))
-        .child(div().text_size(12).text_color(d.fg3).child(String(nHidden))));
+        .child(div().text_size(12).text_color(d.fg2).child(String(nHidden))));
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
     }
     this.extras(list, waiting, extra, d);
@@ -530,16 +532,16 @@ export default class CrewRoster extends View {
   // your click there; channels that look stuck), and your rooms.
   extras(list, waiting, extra, d) {
     if (extra > 0) {
-      list.child(h_flex().id("inbox-row").h(36).flex_none().items_center().gap(10).pl(6).pr(8).rounded(d.r.md).cursor_pointer()
+      list.child(h_flex().id("inbox-row").h(40).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { setShared("crew.view", "you"); cx.notify(); })
-        .child(div().w(41).flex_none().flex().justify_center().child(div().size(6).rounded(3).bg(d.warn)))
+        .child(div().w(ROW_PET).flex_none().flex().justify_center().child(div().size(6).rounded(3).bg(d.warn)))
         .child(div().flex_1().text_size(13).text_color(d.body).child(this.ops.approvals.length ? "Inbox · waiting for your OK" : "Inbox"))
         .child(div().text_size(12).text_color(d.warnText).child(String(waiting.length + extra))));
     }
     const rs = rooms();
     if (rs.length) {
-      list.child(h_flex().h(28).mt(6).flex_none().items_center().px(6).child(div().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms")));
+      list.child(h_flex().h(28).mt(8).flex_none().items_center().px(8).child(div().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms")));
       list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(6).px(8).rounded(d.r.md).cursor_pointer()
         .when(shownRoom()?.id === room.id, (el) => el.bg(d.sel))
         .hover((s) => s.bg(d.hover))
@@ -580,39 +582,39 @@ export default class CrewRoster extends View {
     const p = petOf(bot);
     const state = petState(bot, m);
     const W = Math.max(160, Math.round(w - 1));
-    // The sprite at 90% of the width (the rows' bigger pets took the room), centred.
-    const SW = Math.round(W * 0.9), SX = Math.round((W - SW) / 2);
+    // The sprite 16 px in from both sides (the grid's left edge, and the laptop clear of the edge).
+    const SX = 16, SW = W - 32;
     const H = Math.round(SW * 108 / 138);
     const light = d.bg1 !== "#0E0E0F";
     const ready = p && petReady(p);
     const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
-    const NB = 30;      // the name's band over the sprite
+    const NB = 36;      // the name's band over the sprite (room for the bits that rise off it)
     const FY = NB + H + 2;   // the floor's line
     const word = !bot.awake ? "Asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
     const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
     const label = since && since !== "now" ? `${word} · ${since}` : word;
     const [dot, wordColor] = state === "work" ? [d.info, d.infoText] : state === "ask" || state === "stuck" ? [d.warn, d.warnText]
-      : state === "done" || state === "pr" ? [d.ok, d.okHi] : [null, d.fg3];
+      : state === "done" || state === "pr" ? [d.ok, d.okHi] : [null, d.fg2];
     // The state word rides after the name only when both fit (Inter 16/600 ~ 9.2 px a char, 12/500 ~ 6.6).
     const fits = 28 + (dot ? 13 : 0) + bot.name.length * 9.2 + 14 + label.length * 6.6 <= W;
     const art = div().id("hero-art").relative().w(W).h(FY + 6).flex_none().cursor_pointer().when(light, (el) => el.bg("#0E0E0F"))
       .on_click((_e, cx) => { this.open(space); cx.notify(); });
     // Depth without an edge: a soft radial aura behind the sprite, fading out to nothing.
-    art.child(div().absolute().left(SX - 14).top(NB - 18).w(SW + 28).h(H + 24).child(image(`${ICON}/pet-aura.svg`).w(SW + 28).h(H + 24)));
+    art.child(div().absolute().left(SX - 14).top(NB - 14).w(SW + 28).h(H + 24).child(image(`${ICON}/pet-aura.svg`).w(SW + 28).h(H + 24)));
     // The pool, drawn as an image so it sits behind the pet (Herdr draws svg() elements over images).
     if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
       .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
       .child(image(`${ICON}/pet-floor-${state}.svg`).w(W).h(72)));
-    art.child(div().absolute().left(SX).top(NB - 8).child(ready ? petEl(p, state, SW, H, { open: true })
+    art.child(div().absolute().left(SX).top(NB - 4).child(ready ? petEl(p, state, SW, H, { open: true })
       : div().w(SW).h(H).flex().items_center().justify_center().child(mascotEl(bot, m, 96, t))));
     // The name, in its own band at the top: the sprite starts just under it (bun ears, antennas and
     // crowns reach the sprite's top edge, so text over the sprite would sit on dots).
-    art.child(h_flex().absolute().left(14).top(9).w(W - 28).items_center().gap(7)
+    art.child(h_flex().absolute().left(16).top(10).w(W - 32).items_center().gap(7)
       .when(Boolean(dot), (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot)))
       .child(div().flex_1().min_w(0).text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
       .when(fits, (el) => el.child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(label)))
       .tooltip(fits ? bot.name : `${bot.name} · ${label}`));
-    art.child(div().absolute().left(12).top(FY).w(W - 24).h(1).bg("#FFFFFF14"));
+    art.child(div().absolute().left(8).top(FY).w(W - 16).h(1).bg("#FFFFFF14"));
     const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
       .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
       .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
@@ -627,7 +629,7 @@ export default class CrewRoster extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
-      .child(h_flex().px(12).pt(10).gap(6)
+      .child(h_flex().px(8).pt(12).gap(6)
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)).flex_1())
         .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })).flex_1())
         .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null).flex_1())
@@ -644,7 +646,7 @@ export default class CrewRoster extends View {
     const q = this.chSearchOpen ? this.chSearch.value().trim().toLowerCase() : "";
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
-    const head = h_flex().id("hero-ch-head").h(30).px(14).items_center().gap(6);
+    const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -661,12 +663,12 @@ export default class CrewRoster extends View {
           .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
           .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
     }
-    const rows = v_flex().id("hero-ch-list").px(8).gap(1).max_h(6 * 29).overflow_y_scrollbar();
+    const rows = v_flex().id("hero-ch-list").px(8).gap(2).max_h(6 * 30).overflow_y_scrollbar();
     for (const tab of list) {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      rows.child(h_flex().id(`hero-ch-${tab.id}`).h(28).flex_none().px(6).gap(7).items_center().rounded(d.r.sm).cursor_pointer()
+      rows.child(h_flex().id(`hero-ch-${tab.id}`).h(28).flex_none().px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
@@ -678,8 +680,8 @@ export default class CrewRoster extends View {
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
           : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
     }
-    if (q && !list.length) rows.child(div().h(28).px(6).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
-    return v_flex().pt(8).child(head).child(rows);
+    if (q && !list.length) rows.child(div().h(28).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+    return v_flex().pt(4).child(head).child(rows);
   }
 
   // Put a pal to sleep (the hero's moon; the same as its menu's): keep its record (folder, brain,
@@ -701,7 +703,7 @@ export default class CrewRoster extends View {
     return div().relative().w(ROW_PET).h(h).flex_none()
       // Depth without an edge (DeNon: the old box's depth, not its line): a soft radial aura behind
       // the pet that fades out to nothing. An image, so it stays behind (svg() would draw over).
-      .child(div().absolute().left(-10).top(-8).w(ROW_PET + 20).h(h + 16).child(image(`${ICON}/pet-aura.svg`).w(ROW_PET + 20).h(h + 16)))
+      .child(div().absolute().left(-12).top(-9).w(ROW_PET + 24).h(h + 18).child(image(`${ICON}/pet-aura-row.svg`).w(ROW_PET + 24).h(h + 18)))
       .when(lit, (el) => el.child(div().absolute().left(-6).top(h - 17).w(ROW_PET + 12).h(24)
         .when(state === "ask", (x) => x.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
         .child(image(`${ICON}/pet-floor-${state}.svg`).w(ROW_PET + 12).h(24))))
@@ -716,9 +718,11 @@ export default class CrewRoster extends View {
     const dot = awake ? this.liveDot(st, d) : null;
     const news = awake && ["working", "blocked", "done"].includes(st);
     const [tag, what] = this.doing(space, bot);
-    const nameColor = on || news ? d.fg1 : awake ? d.body : d.fg2;
-    const whatColor = !awake ? d.fg3 : on ? d.fg2 : news ? d.body : d.fg2;
-    return h_flex().id(`bot-${space.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(5).pr(8).rounded(d.r.md).cursor_pointer()
+    // Hierarchy: name #EDEDED, what it's on #C8C8C8, [channel] #808082 mono; a closed pal's text
+    // never drops below #808082 (its pet dims instead).
+    const nameColor = awake ? d.fg1 : d.fg2;
+    const whatColor = awake ? d.body : d.fg2;
+    return h_flex().id(`bot-${space.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
       .when(on, (el) => el.bg(d.sel))
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { this.open(space); cx.notify(); })
@@ -728,24 +732,24 @@ export default class CrewRoster extends View {
         .child(h_flex().items_center().gap(6)
           .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
           .when(palPinned(bot), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
-          .child(div().flex_none().text_size(11).line_height("14px").text_color(d.fg3).child(stamp(this.lastChange(space))))
+          .child(div().flex_none().text_size(11).line_height("18px").text_color(d.fg3).child(stamp(this.lastChange(space))))
           .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot))))
         // [channel], then what it's on, each on its own full-width line (side by side, a long
         // channel name squeezed the preview into a narrow column).
-        .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg3).child(`[${tag}]`)))
+        .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("15px").font_family(d.mono).text_color(d.fg2).child(`[${tag}]`)))
         .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(whatColor).child(what)));
   }
 
   sleeperRow(rec, t, d) {
     const bot = { ...rec, awake: false };
-    return h_flex().id(`sleep-${rec.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(5).pr(8).rounded(d.r.md).cursor_pointer()
+    return h_flex().id(`sleep-${rec.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
       .hover((s) => s.bg(d.hover))
       .on_click(() => this.wake(rec))
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
       .child(div().flex_none().opacity(0.5).child(this.rowPet(bot, "asleep", t)))
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(div().truncate().text_size(14).line_height("18px").text_color(d.fg2).child(rec.name))
-        .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg3).child("closed · click to wake")));
+        .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg2).child("closed · click to wake")));
   }
 
   // Pro: the shown pal's banner, its channels, and what the others are doing.
