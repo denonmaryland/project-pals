@@ -207,7 +207,8 @@ rectangular segments and tags.
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
     rows (`#`, the name, a blue/amber dot, a green check or when it last changed; the shown one
     #232324), up to four (the box hugs fewer); past four the box is four rows plus the top 12px of the
-    fifth, cut at its edge, with an always-drawn scrollbar and "+N more" (#808082, rows below the
+    fifth, cut at its edge, with an always-drawn 6px scrollbar in the 8px margin right of the rows
+    (never over the times, pins or dots; its colours are the theme's) and "+N more" (#808082, rows below the
     box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
     shown channel is scrolled into view when it changes. Order: pinned channels first (in pin order,
     with a small pin mark), then, once you've arranged that pal's channels, Herdr's tab order, else

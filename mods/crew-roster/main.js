@@ -633,8 +633,10 @@ export default class CrewRoster extends View {
     // after, so the count follows it, and it's gone at the end.
     const ROWS = 4, ROW = 30;
     const listKey = `${space.id}|${q}|${list.length}`;
-    const end = this.chEndKey === listKey ? this.chEnd : ROWS + 1;
-    const below = list.length > ROWS ? (end >= list.length ? 0 : list.length - end + 1) : 0;
+    // The renderer's range runs a row past what's on screen, so count from its first row: four full
+    // rows are seen (five once the end is in view, where the peek row is the last one).
+    const [start, end] = this.chEndKey === listKey ? this.chRange : [0, ROWS + 2];
+    const below = list.length > ROWS ? Math.max(0, list.length - (start + (end >= list.length ? ROWS + 1 : ROWS))) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -676,29 +678,30 @@ export default class CrewRoster extends View {
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
           : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
     };
-    const box = v_flex().px(8);
+    const box = v_flex();
     if (!list.length) {
-      if (q) box.child(div().h(28).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
       return v_flex().pt(4).child(head).child(box);
     }
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
     if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
     // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
-    // there's more. The scrollbar stays drawn while the list overflows.
+    // there's more. The scrollbar stays drawn while the list overflows, in the 8 px margin right of
+    // the rows (not over them: the times, pins and dots keep the same right edge as a short list's).
     const n = list.length, h = n > ROWS ? ROWS * ROW + 12 : n * ROW;
-    box.child(div().relative().h(h)
+    box.child(div().relative().h(h).w_full()
       .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
-      .child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
-        this.chEnd = range.end; this.chEndKey = listKey;
+      .child(div().px(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
+        this.chRange = [range.start, range.end]; this.chEndKey = listKey;
         const out = [];
         for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
         return out;
       }).track_scroll(this.chScroll)
         .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
         .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
-        .h(h).w_full())
-      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(-6).w(6).h(h))));
+        .h(h).w_full()))
+      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(1).w(6).h(h))));
     return v_flex().pt(4).child(head).child(box);
   }
 
