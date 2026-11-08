@@ -223,8 +223,12 @@ rectangular segments and tags.
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
   the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot).
-- **Status bar** (24px, under everything): the working count, the shown channel's 5-hour and
-  weekly usage, and the installed version.
+- **Status bar** (24px, under everything): a quiet gear at its left end, the working count, the
+  shown channel's 5-hour and weekly usage, and the installed version. The gear (and the folded
+  rail's) opens the app menu (`crew-appmenu`, a 252x392 popup in the terminal menu's look, with
+  shortcuts from keys.json): Hire a pal…, New room…, Inbox, Rooms, Routines, Theme and look
+  (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
+  settings, Command palette, Project Pals: settings and updates (About, update, Roll back).
 - **The terminal sits in the app** (DeNon, 2026-11-08): no card around it. The pals layout sets
   its own `colors.background` to the column's #0B0B0C (this layout only, not the person's theme),
   so a terminal's default background is the column itself; programs' own coloured cells keep
@@ -250,7 +254,7 @@ rectangular segments and tags.
     and show or hide `crew-composer`.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
-    `crew-composer` (rooms), `crew-status`. Removed with Pro: `crew-palrail`, `crew-tabs`,
+    `crew-composer` (rooms), `crew-status`. Popups: `crew-appmenu` (the gear), `crew-termmenu`. Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,

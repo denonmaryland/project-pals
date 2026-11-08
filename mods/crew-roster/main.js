@@ -231,7 +231,7 @@ export default class CrewRoster extends View {
           .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
           .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked))))))
       .child(icon("rail-hire", "plus", () => this.hire()))
-      .child(icon("rail-settings", "settings", () => run("app.settings")));
+      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 392 })));
   }
 
   brand(t) {

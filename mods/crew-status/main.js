@@ -1,9 +1,10 @@
-// Project Pals status bar: one 24 px hairline strip under the whole window. Left: how many
+// Project Pals status bar: one 24 px hairline strip under the whole window. Left: the gear (the app
+// menu: hiring, rooms, routines, themes, layouts, Herdr's settings, the palette, updates), how many
 // channels are working and the shown channel's usage. Right: the installed version.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, agents, theme, appHome, readTextFile } from "herdr";
+import { spaces, panes, agents, theme, appHome, readTextFile, openOverlay } from "herdr";
 import { leadPane, ds, tone } from "./crew.js";
 
 export default class CrewStatus extends View {
@@ -42,10 +43,16 @@ export default class CrewStatus extends View {
     const usage = [rl.five_hour && `5h ${pct(rl.five_hour)}`, rl.seven_day && `week ${pct(rl.seven_day)}`].filter(Boolean).join(" · ");
 
     const items = [];
+    // The gear: a quiet 20 px button, its icon #808082, brighter on hover.
+    items.push(div().id("crew-gear").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+      .tooltip("Menu: settings, themes, layouts, hire, routines")
+      .hover((s) => s.bg(d.hover))
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 392 }); })
+      .child(svg("mods/crew-roster/icons/settings.svg").size(12).text_color(d.fg2)), sep());
     items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
     if (usage) items.push(sep(), text(usage, d.fg3));
     items.push(div().flex_1());
     if (this.version) items.push(text(`pal ${this.version}`));
-    return h_flex().id("crew-status").size_full().items_center().px(12).gap(14).bg(d.bg1).border_t_1().border_color(d.lineSoft).children(items);
+    return h_flex().id("crew-status").size_full().items_center().pl(6).pr(12).gap(12).bg(d.bg1).border_t_1().border_color(d.lineSoft).children(items);
   }
 }
