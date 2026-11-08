@@ -227,9 +227,10 @@ rectangular segments and tags.
     Pin / Unpin and Move up / Move down (within its group). Pinning and moving move Herdr's own tabs
     (`tab.move`), so the order survives restarts and the pal chip's channel dropdown lists the same.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then four quick actions as raised "pebbles" (after DeNon's Omarchy Recess plugin: a soft shadow, a
-    near-black outline, a convex face in four bands lighter at the top, a top sheen and a bottom shade,
-    r8, 32px; hover lifts a step, a press sinks 1px and turns concave; `pebble()` in crew.js): + Channel (new channel
+    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (one flat #1B1B1E face, a 6% white
+    hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest
+    shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
+    `pebble()` in crew.js): + Channel (new channel
     dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
     pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
     asks first). No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel
