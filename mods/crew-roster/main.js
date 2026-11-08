@@ -13,7 +13,7 @@ import {
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
-  togglePanel, panelOpen, panelTab, needsOf, openProposalPanel, APP_MENU, workingMark,
+  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -36,6 +36,10 @@ function toggleRail() {
   if (!narrow() && width) setShared("crew.sidebar.width", width);
   run("layout.resize", { id: "sidebar", px: narrow() ? (shared("crew.sidebar.width") ?? sidebarPref()) : RAIL });
 }
+
+// A blocked channel whose question is for you, not one asking another pal (T19: the roster's
+// published "crew.needs" lists those apart, so the count, the rail and the Inbox agree).
+const askingYou = (tab) => tab.status === "blocked" && !(shared("crew.needs")?.toPalItems ?? []).some((x) => x.tab === tab.id);
 
 export default class CrewRoster extends View {
   init(_props, cx) {
@@ -81,9 +85,12 @@ export default class CrewRoster extends View {
     this.ops = { approvals: [], proposals: [], tasks: [], routines: [], stalled: {}, daemon: true };
     const ops = (cx) => cx.spawn(async (cx) => {
       try { this.ops = await loadOps(); } catch {}
-      // What needs DeNon, for the status bar's "N need you" (published only when it changes).
-      const n = needsOf(spaces(), this.ops), was = shared("crew.needs");
-      if (!was || was.count !== n.count || was.approvals !== n.approvals || was.proposals !== n.proposals) setShared("crew.needs", n);
+      // What blocked agents said (only they're asked), so a pal asking another pal isn't counted (T19).
+      try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
+      // What needs DeNon, for the status bar's "N need you", with why each counts (published only
+      // when it changes, reasons included).
+      const n = needsOf(spaces(), this.ops, this.reports ?? {}), was = shared("crew.needs");
+      if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
       cx.notify();
     });
     ops(cx);
@@ -220,7 +227,7 @@ export default class CrewRoster extends View {
   rail(rows, waiting, t, extra = 0) {
     // What waits on you, as the Inbox counts it: finished and blocked channels, approvals, stuck ones.
     const total = waiting.length + extra;
-    const urgent = waiting.some((w) => w.tab.status === "blocked") || this.ops.approvals.length > 0;
+    const urgent = waiting.some((w) => askingYou(w.tab)) || this.ops.approvals.length > 0;
     // Pinned pals first here too (after the head pal).
     const pins = marks().pals ?? {};
     const rank = (r) => (r.bot.god ? 0 : pins[r.bot.id]?.pin ? 1 : 2);
@@ -278,7 +285,7 @@ export default class CrewRoster extends View {
   }
 
   segments(t, bots, waiting, extra = 0, first = "Pals") {
-    const asked = waiting.some((w) => w.tab.status === "blocked") || this.ops.approvals.length > 0;
+    const asked = waiting.some((w) => askingYou(w.tab)) || this.ops.approvals.length > 0;
     const seg = (id, label, count, dot) => {
       const on = this.view() === id;
       return h_flex().id(`seg-${id}`).flex_1().justify_center().items_center().gap(5).py(5).rounded(3).cursor_pointer()
@@ -372,8 +379,8 @@ export default class CrewRoster extends View {
       list.child(div().px(8).text_size(13).text_color(t.dim).child("All caught up. Finished work, questions and approvals land here."));
       return list;
     }
-    // Questions first, then finished work, oldest first.
-    waiting.sort((x, y) => (x.tab.status === "blocked" ? 0 : 1) - (y.tab.status === "blocked" ? 0 : 1) || (x.tab.changed_at ?? 0) - (y.tab.changed_at ?? 0));
+    // Questions for you first, then finished work and pals asking pals, oldest first.
+    waiting.sort((x, y) => (askingYou(x.tab) ? 0 : 1) - (askingYou(y.tab) ? 0 : 1) || (x.tab.changed_at ?? 0) - (y.tab.changed_at ?? 0));
     for (const w of waiting) {
       const on = w.space.active && w.tab.active;
       list.child(h_flex().id(`wait-${w.tab.id}`).items_center().gap(12).px(12).py(10).rounded(8).cursor_pointer()
@@ -382,7 +389,7 @@ export default class CrewRoster extends View {
         .on_click(() => this.go(w.space, w.tab))
         .child(mascotEl(w.bot, w.tab.status === "blocked" ? "blocked" : "done", 36, t))
         .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(w.tab.status === "blocked" ? `${w.bot.name} has a question` : `${w.bot.name} finished`))
+          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(askingYou(w.tab) ? `${w.bot.name} has a question` : w.tab.status === "blocked" ? `${w.bot.name} asked another pal` : `${w.bot.name} finished`))
           .child(div().truncate().text_size(12).text_color(t.dim).child(`#${channelName(w.tab)} · ${w.space.machine ?? "this computer"}`)))
         .child(div().flex_none().text_size(12).text_color(statusColor(w.tab.status, t)).child(ago(w.tab.changed_at))));
     }

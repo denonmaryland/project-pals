@@ -485,9 +485,15 @@ rectangular segments and tags.
   a worktree channel, Open folder), then Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
-  **"N need you"** (channels asking, approvals waiting, stuck channels; amber, red while an
-  approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
-  `crew.needs`), the shown channel's 5-hour and weekly usage, the update pill (see Updates) and the installed
+  **"N need you"** (questions for you, approvals waiting, stuck channels, proposals; amber, red while
+  an approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
+  `crew.needs`). Claude Code marks a channel blocked from the wording of its last message, so a
+  blocked channel plainly addressed to another pal ("Orca, should I…", "tell Orca#general when…",
+  `pal tell`) isn't counted: the roster reads blocked agents' `hc get` → `status.msg` (only theirs,
+  cached until the report changes) and `blockedFor()` decides; anything unclear, or no text,
+  still counts. Its tooltip says why each one counts ("Question: Orca #general · Approval: push ·
+  OMA CMZ #dotfiles · Stuck: … · not counted: 1 asking a pal"). The Inbox lists the pal-to-pal ones
+  as "<pal> asked another pal", after your questions, and they don't turn the Inbox red. Then come the shown channel's 5-hour and weekly usage, the update pill (see Updates) and the installed
   version. The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252x454 popup in the terminal menu's look, with
   shortcuts from keys.json): Hire a pal…, New room…, Inbox, Rooms, Routines, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
@@ -705,7 +711,9 @@ rectangular segments and tags.
 - Ctrl+Shift+I opens the dashboard over the work area; typing "hi" + Enter in its terminal reaches
   that channel's Claude Code (closing the dashboard shows it there too); clicking another channel
   row shows that channel's session; a channel with no agent shows "no agent running" and Wake.
-- The status bar shows "1 needs you" while one channel asks, and nothing at zero.
+- The status bar shows "1 needs you" while one channel asks, and nothing at zero. A channel that ends
+  its turn with "Orca, should I…?" doesn't raise it, and the tooltip names why each one counts
+  (`node tests/test_needs.mjs`).
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.
