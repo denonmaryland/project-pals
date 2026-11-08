@@ -1,0 +1,242 @@
+[
+ {
+  "id": "pixel-comet",
+  "group": "pixel",
+  "name": "Comet lap",
+  "frames": 64,
+  "ms": 2560,
+  "px": 48
+ },
+ {
+  "id": "pixel-breathe",
+  "group": "pixel",
+  "name": "Breathing tile",
+  "frames": 49,
+  "ms": 1960,
+  "px": 48
+ },
+ {
+  "id": "pixel-radar",
+  "group": "pixel",
+  "name": "Radar sweep",
+  "frames": 39,
+  "ms": 1560,
+  "px": 48
+ },
+ {
+  "id": "pixel-fill",
+  "group": "pixel",
+  "name": "Rising fill",
+  "frames": 42,
+  "ms": 1680,
+  "px": 48
+ },
+ {
+  "id": "pixel-snake",
+  "group": "pixel",
+  "name": "Snake",
+  "frames": 36,
+  "ms": 2988,
+  "px": 48
+ },
+ {
+  "id": "pixel-corners",
+  "group": "pixel",
+  "name": "Corner chase",
+  "frames": 4,
+  "ms": 1000,
+  "px": 48
+ },
+ {
+  "id": "pixel-ripple",
+  "group": "pixel",
+  "name": "Halftone ripple",
+  "frames": 26,
+  "ms": 1040,
+  "px": 48
+ },
+ {
+  "id": "pixel-eq",
+  "group": "pixel",
+  "name": "Equaliser",
+  "frames": 94,
+  "ms": 3760,
+  "px": 48
+ },
+ {
+  "id": "pixel-square",
+  "group": "pixel",
+  "name": "Spinning pixel square",
+  "frames": 52,
+  "ms": 2080,
+  "px": 48
+ },
+ {
+  "id": "pixel-noise",
+  "group": "pixel",
+  "name": "Static noise",
+  "frames": 32,
+  "ms": 3200,
+  "px": 48
+ },
+ {
+  "id": "sphere-orb",
+  "group": "sphere",
+  "name": "Glossy orb",
+  "frames": 60,
+  "ms": 3960,
+  "px": 24
+ },
+ {
+  "id": "sphere-wire",
+  "group": "sphere",
+  "name": "Wireframe globe",
+  "frames": 80,
+  "ms": 5280,
+  "px": 24
+ },
+ {
+  "id": "sphere-dots",
+  "group": "sphere",
+  "name": "Dot-matrix Earth",
+  "frames": 90,
+  "ms": 5940,
+  "px": 24
+ },
+ {
+  "id": "sphere-ring",
+  "group": "sphere",
+  "name": "Ringed planet",
+  "frames": 80,
+  "ms": 5280,
+  "px": 24
+ },
+ {
+  "id": "sphere-cloud",
+  "group": "sphere",
+  "name": "Point cloud",
+  "frames": 68,
+  "ms": 4488,
+  "px": 24
+ },
+ {
+  "id": "sphere-scan",
+  "group": "sphere",
+  "name": "Scanning band",
+  "frames": 57,
+  "ms": 2850,
+  "px": 24
+ },
+ {
+  "id": "sphere-glass",
+  "group": "sphere",
+  "name": "Glass orb",
+  "frames": 120,
+  "ms": 9600,
+  "px": 24
+ },
+ {
+  "id": "sphere-moon",
+  "group": "sphere",
+  "name": "Orbiting moon",
+  "frames": 52,
+  "ms": 2600,
+  "px": 24
+ },
+ {
+  "id": "sphere-gyro",
+  "group": "sphere",
+  "name": "Gyroscope",
+  "frames": 86,
+  "ms": 5676,
+  "px": 24
+ },
+ {
+  "id": "sphere-pulse",
+  "group": "sphere",
+  "name": "Pulse",
+  "frames": 27,
+  "ms": 891,
+  "px": 24
+ },
+ {
+  "id": "ascii-ramp",
+  "group": "ascii",
+  "name": "Shaded ramp",
+  "frames": 48,
+  "ms": 3984,
+  "px": 32
+ },
+ {
+  "id": "ascii-earth",
+  "group": "ascii",
+  "name": "ASCII Earth",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ },
+ {
+  "id": "ascii-wire",
+  "group": "ascii",
+  "name": "Wireframe chars",
+  "frames": 12,
+  "ms": 744,
+  "px": 32
+ },
+ {
+  "id": "ascii-binary",
+  "group": "ascii",
+  "name": "Binary",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ },
+ {
+  "id": "ascii-block",
+  "group": "ascii",
+  "name": "Block shading",
+  "frames": 48,
+  "ms": 3984,
+  "px": 32
+ },
+ {
+  "id": "ascii-braille",
+  "group": "ascii",
+  "name": "Braille globe",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ },
+ {
+  "id": "ascii-night",
+  "group": "ascii",
+  "name": "Night side",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ },
+ {
+  "id": "ascii-matrix",
+  "group": "ascii",
+  "name": "Matrix rain",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ },
+ {
+  "id": "ascii-hex",
+  "group": "ascii",
+  "name": "Hex scan",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ },
+ {
+  "id": "ascii-pals",
+  "group": "ascii",
+  "name": "Pals globe",
+  "frames": 72,
+  "ms": 5976,
+  "px": 32
+ }
+]

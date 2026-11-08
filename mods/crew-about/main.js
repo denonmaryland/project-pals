@@ -5,8 +5,8 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, a, tone, ds, sheetFace, headPet } from "./crew.js";
+import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
+import { crewCli, a, tone, ds, sheetFace, headPet, workingStyle, workingMark } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -183,7 +183,15 @@ export default class CrewAbout extends View {
       .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new channels skip their harness's permission prompts",
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
           .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
-        (_e, cx) => this.setBypass(!bypass, cx)));
+        (_e, cx) => this.setBypass(!bypass, cx)))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // The mark beside a working channel: its own dialog, a grid of live previews (crew-indicator).
+      .child(row("set-indicator", "Working indicator", "Beside a channel while its agent works",
+        h_flex().items_center().gap(8)
+          .child(div().size(18).flex().items_center().justify_center().child(workingMark(ds(t))))
+          .child(div().text_size(12.5).text_color(t.muted).child(workingStyle().name))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }));
 
     return v_flex().id("crew-about").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().bg(t.popover).text_color(t.foreground)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (not released yet)
+
+- **Pick your working indicator.** Project Pals settings → Working indicator: the mark beside a
+  working channel can be the classic dot or one of 30 small animations (pixel spinners, shaded
+  spheres, ASCII globes), with live previews. A click applies it.
+
 ## 0.3.0
 
 A new look and a simpler shape. If you used the Pro view, Focus is now the only one.

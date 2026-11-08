@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, agents, theme, props, closeOverlay, openOverlay, run } from "herdr";
-import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag, channelOrder } from "./crew.js";
+import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag, channelOrder, workingMark } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 32;
@@ -71,7 +71,7 @@ export default class CrewPick extends View {
     tabs.forEach((tab, i) => {
       const on = tab.active;
       const shell = !tabHasAgent(tab);
-      const mark = tab.status === "working" ? div().size(6).flex_none().rounded(3).bg(d.info)
+      const mark = tab.status === "working" ? workingMark(d)
         : tab.status === "blocked" ? div().size(6).flex_none().rounded(3).bg(d.warn)
         : tab.status === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
         : null;
