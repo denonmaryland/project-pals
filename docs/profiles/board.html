@@ -259,6 +259,46 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
 .tbar .live{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--okHi)}
 .tbar .pr{font-size:11px;color:var(--fg2)}
 .dright .term{flex:none;height:300px}
+
+/* frame 4/5 additions */
+.chipm{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 6px;border-radius:4px;background:var(--sel);border:1px solid var(--lineMid);font:500 13px/18px var(--ui);color:var(--fg1)}
+.chipm img{width:30px;height:24px}
+.menu .gl{font:500 10px/14px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg3);padding:8px 10px 2px}
+.menu .mh{padding:8px 10px 6px;border-bottom:1px solid var(--line);margin-bottom:2px}
+.menu .mh .a{font:600 13px/18px var(--ui);color:var(--fg1)}
+.menu .mh .b{font:400 11px/14px var(--mono);color:var(--fg3)}
+.flow{display:flex;align-items:stretch;gap:8px;max-width:1780px}
+.fb{flex:1;background:var(--bg0);border:1px solid var(--line);border-radius:6px;padding:10px 12px;min-width:0}
+.fb.hi{border-color:var(--info)}
+.fb .k{font:500 10px/14px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg2)}
+.fb .t{font-size:12px;line-height:16px;color:var(--fg1);margin-top:4px}
+.fb .s{font-size:11px;line-height:15px;color:var(--fg3);margin-top:2px}
+.fb.dash{display:inline-block;border-style:dashed;font-size:12px;color:var(--fg2)}
+.flow2{margin-top:10px}
+.arr{display:flex;align-items:center;color:var(--fg4);font:400 14px/1 var(--ui)}
+.day{display:flex;align-items:center;gap:8px;font:500 10px/14px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg2);padding:12px 0 6px;border-top:1px solid var(--line)}
+.day .live{display:flex;align-items:center;gap:5px;color:var(--okHi);letter-spacing:0;text-transform:none;font-family:var(--ui);font-size:11px}
+.ent{padding:6px 0 8px}
+.ent+.ent{border-top:1px solid var(--lineSoft)}
+.eh{font:400 11px/16px var(--mono);color:var(--fg3)}
+.ed{font-size:12px;line-height:17px;color:var(--body);margin-top:2px}
+.el{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:17px;color:var(--body);margin-top:4px}
+.el .tag{margin-top:1px;min-width:46px;justify-content:center}
+.el .cost{font:400 10px/14px var(--mono);color:var(--warnText);margin-left:4px}
+.ll{font-size:12px;line-height:17px;color:var(--fg1);margin-top:4px}
+.pat{padding:7px 10px}
+.pat+.pat{border-top:1px solid var(--lineSoft)}
+.pat .a{display:flex;align-items:center;gap:8px}
+.pat .pid{font:500 11px/14px var(--mono);color:var(--fg3);width:26px}
+.pat .pt{font-size:12px;color:var(--fg1);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pat .b{font-size:11px;color:var(--fg3);margin:2px 0 0 34px}
+.ibx{width:420px;background:var(--bg1);border:1px solid var(--line);border-radius:8px;padding:14px}
+.ibx .ih{display:flex;align-items:center;gap:8px}
+.ibx .it{font:600 14px/20px var(--ui);color:var(--fg1);margin-top:8px}
+.ibx .ip{font-size:12px;line-height:17px;color:var(--body);margin-top:4px}
+.ibx .ip b{color:var(--fg1);font-weight:500}
+.ibx .iq{font-size:12px;line-height:17px;color:var(--fg2);border-left:2px solid var(--lineMid);padding-left:8px;margin-top:8px}
+.ibx .iq span{display:block;font:400 10px/14px var(--mono);color:var(--fg3)}
 </style>
 </head>
 <body>
@@ -381,7 +421,7 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
     </section>
     <aside class="panel">
       <div class="ph"><img src="art/herdr-work.svg" alt=""><span class="n">Project Pals - Herdr Mod</span><span class="wide">⤢</span><span class="x">×</span></div>
-      <div class="tabs"><span class="tb on">Profile</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
+      <div class="tabs"><span class="tb on">Profile</span><span class="tb">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
       <div class="pc">
         <div class="sec">
           <div class="idb"><div class="pw"><img class="aura" src="art/pet-aura.svg" alt=""><img class="pet" src="art/herdr-work-o.svg" alt=""></div>
@@ -438,7 +478,7 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
     </aside>
     <section class="dash">
       <div class="ph" style="gap:12px"><img src="art/herdr-work.svg" alt=""><span class="n" style="flex:none">Project Pals - Herdr Mod</span>
-        <span class="tabs" style="border:0;height:auto;padding:0 0 0 12px"><span class="tb on">Profile</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></span>
+        <span class="tabs" style="border:0;height:auto;padding:0 0 0 12px"><span class="tb on">Profile</span><span class="tb">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></span>
         <span style="flex:1"></span><span class="ghost" style="height:28px">⤡ Side</span><span class="x">×</span></div>
       <div class="dtop">
         <div class="pw2"><img class="aura" src="art/pet-aura.svg" alt=""><img class="pet" src="art/herdr-work-o.svg" alt=""></div>
@@ -511,7 +551,7 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
 <div><div class="t4">Profile · compact (the dashboard opens Full)</div>
 <aside class="panel solo">
   <div class="ph"><img src="art/herdr-work.svg" alt=""><span class="n">Project Pals - Herdr Mod</span><span class="wide">⤢</span><span class="x">×</span></div>
-  <div class="tabs"><span class="tb on">Profile</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
+  <div class="tabs"><span class="tb on">Profile</span><span class="tb">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
   <div class="pc">
     <div class="sec">
       <div class="idb"><div class="pw"><img class="aura" src="art/pet-aura.svg" alt=""><img class="pet" src="art/herdr-work-o.svg" alt=""></div>
@@ -559,7 +599,7 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
 <div><div class="t4">Mission · the mission profile</div>
 <aside class="panel solo">
   <div class="ph"><img src="art/herdr-work.svg" alt=""><span class="n">Project Pals - Herdr Mod</span><span class="wide">⤢</span><span class="x">×</span></div>
-  <div class="tabs"><span class="tb">Profile</span><span class="tsep"></span><span class="tb on">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
+  <div class="tabs"><span class="tb">Profile</span><span class="tb">Notebook</span><span class="tsep"></span><span class="tb on">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
   <div class="pc">
     <div class="sec">
       <div class="sl">Mission <span class="act">Edit</span></div>
@@ -598,7 +638,7 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
 <div><div class="t4">Brain · the files</div>
 <aside class="panel solo">
   <div class="ph"><img src="art/herdr-work.svg" alt=""><span class="n">Project Pals - Herdr Mod</span><span class="wide">⤢</span><span class="x">×</span></div>
-  <div class="tabs"><span class="tb">Profile</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb on">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
+  <div class="tabs"><span class="tb">Profile</span><span class="tb">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb on">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
   <div class="pc">
     <div class="sec">
       <div class="sl">Files <span class="act">New note</span></div>
@@ -634,7 +674,7 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
 <div><div class="t4">AGENTS.md · the tool, the pointer fix in review</div>
 <aside class="panel solo">
   <div class="ph"><img src="art/herdr-work.svg" alt=""><span class="n">Project Pals - Herdr Mod</span><span class="wide">⤢</span><span class="x">×</span></div>
-  <div class="tabs"><span class="tb">Profile</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb on">AGENTS.md <span class="bdg info">+</span></span></div>
+  <div class="tabs"><span class="tb">Profile</span><span class="tb">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb on">AGENTS.md <span class="bdg info">+</span></span></div>
   <div class="pc">
     <div class="sec">
       <div class="sl">What Claude Code loads here</div>
@@ -670,8 +710,29 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
 
 <!-- ═════════════ FRAME 3 · PROPOSALS AWAITING DeNon ═════════════ -->
 <div>
-<div class="frame-label"><b>4 · Ways in, and three proposals awaiting DeNon</b> · <span style="color:var(--warnText)">P10–P12 are Orca's recommendations, not approved</span></div>
+<div class="frame-label"><b>4 · The pal chip menu, ways in, and three proposals awaiting DeNon</b> · <span style="color:var(--warnText)">P10–P12 are Orca's recommendations, not approved</span></div>
 <div class="strip">
+  <div class="card">
+    <div class="cap">Header pal chip → the pal menu (P16: no channels)</div>
+    <div class="chipm"><img src="art/herdr-work.svg" alt="">Project Pals - Herdr Mod <span style="color:var(--fg3)">▾</span></div>
+    <div class="menu" style="width:300px;margin-top:6px">
+      <div class="mh"><div class="a">Project Pals - Herdr Mod</div><div class="b">Claude Code · ~/Projects/project-pals</div></div>
+      <div class="gl">The pal</div>
+      <div class="mi hi">Profile<span class="k">Ctrl+Shift+I</span></div>
+      <div class="mi">Notebook<span class="k" style="color:var(--warnText)">3 hiccups today</span></div>
+      <div class="mi">Memory</div>
+      <div class="mi">Tasks<span class="k">0 open</span></div>
+      <div class="gl">The project</div>
+      <div class="mi">Mission</div>
+      <div class="mi">Brain</div>
+      <div class="mi">AGENTS.md<span class="k"><span class="bdg info">+</span></span></div>
+      <div class="mi">Review changes<span class="k">crew/profiles</span></div>
+      <div class="mi">Open folder</div>
+      <div class="sep"></div>
+      <div class="mi">Tell…</div>
+      <div class="mi">Put to sleep</div>
+    </div>
+  </div>
   <div class="card">
     <div class="cap">Pal right-click · ways in</div>
     <div class="menu">
@@ -719,6 +780,133 @@ body{background:#060607;color:var(--body);font-family:var(--ui);font-size:13px;l
   <div><b>Esc stays the terminal's</b>Esc closes the panel only while the panel has the keyboard. In the terminal, Esc still interrupts Claude Code.</div>
   <div><b>Follows the shown pal</b>Open, then switch pals: the panel shows the new pal on the same tab. It starts hidden on every launch; its width is remembered.</div>
   <div><b>Memory in the profile (P11)</b>Also awaiting DeNon. If it's a no, the Profile tab ends at Channels and Routines.</div>
+</div>
+</div>
+
+
+<!-- ═════════════ FRAME 5 · NOTEBOOK + DREAM LOOP ═════════════ -->
+<div>
+<div class="frame-label"><b>5 · Notebook and the Dream loop</b> · every pal's journal of hiccups and lessons; a nightly loop that turns repeated hiccups into proposals DeNon approves</div>
+
+<div class="flow">
+  <div class="fb"><div class="k">Notebooks</div><div class="t">every pal, <span class="mono">notebook/YYYY-MM-DD.md</span></div><div class="s">hiccup · needed · lesson</div></div>
+  <div class="arr">→</div>
+  <div class="fb"><div class="k">1 · Summarise</div><div class="t">crewd, 03:30, no model</div><div class="s">skip if &lt; 3 new hiccups</div></div>
+  <div class="arr">→</div>
+  <div class="fb"><div class="k">2 · Group</div><div class="t">one Haiku call</div><div class="s">patterns, matched to open ones</div></div>
+  <div class="arr">→</div>
+  <div class="fb"><div class="k">3 · Draft</div><div class="t">Orca, ≤ 3 a night (P20)</div><div class="s">2+ pals, 3+ times, or 30+ min</div></div>
+  <div class="arr">→</div>
+  <div class="fb hi"><div class="k">Inbox</div><div class="t">DeNon: Approve · Edit · Decline</div><div class="s">nothing written before this</div></div>
+  <div class="arr">→</div>
+  <div class="fb"><div class="k">Writers</div><div class="t">skill · AGENTS.md · task · routine</div><div class="s">each with its backup</div></div>
+  <div class="arr">→</div>
+  <div class="fb"><div class="k">Watch 14 days (P21)</div><div class="t"><span style="color:var(--okHi)">resolved</span> or <span style="color:var(--warnText)">recurred ↺ back to 3</span></div><div class="s">ledger.jsonl</div></div>
+</div>
+<div class="flow2"><span class="fb dash"><span class="k">DJM intake draft</span> · <span class="mono">data/crew-dream/intake/</span> · sanitized · DeNon files it; the loop never writes the Learning Ledger</span></div>
+
+<div class="four" style="margin-top:24px">
+
+<!-- Notebook tab -->
+<div><div class="t4">Notebook · a pal's journal (entries are this session's real hiccups)</div>
+<aside class="panel solo">
+  <div class="ph"><img src="art/herdr-work.svg" alt=""><span class="n">Project Pals - Herdr Mod</span><span class="wide">⤢</span><span class="x">×</span></div>
+  <div class="tabs"><span class="tb">Profile</span><span class="tb on">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md <span class="bdg info">+</span></span></div>
+  <div class="pc">
+    <div class="sec" style="display:flex;align-items:center;gap:10px">
+      <div class="seg"><span class="on">All</span><span>Hiccups</span><span>Lessons</span></div>
+      <span style="margin-left:auto;font-size:11px;color:var(--fg3)">this week · <span style="color:var(--warnText)">4 hiccups</span> · ~50m lost</span>
+    </div>
+    <div class="day"><span>Today · Nov 8</span><span class="live"><span class="dot" style="background:var(--ok);width:6px;height:6px"></span>live</span></div>
+    <div class="ent">
+      <div class="eh">06:41 · #profiles · 35m</div>
+      <div class="ed">did: the dashboard frame and section 1b</div>
+      <div class="el"><span class="tag warn">hiccup</span><span>Paper's MCP refused at session start; the board had to be HTML <span class="cost">~10m</span></span></div>
+      <div class="el"><span class="tag">tool</span><span>a way to reconnect an MCP server from inside a session</span></div>
+      <div class="el"><span class="tag info">P-3</span><span style="color:var(--fg2)">in pattern · proposed</span></div>
+    </div>
+    <div class="ent">
+      <div class="eh">06:05 · #profiles · 25m</div>
+      <div class="ed">did: proposal and board for the right-side panel</div>
+      <div class="el"><span class="tag warn">hiccup</span><span>a design decision arrived while I was busy; I'd built the other option <span class="cost">~20m</span></span></div>
+      <div class="el"><span class="tag">context</span><span>decisions already made, in the brief that starts the work</span></div>
+      <div class="ll">lesson: read the queued messages before a second pass</div>
+    </div>
+    <div class="ent">
+      <div class="eh">05:58 · #profiles · 15m</div>
+      <div class="ed">did: lint design for AGENTS.md</div>
+      <div class="el"><span class="tag warn">hiccup</span><span>a naive path check flagged 12 paths, none really stale <span class="cost">~10m</span></span></div>
+      <div class="ll">lesson: skip git refs, VAR=, X.Y.Z and bare names</div>
+    </div>
+    <div class="day"><span>Nov 7</span></div>
+    <div class="ent">
+      <div class="eh">23:10 · #integrate · 1h 20m</div>
+      <div class="ed">did: Focus audit, T13</div>
+      <div class="el"><span class="tag warn">hiccup</span><span>start-up memory hit the 6,000 cap; the oldest notes were cut <span class="cost">~10m</span></span></div>
+      <div class="el"><span class="tag">rule</span><span>curate MEMORY.md when the primer is over budget</span></div>
+    </div>
+  </div>
+</aside></div>
+
+<!-- Dreams view (Orca) -->
+<div><div class="t4">Dreams · in the head pal's panel (illustrative patterns)</div>
+<aside class="panel solo">
+  <div class="ph"><img src="art/orca-rest.svg" alt=""><span class="n">Orca</span><span class="wide">⤢</span><span class="x">×</span></div>
+  <div class="tabs"><span class="tb">Profile</span><span class="tb on">Notebook</span><span class="tsep"></span><span class="tb">Mission</span><span class="tb">Brain</span><span class="tb">AGENTS.md</span></div>
+  <div class="pc">
+    <div class="sec" style="display:flex;align-items:center;gap:10px">
+      <div class="seg"><span>Notebook</span><span class="on">Dreams</span></div>
+      <span class="ghost" style="margin-left:auto;height:26px">Dream now</span>
+    </div>
+    <div class="sec">
+      <div class="sl">This month</div>
+      <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+        <div class="st"><div class="v">9</div><div class="l">proposed</div></div>
+        <div class="st" style="border-left:1px solid var(--line)"><div class="v">6</div><div class="l">accepted</div></div>
+        <div class="st" style="border-left:1px solid var(--line);border-top:0"><div class="v" style="color:var(--okHi)">4</div><div class="l">resolved</div></div>
+        <div class="st" style="border-left:1px solid var(--line);border-top:0"><div class="v" style="color:var(--warnText)">1</div><div class="l">recurred</div></div>
+      </div>
+      <div class="note">~5h of hiccups this week, from ~9h a month ago.</div>
+    </div>
+    <div class="sec">
+      <div class="sl">Patterns</div>
+      <div class="rows">
+        <div class="pat"><div class="a"><span class="pid">P-3</span><span class="pt">Design MCP down at session start</span><span class="tag info">proposed</span></div><div class="b">3 pals · 4× · ~35m · needed: tool</div></div>
+        <div class="pat"><div class="a"><span class="pid">P-2</span><span class="pt">A decision lands after the work began</span><span class="tag">watching 9d</span></div><div class="b">2 pals · 3× · ~1h · accepted: rule in god/AGENTS.md</div></div>
+        <div class="pat"><div class="a"><span class="pid">P-4</span><span class="pt">Start-up memory over its cap</span><span class="tag warn">recurred</span></div><div class="b">3 pals · 5× · ~40m · skill accepted Oct 30; came back Nov 7</div></div>
+        <div class="pat"><div class="a"><span class="pid">P-1</span><span class="pt">Folder trust question stalls new pals</span><span class="tag ok">resolved</span></div><div class="b">4 pals · 6× · fixed by the trust notice</div></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sl">DJM intake drafts</div>
+      <div class="fr"><span class="v m" style="font-size:11px">2026-11-08-check-design-mcp.md</span><span class="mini">Open</span></div>
+      <div class="note" style="margin-top:4px">Drafts only. DeNon files them; the loop never writes the Learning Ledger.</div>
+    </div>
+  </div>
+</aside></div>
+
+<!-- Inbox card -->
+<div><div class="t4">Inbox · a dream proposal (illustrative)</div>
+<div class="ibx">
+  <div class="ih"><span class="tag info">dream · skill</span><span class="mono" style="font-size:11px;color:var(--fg3)">D-7 · from Orca</span><span style="margin-left:auto;font-size:11px;color:var(--fg3)">expires in 7d</span></div>
+  <div class="it">New skill: <span class="mono">check-design-mcp</span></div>
+  <div class="ip">Pattern <b>P-3</b> · 3 pals, 4 times this week, ~35 min lost: the design tool's MCP was down when a board was planned.</div>
+  <div class="iq">"Paper's MCP refused at session start; the board had to be HTML" <span>Project Pals - Herdr Mod, Nov 8</span></div>
+  <div class="iq">"couldn't open the Paper file, drew the tokens in HTML instead" <span>Pals Native, Nov 6</span></div>
+  <div class="diff" style="margin-top:10px">
+    <div class="fh">crew-skills/check-design-mcp/SKILL.md <span class="tag info">new</span><span style="margin-left:auto;font:500 11px/14px var(--mono)"><span style="color:var(--okHi)">+6</span> <span style="color:var(--fg3)">−0</span></span></div>
+    <div class="ln add"><span>1</span><span>+ # Check the design MCP first</span></div>
+    <div class="ln add"><span>2</span><span>+ Before planning a Paper board: curl -s</span></div>
+    <div class="ln add"><span>3</span><span>+   127.0.0.1:29979/mcp (404 = up, refused = down).</span></div>
+    <div class="ln add"><span>4</span><span>+ Down: say so first, ask DeNon to open Paper</span></div>
+    <div class="ln add"><span>5</span><span>+   and /mcp reconnect, and draw the board as</span></div>
+    <div class="ln add"><span>6</span><span>+   HTML in the meantime.</span></div>
+  </div>
+  <div class="foot" style="margin-top:12px"><span class="ghost">Decline</span><span class="ghost" style="margin-left:auto">Edit</span><span class="solid">Approve</span></div>
+  <div class="fn">Approve saves it with <span class="mono">pal skill save</span> and starts a 14-day watch on P-3.</div>
+</div>
+</div>
+
 </div>
 </div>
 

@@ -25,6 +25,10 @@ plus a tool for the project's `AGENTS.md` / `CLAUDE.md`.
   the pal's live channels; a task board of what its channels are on and heading for; and a
   **mini terminal on the pal's real, live session**, so DeNon can prompt the pal from there.
   Identity, mission and brain, the AGENTS.md tool and Memory stay. Section 1b designs it.
+- **Three more (DeNon, relayed by Orca):** the header's pal chip becomes the way into everything
+  about the agent and its project (section 1c); every pal keeps a daily **Notebook** of its
+  work, hiccups and lessons (section 3b); and a **Dream loop** reads the notebooks and proposes
+  improvements that DeNon approves (section 3c).
 
 **To pick.** ★ is my recommendation; the sections below say why. P10–P12 are three
 recommendations of Orca's that DeNon hasn't approved; they're options here, not yeses.
@@ -44,6 +48,12 @@ recommendations of Orca's that DeNon hasn't approved; they're options here, not 
 | P12 | **"N need you"** in the status bar | yes · no | yes |
 | P13 | How the dashboard gets its room | **A** the panel's two sizes: Side (420, beside the terminal) and **Full** (it takes over the work area until closed) · **B** one wide panel (720) beside the terminal · **C** everything inside the 420 panel | **A**, the dashboard opening Full |
 | P14 | Which channel the mini terminal shows first | the channel you were looking at · the lead channel · the most recently active | the one you were looking at |
+| P16 | Channels in the pal chip menu | none (the `# channel ▾` picker and the hero list cover them) · one compact line ("4 channels · 1 asks you") | none |
+| P17 | How the notebook gets written | **A** the pal writes it, prompted by its primer and by a few nudges (task done, blocked, after being stuck) · **B** A, plus a cheap model drafting entries from channel screens at session end | **A** |
+| P18 | Lessons in the SessionStart primer | the pal's last 7 days of lessons (at most 400 characters) · none | the last 7 days |
+| P19 | Who dreams | **A** Orca, as a routine in its channel · **B** a headless "dreamer" (`claude -p`) run by crewd · **C** crewd does the cheap summary, then hands a short digest to Orca, which drafts the proposals | **C** |
+| P20 | Dream cadence and cap | nightly at 03:30 + on demand, at most 3 proposals a night · weekly | nightly, 3 a night |
+| P21 | How long a fix is watched for the hiccup coming back | 14 days · 30 days | 14 days |
 | P15 | The task board's columns | **Now · Next · Blocked · Done** (tasks plus each channel's live activity) · the board's own statuses (Open · Claimed · Blocked · Done) | Now · Next · Blocked · Done |
 
 ## 0. What's already there
@@ -267,6 +277,38 @@ profile (column)                      ← the panel; Side = 420 px, Full = fills
 - **Several mod blocks, one mod:** `crew-profile` copies are told their `part` by props and share
   state through shared `crew.panel`, the same way the roster and header share `crew.*` today.
 
+## 1c. The pal chip menu
+
+The header's pal chip (centred, the pet and the pal's name) opens `crew-pick` today: the pal's
+channels. The `# channel ▾` picker on the left opens the same list, and the hero lists the channels
+too. So the chip becomes the menu for **the agent and its project**, and channels stay out (P16).
+
+A popup under the chip: 300 px, the `crew-menu` look (r6, #141415, a #2C2C2F hairline,
+28 px rows, a 12 px icon and a mono key hint on the right):
+
+| Group | Item | What it opens |
+|---|---|---|
+| The pal | **Profile** | the panel's Profile tab (the dashboard, Full) |
+| | **Notebook** | the Notebook tab, on today's entry |
+| | **Memory** | the Profile tab in Side, scrolled to Memory (P11) |
+| | **Tasks** | the Profile tab Full, with the task board in view |
+| The project | **Mission** | the Mission tab |
+| | **Brain** | the Brain tab |
+| | **AGENTS.md** | the AGENTS.md tab (with its lint badge on the row) |
+| | **Review changes** | `crew-review`, only on a worktree channel (P10) |
+| | **Open folder** | the pal's folder in the file manager (`xdg-open`) |
+| Actions | **Tell…** | the `crew-tell` dialog |
+| | **Put to sleep** / **Wake** | as the hero's moon and the pal menu |
+
+- A one-line header in the popup: the pal's name, and "Claude Code · ~/Projects/project-pals" in
+  11 px mono #6A6A6C.
+- Keys: ↑/↓, Enter, Esc, like `crew-pick`. The panel's own shortcut (P2) still opens Profile.
+- When the panel is already open on a tab, that row is marked, and choosing it closes the panel
+  (the "same trigger closes" rule).
+- The chip gets a small ▾ after the name, so it reads as a menu.
+- The right-click pal menu keeps its own items (pin, rename, look, channel, sleep) and gains
+  Profile / Mission at the top, as in section 5. The chip menu is the fuller one.
+
 ## 2. The mission
 
 ### What it is
@@ -401,6 +443,159 @@ headings (Current Status → Focus, Change Log → Change log, Decisions → Dec
 that file, with DeNon's click, since it's a project file. "Split into pal brain files" is an
 optional one-time action, with a preview.
 
+## 3b. The notebook: each pal's daily journal
+
+Every pal keeps a journal of **how the work went**, written by the pal in its own words. DeNon
+reads it in the panel. The part that matters most is the **hiccups**: where it got stuck, what
+slowed it, what it would have needed (a tool, a skill, a rule, better context), and what it
+learned. Those are what the Dream loop (3c) feeds on.
+
+### How it differs from the other files
+
+| | Holds | Written |
+|---|---|---|
+| Memory (`pal remember`) | facts to carry into the next session | as they come up |
+| Change log (brain) | what changed in the project | per change |
+| **Notebook** | how the work went: hiccups, what was missing, lessons | at the end of a piece of work, or at a hiccup |
+
+A notebook entry links to the task or change-log line it's about rather than repeating it ("did:
+T16, see change log").
+
+### Where it lives
+
+`data/crew-memory/<pal>/notebook/YYYY-MM-DD.md`: one file per day, in pal data (never the
+project). It sits inside the memory folder, so `pal renamed` already carries it. All of a pal's
+channels write to the same day file. Files are kept 90 days; older days roll into
+`notebook/YYYY-MM.md` as the month's lessons only.
+
+### The entry template
+
+```markdown
+### 14:32 · #profiles · T16 · 40m
+- did: drew the dashboard frame (board.html, frame 2)
+- hiccup: Paper's MCP was down; couldn't draw in Paper  (cost: ~10m)
+- needed: tool: a way to reconnect an MCP server from inside a session
+- lesson: check `curl 127.0.0.1:29979` before planning a Paper board
+```
+
+- **Heading:** time, `#channel`, the task id if any, and roughly how long the work took.
+- **`did`:** one line. Required.
+- **`hiccup`:** what got in the way, with a rough cost. Zero or more lines. An entry with none is fine.
+- **`needed`:** one of `tool:` `skill:` `rule:` `context:` `access:`, then what. These tags are
+  what the Dream loop groups by.
+- **`lesson`:** one line, if there was one.
+- At most 8 lines an entry. The CLI rejects longer ones and says to split or trim.
+
+The pal writes it with `pal notebook "did: …" --hiccup "…" --needed "skill: …" --lesson "…"`,
+or `pal notebook hiccup "…"` for a quick one in the middle of work. `pal notebook` with no text
+shows today's.
+
+### When it writes (P17 ★ A: cheap, no flood)
+
+- **Only after real work.** The SessionStart primer gets one line: "When you finish a task, hit a
+  hiccup, or are about to stop after real work, add a notebook entry (pal notebook); skip it if
+  nothing happened."
+- **Nudges, one line each, at the moments that matter:**
+  - `pal task done` and `pal task block` print a reminder: "Anything slow? pal notebook …".
+  - When crewd's stuck check clears (the channel was stuck 15+ minutes and is moving again), it
+    queues a one-line note to that channel ("You were stuck 22m in #x. If something was missing,
+    note it: pal notebook hiccup …"). It does this at most once an hour per channel, and it's
+    delivered when the turn ends, like any message.
+- **No flood:** at most one entry per task, plus hiccups. Entries from the same channel within
+  10 minutes merge into one. A day with no real work has no file.
+- B adds a cheap model drafting entries from channel screens. It's not recommended: it sends
+  screens to the API, and the pal's own account of a hiccup is better than a guess from a screen.
+
+### What it never holds
+
+**No secrets, credentials, private user data or raw transcripts.** `pal notebook` enforces it
+before writing:
+- It masks key- and token-shaped strings, the same check as the AGENTS.md lint's `secret`.
+- It rejects pasted terminal output: more than 3 lines that look like a transcript or log.
+- It rejects absolute paths under a home folder other than the pal's project. Personal files are
+  someone's data.
+
+The primer line says it too. The Notebook tab shows a masked string as `‹masked›`, and DeNon can
+delete any entry (with a backup).
+
+### The Notebook tab
+
+In the panel, in the pal's group: **Profile · Notebook ‖ Mission · Brain · AGENTS.md**.
+- Days newest first, today on top and **live**: it updates as entries land (`watchFolder` on the
+  notebook folder).
+- Each entry is drawn from the template: heading in 11 px mono, `did` in body text, hiccups with an
+  amber `hiccup` tag and their cost, `needed` with its kind tag (tool / skill / rule / context /
+  access), and lessons in #EDEDED.
+- A filter: **All · Hiccups · Lessons**, and a count for the week ("6 hiccups · ~2h lost").
+- Each hiccup shows whether the Dream loop has picked it up: `in pattern P-3` and its state
+  (proposed / accepted / resolved).
+
+## 3c. The Dream loop: the crew learns from its hiccups
+
+An orchestrator reads every pal's notebook hiccups and lessons, finds patterns across pals, and
+**proposes** fixes: new or refined skills, AGENTS.md rules, tools and processes. **Nothing is
+written until DeNon approves it in the Inbox** (as with P6). The loop also tracks whether a fix
+worked: does the same hiccup stop coming back?
+
+### Who dreams (P19 ★ C) and what it costs
+
+1. **Summarise (crewd, no model, nightly at 03:30):** parse every `notebook/` day since the last
+   dream for `hiccup`, `needed` and `lesson` lines, with pal, channel, date and cost. That's
+   usually a few dozen lines, a few KB. Under 3 new hiccups crew-wide, the night is skipped.
+2. **Group (one cheap call, Haiku via `claude -p`):** cluster the lines into patterns, and match
+   them to patterns already open in the ledger: "3 pals, 4 times this week: Paper's MCP down at
+   session start, ~35m lost". It sends only notebook lines, which are already redacted.
+3. **Draft (Orca, only when a pattern qualifies):** a pattern qualifies when it shows up in 2+
+   pals, 3+ times, or costs 30+ minutes. crewd sends Orca a short digest (patterns, counts,
+   costs, quotes), and Orca drafts at most 3 proposals (P20) with `pal dream propose`. Orca has
+   the crew context, it's visible and interruptible, and it goes through the approval gate like any pal.
+
+On demand: `pal dream` (or a button in the Dreams view) runs the same steps now;
+`pal dream --dry-run` stops after step 2 and shows the patterns.
+
+A is simpler but costs an Orca turn every night even when nothing happened. B is cheapest but
+drafts without crew context, and nobody sees it working.
+
+### What a proposal can be, and what writes it on approval
+
+| Kind | Example | Written on approval by |
+|---|---|---|
+| **Skill** (new or refined) | "check-mcp-before-design": test a design MCP's port before planning | `pal skill save` (a refined skill shows as a diff of the old SKILL.md) |
+| **Rule** | an AGENTS.md line in one project: "Run `herdr-app check` on the installed copy, not lib/" | `pal agents apply` (the AGENTS.md tool's backup, hash check and log) |
+| **Tool** | "a `pal mcp status` command" | a task on the board, assigned to the pal that owns that code, with the spec. The dream doesn't write code |
+| **Process** | a routine, or a gate-policy change | the existing `pal routine` / policy commands, shown as a diff |
+| **Context** | a brain note or a mission line for one pal | the brain writers (section 3) |
+
+Each proposal is an **Inbox card**: the pattern (pals, count, cost, two quotes from notebooks),
+what to change, the **diff**, and **Approve · Edit · Decline**. Approve writes through the writer
+above, with its usual backup. Decline asks for an optional one-line reason, which teaches the next
+dream. Proposals not decided in 7 days expire.
+
+### Closing the loop
+
+`data/crew-dream/ledger.jsonl` keeps one line per pattern and proposal: the pattern's id and
+summary, its source hiccups (pal, day, line), the kind, target, diff and status (proposed /
+accepted / declined / expired), who decided, and when.
+
+- **Accepted → watching** for 14 days (P21). Each night's grouping step matches new hiccups to
+  watched patterns. If none comes back, it's **resolved**. If one does, it's **recurred**:
+  the card comes back to the Inbox with the new hiccup, so the fix gets refined, not repeated.
+- **Declined** patterns aren't proposed again for 30 days, unless they double in count.
+- **The Dreams view** (in the head pal's panel, a **Dreams** segment of its Notebook tab):
+  - open patterns, with counts, pals and time lost;
+  - proposals and their states;
+  - a monthly line: "9 proposed · 6 accepted · 4 resolved · 1 recurred · ~5h of hiccups this
+    week vs ~9h a month ago".
+
+### DJM OS's Learning Ledger
+
+DJM OS keeps its own Learning Ledger, which pals can only read. **The Dream loop never writes to
+it.** When a lesson matters beyond Project Pals, the dream drafts an **intake note** for DeNon to
+file themselves: `data/crew-dream/intake/YYYY-MM-DD-<slug>.md`. It's sanitized (no secrets, no
+private data, no transcripts), with what happened, the evidence (pattern, counts), what was
+applied, what was checked, and what's still open. Its Inbox card says "Draft for DJM intake",
+with Open and Copy. Filing is DeNon's.
+
 ## 4. The AGENTS.md / CLAUDE.md tool
 
 It's the panel's **AGENTS.md** tab, the third part of the mission profile.
@@ -527,16 +722,18 @@ closed                                          open (push, P9 ★)
 - **Header (52 px, #0E0E0F, a hairline under it):** the pet chip (30 × 24, the pal's live
   state), the pal's name (14/600 #EDEDED, truncated), and two 28 px buttons on the right: ⤢ / ⤡
   (Full / Side) and ×. In Full, the tabs sit in this header row instead of a strip under it.
-- **Tabs (36 px):** four rectangular tabs in one strip, radius 4, the shown one #232324 on a
-  #2C2C2F hairline: **Profile** ‖ **Mission · Brain · AGENTS.md**. A 1 px divider and 8 px
-  of space separate the two groups, so the strip is also the Pal / Mission switch: Profile is the pal's
-  profile, and the other three are the mission profile. AGENTS.md carries its lint badge
+- **Tabs (36 px):** five rectangular tabs in one strip, radius 4, the shown one #232324 on a
+  #2C2C2F hairline: **Profile · Notebook** ‖ **Mission · Brain · AGENTS.md**. A 1 px divider
+  and 8 px of space separate the two groups, so the strip is also the Pal / Mission switch: the
+  agent on the left, its project on the right. They fit 420 px; under 400 px, AGENTS.md shortens
+  to "Agents". On the head pal, the Notebook tab has a Notebook | Dreams switch (3c). AGENTS.md carries its lint badge
   (an amber count for warnings, red for errors, a blue `+` when a pointer can be created).
 - **Tabs, not one long page.** Stacking all four in 420 px would be a very long scroll, and the
   editor and the diff need the panel's full height. Inside each tab the sections are stacked,
   16 px in, split by hairlines, with 10 px uppercase mono labels (#6A6A6C).
   - **Profile:** the dashboard (section 1b). In Side it's the compact version: identity, facts,
     stats (2 × 2), the channels, Now as a list, memory (P11), routines, and Open dashboard ⤢.
+  - **Notebook:** the pal's journal, days newest first, today live (section 3b).
   - **Mission:** the mission card (statement, goals, done-when, focus), then the last 3 change-log
     lines and the last 2 decisions, with "All in Brain →" (section 2).
   - **Brain:** the brain files as rows (Decisions 12, Change log 48, Map → AGENTS.md,
@@ -616,10 +813,15 @@ Internal names stay `crew` (AGENTS.md): new data sits beside the old.
 | CLI | brain | `pal brain ls / show [file] / log "…" / decide "…" --why "…" / note <topic> "…"` |
 | CLI | agents files | `pal agents show / lint [--deep] [--json] / propose <file> -F f / apply` (gated) |
 | Gate | rules | `agents-apply` (`pal agents apply`), `agents-file` (Edit/Write on AGENTS.md / CLAUDE.md, P6) |
-| Hook | SessionStart | the mission block (section 2) |
-| crewd | helpers | a change-log line per task done; the stale-Focus note in the nightly distill |
+| Data | notebook | `data/crew-memory/<slug>/notebook/YYYY-MM-DD.md` |
+| Data | dream ledger, drafts, intake drafts | `data/crew-dream/ledger.jsonl`, `data/crew-dream/proposals/`, `data/crew-dream/intake/` |
+| CLI | notebook | `pal notebook ["…"] [--hiccup …] [--needed kind: …] [--lesson …]`, `pal notebook hiccup "…"` |
+| CLI | dream | `pal dream [--dry-run]`, `pal dream propose -F proposal.json` (Orca), `pal dream ls` |
+| Hook | SessionStart | the mission block (section 2), the notebook line, and the last 7 days of lessons (P18) |
+| crewd | helpers | a change-log line per task done; the stale-Focus note in the nightly distill; the stuck-cleared notebook nudge; the nightly dream summary and grouping (03:30) |
 | Mod | new | `crew-profile` (the panel: header, tabs, all four tabs, and the dashboard's parts by `props.part`; `"focusable": true`) |
-| Mod | changed | `crew-roster` (name click, Profile action, menu items, `crew-roster.profile`, hides the panel at start, `crew.needs`), `crew-menu` (Profile, Mission, Review changes), `crew-status` (need you, P12) |
+| Mod | new | `crew-palmenu` (the header chip's popup, section 1c) |
+| Mod | changed | `crew-header` (the chip opens `crew-palmenu`, with a ▾), `crew-roster` (name click, Profile action, menu items, `crew-roster.profile`, hides the panel at start, `crew.needs`), `crew-menu` (Profile, Mission, Review changes), `crew-status` (need you, P12) |
 | Layout | changed | `layouts/pals.json`: the hidden `profile` column in `body`, with the dashboard tree and its `dash-term` agent block (section 1b) |
 | Keys | added if free | `"ctrl-shift-i": "crew-roster.profile"` (P2) |
 
@@ -634,14 +836,20 @@ Each step works by itself and gets installed and checked before the next.
    task board with activity cards and channel chips, the mini terminal and its picker. Verify
    `agent.focus` and the one-size question first, on a sandbox window (the
    `herdr-sandbox-live-test` skill), never DeNon's. About 3 days.
-3. **The small ones, if DeNon says yes:** Review changes in the menu (P10) and "N need you"
-   (P12, `crew.needs`). About half a day; they don't depend on step 1.
+3. **The pal chip menu** (`crew-palmenu`) and **the small ones, if DeNon says yes**: Review
+   changes in the menu (P10) and "N need you" (P12, `crew.needs`). About a day; the small ones
+   don't depend on step 1.
 4. **Mission and brain:** the files, `pal mission` / `pal brain`, the primer block, the Mission
    and Brain tabs (mission card, file list, viewer and editor, hash-checked). About 2 days.
 5. **The AGENTS.md tab:** `pal agents lint`, View, Edit → Review → Write with backup, Full, the
    three fixes, restore. About 2 days.
 6. **Proposals and gates:** `pal mission propose`, `pal agents propose`, the Inbox cards, the
    `agents-apply` / `agents-file` rules; the deep check; adopting `_Brain/`. About 1.5 days.
+7. **The notebook:** `pal notebook` with its redaction checks, the primer line and the nudges, the
+   Notebook tab. About 1.5 days.
+8. **The Dream loop:** the crewd summary and grouping, `pal dream`, the Inbox proposal cards
+   with their writers, the ledger and the recurrence check, the Dreams view, and intake drafts.
+   About 3 days, after step 7 has collected a week of real notebooks to tune it on.
 
 Each step is checked the AGENTS.md way: the preflight, `herdr-app check` on every mod, an
 install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only with DeNon's OK.
@@ -713,20 +921,31 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
 - A pal's `Edit` on its AGENTS.md is held in the Inbox (if P6 is on).
 - If P10 is a yes: a worktree channel's right-click shows Review changes; a plain channel's doesn't.
 - If P12 is a yes: the status bar shows "1 need you" while one channel asks, and nothing at zero.
+- The header chip opens the pal menu (Profile, Notebook, Memory, Tasks, Mission, Brain, AGENTS.md,
+  Review changes on worktree channels only, Open folder, Tell, Sleep/Wake), with no channels, and each
+  item opens its panel tab.
+- `pal notebook "did: x" --hiccup "y (cost: 10m)"` adds one entry to today's file, shown live in
+  the Notebook tab. A line holding `sk-ant-…` is masked, and a pasted 20-line log is refused.
+- `pal dream --dry-run` on a sandbox `CREW_DATA` with planted hiccups (the same one in 2 pals)
+  prints one pattern. A full run puts one Inbox card with a diff and writes nothing else.
+  Approving it writes through the right writer with a backup, and the ledger shows the
+  proposal as watching.
+- A planted repeat of an accepted pattern's hiccup turns it "recurred" on the next dream.
+- No dream step writes outside `data/` without an Inbox approval, and nothing touches DJM OS.
 - No radius above 8, no oval pills: only dots of 9 px or less are round.
 
 ## The board
 
-`PROFILE · Pal + Mission`, for the Design system page in Paper. **Paper's app wasn't running**
-(its MCP at 127.0.0.1:29979 refused the connection), so the board is drawn here as
-`docs/profiles/board.html`, with a capture at `docs/profiles/board.png`. These are the frames I'll
-draw in Paper once the app is open:
+`PROFILE · Pal + Mission`, for the Design system page in Paper. This session's Paper connection
+failed at startup, so the board is drawn here as `docs/profiles/board.html`, with a capture at
+`docs/profiles/board.png`. These are the frames I'll draw in Paper once it's reconnected:
 
-1. **Closed → open (Side):** the Focus window with the panel closed (the terminal at full width), then
-   the same window with the panel open beside the terminal, with the four triggers marked.
+1. **Closed → open (Side):** the Focus window with the panel closed, then open beside the
+   terminal, with the four triggers marked.
 2. **The dashboard (Full):** the Profile tab taking over the work area: the header strip, channels
-   and memory, the task board (Now · Next · Blocked · Done) and the live mini terminal.
-3. **The other tabs at 420 px (Side):** the compact Profile, Mission, Brain, and AGENTS.md with the
-   CLAUDE.md pointer fix in review.
-4. **Ways in, and proposals awaiting DeNon (P10–P12):** the pal menu, the quick actions, the
-   channel menu with Review changes, and the status bar with "2 need you".
+   and memory, the task board and the live mini terminal.
+3. **The tabs in Side (420 px):** Profile (compact), Notebook, Mission, Brain, and AGENTS.md with
+   the CLAUDE.md pointer fix in review.
+4. **The pal chip menu, ways in, and proposals awaiting DeNon (P10–P12).**
+5. **The Dream loop:** the flow (notebooks → summary → patterns → proposals → Inbox → watch),
+   a proposal's Inbox card with its diff, and the Dreams view in the head pal's panel.
