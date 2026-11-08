@@ -72,6 +72,9 @@ export default class CrewTasks extends View {
           this.files.push({ path: `${dir}/${file}`, rel: `${STORE}/${file}`, name });
         } catch (e) { notify({ title: `Couldn't attach ${name}`, body: String(e).slice(0, 160), level: "warning" }); }
       }
+      // The paperclip's list was a popup over this dialog: give the typing back to the field, so
+      // Enter adds the task.
+      this.input.focus();
       cx.notify();
     });
   }

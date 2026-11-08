@@ -6,7 +6,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, theme, props, closeOverlay, openOverlay, run, exec, setShared, keys } from "herdr";
+import { spaces, theme, props, closeOverlay, openOverlay, run, exec, setShared, keys, home } from "herdr";
 import {
   botOf, ds, tone, channelName, crew, taskFor, loadOps, openPanel, closePanel, panelOpen, panelTab, panelState, worktreeOf, openReview,
   updateBot, rememberModel, wakePal,
@@ -20,6 +20,9 @@ function shortcut() {
   const k = keys().find((x) => x.action === "crew-roster.profile");
   return k ? k.keys.split("-").map((p) => p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1)).join("+") : null;
 }
+
+// A folder as people say it: ~ for the home folder (wherever it is: /home/x, /Users/x).
+const tilde = (f) => { const h = home(); return h && (f === h || f.startsWith(`${h}/`)) ? `~${f.slice(h.length)}` : f; };
 
 export default class CrewPalMenu extends View {
   init(_props, cx) {
@@ -85,7 +88,7 @@ export default class CrewPalMenu extends View {
     root.child(v_flex().px(8).pt(6).pb(7).mb(2).border_b_1().border_color(d.line)
       .child(div().truncate().text_size(13).line_height("18px").font_weight(600).text_color(d.fg1).child(bot.name))
       .child(div().truncate().text_size(11).line_height("14px").font_family(d.mono).text_color(d.fg3)
-        .child([bot.harnessName ?? "no agent", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~")].filter(Boolean).join(" · "))));
+        .child([bot.harnessName ?? "no agent", tilde(bot.folder ?? space.folder ?? "")].filter(Boolean).join(" · "))));
     let group = null;
     items.forEach((it, i) => {
       const [g, id, icon, label, hint] = it;
