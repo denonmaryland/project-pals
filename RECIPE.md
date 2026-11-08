@@ -1,7 +1,7 @@
 # Project Pals
 
-Your coding agents as a crew of pals. Any harness works: Claude Code, Codex, Grok CLI, Gemini CLI,
-opencode, Hermes, Copilot, Cursor, pi.
+Your coding agents as a crew of pals. Any harness works: Claude Code, Antigravity CLI (`agy`),
+Codex, Grok CLI, Gemini CLI, opencode, Hermes, Copilot, Cursor, pi.
 
 Every Herdr space is a pal (a project with a brain), and each of its tabs is a channel, a clone
 working on one thing. Pals are pocket pets whose pose shows what they're doing. You can watch
@@ -173,10 +173,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   pets in that tile state; no file, everyone, live. `preview.png` was made this way in a second
   Herdr window (`HERDR_APP_HOME` on a short path, started without the `HC_*` variables), across four
   Omarchy themes.
-- **`pal hire --model haiku|sonnet|opus`** puts `--model` on the hired pal's command line.
+- **`pal hire --model <model>`** puts `--model` on the hired pal's command line.
 - **Models:** Hire and New channel have a **Model** row for Claude Code (Your default · Opus ·
-  Sonnet · Haiku; New channel adds "Same as <pal>"). It goes on that command line as `--model`,
-  never through `/model`, which would change the default for every session.
+  Sonnet · Haiku) and Antigravity CLI (Your default · Gemini 4 Argon · Gemini 3.8 Flash · Claude
+  Opus/Sonnet · GPT-OSS; New channel adds "Same as <pal>"). It goes on that command line as `--model`,
+  never through `/model`, which would change the default for every session. Antigravity CLI initial
+  tasks are passed via `-i <prompt>` rather than positional args so interactive sessions stay alive.
 - **Hire / Add channel / invite:** a pal or you runs `pal hire|channel|invite`. That drops a
   request in `data/crew-requests/`, which the roster carries out with `space.new` / `tab.new`
   and answers with `<id>.result.json`. Your view stays where it was.
@@ -191,9 +193,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Whoever handed out work is told when it's done.
   - Stuck channels (15 minutes of an unchanged screen) get flagged.
   - Routines run on schedule; a reply of NOTHING_NEW stays quiet.
-  - A cheap model reviews channels to save memory notes, distilled nightly.
+  - A cheap model (`claude -p` or `agy -p`, chosen with `pal settings llm`) reviews channels to save memory notes, distilled nightly.
+  - Pals' replies (for `pal ask` and the "finished what you asked" callbacks) are read from Claude Code (`~/.claude/projects/…`) and Antigravity CLI (`~/.gemini/antigravity-cli/brain/…`) session files, through `crewchat.py`.
   - It checks for updates every 6 hours at most (`crewupdate.CHECK_EVERY`).
-- **Approvals:** with the Claude Code hook, these are held for the owner's approval in the
+- **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
 - **Updates:** the status bar's quiet **Update available · X** pill (a 18px raised rectangle,
@@ -641,9 +644,10 @@ rectangular segments and tags.
   channel screens to the API.
 - **The helpers change your setup:**
   - They add a systemd user service, `herdr-crew.service`.
-  - They edit `~/.claude/settings.json`: SessionStart and PreToolUse hooks, and the status line
-    command is wrapped by `crew-statusline`, which keeps the original in
-    `data/crew-statusline-original`. The file is backed up first.
+  - They edit `~/.claude/settings.json` (SessionStart, PreToolUse, PostToolUse and Stop hooks, plus the
+    `crew-statusline` wrapper) and `~/.gemini/config/hooks.json` (`project-pals` SessionStart, PreToolUse
+    `run_command`, PreInvocation and Stop hooks).
+    Existing files are backed up first.
   - `./install.sh --no-helpers` skips all of that.
 - **Linux only** for the helpers (systemd).
 - **Virtual-list rows can't hold `on_click`:** they render blank. Use the list's
@@ -652,6 +656,8 @@ rectangular segments and tags.
 - **TextView ignores font weights here:** with the layout's Adwaita Sans (a variable font) and with
   Geist, `**bold**` and headings draw at regular weight. Headings still draw larger.
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.
+- **Session formats aren't public:** unknown entries are skipped when replies are read from session
+  files. Approvals cover Claude Code and Antigravity CLI (Codex and others stay un-gated).
 - **Claude Code's folder-trust question stalls new pals:** a pal or worktree channel in a folder
   Claude Code hasn't seen waits on "Quick safety check … one you trust?". Detect it (whitespace-
   insensitive: "Yes, I trust this folder" plus "Accessing workspace" or "Quick safety check") and
@@ -663,6 +669,16 @@ rectangular segments and tags.
   glued to the message, so nothing is typed in while it's there: crewd keeps the messages queued,
   lists the hold under "Waiting on", and delivers once the box is empty. Callbacks never quote
   that unsent text, since it isn't anyone's answer.
+- **Hooks deliver to busy pals:** a Claude Code or agy pal with the hooks installed takes its own
+  queue (`crew-hook stop` / `post-tool-use`, `agy-stop` / `agy-pre-invocation`), so messages reach it
+  mid-turn or as its turn ends without typing; crewd still types to idle pals. Queue files are
+  claimed by renaming them to `.taken`, so crewd and a hook never deliver the same one. Replies for
+  `pal ask` and callbacks come from the pal's session file, the screen only when it has none.
+  `pal ask` to a busy pal with hooks doesn't wait its turn out: the question goes in mid-turn and
+  the answer comes back as soon as it's written.
+- **agy gets its primer back after compacting:** agy drops everything before a compaction's
+  `CHECKPOINT` entry, the SessionStart primer included, so `agy-pre-invocation` watches the session
+  file (only the bytes added since the last call) and injects the primer again once per compaction.
 - **The gate sees only the line a pal types:** a script that pushes or publishes inside itself
   (a repo's `./release`) goes around the per-command rules, so release scripts have their own rule
   (`release-script`). An approval is good for one run of that exact command, and lapses

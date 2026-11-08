@@ -1,6 +1,7 @@
 """Shared Project Pals skills: data/crew-skills/<name>/SKILL.md (agentskills format), linked into
-~/.claude/skills and ~/.codex/skills so every Claude Code and Codex pal can use them. Learned
-skills (saved by the background review) that nobody updates for 30 days are archived, never deleted."""
+~/.claude/skills, ~/.codex/skills and ~/.gemini/config/skills so Claude Code, Codex and Antigravity
+CLI pals can use them. Learned skills (saved by the background review) that nobody updates for 30
+days are archived, never deleted."""
 import re
 import shutil
 import time
@@ -8,7 +9,11 @@ from pathlib import Path
 
 from crewlib import SKILLS, slug
 
-LINKS = [Path.home() / ".claude" / "skills", Path.home() / ".codex" / "skills"]
+LINKS = [
+    Path.home() / ".claude" / "skills",
+    Path.home() / ".codex" / "skills",
+    Path.home() / ".gemini" / "config" / "skills",
+]
 STALE_DAYS = 30
 
 
@@ -61,8 +66,13 @@ def save(name, description, body, by=None, learned=False):
 def link(name):
     """Make the skill visible to each harness; never replace someone else's skill of that name."""
     linked = []
+    home = Path.home()
     for root in LINKS:
-        if not root.parent.exists():
+        try:
+            top = home / root.relative_to(home).parts[0]
+        except ValueError:
+            top = root.parent
+        if not top.exists():
             continue
         root.mkdir(parents=True, exist_ok=True)
         dest, src = root / name, SKILLS / name

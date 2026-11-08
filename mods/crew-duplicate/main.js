@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone, ds,
+import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
   sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 
 export default class CrewDuplicate extends View {
@@ -69,9 +69,10 @@ export default class CrewDuplicate extends View {
       return;
     }
     // The pal's brain: as it was hired, else what runs in it now; none: a shell.
+    const brainKey = this.harness?.key ?? bot.harness;
     let argv = this.harness ? withBypass(this.harness.key, this.harness.run) : (bot.record?.argv ?? (this.same ? withBypass(this.same.key, this.same.run) : undefined));
     // A model picked here goes on this channel's own command line ("Your default" drops the pal's).
-    if (this.model !== undefined && argv && (this.harness?.key ?? bot.harness) === "claude") argv = withModel(argv, "claude", this.model);
+    if (this.model !== undefined && argv && modelsFor(brainKey, argv)) argv = withModel(argv, brainKey, this.model);
     updateBot(bot.record ?? bot, (b) => ({
       ...b,
       categories: { ...(b.categories ?? {}), [name]: category },
@@ -79,9 +80,11 @@ export default class CrewDuplicate extends View {
       brains: this.harness ? { ...(b.brains ?? {}), [name]: this.harness.key } : (b.brains ?? {}),
     }));
     const memory = (bot.memory ?? "").trim();
-    const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
+    // A brain without Project Pals hooks is asked to read its primer; agy takes its task as `-i` (PR #1).
+    const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, primerHint(argv, brainKey), memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
+    const spec = launchSpec(brainKey, argv, argv ? task : "");
     closeOverlay(props().overlay);
-    run("tab.new", { space: space.id, name, argv: argv || undefined, folder: bot.folder || undefined, task: argv ? (task || undefined) : undefined });
+    run("tab.new", { space: space.id, name, argv: spec.argv, folder: bot.folder || undefined, task: spec.task });
   }
 
   key(e, cx) {
@@ -103,15 +106,17 @@ export default class CrewDuplicate extends View {
     const current = this.harness ?? this.same;
     const brainName = this.harness ? this.harness.name : `${bot.harnessName ?? "Shell"} (same)`;
     const brainKey = this.harness?.key ?? bot.harness;
-    const palModel = modelOf(bot.record?.argv);
-    const modelName = (k) => MODELS.find((m) => m.key === k)?.name ?? k;
+    // Claude Code and Antigravity CLI channels can run on another model than the pal.
+    const models = modelsFor(brainKey, this.harness ? this.harness.run : (bot.record?.argv ?? this.same?.run));
+    const palModel = !this.harness ? modelOf(bot.record?.argv) : null;
+    const modelName = (k) => (models ?? []).find((m) => m.key === k)?.name ?? k;
     const modelLabel = this.model === undefined ? (palModel ? `${modelName(palModel)} (same)` : "Same") : modelName(this.model);
     const cats = this.categories();
 
     const row = sheetRow()
       .child(sheetSelect(d, "dup-brain", { label: "Brain", value: brainName, open: this.picking === "brain", onClick: toggle("brain"),
         face: brainLogo(current?.key ?? bot.harness, 13, d, this.agents) }))
-      .when(brainKey === "claude", (el) => el.child(sheetSelect(d, "dup-model", { label: "Model", value: modelLabel, open: this.picking === "model", onClick: toggle("model") })))
+      .when(Boolean(models), (el) => el.child(sheetSelect(d, "dup-model", { label: "Model", value: modelLabel, open: this.picking === "model", onClick: toggle("model") })))
       .when(this.isRepo, (el) => el.child(sheetToggle(d, "dup-branch", { label: "Own branch", on: this.ownBranch, onClick: () => { this.ownBranch = !this.ownBranch; } })))
       .child(sheetSelect(d, "dup-more", { label: "Category", value: this.category === "+new" ? "New…" : this.category, open: this.picking === "cat", onClick: toggle("cat") }));
 
@@ -120,11 +125,11 @@ export default class CrewDuplicate extends View {
       panel = sheetPanel(d, "dup-brains")
         .child(sheetOption(d, "brain-same", { on: !this.harness, left: brainLogo(bot.harness, 14, d, this.agents), label: `Same as ${short}`, sub: bot.harnessName ?? "", onClick: () => { this.harness = null; this.picking = null; } }))
         .children(this.agents.filter((x) => x.key !== bot.harness).map((ag, i) => sheetOption(d, `brain-${i}`, { on: this.harness?.key === ag.key,
-          left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, onClick: () => { this.harness = ag; this.picking = null; } })));
+          left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, onClick: () => { this.harness = ag; this.model = undefined; this.picking = null; } })));
     } else if (this.picking === "model") {
       panel = sheetPanel(d, "dup-models")
         .child(sheetOption(d, "model-same", { on: this.model === undefined, label: `Same as ${short}`, sub: palModel ? modelName(palModel) : "", onClick: () => { this.model = undefined; this.picking = null; } }))
-        .children(MODELS.map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
+        .children((models ?? []).map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
     } else if (this.picking === "cat") {
       panel = sheetPanel(d, "dup-cats")
         .children(cats.map((c, i) => sheetOption(d, `cat-${i}`, { on: this.category === c, label: c, onClick: () => { this.category = c; this.picking = null; } })))

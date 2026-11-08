@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, machines, notify, pickFolder } from "herdr";
-import { crew, saveCrew, newId, brainLogo, ROLES, COMPANY, a, withBypass, MODELS, withModel, tone, ds, pebble,
+import { crew, saveCrew, newId, brainLogo, ROLES, companyOf, a, withBypass, modelsFor, withModel, launchSpec, primerHint, isClaude, tone, ds, pebble,
   sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 import { spaces } from "herdr";
 
@@ -61,11 +61,16 @@ export default class CrewHire extends View {
       categories: { [channel]: "General" }, briefs: brief ? { [channel]: brief } : {}, memory: "", hired: Date.now(),
     };
     saveCrew({ ...c, bots: [...c.bots, bot] });
+    // A brain without Project Pals hooks (Codex, …) is asked to read its primer first; agy takes its
+    // first task as `-i` (launchSpec, from goodboimax's PR #1).
+    const hint = primerHint(bot.argv, this.harness.key);
+    const prompt = [brief && `You are ${name}, my ${this.role.toLowerCase()}. ${brief}`, hint].filter(Boolean).join("\n\n");
+    const spec = launchSpec(this.harness.key, bot.argv, prompt);
     closeOverlay(props().overlay);
     run("space.new", {
-      name, tab: channel, argv: bot.argv, machine: this.machine ?? "",
+      name, tab: channel, argv: spec.argv, machine: this.machine ?? "",
       folder: folder || undefined,
-      task: brief ? `You are ${name}, my ${this.role.toLowerCase()}. ${brief}` : undefined,
+      task: spec.task,
     });
     // Link the record to its new space so renaming the space later keeps its memory.
     const made = spaces().find((s) => s.name === name && (s.machine ?? null) === this.machine);
@@ -88,23 +93,25 @@ export default class CrewHire extends View {
     const h = this.harness;
     const installed = this.agents.filter((x) => x.installed);
     const missing = this.agents.filter((x) => !x.installed);
+    // Claude Code and Antigravity CLI can start on a chosen model (on the pal's own command line).
+    const models = h ? modelsFor(h.key, h.run) : null;
     const ms = [null, ...machines().map((m) => m.name).filter(Boolean)];
 
     const row = sheetRow()
       .child(sheetSelect(d, "hire-brain", { label: "Brain", value: this.loading ? "Looking…" : h ? h.name : "None installed", open: this.picking === "brain", onClick: pick("brain"),
         face: h ? brainLogo(h.key, 13, d, this.agents) : null }))
-      .when(h?.key === "claude", (el) => el.child(sheetSelect(d, "hire-model", { label: "Model", value: MODELS.find((m) => m.key === this.model)?.name ?? "Your default", open: this.picking === "model", onClick: pick("model") })))
+      .when(Boolean(models), (el) => el.child(sheetSelect(d, "hire-model", { label: "Model", value: models.find((m) => m.key === this.model)?.name ?? "Your default", open: this.picking === "model", onClick: pick("model") })))
       .child(sheetSelect(d, "hire-role", { label: "Role", value: this.role, open: this.picking === "role", onClick: pick("role") }))
       .when(ms.length > 1, (el) => el.child(sheetSelect(d, "hire-machine", { label: "Computer", value: this.machine ?? "This one", open: this.picking === "machine", onClick: pick("machine") })));
 
     let panel = null;
     if (this.picking === "brain") {
       panel = sheetPanel(d, "hire-brains")
-        .children(installed.map((ag, i) => sheetOption(d, `brain-${i}`, { on: h?.key === ag.key, left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, sub: COMPANY[ag.key] ?? "",
-          onClick: () => { this.harness = ag; this.picking = null; } })))
+        .children(installed.map((ag, i) => sheetOption(d, `brain-${i}`, { on: h?.key === ag.key, left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, sub: companyOf(ag.key, ag.run),
+          onClick: () => { this.harness = ag; if (!modelsFor(ag.key, ag.run)?.some((m) => m.key === this.model)) this.model = null; this.picking = null; } })))
         .when(missing.length > 0, (el) => el.child(div().px(8).py(4).text_size(11).line_height("14px").text_color(d.fg3).child(`Not installed here: ${missing.map((x) => x.name).join(", ")}`)));
     } else if (this.picking === "model") {
-      panel = sheetPanel(d, "hire-models").children(MODELS.map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
+      panel = sheetPanel(d, "hire-models").children((models ?? []).map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
     } else if (this.picking === "role") {
       panel = sheetPanel(d, "hire-roles").children(ROLES.map((r, i) => sheetOption(d, `role-${i}`, { on: this.role === r, label: r, onClick: () => { this.role = r; this.picking = null; } })));
     } else if (this.picking === "machine") {
@@ -117,7 +124,7 @@ export default class CrewHire extends View {
       if (picked) this.folder.set_value(picked);
       cx.notify();
     }) });
-    const trustNote = h?.key === "claude" && this.folder.value().trim();
+    const trustNote = isClaude(h?.key, h?.run) && this.folder.value().trim();
     const ready = Boolean(name && h);
     return sheet(d, "crew-hire", this.handle, (e, cx) => this.key(e, cx))
       .child(sheetHeader(d, { id: "hire", face: div().size(40).flex_none().flex().items_center().justify_center().rounded(8).bg(d.raised).border_1().border_color(d.line).child(brainLogo(h?.key, 20, d, this.agents)), title: "Hire a pal", onClose: close,

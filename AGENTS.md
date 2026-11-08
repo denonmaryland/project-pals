@@ -11,11 +11,11 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 |---|---|
 | `mods/crew-*/` | Herdr mods (`mod.json` + `main.js`, plus icons). One per sidebar, header, menu, dialog, etc. |
 | `lib/` | Shared JS (`crew.js`, `pets.js`, `palstyles.js`). **Not imported from a shared place:** `install.sh` copies them into every mod folder. Edit them here, never the copies in an installed mod. |
-| `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code hooks, `crew-statusline` the status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
+| `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code and Antigravity CLI hooks (`crew-hook-fast` the shell fast path in front of the per-step ones), `crew-statusline` the Claude status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
 | `god/AGENTS.md` | The head pal's standing brief, a template (`{{HEAD}}`, `{{OWNER}}`) rendered into `~/.config/herdr-app/data/crew-god/`. |
 | `layouts/pals.json`, `pals.svg` | The `pals` Herdr layout and its icon. |
 | `systemd/herdr-crew.service` | The user unit that runs `crewd`. |
-| `install.sh`, `install-hooks.py` | The installer. The hooks script edits `~/.claude/settings.json` (it backs it up first). |
+| `install.sh`, `install-hooks.py` | The installer. The hooks script edits `~/.claude/settings.json` and `~/.gemini/config/hooks.json` (backing them up first). |
 | `release` | The release script (see below). |
 | `pals.json`, `VERSION` | The manifest (name, GitHub repo, layout) and the current version, both read by the updater. |
 | `docs/` | Longer notes, e.g. `mac-support.md`. |
@@ -36,9 +36,11 @@ CrewAI's `crew` alone, for example). Don't remove these aliases or the old-layou
 
 Check changes like this:
 
-0. **Regression tests:** `python3 -m unittest discover -s tests` and `node tests/test_bind.mjs`
-   (the approval gate, the owner's click, attachments, Roll back, the panel's edit binding). They
-   use throwaway `CREW_DATA` and homes; the release preflight runs them. Add a test with every fix.
+0. **Regression tests:** `python3 -m unittest discover -s tests` and every `node tests/*.mjs`
+   (the approval gate, the owner's click, attachments, Roll back, the panel's edit binding, and
+   messaging: the queue, the delivery hooks, replies from session files, callbacks, the hook
+   installer). They use throwaway `CREW_DATA` and homes with fake `hc` / `herdr-app` / `systemctl`,
+   so they're safe anywhere; the release preflight runs them. Add a test with every fix.
 1. **Syntax and mods:** the `./release` preflight does `bash -n` on the scripts, `py_compile` on
    the Python, `json.tool` on the JSON and `node --check` on the JS. `herdr-app check <installed mod folder>`
    loads a mod once and reports errors. `install.sh` runs it on every mod at the end.

@@ -18,8 +18,8 @@ Talking
   pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#ch]>...
 
 Hiring
-  pal hire <Name> [--harness claude] [--model haiku|sonnet|opus] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
-  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
+  pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
+  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
                                      a new channel; --worktree gives it its own git branch and folder
 
 Work
@@ -63,8 +63,8 @@ Memory and skills
   pal skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
 
 Settings
-  pal settings                      who the pals work for, and whether new pals bypass permissions
-  pal settings owner "Name" | bypass on|off
+  pal settings                      who the pals work for, head pal, bypass, and background LLM
+  pal settings owner "Name" | head "Name" | bypass on|off | llm auto|claude|agy
 
 Updates
   pal version                       what's installed
@@ -88,7 +88,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (owner_gate, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
@@ -365,25 +366,62 @@ def cmd_tell(spaces, spec, text, now=False):
 def cmd_ask(spaces, spec, text, timeout):
     space, tab, t = target(spaces, spec)
     deadline = time.time() + timeout
-    while (term_info(t).get("status") or {}).get("state") == "working" and time.time() < deadline:
-        time.sleep(2)
-    if (term_info(t).get("status") or {}).get("state") == "blocked":
-        die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
-    before = term_info(t).get("turn", 0)
     me, name = whoami(spaces)
     head = from_bot(name) if me else f"[from {OWNER}]"
-    send_now(t, f"{head} asks: {text}\n(Answer right here in your reply; {name} is reading your screen.)")
+    import crewchat
+    from crewlib import QUEUE, hooked
+    status = lambda: (term_info(t).get("status") or {}).get("state")
     started = False
+    midturn = status() == "working" and hooked(t) and daemon_alive()
+    if midturn:
+        # Busy, with delivery hooks: they hand it the question mid-turn, so ask now instead of
+        # waiting the whole turn out; its answer starts once the hook has taken the message.
+        before = term_info(t).get("turn", 0)
+        item = enqueue(t, f"{head} asks: {text}\n(Answer it in your next message, then carry on.)",
+                       sender=name, kind="ask")
+        f = QUEUE / t / f"{item['at']}-{item['id']}.json"
+        sent_at = now_ms()
+        while (f.exists() or f.with_name(f.name + ".taken").exists()) and time.time() < deadline:
+            sent_at = now_ms()   # last moment it was still waiting: its answer comes after this
+            time.sleep(0.1)
+        if f.exists():   # never handed over (a draft in the way, or it's blocked): don't leave it behind
+            from crewlib import claim_queue, finish_claimed
+            finish_claimed(claim_queue(t, only=[f]))
+            die(f"{space['name']} #{chan(tab)} didn't take the question within {timeout}s; nothing was sent")
+    else:
+        while status() == "working" and time.time() < deadline:
+            time.sleep(2)
+        if status() == "blocked":
+            die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
+        before = term_info(t).get("turn", 0)
+        linked = t in crewchat.links()
+        sent_at = now_ms()
+        send_now(t, f"{head} asks: {text}" + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
+    last, still, idle = None, 0, 0
     while time.time() < deadline:
         info = term_info(t)
         state = (info.get("status") or {}).get("state")
         if state == "working" or info.get("turn", 0) > before:
             started = True
-        if started and state != "working":
+        if midturn:
+            # It answers and carries on with its own work: return once the answer stops growing
+            # (or its turn ends), not when the whole turn does.
+            reply = crewchat.replies_since(t, sent_at)
+            still = still + 1 if reply and reply == last else 0
+            last = reply
+            idle = idle + 1 if state != "working" else 0
+            if still >= 4 or (idle >= 2 and reply) or idle >= 4:
+                break
+        elif started and state != "working":
             break
         time.sleep(1.5)
     else:
         print(f"(still working after {timeout}s; its screen so far:)")
+    reply = crewchat.replies_since(t, sent_at)   # the hooks may have linked it during this turn
+    if reply:
+        print(f"── {space['name']} #{chan(tab)} ──")
+        print(reply)
+        return
     out = screen(t, 200)
     at = max((i for i, l in enumerate(out) if f"{head} asks:" in l), default=-1)
     answer = [l for l in meaningful(out[at + 1:]) if "Answer right here" not in l and "Worked for" not in l and "Crunched for" not in l]
@@ -1266,11 +1304,11 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
 
 
 def cmd_settings(rest):
-    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off"""
+    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off | pal settings llm auto|claude|agy"""
     from crewlib import save_settings
     if not rest:
         st = settings()
-        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}")
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
         return
     if ME and is_bot_terminal(ME):
         die("settings are the owner's to change, not a pal's")
@@ -1279,6 +1317,8 @@ def cmd_settings(rest):
         st = save_settings(owner=val)
     elif key == "bypass" and val in ("on", "off"):
         st = save_settings(bypass=val == "on")
+    elif key == "llm" and val in ("auto", "claude", "agy"):
+        st = save_settings(llm=val)
     elif key == "head" and val:
         if "#" in val or val.startswith("@"):
             die("a pal's name can't have # in it or start with @")
@@ -1295,10 +1335,10 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings llm auto|claude|agy')
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
-    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'}")
+    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'} · llm: {st.get('llm', 'auto')}")
 
 
 UPDATE_LOG = DATA / "crew-update.log"
@@ -1443,7 +1483,7 @@ def main(argv):
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
     elif cmd == "channel" and len(rest) >= 2:
-        pos, o = opts(rest, ("brief", "category", "harness", "base"), ("worktree",))
+        pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
         extra = {}
         if o.pop("worktree", False):
             space, _ = find(pos[0], spaces)
@@ -1452,7 +1492,8 @@ def main(argv):
         o.pop("base", None)
         out = request("channel", spaces, bot=pos[0], name=" ".join(pos[1:]), **o, **extra)
         print(f"{out['bot']} now has {out['channel']}" + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
-        watch_for_trust(out["bot"], out["channel"])
+        if "claude" in str(out.get("argv") or o.get("harness") or "").lower():
+            watch_for_trust(out["bot"], out["channel"])
     elif cmd == "invite" and len(rest) >= 2:
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):

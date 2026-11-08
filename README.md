@@ -1,8 +1,8 @@
 # Project Pals
 
 A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of pals, in the
-spirit of Grok's bots but for any harness: Claude Code, Codex, Grok CLI, Gemini CLI, opencode,
-Hermes and more.
+spirit of Grok's bots but for any harness: Claude Code, Antigravity CLI (`agy`), Codex, Grok CLI,
+Gemini CLI, opencode, Hermes and more.
 
 ![Project Pals in Herdr: the pals sidebar with pocket pets, a pal's channels and its terminal](preview.png)
 
@@ -32,9 +32,10 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 
 | Harness | Status |
 |---|---|
-| Claude Code | Tested daily: hiring, channels, hooks, the approval gate and status line |
-| Codex | Tested as a pal. The approval gate, hooks and status line are Claude Code only |
-| Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code but not tested yet. The approval gate, hooks and status line are Claude Code only |
+| Claude Code | Tested daily: hiring, channels, model picker, hooks (messages handed over between steps), the approval gate and status line |
+| Antigravity CLI (`agy`) | Native (goodboimax's PR #1): hiring, channels, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate, shared skills |
+| Codex | Tested as a pal. Shared skills work; the approval gate and hooks are Claude Code and Antigravity CLI only, so messages are typed in when it's idle |
+| Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code as terminal pals. Hooks and the approval gate are Claude Code and Antigravity CLI only |
 
 Reports from other harnesses are welcome.
 
@@ -63,15 +64,15 @@ skipped: messages are typed in directly and routines and callbacks don't run.
 
 ## What it changes on your computer
 
-Project Pals runs programs (`hc`, `git`, `claude -p`) and reads files outside Herdr's folder.
+Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files outside Herdr's folder.
 
 - **Layout, mods and commands:** `~/.config/herdr-app/layouts/pals.json`, `mods/crew-*`, and
   `~/.local/bin/pal` and friends (`crew` is an alias).
-- **Helpers (skip them with `--no-helpers`):**
+- **Helpers (skip all with `--no-helpers`, or skip one harness's hooks with `--no-claude-hooks` / `--no-agy-hooks`):**
   - `herdr-crew.service`, the background helper.
   - Claude Code hooks and a status-line wrapper in `~/.claude/settings.json`, backed up first.
-- **Memory reviews:** these send channel screens to Claude (Haiku). Nightly memory distillation
-  uses Sonnet.
+  - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
+- **Memory reviews:** these send channel screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; configurable with `pal settings llm auto|claude|agy`).
 
 ## Hiring a pal into a new folder
 

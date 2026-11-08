@@ -13,6 +13,7 @@ Every couple of seconds it looks at every terminal herdr-core runs and:
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,15 +21,18 @@ import time
 import traceback
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, load_json, save_json, locked, append_jsonl,
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
+from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
                      herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
-                     trust_prompt, trust_notice, input_draft, DraftInTheWay)
+                     trust_prompt, trust_notice, input_draft, DraftInTheWay, batch_text, claim_queue,
+                     unclaim, finish_claimed, hooked, tidy_queue)
 import crewskills
 import crewroutines
 import crewupdate
 import crewguard
+import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
@@ -38,7 +42,66 @@ DISTILL_AT = "03:30"
 DREAM_AT = "03:30"      # the Dream loop (crewdream), after the memory distill
 REVIEW_MODEL = os.environ.get("CREW_REVIEW_MODEL", "haiku")
 DISTILL_MODEL = os.environ.get("CREW_DISTILL_MODEL", "sonnet")
+AGY_REVIEW_MODEL = os.environ.get("CREW_AGY_REVIEW_MODEL", "gemini-3.8-flash-low")
+AGY_DISTILL_MODEL = os.environ.get("CREW_AGY_DISTILL_MODEL", "gemini-3.8-flash-high")
 LOG = DATA / "crewd.log"
+
+
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def run_headless(prompt, kind="review", timeout=240):
+    """Run a background prompt through Claude Code (`claude -p`) or Antigravity CLI (`agy -p`).
+    Controlled by CREW_LLM / settings.llm ('auto' tries claude then falls back to agy)."""
+    pref = (os.environ.get("CREW_LLM") or settings().get("llm") or "auto").strip().lower()
+    if pref in ("agy", "antigravity", "antigravity-cli"):
+        order = ["agy"]
+    elif pref == "claude":
+        order = ["claude"]
+    else:
+        order = ["claude", "agy"]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HC_")}
+    last = subprocess.CompletedProcess([], 1, "", "no headless model installed")
+    for backend in order:
+        if backend == "claude" and shutil.which("claude"):
+            model = REVIEW_MODEL if kind == "review" else DISTILL_MODEL
+            try:
+                last = subprocess.run(
+                    ["claude", "-p", "--model", model, "--output-format", "text"],
+                    input=prompt, capture_output=True, text=True, timeout=timeout, cwd=str(DATA), env=env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as e:
+                last = subprocess.CompletedProcess(["claude"], 1, "", str(e))
+                continue
+            if last.returncode == 0 and last.stdout.strip():
+                return last
+        elif backend == "agy" and shutil.which("agy"):
+            model = AGY_REVIEW_MODEL if kind == "review" else AGY_DISTILL_MODEL
+            # Keep -p immediately before the prompt so both /usr/bin/agy and wrapper scripts treat it as a flag value.
+            # --output-format json gives us conversation_id so we can clean up the ephemeral brain/ folder.
+            try:
+                r = subprocess.run(
+                    ["agy", "--model", model, "--disable-slash-commands", "--output-format", "json", "-p", prompt],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout, cwd=str(DATA), env=env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as e:
+                last = subprocess.CompletedProcess(["agy"], 1, "", str(e))
+                continue
+            text = r.stdout
+            try:
+                doc = json.loads(r.stdout)
+                if isinstance(doc, dict):
+                    cid = str(doc.get("conversation_id") or "").strip()
+                    if UUID_RE.match(cid):
+                        shutil.rmtree(crewchat.AGY_BRAIN / cid, ignore_errors=True)
+                    if "response" in doc:
+                        text = str(doc.get("response") or "")
+            except ValueError:
+                pass
+            last = subprocess.CompletedProcess(r.args, r.returncode, text, r.stderr)
+            if last.returncode == 0 and last.stdout.strip():
+                return last
+    return last
 
 
 def log(msg):
@@ -65,6 +128,7 @@ class Crewd:
     # ── main loop ──
     def run(self):
         log("crewd started")
+        threading.Thread(target=crewchat.refresh_agy_models, daemon=True).start()
         while True:
             try:
                 self.tick()
@@ -85,6 +149,7 @@ class Crewd:
         if time.time() - self.last_stall_check > 60:
             self.last_stall_check = time.time()
             self.stalls(terms)
+            tidy_queue(set(terms))
             try:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
             except Exception:
@@ -144,7 +209,7 @@ class Crewd:
             dels = load_json(path, [])
             keep, fire = [], []
             for d in dels:
-                if d.get("to") == addr and d.get("delivered_at") and now_ms() - d["delivered_at"] > 2500:
+                if d.get("to") == addr and d.get("delivered_at") and (d.get("by_hook") or now_ms() - d["delivered_at"] > 2500):
                     fire.append(d)
                 elif now_ms() - d.get("at", 0) < 24 * 3600 * 1000:
                     keep.append(d)
@@ -152,21 +217,28 @@ class Crewd:
                 keep += fire  # still open: it'll finish later
             save_json(path, keep)
         bot, ch = split_where(t.get("where"))
+        # One note per sender: several things asked of the same turn share one reply.
+        by_sender = {}
         for d in fire:
-            ask = " ".join((d.get("text") or "").split())[:90]
+            by_sender.setdefault(d["from"], []).append(d)
+        lines = screen(addr) if what != "blocked" and by_sender else []
+        for sender, ds in by_sender.items():
+            ask = "; ".join('"' + " ".join((d.get("text") or "").split())[:90] + '"' for d in ds)
             if what == "blocked":
-                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked (\"{ask}\"). "
+                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked ({ask}). "
                        f"It can't go on until {OWNER} answers in its channel; don't answer for {OWNER}.")
             else:
-                lines = screen(addr)
-                tail = meaningful(without_input_box(lines))[-10:]
+                reply = crewchat.replies_since(addr, min(d["delivered_at"] for d in ds))
+                if reply:
+                    said = "Its reply:\n" + (reply if len(reply) <= 1500 else "…" + reply[-1500:])
+                else:
+                    said = "The end of its screen:\n" + "\n".join(meaningful(without_input_box(lines))[-10:])
                 draft = input_draft(lines)
-                msg = (f"[pal] {bot} #{ch} finished what you asked (\"{ask}\"). The end of its screen:\n"
-                       + "\n".join(tail)
+                msg = (f"[pal] {bot} #{ch} finished what you asked ({ask}). {said}"
                        + ("\n(Its input box has unsent text: someone is typing there. It hasn't been sent, so it isn't anyone's answer.)" if draft else "")
                        + f"\n(More: pal peek \"{bot}#{ch}\")")
             try:
-                enqueue(d["from"], msg, sender="crew", kind="callback")
+                enqueue(sender, msg, sender="crew", kind="callback")
             except CrewError:
                 pass
 
@@ -206,41 +278,34 @@ class Crewd:
             urgent = [x for x in due if x[1].get("urgent")]
             idle = is_agent(t) and t.get("status") not in ("working", "blocked")
             recently = time.time() - self.last_sent.get(addr, 0) < 6
+            if not idle and hooked(addr):
+                continue   # its hooks hand these over mid-turn or as its turn ends, without typing
             batch = urgent if (urgent and not idle) else (due if idle and not recently else [])
             if not batch:
                 continue
-            text = batch[0][1]["text"] if len(batch) == 1 else \
-                "Messages that came in while you were busy:\n\n" + "\n\n".join(m["text"] for _, m in batch)
+            claimed = claim_queue(addr, only=[f for f, _ in batch])
+            if not claimed:
+                continue   # a hook took them first
             try:
-                send_now(addr, text)
+                send_now(addr, batch_text([m for _, m in claimed]))
             except DraftInTheWay:
+                unclaim(claimed)
                 # Someone's typing in that box: keep the messages until it's sent or cleared.
                 if addr not in self.drafts:
                     bot, ch = split_where(t.get("where"))
                     self.drafts[addr] = {"bot": bot, "channel": ch, "since": now_ms()}
-                    feed("draft", terminal=addr, bot=bot, channel=ch, held=len(batch))
-                    log(f"holding {len(batch)} message(s) for {bot} #{ch}: unsent text in its input box")
+                    feed("draft", terminal=addr, bot=bot, channel=ch, held=len(claimed))
+                    log(f"holding {len(claimed)} message(s) for {bot} #{ch}: unsent text in its input box")
                     self.save_health()
                 continue
             except CrewError as e:
+                unclaim(claimed)
                 log(f"couldn't deliver to {addr}: {e}")
                 continue
             if self.drafts.pop(addr, None) is not None:
                 self.save_health()
             self.last_sent[addr] = time.time()
-            for f, m in batch:
-                f.unlink(missing_ok=True)
-                if m.get("delegation"):
-                    self.delivered(m["delegation"])
-
-    def delivered(self, did):
-        path = DATA / "crew-delegations.json"
-        with locked("delegations"):
-            dels = load_json(path, [])
-            for d in dels:
-                if d.get("id") == did:
-                    d["delivered_at"] = now_ms()
-            save_json(path, dels)
+            finish_claimed(claimed)
 
     # ── stuck channels ──
     def stalls(self, terms):
@@ -379,8 +444,7 @@ Reply with JSON only, no prose:
 - facts: 0-5 short durable facts about this project that a future session would want and that aren't remembered yet: decisions made, conventions, where things live, gotchas, what's finished. No play-by-play, nothing temporary. Only what the session actually shows was said or done: never guess at what {OWNER} wants next or what work is pending, and never claim {OWNER} asked for something unless their own words in the session do.
 - user: 0-2 durable things about {OWNER} (preferences, how they like to work) newly shown here. Usually empty.
 - skill: only if the session worked out a reusable multi-step procedure worth doing the same way again, and no listed skill covers it: {{"name": "kebab-case", "description": "when to use it, one line", "body": "markdown steps"}}. Usually null."""
-            out = subprocess.run(["claude", "-p", "--model", REVIEW_MODEL, "--output-format", "text"],
-                                 input=prompt, capture_output=True, text=True, timeout=240, cwd=str(DATA))
+            out = run_headless(prompt, kind="review", timeout=240)
             m = re.search(r"\{.*\}", out.stdout, re.S)
             if not m:
                 log(f"review of {bot} #{ch}: no JSON")
@@ -432,8 +496,7 @@ Reply with JSON only, no prose:
                           "by topic. Reply with the new memory only.\n\nCurrent memory:\n" + (current or "(empty)")
                           + "\n\nDaily notes:\n" + "\n\n".join(n.read_text() for n in notes))
                 try:
-                    out = subprocess.run(["claude", "-p", "--model", DISTILL_MODEL, "--output-format", "text"],
-                                         input=prompt, capture_output=True, text=True, timeout=300, cwd=str(DATA))
+                    out = run_headless(prompt, kind="distill", timeout=300)
                 except subprocess.TimeoutExpired:
                     continue
                 new = out.stdout.strip()

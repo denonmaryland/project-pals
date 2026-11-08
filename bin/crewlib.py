@@ -8,7 +8,7 @@ Everything lives under ~/.config/herdr-app/data (HERDR_APP_HOME picks another ho
   crew-routines.json             scheduled prompts; crew-routines.log.jsonl their runs
   crew-tasks.json                the task board
   crew-memory/                   USER.md (the owner, shared) and <pal>/MEMORY.md + notes/<day>.md
-  crew-skills/<name>/SKILL.md    shared skills, linked into ~/.claude/skills and ~/.codex/skills
+  crew-skills/<name>/SKILL.md    shared skills, linked into ~/.claude/skills, ~/.codex/skills and ~/.gemini/config/skills
   crew-approvals/<id>.json       guarded commands waiting on the owner
   crew-policy.json               what needs the owner's approval, and which pals are trusted
   crew-health.json               channels that look stuck
@@ -38,7 +38,8 @@ WORKTREES = DATA / "crew-worktrees"
 ME = os.environ.get("HC_TERMINAL_ID", "")
 SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu", "nushell", "elvish", "xonsh", "pwsh"}
 CHROME = re.compile(r"^[\s─━│┃╭╮╰╯┌┐└┘├┤┬┴┼═║>❯›·•✻✶✳✢⏺⎿…\-_=]*$")
-NOISE = ("bypass permissions", "? for shortcuts", "Update available", " ctx ", "esc to interrupt")
+NOISE = ("bypass permissions", "? for shortcuts", "Update available", " ctx ", "esc to interrupt",
+         "ctrl+o to expand", "Resume with -c", "agy --conversation=")
 
 
 class CrewError(Exception):
@@ -87,7 +88,7 @@ DEFAULT_HEAD = "Orchestrator"   # the head pal's name until the owner picks one
 def settings():
     s = load_json(SETTINGS, {})
     return {**s, "owner": (s.get("owner") or "").strip() or _default_owner(), "bypass": bool(s.get("bypass", False)),
-            "head": (s.get("head") or "").strip() or DEFAULT_HEAD}
+            "head": (s.get("head") or "").strip() or DEFAULT_HEAD, "llm": (s.get("llm") or "auto").strip().lower()}
 
 
 @contextlib.contextmanager
@@ -306,7 +307,7 @@ def screen(address, lines=0):
         return []
 
 
-TIMER = re.compile(r"^\s*[✻✶✳✢·*]\s+\S+ for \d|^\s*❯\s*$|\[hc\] incomplete")
+TIMER = re.compile(r"^\s*[✻✶✳✢·*]\s+\S+ for \d|^\s*[❯>]\s*$|\[hc\] incomplete")
 
 
 # Claude Code asks "Quick safety check: … one you trust?" the first time it runs in a folder, and
@@ -348,18 +349,20 @@ def daemon_alive():
     return time.time() - beat.get("at", 0) < 20
 
 
-# Claude Code's input box: a rule, "❯ " plus whatever is typed (wrapping onto more lines), a rule.
-# Text there that hasn't been sent is someone's draft (usually the owner typing). Pasting a message
-# in would glue it onto that draft and press Enter on both, so nothing is typed in while it's there.
+# Agent input box (Claude Code "❯ " or Antigravity CLI "> "): a rule, the prompt plus whatever is
+# typed (wrapping onto more lines), and a rule. Text there that hasn't been sent is someone's draft
+# (usually the owner typing). Pasting a message in would glue it onto that draft and press Enter on
+# both, so nothing is typed in while it's there.
 RULE = re.compile(r"^\s*[─━]{20,}\s*$")
-PROMPT_LINE = re.compile(r"^\s*❯\s?(.*)$")
-# Greyed hints an empty box shows (plain text in hc read): the starter tip, and the one shown while
-# a message sent mid-turn waits in Claude Code's own queue (that message is sent, not a draft).
-PLACEHOLDER = re.compile(r'^(Try "|Press up to edit queued messages)')
+PROMPT_LINE = re.compile(r"^\s*[❯>]\s?(.*)$")   # Claude Code's ❯, agy's >
+# Greyed hints an empty box shows (plain text in hc read): the starter tip, agy's and other harnesses'
+# empty-box hints, and the one shown while a message sent mid-turn waits in Claude Code's own queue
+# (that message is sent, not a draft).
+PLACEHOLDER = re.compile(r'^(?:Try "|Press up to edit queued messages|Type a message|Ask anything|Enter a prompt)')
 
 
 def input_draft(lines):
-    """The unsent text in a Claude Code input box at the bottom of a screen: '' when the box is
+    """The unsent text in an agent input box at the bottom of a screen: '' when the box is
     empty, None when there's no such box (another harness, or a dialog in its place)."""
     rules = [i for i, l in enumerate(lines) if RULE.match(l)]
     if len(rules) < 2 or rules[-1] - rules[-2] < 2:
@@ -373,7 +376,7 @@ def input_draft(lines):
 
 
 def without_input_box(lines):
-    """The screen above Claude Code's input box (and its status lines), when there is one."""
+    """The screen above the agent's input box (and its status lines), when there is one."""
     rules = [i for i, l in enumerate(lines) if RULE.match(l)]
     if input_draft(lines) is None:
         return lines
@@ -419,6 +422,114 @@ def enqueue(terminal, text, sender=None, kind="msg", not_before=0.0, urgent=Fals
     return item
 
 
+def batch_text(msgs):
+    """One message as is; several as one block, oldest first."""
+    if len(msgs) == 1:
+        return msgs[0]["text"]
+    return "Messages that came in while you were busy:\n\n" + "\n\n".join(m["text"] for m in msgs)
+
+
+def claim_queue(terminal, only=None):
+    """Take this terminal's due messages off the queue: [(claimed path, message)], oldest first.
+    Each file is renamed before it's read, so crewd and a hook never both deliver the same one;
+    `only` (paths) limits it to those. Put them back with unclaim(), or drop them with
+    finish_claimed() once they've been delivered."""
+    d = QUEUE / terminal
+    if not d.is_dir():
+        return []
+    out = []
+    for f in sorted(only if only is not None else d.glob("*.json")):
+        taken = f.with_name(f.name + ".taken")
+        try:
+            f.rename(taken)
+            os.utime(taken)   # tidy_queue counts from the claim, not from when it was queued
+            m = json.loads(taken.read_text())
+        except FileNotFoundError:
+            continue   # someone else took it
+        except (OSError, ValueError):
+            taken.unlink(missing_ok=True)
+            continue
+        if m.get("not_before", 0) > now_ms():
+            taken.rename(f)
+            continue
+        out.append((taken, m))
+    return out
+
+
+def unclaim(claimed):
+    for taken, _ in claimed:
+        try:
+            taken.rename(taken.with_name(taken.name[:-len(".taken")]))
+        except OSError:
+            pass
+
+
+def finish_claimed(claimed, by_hook=False):
+    for taken, m in claimed:
+        taken.unlink(missing_ok=True)
+        if m.get("delegation"):
+            mark_delivered(m["delegation"], by_hook)
+
+
+def mark_delivered(did, by_hook=False):
+    """A pal tell reached its pal: the sender hears back when that pal's turn ends. by_hook: handed
+    over inside a running turn, so the next turn end is its answer however soon it comes."""
+    path = DATA / "crew-delegations.json"
+    with locked("delegations"):
+        dels = load_json(path, [])
+        for d in dels:
+            if d.get("id") == did:
+                d["delivered_at"] = now_ms()
+                d["by_hook"] = by_hook
+        save_json(path, dels)
+
+
+def take_queue(terminal):
+    """For a hook: this terminal's due messages as one text (now delivered), or None."""
+    claimed = claim_queue(terminal)
+    if not claimed:
+        return None
+    finish_claimed(claimed, by_hook=True)
+    return batch_text([m for _, m in claimed])
+
+
+HOOKED = DATA / "crew-hooked"
+
+
+def mark_hooked(terminal):
+    """A delivery hook ran in this terminal: crewd leaves its mid-turn messages to the hooks."""
+    try:
+        HOOKED.mkdir(parents=True, exist_ok=True)
+        (HOOKED / terminal).touch()
+    except OSError:
+        pass
+
+
+def hooked(terminal, within=24 * 3600):
+    # Long on purpose: if the hooks are gone, a busy pal's messages just wait until it's idle.
+    try:
+        return time.time() - (HOOKED / terminal).stat().st_mtime < within
+    except OSError:
+        return False
+
+
+def tidy_queue(live, stale=120):
+    """Put back messages a crashed crewd or hook claimed but never delivered (at least once beats
+    lost), and forget hook marks of terminals that are gone. live: the terminals still there."""
+    if QUEUE.exists():
+        for d in QUEUE.iterdir():
+            for taken in d.glob("*.taken") if d.is_dir() else ():
+                try:
+                    if time.time() - taken.stat().st_mtime > stale:
+                        unclaim([(taken, None)])
+                except OSError:
+                    pass
+    if HOOKED.exists():
+        for f in HOOKED.iterdir():
+            if f.name not in live:
+                f.unlink(missing_ok=True)
+
+
 def feed(kind, **fields):
     append_jsonl(FEED, {"at": now_ms(), "kind": kind, **fields})
 
@@ -431,7 +542,7 @@ def from_bot(name):
 # ── memory ───────────────────────────────────────────────────────────────────────────────────
 
 def renamed(old, new):
-    """A pal got a new name: carry its memory folder and the routines aimed at it along."""
+    """A pal got a new name: carry its memory folder, the routines aimed at it and its room seats along."""
     if not old or old == new:
         return
     src, dest = memory_dir(old), memory_dir(new)
@@ -451,6 +562,14 @@ def renamed(old, new):
                 hit = True
         if hit:
             save_json(store, items)
+    # Rooms keep each member's name too (pal-room members, @mentions): follow the rename there.
+    for path in ROOMS.glob("*.json") if ROOMS.exists() else []:
+        meta = load_json(path, None)
+        seats = [m for m in (meta or {}).get("members") or [] if str(m.get("bot") or "").lower() == old.lower()]
+        for m in seats:
+            m["bot"] = new
+        if seats:
+            save_json(path, meta)
 
 
 def memory_dir(bot_name):
