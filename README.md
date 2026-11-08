@@ -19,14 +19,13 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 - memory and shared skills
 - branch-per-channel review
 - an approval gate
-- a card that answers a pal's permission prompt or question with a click (Claude Code)
 
 ## Harnesses
 
 | Harness | Status |
 |---|---|
-| Claude Code | Tested daily: hiring, channels, hooks, the approval gate, status line and prompt cards |
-| Codex | Tested as a pal. The approval gate, hooks, status line and prompt cards are Claude Code only |
+| Claude Code | Tested daily: hiring, channels, hooks, the approval gate and status line |
+| Codex | Tested as a pal. The approval gate, hooks and status line are Claude Code only |
 | Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code but not tested yet. The approval gate, hooks and status line are Claude Code only |
 
 Reports from other harnesses are welcome.
@@ -91,6 +90,3 @@ GitHub release.
 ## License
 
 MIT
-
-Answering an agent's permission prompts and questions from a card follows the idea of
-[flockbook](https://github.com/minchenlee/flockbook)'s approval cards (no code of theirs is used).

@@ -62,7 +62,7 @@ for dir in "$src"/mods/crew-*; do
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-for gone in crew-rail crew-chat; do
+for gone in crew-rail crew-chat crew-prompt; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
@@ -135,8 +135,9 @@ for alias in buddy:pal buddy-room:pal-room botz:pal botz-room:pal-room crew:pal 
   fi
 done
 install -m 644 "$src"/bin/crew*.py "$HOME/.local/lib/herdr-crew/"
-# Modules Project Pals no longer ships (crewchat.py fed the removed chat view).
-rm -f "$HOME/.local/lib/herdr-crew/crewchat.py"
+# Modules Project Pals no longer ships (crewchat.py fed the removed chat view; crewprompt.py the removed
+# prompt card).
+rm -f "$HOME/.local/lib/herdr-crew/crewchat.py" "$HOME/.local/lib/herdr-crew/crewprompt.py"
 
 if [[ $helpers -eq 1 ]]; then
   # crewd, as a user service (needs a systemd user session: not in most containers or WSL).

@@ -45,7 +45,6 @@ Settings
 Updates
   pal version                       what's installed
   pal update [check|apply|rollback] [--json]
-  pal prompt <terminal> [--answer N --request ID]   what an agent asks on screen; the app answers it
                                      check GitHub for a newer release, install it, or put the previous one back
 
 Approvals (the owner)
@@ -804,33 +803,6 @@ def cmd_update(rest):
 
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
-def cmd_prompt(rest):
-    """pal prompt <terminal>: what the agent there asks on screen, as JSON (null when nothing).
-    pal prompt <terminal> --answer N --request ID [--text T]: press option N of that prompt, only
-    while it's still on screen. Answering is the owner's: the app's chat card does it. It never runs
-    from inside a herdr-core terminal (a pal, or a helper a pal started)."""
-    import crewprompt
-    args = [a for a in rest if not a.startswith("--")]
-    opt = lambda name: rest[rest.index(name) + 1] if name in rest and rest.index(name) + 1 < len(rest) else None
-    if not args:
-        die("pal prompt <terminal> [--answer N --request ID [--text T]]")
-    terminal = args[0]
-    if "--answer" not in rest:
-        print(json.dumps(crewprompt.read(terminal), ensure_ascii=False))
-        return
-    if ME:
-        print(json.dumps({"result": "failed", "message": f"Only {OWNER} answers an agent's questions, from the chat card in the app."}))
-        sys.exit(1)
-    try:
-        pick = int(opt("--answer"))
-    except (TypeError, ValueError):
-        die("--answer takes an option number")
-    request = opt("--request") or die("--request <id> (from pal prompt) is needed")
-    out = crewprompt.answer(terminal, request, pick, opt("--text"))
-    print(json.dumps(out, ensure_ascii=False))
-    sys.exit(0 if out["result"] == "sent" else 1)
-
-
 def main(argv):
     if not argv:
         argv = ["bots"]
@@ -854,8 +826,6 @@ def main(argv):
         return
     if cmd == "update":
         return cmd_update(rest)
-    if cmd == "prompt":
-        return cmd_prompt(rest)
     if cmd == "settings":
         return cmd_settings(rest)
     if cmd == "renamed":

@@ -184,16 +184,19 @@ rectangular segments and tags.
 
 - **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
   above), no tab strip.
-  - **The hero** (hero v2, DeNon 2026-11-08): no box. The shown pal's pet and its laptop at the
-    sidebar's full width (303x237 at 304; the critter about 180px), drawn on the sidebar itself
-    (its own "open" tiles, `-o.svg`). Under it, its name (20/600) with a 7px state dot (blue
-    working, amber asks you or stuck, green done), and to the right of the name its channels:
-    "Channels", up to three `# name` rows (24px, the shown one #232324, a blue/amber dot or green
-    check), "+N more" opening the channel picker. Then four r4 quick actions in a row: + Channel
-    (new channel dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks
-    with this pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep;
-    Herdr asks first). No state pill, no species/brain line; the task text is in its pal row.
-    While it works, a lightsaber runs along the hero's bottom line, right to left and back. The header has a `# channel ▾` picker on the left (a popup of the pal's
+  - **The hero** (hero v2 "2 · Floor", DeNon 2026-11-08): no box. The shown pal's pet and its
+    laptop at the sidebar's full width (303x237 at 304; the critter about 180px), drawn on the
+    sidebar itself (its own "open" tiles, `-o.svg`), standing on a floor: a 6% white hairline 12px
+    in from each side, with a pool of the state's colour under the pet (`pet-floor-<state>.svg`:
+    working blue, done mint, asks you amber and breathing, PR green, merged purple, closing red,
+    stuck amber; none at rest or asleep). While it works, a lightsaber runs along the floor, right
+    to left and back. Under it: the name (20/600) with the state on the right ("● Working · 4m",
+    blue; amber for asks you / stuck; green for done / PR), the pal's channels as r4 chips (24px,
+    `# name` and a dot or check, the shown one #232324, as many as fit, "+N" opens the picker),
+    and four r4 quick actions: + Channel (new channel dialog), Tell (a small dialog that sends
+    `pal tell`, marked from the owner), Tasks with this pal's open count (switches the sidebar to
+    Tasks), and an icon-only moon (put to sleep; Herdr asks first). No state pill, no
+    species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
   the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot). Tasks, Changes and Branch are Pro's.
@@ -208,28 +211,28 @@ rectangular segments and tags.
   5-hour and weekly usage, in Pro its branch with ahead/behind, the shortcut, the mode switch and
   the installed version.
 - **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal in both modes; you type in it
-  directly. The composer shows only under a room. The prompt card floats over the terminal
-  when the channel asks something.
+  directly, and you answer its permission prompts and questions there too (no prompt card:
+  DeNon removed it on 2026-11-08, since it repeated the terminal's question and covered it). The
+  composer shows only under a room.
 - **Splits:** Herdr's own (Ctrl+Shift+O right, Ctrl+Shift+E down, Ctrl+Shift+X close, Ctrl+Shift+Z
   zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the Focus header and
   Pro's tab strip, and the right-click on a terminal (`crew-termmenu`, the layout's
   `terminal_menu`: split, zoom, copy, paste, right-click routing, close; "Close pane (ends
   Claude Code)" in red on the agent's pane). A new pane is a shell in the channel's folder and
-  belongs to that channel; the channel's agent stays its lead pane (state, "no agent", `pal tell`,
-  the prompt card all read the agent's pane).
+  belongs to that channel; the channel's agent stays its lead pane (state, "no agent" and `pal tell`
+  all read the agent's pane).
 - **Remembered** in `data/crew-settings.json`: `layoutMode`, `focus.sidebarPx`, `pro.listPx`,
   `pro.inspectorPx` and `pro.inspectorTab`. Each mode keeps its own drag widths.
 
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
-  - Stack `center` has the children `tab-view` and `room-view`, and a floating `prompt-card`
-    (`crew-prompt`) at its bottom edge. `showRoom` / `showTabs` switch it and show or hide
-    `crew-composer`.
+  - Stack `center` has the children `tab-view` and `room-view`. `showRoom` / `showTabs` switch it
+    and show or hide `crew-composer`.
   - The `panel` block starts hidden and is toggled with `layout.toggle {id: "panel"}`.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-tabs`, `crew-header`,
-    `crew-room`, `crew-composer` (rooms), `crew-side`, `crew-prompt` (floating).
+    `crew-room`, `crew-composer` (rooms), `crew-side`.
   - Dialogs: `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
     `crew-attach`.
@@ -256,6 +259,7 @@ rectangular segments and tags.
 
 - **The hero's saber line** is the same trick with two pivots, one above the line and one below,
   so one sweep crosses it right to left and the other left to right, both with trailing tails.
+  The floor pool is an `image()`, not an `svg()`, so it stays behind the pet.
 - **The pets' lightsaber is faked:** Herdr can't blur, stroke a path, tint a shadow or clip to a
   rounded shape. A comet-shaped sweep (`pet-saber.svg`, 40 slices) spins about the container's
   centre and shows only through 1.5-10 px strips along its edges, one set of strips per glow
@@ -279,11 +283,6 @@ rectangular segments and tags.
 - **TextView ignores font weights here:** with the layout's Adwaita Sans (a variable font) and with
   Geist, `**bold**` and headings draw at regular weight. Headings still draw larger.
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.
-- **Prompt cards read Claude Code's screen** (`bin/crewprompt.py`, Claude Code 2.1's layout: a
-  full-width rule, the title, the command between dashed rules, numbered options, "Esc to
-  cancel"); a digit answers. Other harnesses and the trust question get no card. Answering
-  (`pal prompt <t> --answer N --request ID`) re-reads the screen first and refuses to run inside
-  any herdr-core terminal, so no pal or helper can answer its own prompts.
 - **Claude Code's folder-trust question stalls new pals:** a pal or worktree channel in a folder
   Claude Code hasn't seen waits on "Quick safety check … one you trust?". Detect it (whitespace-
   insensitive: "Yes, I trust this folder" plus "Accessing workspace" or "Quick safety check") and
@@ -312,8 +311,8 @@ rectangular segments and tags.
 - `pal hire Test --harness claude` makes a space named Test, and your view doesn't move.
 - `pal-room new demo --with "A#x" "B#y"` opens a room in Rooms, and `pal-room say demo "@A hi"`
   shows a typing bubble, then the message.
-- A Claude Code channel blocked on "Do you want to proceed?" shows the prompt card over its
-  terminal; clicking "1 Yes" answers it, and `pal prompt <t>` prints `null` once it's gone.
+- A Claude Code channel blocked on a question shows "asks you" on its pet and row, and nothing
+  floats over its terminal.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
   `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose. A record with `"pet": "none"` shows the folder mascot.

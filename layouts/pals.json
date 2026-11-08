@@ -119,16 +119,6 @@
                     "mod": "crew-room"
                   }
                 }
-              ],
-              "floating": [
-                {
-                  "id": "prompt-card",
-                  "content": {
-                    "mod": "crew-prompt"
-                  },
-                  "edge": "bottom",
-                  "align": "center"
-                }
               ]
             },
             {
