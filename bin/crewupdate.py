@@ -189,6 +189,8 @@ def restore_config(snap, log=print):
             tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False) + "\n")
             tmp.replace(sp)
     return changed
+
+
 APP = "@app"   # snapshot names under Herdr's home start with this (it needn't be inside $HOME)
 
 
@@ -224,7 +226,7 @@ def backups():
     return sorted(BACKUPS.glob("update-*.tar.gz"), key=lambda p: p.stat().st_mtime) if BACKUPS.exists() else []
 
 
-def rollback(path=None):
+def rollback(path=None, log=print):
     path = Path(path) if path else (backups()[-1] if backups() else None)
     if not path or not path.exists():
         raise CrewError("no update backup to roll back to")
@@ -269,8 +271,8 @@ def rollback(path=None):
             else:
                 tar.extractall(dest, members=group)
     if snap:
-        for line in restore_config(snap):
-            print(line)
+        for line in restore_config(snap, log=log):
+            log(line)
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     return path
 
@@ -324,10 +326,10 @@ def apply(log=print, version=None):
         try:
             r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
         except BaseException as e:
-            rollback(snap)
+            rollback(snap, log=log)
             raise CrewError(f"installing {new_version} stopped ({type(e).__name__}), so the previous version was put back")
         if r.returncode != 0:
-            rollback(snap)
+            rollback(snap, log=log)
             tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
             raise CrewError(f"version {new_version} didn't install cleanly, so the previous one was put back:\n{tail}")
         log(f"installed {new_version}")

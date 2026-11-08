@@ -1335,7 +1335,8 @@ def cmd_update(rest):
             say = (lambda *_: None) if as_json else print
             out = crewupdate.apply(log=lambda m: (update_log(m), say(m), crewupdate.run_state(state="running", step=m)))
         elif sub == "rollback":
-            out = {"ok": True, "restored": str(crewupdate.rollback())}
+            say = (lambda *_: None) if as_json else print
+            out = {"ok": True, "restored": str(crewupdate.rollback(log=lambda m: (update_log(m), say(m))))}
         else:
             die("pal update check | apply | rollback [--json]")
     except CrewError as e:
