@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, run, theme, openOverlay } from "herdr";
-import { mood, mascotEl, channelName, renameChannel, rooms, shownRoom, showRoom, roomMembers, tabPinned, botOf, ds, tone, palChip } from "./crew.js";
+import { mood, mascotEl, channelName, renameChannel, rooms, shownRoom, showRoom, roomMembers, tabPinned, botOf, ds, tone, palChip, tabHasAgent } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -52,6 +52,7 @@ export default class CrewTabs extends View {
       const hovered = this.hover === tab.id;
       const pin = tabPinned(tab);
       const dot = state(tab.status);
+      const shell = !tabHasAgent(tab);
       return tabBox(`tab-${tab.id}`, on)
         .on_hover((h, cx) => { this.hover = h ? tab.id : (this.hover === tab.id ? null : this.hover); cx.notify(); })
         .on_mouse_down("left", (e, cx) => {
@@ -60,8 +61,10 @@ export default class CrewTabs extends View {
           else if (!on) run("tab.select", { id: tab.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); menu(tab); })
+        .when(shell, (el) => el.tooltip("No agent running here: a plain shell"))
         .child(hash(on))
-        .child(label(channelName(tab), on))
+        .child(label(channelName(tab), on).when(shell, (el) => el.text_color(d.fg4)))
+        .when(shell && !hovered, (el) => el.child(div().flex_none().text_size(10.5).text_color(d.fg4).child("shell")))
         .when(pin && !hovered, (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
         .when(Boolean(dot) && !hovered, (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot)))
         // Close only on hover (a pinned channel is unpinned from its menu first).

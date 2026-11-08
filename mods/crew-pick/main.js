@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, agents, theme, props, closeOverlay, openOverlay, run } from "herdr";
-import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf } from "./crew.js";
+import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 32;
@@ -65,6 +65,7 @@ export default class CrewPick extends View {
       .child(div().flex_none().text_size(11).text_color(d.fg4).child(`${space.tabs.length} channel${space.tabs.length === 1 ? "" : "s"}`)));
     space.tabs.forEach((tab, i) => {
       const on = tab.active;
+      const shell = !tabHasAgent(tab);
       const mark = tab.status === "working" ? div().size(6).flex_none().rounded(3).bg(d.info)
         : tab.status === "blocked" ? div().size(6).flex_none().rounded(3).bg(d.warn)
         : tab.status === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
@@ -73,7 +74,8 @@ export default class CrewPick extends View {
         .on_click(() => this.open(tab))
         .child(div().w(10).flex_none().text_size(12).font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_none().max_w(130).truncate().text_size(13).when(on, (el) => el.font_weight(500)).text_color(on ? d.fg1 : d.body).child(channelName(tab)))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(on ? d.fg2 : d.fg3).child(this.what(tab)))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(shell ? d.fg4 : on ? d.fg2 : d.fg3).child(shell ? "a plain shell" : this.what(tab)))
+        .when(shell, (el) => el.child(noAgentTag(d)))
         .when(Boolean(mark), (el) => el.child(mark))
         .child(div().w(38).flex_none().text_size(11).text_color(d.fg4).text_right().child(stamp(tab.changed_at)))
         // The channel you're in: a check at the end of its row (and the lit fill until you move).

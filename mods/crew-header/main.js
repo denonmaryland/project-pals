@@ -5,7 +5,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, theme, focused } from "herdr";
-import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, tone, ds, palChip, openChannels } from "./crew.js";
+import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, tone, ds, palChip, openChannels, tabHasAgent, noAgentTag } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -40,7 +40,9 @@ export default class CrewHeader extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); renameChannel(tab); })
       .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg3).child("#"))
       .child(div().min_w(0).truncate().text_size(13).font_weight(500).text_color(d.body).child(channelName(tab)))
-      .child(svg(`${ICON}/ds-chevron-down.svg`).size(12).flex_none().text_color(d.icon));
+      .child(svg(`${ICON}/ds-chevron-down.svg`).size(12).flex_none().text_color(d.icon))
+      // A channel with no agent is just a shell: say so right by its name.
+      .when(!tabHasAgent(tab), (el) => el.child(noAgentTag(d)));
     return root
       .child(h_flex().flex_1().flex_basis(0).min_w(0).items_center().child(picker))
       .child(palChip(bot, tab, d, "focus"))

@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane,
-  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, petScreen, modelOf, palPinned, taskTitle } from "./crew.js";
+  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, petScreen, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const RAIL = 64;
@@ -666,7 +666,8 @@ export default class CrewRoster extends View {
     for (const tab of space.tabs) {
       const on = tab.active;
       const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
-      const what = !bot.awake ? "asleep" : taskTitle(ag?.title, bot.name, space.name, channelName(tab)) ?? statusWord(tab.status ?? "idle");
+      const shell = !tabHasAgent(tab);
+      const what = shell ? "a plain shell" : !bot.awake ? "asleep" : taskTitle(ag?.title, bot.name, space.name, channelName(tab)) ?? statusWord(tab.status ?? "idle");
       const dot = bot.awake && ["working", "blocked"].includes(tab.status) ? this.liveDot(tab.status, d) : null;
       const done = bot.awake && tab.status === "done";
       const quiet = !bot.awake || (!dot && !done && tab.changed_at && Date.now() - tab.changed_at > 86400000);
@@ -679,7 +680,8 @@ export default class CrewRoster extends View {
           .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
           .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
             .text_color(on ? d.fg1 : quiet ? d.fg2 : d.body).child(channelName(tab)))
-          .child(dot ? div().size(6).flex_none().rounded(3).bg(dot)
+          .child(shell ? noAgentTag(d)
+            : dot ? div().size(6).flex_none().rounded(3).bg(dot)
             : done ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
             : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))))
         .child(div().pl(14).truncate().text_size(12).line_height("16px").text_color(on ? d.fg2 : quiet ? d.fg4 : d.fg3).child(what)));
