@@ -8,9 +8,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { botOf, updateBot, writeArt, petOf, ds, tone, sheet, sheetHeader, sheetBody, sheetField, sheetFooter, pebble } from "./crew.js";
+import { botOf, updateBot, writeArt, petOf, ds, tone, sheet, sheetHeader, sheetBody, sheetField, sheetFooter, pebble, SWATCHES, validHex, normHex } from "./crew.js";
 import { petSpec, petFiles, petPath, PET_SPECIES, BARE_VIEW } from "./pets.js";
-import { SWATCHES, validHex, normHex } from "./mascot-art.js";
 
 const ICON = "mods/crew-roster/icons";
 const WEARS = [["phones", "Headphones"], ["glasses", "Glasses"], ["cap", "Cap"], ["beanie", "Beanie"], ["hood", "Hood"],

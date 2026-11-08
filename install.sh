@@ -57,7 +57,8 @@ for dir in "$src"/mods/crew-*; do
   # Mirror the mod (keep the files Herdr writes itself: jsconfig.json, *.d.ts).
   rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' "$dir/" "$dest/"
   cp "$src/lib/crew.js" "$dest/crew.js"
-  cp "$src/lib/mascot-art.js" "$dest/mascot-art.js"
+  # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
+  rm -f "$dest/mascot-art.js"
   cp "$src/lib/pets.js" "$dest/pets.js"
 done
 

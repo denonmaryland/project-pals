@@ -110,8 +110,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   species (8), colour (16 swatches or a hex), what it wears (none or up to two of 10; a third
   replaces the older one) and its eyes (9), each choice shown as a resting thumbnail of the pet with
   it; Reset to its default, Cancel, Save (stores `pet` {species, acc, eyes} and `look.color`). No
-  laptop choice: every state uses the profile laptop. `mascot-art.js` is kept only for its colour
-  swatches and hex helpers.
+  laptop choice: every state uses the profile laptop. (The folder mascots' `mascot-art.js` is gone.)
 - **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
   little critter in round LED dots, glowing in the pal's own colour (its look's colour, else its
   stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
@@ -289,7 +288,7 @@ rectangular segments and tags.
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
     `crew-attach`, `crew-tasks` (props `space`). The installer retires the old `crew-tell`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
-  - Every mod gets `lib/crew.js` (the shared model), `lib/mascot-art.js` and `lib/pets.js` copied in.
+  - Every mod gets `lib/crew.js` (the shared model) and `lib/pets.js` copied in.
 - **Herdr functions:**
   - Data: `spaces`, `panes`, `agents`, `layout`, `shared`/`setShared` (`crew`,
     `crew.settings`, `crew.room`, `crew.marks` for pins and tab colors).

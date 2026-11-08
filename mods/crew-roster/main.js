@@ -7,7 +7,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, VirtualListScrollHandle, v_virtual_list } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
-  crew, botOf, sleepers, mascotFor, mascotEl, mood, channelName, harnessName, ago, a,
+  crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
