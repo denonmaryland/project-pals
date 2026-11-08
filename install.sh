@@ -61,6 +61,13 @@ for dir in "$src"/mods/crew-*; do
   cp "$src/lib/pets.js" "$dest/pets.js"
 done
 
+# Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
+for gone in crew-rail; do
+  if [[ -d "$home/mods/$gone" ]]; then
+    mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
+  fi
+done
+
 mkdir -p "$home/layouts"
 if [[ -f "$home/layouts/pals.json" ]]; then mkdir -p "$backup/layouts"; cp -a "$home/layouts/pals.json" "$backup/layouts/"; fi
 cp "$src/layouts/pals.json" "$home/layouts/pals.json"

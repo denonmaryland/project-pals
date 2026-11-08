@@ -199,15 +199,15 @@ rectangular segments and tags.
 - **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
   above), no tab strip. The header has a `# channel ▾` picker on the left (a popup of the pal's
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
-  the right. A 48px **rail** on the sheet's right edge has Run, Tasks and Memory icons (Run carries
-  the channel's live dot) and Expand at the bottom. An icon **peeks** that inspector section in a
-  320px panel beside it; clicking it again, or the panel's ×, closes it. A peek isn't remembered.
+  the right (with Chat | Terminal for a channel with a chat feed). Nothing on the right: the chat
+  takes the full width, its 720px column centred (DeNon, 2026-11-08, after Grok Bot: sidebar, chat
+  and composer only). Tasks, Changes and Branch are Pro's; the terminal is Chat | Terminal.
 - **Pro:** a 60px **pal rail** (faces in sidebar order, state dots, + to hire, settings), a 264px
   list column (the shown pal as a banner card, its channels with what each is on, Channels ·
   Rooms · Tasks · Inbox, and "Across pals": who else is working or needs you), the channel tabs
   above the sheet, and the **inspector** open at 320px with Run / Tasks / Memory tabs and Fold.
-- **Switching:** Ctrl+Shift+M (`crew-roster.mode`), the status bar's `Focus | Pro` segment, Expand
-  (opens Pro on the peeked section) and Fold, About › Settings › Layout (two picture tiles), or
+- **Switching:** Ctrl+Shift+M (`crew-roster.mode`), the status bar's `Focus | Pro` segment, Pro's
+  Fold, About › Settings › Layout (two picture tiles), or
   `pal settings layout focus|pro` from your own shell (the window follows within 3 seconds).
 - **Status bar** (28px, under everything): working count (Pro adds needs-you), the shown channel's
   5-hour and weekly usage, in Pro its branch with ahead/behind, the shortcut, the mode switch and

@@ -22,7 +22,7 @@ and which nodes are shown. Content never re-orders and a draft never gets lost.
 | Left | 304 px sidebar: **hero pal card** (full art), then the **pal list** with avatar, name, `[tag] preview`, time, unread/state dot, and "Hidden pals N" | **Pal rail** 60 px (avatars + state dots, same order) + **list column** 264 px: banner pal card (art cropped to 150 px), the active pal's **channels** with previews, and "Across pals" (working / needs you) |
 | Header | `# channel ▾` picker on the left, **pal name chip centred**, branch chip on the right | **Channel tabs** (30 px, r4), name chip at the right end |
 | Chat | Centred 720 px column, 28 px between groups, airy | Fluid column, 16 px between groups, inline **tool log** under replies |
-| Right | **48 px rail** of icons: Tasks · Files · Branch · Terminal, with a live dot and Expand at the bottom | **Inspector** 320 px: Run / Tasks / Memory tabs, Tasks list, **Changes** with +/− per file, **Terminal** tail, and Fold |
+| Right | Nothing: the chat takes the full width (the rail was removed 2026-11-08; terminal via Chat · Terminal) | **Inspector** 320 px: Run / Tasks / Memory tabs, Tasks list, **Changes** with +/− per file, **Terminal** tail, and Fold |
 | Composer | **Shared** (below) | **Shared**, full width |
 | Status bar | working count · usage · **mode switch** · version | Same, plus needs-you count and git ahead/behind |
 
@@ -52,16 +52,17 @@ Four ways in, one setting behind them:
    It's bound in the `global` map like Herdr's other `ctrl-shift-*` keys, so Herdr takes it before any terminal
    sees it. (In legacy terminal encoding it would read as Ctrl+M, i.e. Enter, which is why it must stay global.)
    Rejected: `Ctrl+\` is SIGQUIT in terminals, and `Ctrl+Shift+L` is Herdr's own `layout.switch`.
-3. **In place:** the Focus rail's **Expand** opens Pro on the section you were looking at, and Pro's inspector
-   **Fold** returns to Focus.
+3. **In place:** Pro's inspector **Fold** returns to Focus. (Focus had a rail with Expand until 2026-11-08; see below.)
 4. **Settings › Appearance › Layout:** two picture radio tiles (Focus *default*, Pro), plus an optional
    "Remember a layout for each pal" (off by default).
 
-**Peek (Focus only):** clicking a rail icon docks one 320 px panel beside the rail, using the same component as
-that Pro inspector section. Esc or a second click closes it; its pin opens Pro with that section. A peek
-is not a mode change and isn't remembered.
+**No right rail in Focus (DeNon, 2026-11-08).** Focus first had a 48 px rail of icons (Tasks · Files · Branch ·
+Terminal, Expand) that peeked one inspector section beside it. DeNon compared Focus with their Grok Bot app (sidebar,
+chat and composer, the chat taking the full width) and had the rail removed: the chat column recentres in the freed
+width, the terminal is the header's Chat | Terminal, and Tasks, Changes and Branch live in Pro. No peek by default;
+if one comes back it opens from the pal-chip dropdown or the header, never a rail.
 
-**Motion:** 180 ms ease-out on widths only. The sidebar goes 304 → 60 + 264, and the rail goes 48 → 320 (sections fade
+**Motion:** 180 ms ease-out on widths only. The sidebar goes 304 → 60 + 264, and the inspector opens at 320 (sections fade
 in after 60 ms). The chat column's max-width releases, and scroll stays anchored on the last visible message. With
 reduce-motion on, the switch is instant.
 
@@ -89,10 +90,10 @@ Small steps. Each step ships alone behind `layoutMode` defaulting to today's beh
    plus `herdr-app shot`.
 2. **One layout, two shapes.** Keep a single `pals.json` (so updates and `layout.reset` stay simple) and add nodes:
    - `pal-rail` (block, 60 px, a new small mod or a narrow mode of `crew-roster`) left of `sidebar`;
-   - `rail` (block, 48 px, a new `crew-rail` mod) right of `panel`.
+   - (a Focus `rail` block of icons right of `panel` was built, then removed on 2026-11-08: see "No right rail".)
    A mode is then a list of `layout.show`/`layout.hide`/`layout.resize` calls:
-   Focus = hide `pal-rail`, `panel`, and `crew-tabs`; show `rail`; resize `sidebar` 304.
-   Pro = show `pal-rail`, `panel`, and `crew-tabs`; hide `rail`; resize `sidebar` 264 and `panel` 320.
+   Focus = hide `pal-rail`, `panel`, and `crew-tabs`; show `crew-header`; resize `sidebar` 304.
+   Pro = show `pal-rail`, `panel`, and `crew-tabs`; hide `crew-header`; resize `sidebar` 264 and `panel` 320.
    The roster already does this kind of thing (`toggleRail()` resizes `sidebar`); reuse that pattern.
 3. **`setMode(mode)` in `lib/crew.js`.** It runs the calls above, writes `layoutMode`, and saves and restores the per-mode widths.
    The roster calls it on start, so the remembered mode comes back.
@@ -103,7 +104,7 @@ Small steps. Each step ships alone behind `layoutMode` defaulting to today's beh
    the last task tag). Pro draws the banner card + channel list + "Across pals". Both use the same row and avatar code.
 6. **`crew-header`** shows the channel picker and centred chip in Focus, and the tab strip's chip in Pro (it reads `layoutMode`).
 7. **`crew-side` becomes the inspector** (Run/Tasks/Memory, Changes, Terminal) and also renders a single section,
-   so the Focus **peek** can reuse it. `crew-rail` opens a peek by showing `panel` at 320 with `crew.peek=<section>`.
+   (Focus no longer peeks; Pro shows it.)
 8. **`crew-composer`** gets the shared two-row control set (model, permission, mic, voice) in both modes. Mic and voice
    are UI only until a dictation backend is chosen (likely Softly; that's a cross-project call for Orca).
 9. **Status bar switch + Settings tile**, then flip the default to Focus.

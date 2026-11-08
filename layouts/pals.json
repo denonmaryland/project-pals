@@ -151,18 +151,6 @@
           "content": {
             "mod": "crew-side"
           }
-        },
-        {
-          "id": "rail",
-          "type": "block",
-          "size": {
-            "px": 48
-          },
-          "min": 48,
-          "max": 48,
-          "content": {
-            "mod": "crew-rail"
-          }
         }
       ]
     },
