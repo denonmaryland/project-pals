@@ -116,7 +116,9 @@ class OwnerGate(unittest.TestCase):
 
     def run_crew(self, *args, env_extra=None):
         import subprocess
-        env = {**os.environ, "HOME": TMP, **(env_extra or {})}
+        env = {**os.environ, "HOME": TMP, "CREW_DATA": TMP, "HERDR_APP_HOME": TMP, **(env_extra or {})}
+        env.pop("HC_TERMINAL_ID", None)
+        env.update(env_extra or {})
         bindir = Path(__file__).resolve().parent.parent / "bin"
         lib = Path(TMP) / ".local" / "lib"
         lib.mkdir(parents=True, exist_ok=True)
