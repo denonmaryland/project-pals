@@ -161,20 +161,42 @@ def dream(force=False, model=True, dry=False, log=print):
                 pr = load_json(crewproposals.DIR / f"{p['proposal']}.json", {})
                 if pr.get("status") in ("expired", None):
                     p["status"] = "open"
-        resolved_now = []
+        resolved_now, recurred_now = [], []
         if len(new_hiccups) < MIN_NEW and not force:
+            # Too few new hiccups to group with the model, but they're still evidence: a watched fix
+            # whose hiccup came back has RECURRED, whatever its age (review M7 re-check). Matched by word
+            # overlap only (no model on a quiet night); those lines are used up.
+            watched = {p["id"]: p for p in known.values() if p["status"] == "watching"}
+            used = set()
+            if watched and new_hiccups:
+                for g in group_offline(new_hiccups, watched):
+                    if g["id"] in watched:
+                        p = watched[g["id"]]
+                        ls = [new_hiccups[i] for i in g["lines"]]
+                        p["status"], p["recurred"] = "recurred", time.strftime("%Y-%m-%d")
+                        p["count"] += len(ls)
+                        p["pals"] = sorted(set(p["pals"]) | {l["pal"] for l in ls})
+                        p["minutes"] += sum(l["cost"] for l in ls)
+                        p["sources"] = (p.get("sources", []) + [{"pal": l["pal"], "day": l["day"], "time": l["time"], "text": l["text"][:200]} for l in ls])[-20:]
+                        p["last_seen"] = time.strftime("%Y-%m-%d")
+                        recurred_now.append(p["id"])
+                        used |= {key(l) for l in ls}
             for p in known.values():
                 if p["status"] == "watching" and p.get("accepted_at") and now_ms() - p["accepted_at"] > WATCH_DAYS * 86400000:
                     p["status"], p["resolved"] = "resolved", time.strftime("%Y-%m-%d")
                     resolved_now.append(p["id"])
             if not dry:
                 save_patterns(known)
+                for pid in recurred_now:
+                    event("recurred", pattern=pid, lines=1)
                 for pid in resolved_now:
                     event("resolved", pattern=pid)
+                if used:
+                    state["seen"] = sorted(seen | used)[-5000:]
                 state["last"] = now_ms()
                 save_json(STATE, state)
                 event("skipped", new=len(new_hiccups))
-            return {"skipped": True, "new": len(new_hiccups), "resolved": resolved_now}
+            return {"skipped": True, "new": len(new_hiccups), "resolved": resolved_now, "recurred": recurred_now}
         try:
             groups = group_model(lines, known) if model and lines else group_offline(lines, known)
             how = "model" if model else "offline"

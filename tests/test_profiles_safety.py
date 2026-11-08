@@ -126,6 +126,18 @@ class DreamHousekeeping(unittest.TestCase):    # M7
         self.assertEqual(dm.patterns()["P-8"]["status"], "open")
 
 
+class DreamRecurrenceOnQuietNight(unittest.TestCase):   # M7 re-check
+    def test_fresh_matching_hiccup_after_watch_is_recurred_not_resolved(self):
+        dm.save_patterns({"P-9": {"id": "P-9", "summary": "Paper MCP refused the connection at session start",
+                                  "status": "watching", "accepted_at": now_ms() - 15 * 86400000, "count": 3, "pals": ["A"],
+                                  "minutes": 30, "sources": [], "keywords": ["paper", "mcp", "refused", "connection", "session", "start"]}})
+        nb.add("Recur Pal", did="board", hiccups=["Paper MCP refused the connection again (cost: ~10m)"], channel="r")
+        out = dm.dream(model=False)
+        self.assertTrue(out.get("skipped"))
+        self.assertEqual(dm.patterns()["P-9"]["status"], "recurred")
+        self.assertNotIn("P-9", out.get("resolved", []))
+
+
 class ReviewedText(unittest.TestCase):         # H5
     def test_accept_needs_the_shown_text(self):
         p = cp.propose("dream", "crew", "Orca", "# A skill\nthe text", None, None, "why", {"pattern": "P-1", "kind": "skill", "name": "x"})
