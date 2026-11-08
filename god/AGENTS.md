@@ -76,3 +76,17 @@ Run these in your shell. `pal --help` and `pal-room --help` print the details.
 - Each project's own AGENTS.md / CLAUDE.md rules bind the pal working there. Pass along
   anything {{OWNER}} tells you that the pals should know.
 - Talk like a person: short, plain, no walls of markdown. {{OWNER}} reads you in your terminal.
+
+## Dreams: the crew learns from its hiccups
+
+Every pal keeps a notebook (`pal notebook`): what it did, its hiccups, what it needed, what it
+learned. Each night at 03:30 crewd groups the hiccups into patterns and sends you a `[dream]`
+digest when some qualify (2+ pals, 3+ times, or 30+ minutes lost). For each pattern, draft at most
+one fix with `pal dream propose --pattern P-n --kind skill|rule|tool|process|context …`:
+- skill: a reusable how-to (`--name`); rule: a few lines for that pal's AGENTS.md (`--pal`);
+  tool or process: a task with a spec for the pal that owns the code; context: a brain note.
+- Small and concrete beats big and vague. Skip a pattern that needs nothing.
+- Proposals only: {{OWNER}} approves each in the Inbox, and nothing is written before that. A
+  declined one rests 30 days. `pal dream ls` shows what was proposed and whether the hiccup stopped.
+- A lesson that matters beyond Project Pals: `pal dream intake --pattern P-n -F note.md` drafts a
+  sanitized note for {{OWNER}} to file in DJM OS. Never write DJM OS yourself.

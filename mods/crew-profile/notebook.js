@@ -11,6 +11,8 @@ import { crewCli, panelTab } from "./crew.js";
 
 export function initNotebook(view, cx) {
   view.nb = null; view.nbFor = null; view.nbFilter = "all"; view.nbArmed = null;
+  view.nbView = "notebook"; view.dreams = null; view.dreaming = false;
+  cx.timer.every(10000, (cx) => { if (view.isOpen() && panelTab() === "notebook" && view.nbView === "dreams") loadDreams(view, cx); });
   cx.timer.every(5000, (cx) => { if (view.isOpen() && panelTab() === "notebook") loadNotebook(view, cx, true); });
   cx.timer.every(400, (cx) => {
     const s = view.shown();
@@ -42,9 +44,76 @@ function tag(d, text, tone) {
     .text_size(10).font_family(d.mono).font_weight(500).text_color(c[0]).child(text);
 }
 
+function loadDreams(view, cx) {
+  cx.spawn(async (cx) => {
+    try { view.dreams = JSON.parse(await crewCli(["dream", "ls", "--json"])); } catch {}
+    cx.notify();
+  });
+}
+
+const STATUS_TONE = { open: null, proposed: "info", watching: null, resolved: "ok", recurred: "warn", declined: null };
+
+// The head pal's Notebook tab has a second view: the Dream loop's patterns and how they turned out.
+function dreamsView(view, d) {
+  const st = view.dreams;
+  const body = v_flex().gap(0);
+  if (!st) return body.child(div().py(8).text_size(12).text_color(d.fg3).child("Reading the dream ledger…"));
+  const cells = [[st.proposed, "proposed"], [st.accepted, "accepted"], [st.resolved, "resolved", d.okHi], [st.recurred, "recurred", d.warnText]];
+  const grid = h_flex().rounded(d.r.md).border_1().border_color(d.line);
+  cells.forEach(([v, l, c], i) => grid.child(v_flex().flex_1().px(10).py(8).when(i > 0, (el) => el.border_l_1().border_color(d.line))
+    .child(div().text_size(18).line_height("22px").font_weight(600).text_color(c ?? d.fg1).child(String(v)))
+    .child(div().text_size(11).text_color(d.fg2).child(l))));
+  body.child(v_flex().py(12).gap(8).border_t_1().border_color(d.line)
+    .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg3).child("THIS MONTH"))
+    .child(grid)
+    .child(div().text_size(11).text_color(d.fg3).child(`${fmtMin(st.minutes_week)} of hiccups this week${st.last ? ` · last dream ${new Date(st.last).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}`)));
+  const pats = v_flex().rounded(d.r.md).border_1().border_color(d.line);
+  if (!st.patterns.length) pats.child(div().p(10).text_size(12).text_color(d.fg3).child("No patterns yet: they come from the pals' notebook hiccups."));
+  st.patterns.slice(0, 20).forEach((p, i) => pats.child(v_flex().id(`dv-${p.id}`).px(10).py(7).gap(2).when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
+    .child(h_flex().items_center().gap(8)
+      .child(div().w(28).flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(p.id))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(d.fg1).child(p.summary))
+      .child(tag(d, p.status, STATUS_TONE[p.status])))
+    .child(div().pl(36).text_size(11).text_color(d.fg3).child(`${p.pals?.length ?? 0} pal(s) · ${p.count}x · ${fmtMin(p.minutes)}${p.kind ? ` · ${p.kind}` : ""}`))));
+  body.child(v_flex().py(12).gap(8).border_t_1().border_color(d.line)
+    .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg3).child("PATTERNS")).child(pats));
+  body.child(v_flex().py(12).gap(6).border_t_1().border_color(d.line)
+    .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg3).child("DJM INTAKE DRAFTS"))
+    .children(st.intake.length ? st.intake.map((f) => div().text_size(11).font_family(d.mono).text_color(d.body).child(f)) : [div().text_size(12).text_color(d.fg3).child("None.")])
+    .child(div().text_size(11).line_height("15px").text_color(d.fg3).child("Drafts only (data/crew-dream/intake/). You file them; the loop never writes DJM OS's Learning Ledger.")));
+  return body;
+}
+
 export function notebookTab(view, space, bot, d, full) {
   const nb = view.nb && view.nbFor === bot.name ? view.nb : null;
   const body = v_flex().px(16).pb(24);
+  if (bot.god) {
+    const seg = h_flex().rounded(d.r.sm).border_1().border_color(d.lineMid).overflow_hidden();
+    [["notebook", "Notebook"], ["dreams", "Dreams"]].forEach(([k, label], i) => {
+      const on = view.nbView === k;
+      seg.child(div().id(`nb-v-${k}`).h(26).px(12).flex().items_center().when(i > 0, (el) => el.border_l_1().border_color(d.lineMid))
+        .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover))
+          .on_click((_e, cx) => { view.nbView = k; if (k === "dreams") loadDreams(view, cx); cx.notify(); }))
+        .text_size(12).font_weight(500).text_color(on ? d.fg1 : d.fg2).child(label));
+    });
+    const row = h_flex().pt(14).items_center().gap(10).child(seg).child(div().flex_1());
+    if (view.nbView === "dreams") {
+      row.child(div().id("nb-dream-now").h(26).px(10).flex().items_center().rounded(d.r.sm).border_1().border_color(d.lineMid)
+        .when(!view.dreaming, (el) => el.cursor_pointer().hover((s) => s.border_color(d.lineStrong)).on_click((_e, cx) => {
+          view.dreaming = true;
+          cx.spawn(async (cx) => {
+            try { const out = await crewCli(["dream"]); notify({ title: "Dreamed", body: out.trim().split("\n").slice(0, 3).join(" · ").slice(0, 240), level: "success", timeout: 5000 }); }
+            catch (e) { notify({ title: "The dream didn't run", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+            view.dreaming = false;
+            loadDreams(view, cx);
+          });
+          cx.notify();
+        }))
+        .text_size(12).font_weight(500).text_color(view.dreaming ? d.fg3 : d.body).child(view.dreaming ? "Dreaming…" : "Dream now"));
+      return body.child(row).child(div().h(12)).child(dreamsView(view, d));
+    }
+    body.child(row);
+  }
   if (!nb) return body.child(div().py(16).text_size(12).text_color(d.fg3).child("Reading the notebook…"));
   const f = view.nbFilter;
   // The filter, and the week.

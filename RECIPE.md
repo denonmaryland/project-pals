@@ -315,6 +315,22 @@ rectangular segments and tags.
   (‹masked›); more than 3 lines, or log-looking lines, are refused; paths into someone's home
   other than config (~/.x), ~/Projects and the pal's project are refused. Days older than 90 roll
   into `YYYY-MM.md` (lessons only).
+- **The Dream loop** (`bin/crewdream.py`; proposals only): nightly at 03:30 (crewd, after the memory
+  distill, one model run at a time) and on demand (`pal dream`, or Dream now in the head pal's
+  Notebook tab → Dreams). (1) Every notebook's hiccup / needed / lesson lines since the last dream,
+  no model; under 3 new hiccups crew-wide it skips. (2) One Haiku call groups them into patterns
+  (`P-n`), reusing the ledger's open ones; if the call fails, word overlap (2+ shared words). (3)
+  Patterns seen in 2+ pals, 3+ times or costing 30+ minutes (at most 3) go to the head pal as a
+  `[dream]` digest; it drafts fixes with `pal dream propose` (skill, rule = lines added to a pal's
+  AGENTS.md as an agent-file proposal, tool / process = a task, context = a brain note). Each is an
+  Inbox card (the pattern, two quotes, the text; Decline · Approve) or, for a rule, the usual
+  agent-file review. Approve writes through that kind's writer. `data/crew-dream/patterns.json`
+  + `ledger.jsonl`: accepted → watching 14 days → resolved, or recurred when the hiccup comes back;
+  declined rests 30 days unless it doubles; a proposal that expires reopens its pattern. It never
+  writes DJM OS's Learning Ledger: `pal dream intake` drafts a sanitized note in
+  `data/crew-dream/intake/` for the owner to file. The Dreams view: this month's proposed /
+  accepted / resolved / recurred, the week's minutes lost, every pattern with its state, the
+  intake drafts.
 - **Proposals** (`bin/crewproposals.py`, `data/crew-proposals/<id>.json` + `.md`): a pal's
   `pal mission propose` or `pal agents propose <file>` becomes an Inbox card (View opens the panel
   on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
@@ -493,6 +509,10 @@ rectangular segments and tags.
 - A pal's Edit of an AGENTS.md is held in the Inbox.
 - `pal notebook "did: x" --hiccup "y (cost: 10m)"` from a pal adds one entry, shown live in the
   Notebook tab; a line with `sk-ant-…` comes out ‹masked›; a pasted 20-line log is refused.
+- With three pals' notebooks holding the same hiccup, `pal dream --no-model --dry-run` shows one
+  qualifying pattern; a real run sends the head pal one `[dream]` digest; `pal dream propose
+  --kind skill …` puts one card in the Inbox; Approve saves the skill and `pal dream ls` shows the
+  pattern watching; the same hiccup again makes it recurred; 15 quiet days, resolved.
 - Ctrl+Shift+I opens the dashboard over the work area; typing "hi" + Enter in its terminal reaches
   that channel's Claude Code (closing the dashboard shows it there too); clicking another channel
   row shows that channel's session; a channel with no agent shows "no agent running" and Wake.

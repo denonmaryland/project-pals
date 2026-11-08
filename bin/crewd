@@ -35,6 +35,7 @@ STALL_MIN = 15          # working with an unchanged screen this long: looks stuc
 REVIEW_EVERY = 6        # review a channel's memory after this many finished turns
 REVIEW_GAP = 30 * 60    # and at most this often per channel
 DISTILL_AT = "03:30"
+DREAM_AT = "03:30"      # the Dream loop (crewdream), after the memory distill
 REVIEW_MODEL = os.environ.get("CREW_REVIEW_MODEL", "haiku")
 DISTILL_MODEL = os.environ.get("CREW_DISTILL_MODEL", "sonnet")
 LOG = DATA / "crewd.log"
@@ -94,6 +95,8 @@ class Crewd:
             crewroutines.tick(terms, log)
             if time.strftime("%H:%M") == DISTILL_AT:
                 threading.Thread(target=self.nightly, daemon=True).start()
+            if time.strftime("%H:%M") == DREAM_AT:
+                threading.Thread(target=self.dream, daemon=True).start()
         crewroutines.watch(terms, log)
         # Updates: look for a newer release once a day (the About dialog and a sidebar dot show it).
         last = load_json(crewupdate.STATE, {}).get("checked", 0)
@@ -398,6 +401,22 @@ Reply with JSON only, no prose:
             log("review failed:\n" + traceback.format_exc())
         finally:
             self.busy.release()
+
+    def dream(self):
+        """The Dream loop's nightly run (crewdream): group the notebooks' hiccups; qualifying patterns go
+        to the head pal as a digest, and it drafts the proposals. Proposals only."""
+        with self.busy:
+            try:
+                import crewdream
+                out = crewdream.dream(log=log)
+                if out.get("skipped"):
+                    log(f"dream: skipped ({out['new']} new hiccups)")
+                    return
+                log(f"dream: {out['lines']} lines, {len(out['qualifying'])} qualifying ({out['grouped_by']})")
+                if out.get("digest"):
+                    self.tell_head(out["digest"])
+            except Exception:
+                log("dream failed:\n" + traceback.format_exc())
 
     def nightly(self):
         """Distill each pal's last week of notes into its MEMORY.md; archive stale learned skills."""

@@ -328,6 +328,7 @@ export default class CrewRoster extends View {
     // Proposals: a change a pal wants made to its mission or its project's AGENTS.md / CLAUDE.md.
     // View opens the profile panel on it (the diff, then Write / Accept); Decline tells the pal.
     for (const pr of proposals) {
+      if (pr.kind === "dream") { list.child(this.dreamCard(pr, t)); continue; }
       const f = this.locate(pr.pal);
       const bot = f ? botOf(f.space) : { name: pr.pal, harness: null };
       const what = pr.kind === "mission" ? "its mission" : pr.file;
@@ -338,6 +339,8 @@ export default class CrewRoster extends View {
             .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${pr.by.split(" - ")[0]} proposes a change to ${what}`))
             .child(div().truncate().text_size(12).text_color(t.dim).child(`${pr.pal.split(" - ")[0]} · ${ago(pr.at)} · ${pr.id}`))))
         .when(Boolean(pr.note), (el) => el.child(div().text_size(12).text_color(t.muted).child(pr.note)))
+        .when(Boolean(pr.meta?.pattern), (el) => el.child(div().text_size(12).text_color(t.dim)
+          .child(`Dream ${pr.meta.pattern}: ${pr.meta.summary} · ${pr.meta.count}x, ${pr.meta.pals?.length ?? 0} pal(s), ~${pr.meta.minutes}m lost`)))
         .child(h_flex().gap(8).justify_between()
           .child(div().id(`pr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
             .on_click((_e, cx) => cx.spawn(async (cx) => { try { await crewCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
@@ -377,6 +380,35 @@ export default class CrewRoster extends View {
         .child(div().flex_none().text_size(12).text_color(statusColor(w.tab.status, t)).child(ago(w.tab.changed_at))));
     }
     return list;
+  }
+
+  // A Dream loop proposal (a skill, a task, a brain note): the pattern behind it (pals, how often,
+  // time lost, two quotes from the notebooks), the text, Decline and Approve at opposite ends.
+  // Approve writes it through its kind's writer (`pal proposal accept`); nothing before that.
+  dreamCard(pr, t) {
+    const m = pr.meta ?? {};
+    const what = { skill: `New skill: ${m.name}`, tool: "A tool to build (a task)", process: "A process change (a task)", context: `Context for ${m.pal ?? "a pal"} (a brain note)` }[m.kind] ?? "A fix";
+    const lines = (pr.text ?? "").split("\n").slice(0, 8).join("\n");
+    return v_flex().id(`dr-${pr.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.accent, "10")).border_1().border_color(a(t.accent, "30"))
+      .child(h_flex().items_center().gap(8)
+        .child(div().px(5).h(16).flex().items_center().rounded(3).border_1().border_color(a(t.accent, "55")).text_size(10).font_family("JetBrains Mono").text_color(t.accent).child(`dream · ${m.kind}`))
+        .child(div().flex_1().truncate().text_size(11).font_family("JetBrains Mono").text_color(t.dim).child(`${pr.id} · ${m.pattern} · from ${pr.by.split("#")[0]}`)))
+      .child(div().text_size(14).font_medium().text_color(t.foreground).child(what))
+      .child(div().text_size(12).text_color(t.muted).child(`${m.summary} · ${m.count}x, ${m.pals?.length ?? 0} pal(s), ~${m.minutes}m lost`))
+      .children((m.quotes ?? []).map((q, i) => div().id(`dr-q-${pr.id}-${i}`).pl(8).border_l_2().border_color(a(t.foreground, "22")).text_size(12).text_color(t.dim).child(`“${q}”`)))
+      .when(Boolean(pr.text), (el) => el.child(div().px(10).py(7).rounded(6).bg(a(t.canvas, "aa")).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(lines)))
+      .when(Boolean(pr.note), (el) => el.child(div().text_size(12).text_color(t.muted).child(pr.note)))
+      .child(h_flex().gap(8).justify_between()
+        .child(div().id(`dr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
+          .on_click((_e, cx) => cx.spawn(async (cx) => { try { await crewCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
+          .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
+        .child(div().id(`dr-ok-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
+          .on_click((_e, cx) => cx.spawn(async (cx) => {
+            try { const out = await crewCli(["proposal", "accept", pr.id]); notify({ title: "Approved", body: out.trim().split("\n")[0].slice(0, 200), level: "success", timeout: 3500 }); }
+            catch (e) { notify({ title: "Couldn't apply it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+            this.refreshOps(cx);
+          }))
+          .child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve"))));
   }
 
   // The task board, in the Project Pals dialogs' look: an add field, then a quiet bordered list per group

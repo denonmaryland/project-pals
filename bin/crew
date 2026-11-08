@@ -50,6 +50,13 @@ Notebook (how the work went; the Dream loop learns from it)
                                      needed kinds: tool, skill, rule, context, access. Never secrets,
                                      private data or pasted output (masked or refused)
 
+Dream loop (the crew learns from its notebooks; proposals only, the owner approves each)
+  pal dream [--dry-run] [--no-model] [--force]   group the notebooks' hiccups into patterns; qualifying
+                                     ones go to the head pal as a digest (nightly at 03:30 by crewd too)
+  pal dream ls [--json]             patterns, proposals and how they turned out
+  pal dream propose --pattern P-n --kind skill|rule|tool|process|context [--name N] [--pal P] -F f --note "why"
+  pal dream intake --pattern P-n -F note.md     a sanitized draft for DJM OS's intake (the owner files it)
+
 Memory and skills
   pal remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about the owner)
   pal memory [Pal] [--json]         what's remembered (--json: what a session starts with, for the profile panel)
@@ -925,6 +932,10 @@ def cmd_agents(spaces, rest):
             import crewproposals
             crewproposals.decide(o["proposal"], "accepted", via="profile panel")
             tell_proposer(spaces, o["proposal"], True)
+            pattern = (crewproposals.get(o["proposal"]).get("meta") or {}).get("pattern")
+            if pattern:
+                import crewdream
+                crewdream.decided(pattern, True, o["proposal"])
         print(json.dumps(out) if o.get("json") else f"wrote {out['path']} (backup: {out['backup']}). Not committed.")
     elif sub == "propose":
         import crewproposals
@@ -953,7 +964,8 @@ def tell_proposer(spaces, pid, accepted, why=None):
     by = p.get("by") or ""
     if "#" not in by:
         return
-    what = "your mission proposal" if p["kind"] == "mission" else f"your {p.get('file') or 'file'} proposal"
+    what = ("your mission proposal" if p["kind"] == "mission" else f"your dream proposal for {(p.get('meta') or {}).get('pattern')}"
+            if p["kind"] == "dream" else f"your {p.get('file') or 'file'} proposal")
     try:
         target = find(by, spaces)[1]
         lt = lead(target)
@@ -978,10 +990,23 @@ def cmd_proposals(spaces, rest):
         p = crewproposals.get(pos[0])
         if p["status"] != "pending":
             die(f"{p['id']} is already {p['status']}")
+        pattern = (p.get("meta") or {}).get("pattern")
         if sub == "decline":
-            crewproposals.decide(p["id"], "declined", " ".join(pos[1:]) or o.get("note"), via="cli")
-            tell_proposer(spaces, p["id"], False, " ".join(pos[1:]) or o.get("note"))
+            why = " ".join(pos[1:]) or o.get("note")
+            crewproposals.decide(p["id"], "declined", why, via="cli")
+            tell_proposer(spaces, p["id"], False, why)
+            if pattern:
+                import crewdream
+                crewdream.decided(pattern, False, p["id"], why)
             print(f"declined {p['id']}")
+            return
+        if p["kind"] == "dream":
+            print(apply_dream(spaces, p))
+            crewproposals.decide(p["id"], "accepted", via="cli")
+            import crewdream
+            crewdream.decided(pattern, True, p["id"])
+            tell_proposer(spaces, p["id"], True)
+            print(f"accepted {p['id']}; {pattern} is watched for {crewdream.WATCH_DAYS} days")
             return
         space, rec, name = pal_of(spaces, p["pal"])
         rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
@@ -999,6 +1024,9 @@ def cmd_proposals(spaces, rest):
             die(f"accept {p['kind']} proposals in the Inbox")
         crewproposals.decide(p["id"], "accepted", via="cli")
         tell_proposer(spaces, p["id"], True)
+        if pattern:
+            import crewdream
+            crewdream.decided(pattern, True, p["id"])
         print(f"accepted {p['id']}")
     else:
         die("pal proposals [ls] [--json] | pal proposal show|accept|decline ID [\"why\"]")
@@ -1063,6 +1091,117 @@ def cmd_notebook(spaces, rest):
     out = crewnotebook.add(name, did, multi["hiccup"], multi["needed"], single.get("lesson"),
                            chan(t) if t else None, single.get("task"), single.get("took"), rec.get("folder") or space.get("folder"))
     print(("added to" if out["merged"] else "wrote") + f" {name}'s notebook: " + " · ".join(l[2:] for l in out["lines"]))
+
+
+def head_terminal(spaces):
+    recs = records()
+    for sp in spaces:
+        if record_of(sp, recs).get("god"):
+            for t in sp["tabs"]:
+                x = lead(t)
+                if x and x.get("app"):
+                    return x["terminal"]
+    return None
+
+
+def cmd_dream(spaces, rest):
+    import crewdream, crewproposals
+    sub = rest[0] if rest and rest[0] in ("ls", "propose", "intake", "run") else "run"
+    args = rest[1:] if rest and rest[0] == sub else rest
+    pos, o = opts(args, ("pattern", "kind", "name", "pal", "file", "note"), ("json", "dry-run", "no-model", "force"))
+    if sub == "run":
+        out = crewdream.dream(force=o.get("force"), model=not o.get("no-model"), dry=o.get("dry-run"))
+        if o.get("json"):
+            print(json.dumps(out))
+            return
+        if out.get("skipped"):
+            print(f"nothing to dream about: {out['new']} new hiccup(s) since the last dream (needs {crewdream.MIN_NEW}; --force to run anyway)")
+            return
+        print(f"grouped {out['lines']} notebook line(s) ({out['grouped_by']}); {len(out['qualifying'])} pattern(s) qualify")
+        for p in out.get("all") or out["qualifying"]:
+            print(f"  {p['id']} [{p['status']}] {p['summary']} · {p['count']}x, {len(p['pals'])} pal(s), ~{p['minutes']}m")
+        if out.get("digest"):
+            term = head_terminal(spaces)
+            if term:
+                enqueue(term, out["digest"], sender="dream", kind="dream")
+                print("sent the digest to the head pal, which drafts the proposals")
+            else:
+                print(out["digest"])
+    elif sub == "ls":
+        st = crewdream.stats()
+        if o.get("json"):
+            print(json.dumps(st))
+            return
+        print(f"this month: {st['proposed']} proposed · {st['accepted']} accepted · {st['declined']} declined · "
+              f"{st['resolved']} resolved · {st['recurred']} recurred · ~{st['minutes_week']}m of hiccups this week")
+        for p in st["patterns"] or [{"id": "-", "status": "", "summary": "(no patterns yet)", "count": 0, "pals": [], "minutes": 0}]:
+            print(f"  {p['id']} [{p['status']}] {p['summary']} · {p['count']}x, {len(p['pals'])} pal(s), ~{p['minutes']}m")
+    elif sub == "propose":
+        kind, pid = o.get("kind"), o.get("pattern")
+        if kind not in crewdream.KINDS or not pid:
+            die("pal dream propose --pattern P-n --kind skill|rule|tool|process|context [--name N] [--pal P] -F text.md --note \"why\"")
+        p = crewdream.patterns().get(pid)
+        if not p:
+            die(f"no pattern {pid} (pal dream ls)")
+        recent = [x for x in crewproposals.all_("pending") if (x.get("meta") or {}).get("pattern") and now_ms() - x["at"] < 86400 * 1000]
+        if len(recent) >= crewdream.MAX_PROPOSALS:
+            die(f"{len(recent)} dream proposals are already waiting from the last day (at most {crewdream.MAX_PROPOSALS})")
+        text = file_opt(o)
+        _, t = my_bot(spaces)
+        by = f"{whoami(spaces)[1] or OWNER}" + (f"#{chan(t)}" if t else "")
+        meta = {"pattern": pid, "kind": kind, "summary": p["summary"], "count": p["count"], "pals": p["pals"], "minutes": p["minutes"],
+                "quotes": [x["text"] for x in p.get("sources", [])[-2:]]}
+        if kind == "rule":
+            import crewagents
+            space, rec, name = pal_of(spaces, o.get("pal") or die("a rule goes in a pal's project: --pal \"Pal\""))
+            folder = folder_of(space, rec)
+            cur = crewagents.read(os.path.join(folder, "AGENTS.md"))
+            new = (cur.rstrip() + "\n\n" if cur else "") + text.strip() + "\n"
+            pr = crewproposals.propose("agents", name, by, new, "AGENTS.md", crewagents.sha(cur), o.get("note"), meta)
+        elif kind == "skill":
+            if not o.get("name"):
+                die("a skill needs --name skill-name")
+            meta["name"] = slug(o["name"])
+            pr = crewproposals.propose("dream", "crew", by, text, f"skill {meta['name']}", None, o.get("note"), meta)
+        else:
+            target = o.get("pal")
+            if target:
+                space, _, target = pal_of(spaces, target)
+            meta["pal"] = target
+            meta["topic"] = o.get("name") or p["summary"][:40]
+            pr = crewproposals.propose("dream", target or "crew", by, text, None, None, o.get("note"), meta)
+        crewdream.proposed(pid, pr["id"])
+        print(f"proposed ({pr['id']}) for {pid}: {OWNER} sees it in the Inbox; nothing is written before {OWNER} approves it")
+    elif sub == "intake":
+        if not o.get("pattern"):
+            die("pal dream intake --pattern P-n -F note.md   (a draft for DJM OS's intake; the owner files it)")
+        path = crewdream.intake(o["pattern"], file_opt(o))
+        print(f"drafted {path} for {OWNER} to file (Project Pals never writes DJM OS)")
+
+
+def apply_dream(spaces, p):
+    """An accepted dream proposal (not a rule: those are agents proposals), through its kind's writer."""
+    m = p.get("meta") or {}
+    kind = m.get("kind")
+    if kind == "skill":
+        import crewskills
+        f = crewskills.save(m["name"], (p.get("note") or m.get("summary") or "")[:200], p["text"], by="dream")
+        linked = crewskills.link(f.parent.name)
+        return f"saved skill {f.parent.name}" + (f"; linked for {', '.join(linked)}" if linked else "")
+    if kind in ("tool", "process"):
+        title = next((l.strip("# ").strip() for l in p["text"].splitlines() if l.strip()), m.get("summary", "dream task"))[:120]
+        target = m.get("pal") or (settings().get("head") if kind == "process" else None)
+        t = crewtasks.add(title, spaces, None, OWNER, p["text"], target)
+        return f"added {t['id']} for {target or 'anyone'}"
+    if kind == "context":
+        import crewbrain
+        if not m.get("pal"):
+            die("a context proposal needs a pal")
+        space, rec, name = pal_of(spaces, m["pal"])
+        rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+        f = crewbrain.note(crewbrain.brain_dir(name, rec), m.get("topic") or "dream", p["text"])
+        return f"added to {name}'s brain: {f}"
+    die(f"can't apply a {kind} proposal here")
 
 
 def cmd_skill(spaces, rest):
@@ -1304,6 +1443,8 @@ def main(argv):
         cmd_mission(spaces, rest)
     elif cmd == "notebook":
         cmd_notebook(spaces, rest)
+    elif cmd == "dream":
+        cmd_dream(spaces, rest)
     elif cmd == "brain":
         cmd_brain(spaces, rest)
     elif cmd == "agents":
