@@ -14,7 +14,7 @@ import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay,
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
-  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS, shortDate, num,
+  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS, shortDate, num, VAULT_NOTES,
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
@@ -77,8 +77,16 @@ export default class CrewProfile extends View {
       ensureProject(this, cx, s.bot);
       if (this.agentsFor !== s.bot.name && !this.agentsLoading) loadAgents(this, cx, true);
     });
-    // pane.go sends "focus" when it moves onto the panel.
-    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "focus") this.h.focus(); cx.notify(); } });
+    // pane.go sends "focus" when it moves onto the panel. crew-profile.<tab or note> (keys.json,
+    // herdr-app do) shows that tab or Vault note: profile, vault, agents, home, mission, notebook, brain.
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c === "focus") this.h.focus();
+        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; openPanel(c); }
+        cx.notify();
+      }
+    });
   }
 
   isOpen() { return panelOpen(); }

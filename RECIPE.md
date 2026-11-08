@@ -314,6 +314,8 @@ rectangular segments and tags.
     Brain › Decisions / Change log / Map / All brain files, Notes, then On disk with the folder and
     Open folder) | the note (max 820 px) | on Home, a 260 px rail (This week 2×2, Latest decisions).
     Side: a Home · Mission · Journal · Brain strip (34 px) over the note.
+    `crew-profile.<name>` (keys.json or `herdr-app do`, while the panel shows) opens a tab or note:
+    profile, vault, agents, home, mission, notebook, brain.
   - **Vault › Home** (`vault.js`, numbers from `vaultdata.js`): "<Pal> / Home.md · ● live"; the
     name (26/700, Full only) and mission statement (15 px); Brain / Project / Channels ("8 · 3
     working" in blue) / Owner; the Focus now callout (blue tint: focus 15 px, Goals x of y, Done
