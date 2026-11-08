@@ -167,13 +167,26 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Stuck channels (15 minutes of an unchanged screen) get flagged.
   - Routines run on schedule; a reply of NOTHING_NEW stays quiet.
   - A cheap model reviews channels to save memory notes, distilled nightly.
-  - It checks for updates once a day.
+  - It checks for updates every 6 hours at most (`crewupdate.CHECK_EVERY`).
 - **Approvals:** with the Claude Code hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
-- **Updates:** About → Check for updates → Update. Downloads the latest release of the repo in
-  `pal.json`, checks it against `SHA256SUMS`, snapshots the installed files, runs `install.sh`,
-  and restores the snapshot if any mod fails `herdr-app check`. Roll back is offered.
+- **Updates:** the status bar's quiet **Update available · X** pill (a 18px raised rectangle,
+  a 6px blue dot, 11px #808082 text; while an update runs, a spinning ring and "Updating to X")
+  or the gear's **Check for updates** opens `crew-update`, an A-style sheet: the head pal's pet,
+  "Project Pals X is out" over "You have Y · released <date>", the release notes' bullet
+  highlights (bold headline, one truncated line of detail, at most 6; the "### Fixed" part is
+  left out), Full release notes →, a shield line saying what happens, then **Later** (hides the
+  pill for that version for 3 days: shared `crew.update.later`) and **Update now**. Update now runs
+  `pal update apply --json` detached (`updateStart`): it downloads the latest release of the repo
+  in `pal.json`, checks it against `SHA256SUMS`, snapshots the installed files, runs `install.sh`,
+  and restores the snapshot if any mod fails `herdr-app check`. It writes its progress to
+  `data/crew-update-run.json` (`running` with a `step`, then `done` or `failed`), which the pill
+  and the dialog read, because the update reinstalls the dialog itself; a run silent for 15
+  minutes counts as failed. After it: "Updated to X" with Roll back. The status bar also asks
+  GitHub when the last check is over 6 hours old (at most once an hour), for installs without
+  crewd. Snapshots store Herdr's home as `@app/…` (it needn't be inside `$HOME`); Roll back still
+  reads older snapshots stored relative to `$HOME`.
   A local `./install.sh` over an existing install takes the same kind of snapshot first
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
   recent install, not an older release update.
@@ -361,11 +374,12 @@ rectangular segments and tags.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
   **"N need you"** (channels asking, approvals waiting, stuck channels; amber, red while an
   approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
-  `crew.needs`), the shown channel's 5-hour and weekly usage, and the installed version. The gear (and the folded
-  rail's) opens the app menu (`crew-appmenu`, a 252x392 popup in the terminal menu's look, with
+  `crew.needs`), the shown channel's 5-hour and weekly usage, the update pill (see Updates) and the installed
+  version. The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252x454 popup in the terminal menu's look, with
   shortcuts from keys.json): Hire a pal…, New room…, Inbox, Rooms, Routines, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
-  settings, Command palette, Project Pals: settings and updates (About, update, Roll back).
+  settings, Command palette, Check for updates (`crew-update` with props `check: true`),
+  Project Pals settings (About: owner, head pal, update, Roll back).
 - **The terminal sits in the app** (DeNon, 2026-11-08): no card around it. The pals layout sets
   its own `colors.background` to the column's #0B0B0C (this layout only, not the person's theme),
   so a terminal's default background is the column itself; programs' own coloured cells keep
@@ -403,7 +417,7 @@ rectangular segments and tags.
     Popups: `crew-appmenu` (the gear), `crew-termmenu`, `crew-palmenu` (props `space`). Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
-    `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
+    `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`, `crew-update` (props `check`),
     `crew-attach`, `crew-tasks` (props `space`). The installer retires the old `crew-tell`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
   - Every mod gets `lib/crew.js` (the shared model) and `lib/pets.js` copied in.

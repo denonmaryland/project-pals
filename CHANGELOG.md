@@ -22,11 +22,19 @@ A new look and a simpler shape. If you used the Pro view, Focus is now the only 
 - **Dialogs** share one calm look, with the pal's pet in the header.
 - **A settings gear** in the status bar: hire, rooms, routines, themes, layouts, Herdr settings and
   updates.
+- **Updates you can see.** A quiet "Update available" pill in the status bar when a new release
+  is out: click it for the highlights, then Update now (checked against the release's SHA256
+  sums, with Roll back) or Later. The gear menu has Check for updates.
+- **One-paste install.** The README's install command downloads the latest release, checks its
+  SHA256 sums and runs the installer.
 - **Start-up memory.** A pal always gets its pinned note, its main memory and what it knows about
   you, whole, then the newest notes.
 - The git branch moved from the header into the agent's own status line.
 
 ### Fixed
 
+- After picking an image with the paperclip, Enter adds the task again.
+- Updating no longer fails when Herdr's folder is outside your home folder (HERDR_APP_HOME).
+- The pal menu shows ~ for the home folder wherever it is.
 - Tasks for pals whose names contain " - " counted toward them again.
 - Pal and hero rows line up on one grid; long names no longer cut off.

@@ -38,13 +38,25 @@ Reports from other harnesses are welcome.
 
 ## Install
 
+Paste this in a terminal. It downloads the latest release, checks it against the release's
+`SHA256SUMS` (it stops if they don't match), and runs the installer:
+
+```sh
+cd "$(mktemp -d)" && u=https://github.com/denonmaryland/project-pals/releases/latest/download \
+  && curl -fsSLO "$u/SHA256SUMS" && f=$(awk '{print $2}' SHA256SUMS) \
+  && curl -fsSLO "$u/$f" && sha256sum -c SHA256SUMS \
+  && tar xzf "$f" && cd "${f%.tar.gz}" && ./install.sh
+```
+
+Or from a clone (to follow `main`, or to read everything first):
+
 ```sh
 git clone https://github.com/denonmaryland/project-pals && cd project-pals
 ./install.sh            # or ./install.sh --no-helpers for just the layout, mods and commands
 ```
 
-Needs Linux, Herdr (open it once first), `python3` and `rsync`. Then switch Herdr to the `pals`
-layout (Ctrl+Shift+L). Without a systemd user session the install still works, but crewd is
+Needs Linux, Herdr (open it once first), `python3`, `curl` and `rsync`. Then switch Herdr to the
+`pals` layout (Ctrl+Shift+L). Without a systemd user session the install still works, but crewd is
 skipped: messages are typed in directly and routines and callbacks don't run.
 
 ## What it changes on your computer
@@ -73,14 +85,17 @@ Project Pals never answers it for you: trusting a folder is your call. It tells 
 
 ## Updates
 
-About (the ⓘ in the sidebar) → **Check for updates** → **Update**. Project Pals also checks once
-a day by itself.
+When a newer release is out, a quiet **Update available · 0.x.y** pill shows in the status bar.
+Click it for the version and its highlights, then **Update now** or **Later** (the pill stays away
+for 3 days for that version). The gear menu has **Check for updates** too. Project Pals looks at
+most every 6 hours.
 
 - Updates come only from this repo's GitHub releases, and must match the release's
   `SHA256SUMS`.
 - Updates replace only Project Pals's own files. Your pals, rooms, memory, routines and tasks
-  are never touched.
-- The previous version is kept for **Roll back**.
+  are never touched. Herdr reloads the mods by itself; nothing restarts.
+- The previous version is kept for **Roll back** (in the update dialog after an update, and in
+  Project Pals settings). If an install fails, the previous version goes back by itself.
 
 From a terminal: `pal version`, `pal update check | apply | rollback`.
 
