@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, godMascot, a, tone, ds } from "./crew.js";
+import { crewCli, a, tone, ds, sheetFace, headPet } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -120,7 +120,8 @@ export default class CrewAbout extends View {
       .child(div().text_size(13).font_medium().text_color(disabled ? t.dim : primary ? t.solid_foreground : t.foreground).child(label));
 
     const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
-      .child(image(godMascot(available ? "done" : "calm")).w(40).h(40).flex_none())
+      // The head pal's pet (the folder mascots are retired).
+      .child(sheetFace(headPet(), t, 52))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(17).font_medium().text_color(t.foreground).child(ins.name ?? "Project Pals"))
         .child(div().truncate().text_size(12.5).text_color(t.dim).child(`Version ${current}${ins.repo ? ` · ${ins.repo}` : ""}`)))

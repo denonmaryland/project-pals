@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, machines, notify, pickFolder } from "herdr";
-import { crew, saveCrew, newId, mascot, ROLES, COMPANY, a, withBypass, MODELS, withModel, tone, ds, pebble,
+import { crew, saveCrew, newId, brainLogo, ROLES, COMPANY, a, withBypass, MODELS, withModel, tone, ds, pebble,
   sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 import { spaces } from "herdr";
 
@@ -92,7 +92,7 @@ export default class CrewHire extends View {
 
     const row = sheetRow()
       .child(sheetSelect(d, "hire-brain", { label: "Brain", value: this.loading ? "Looking…" : h ? h.name : "None installed", open: this.picking === "brain", onClick: pick("brain"),
-        face: h ? image(mascot(h.key, "calm")).size(16).flex_none() : null }))
+        face: h ? brainLogo(h.key, 13, d, this.agents) : null }))
       .when(h?.key === "claude", (el) => el.child(sheetSelect(d, "hire-model", { label: "Model", value: MODELS.find((m) => m.key === this.model)?.name ?? "Your default", open: this.picking === "model", onClick: pick("model") })))
       .child(sheetSelect(d, "hire-role", { label: "Role", value: this.role, open: this.picking === "role", onClick: pick("role") }))
       .when(ms.length > 1, (el) => el.child(sheetSelect(d, "hire-machine", { label: "Computer", value: this.machine ?? "This one", open: this.picking === "machine", onClick: pick("machine") })));
@@ -100,7 +100,7 @@ export default class CrewHire extends View {
     let panel = null;
     if (this.picking === "brain") {
       panel = sheetPanel(d, "hire-brains")
-        .children(installed.map((ag, i) => sheetOption(d, `brain-${i}`, { on: h?.key === ag.key, left: image(mascot(ag.key, "calm")).size(18), label: ag.name, sub: COMPANY[ag.key] ?? "",
+        .children(installed.map((ag, i) => sheetOption(d, `brain-${i}`, { on: h?.key === ag.key, left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, sub: COMPANY[ag.key] ?? "",
           onClick: () => { this.harness = ag; this.picking = null; } })))
         .when(missing.length > 0, (el) => el.child(div().px(8).py(4).text_size(11).line_height("14px").text_color(d.fg3).child(`Not installed here: ${missing.map((x) => x.name).join(", ")}`)));
     } else if (this.picking === "model") {
@@ -120,7 +120,7 @@ export default class CrewHire extends View {
     const trustNote = h?.key === "claude" && this.folder.value().trim();
     const ready = Boolean(name && h);
     return sheet(d, "crew-hire", this.handle, (e, cx) => this.key(e, cx))
-      .child(sheetHeader(d, { id: "hire", face: image(mascot(h?.key, name ? "done" : "calm")).w(40).h(40).flex_none(), title: "Hire a pal", onClose: close,
+      .child(sheetHeader(d, { id: "hire", face: div().size(40).flex_none().flex().items_center().justify_center().rounded(8).bg(d.raised).border_1().border_color(d.line).child(brainLogo(h?.key, 20, d, this.agents)), title: "Hire a pal", onClose: close,
         sub: `Any harness, any company · ${this.machine ?? "this computer"}` }))
       .child(sheetBody()
         .child(sheetField(d, Input.new(this.name).w_full().text_size(13).text_color(d.fg1)))

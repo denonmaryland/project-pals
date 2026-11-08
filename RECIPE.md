@@ -4,7 +4,7 @@ Your coding agents as a crew of pals. Any harness works: Claude Code, Codex, Gro
 opencode, Hermes, Copilot, Cursor, pi.
 
 Every Herdr space is a pal (a project with a brain), and each of its tabs is a channel, a clone
-working on one thing. Pals have living mascot faces that show what they're doing. You can watch
+working on one thing. Pals are pocket pets whose pose shows what they're doing. You can watch
 a channel as a chat instead of a terminal, put pals together in group-chat rooms, and give them
 tasks and scheduled routines. A head pal (named Orchestrator by default; About → Settings or `pal settings head "Name"`
 renames it) oversees everyone.
@@ -86,7 +86,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
       - Other channels, Tasks, Routines, and Memory (a pinned-note field plus the three latest
         remembered facts).
 - **Dialogs** (520px, sized to content, the `popover` color):
-  - Hire a pal, New channel, New room, Routines, Look (mascot editor), About.
+  - Hire a pal, New channel, New room, Routines, Look (the pet's colour), About.
   - Review (86% × 88%, a diff with line comments).
   - Attach (a 400 × 440 popup).
   - All share one look: a small header (face, 17px title, one dim line, ✕), a big name field in
@@ -101,17 +101,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - done: happy eyes and a sparkle
   - idle: calm
   - no agent: asleep, dimmed, with a "z"
-- **Mascots:** little folders with faces, drawn by `mascot-art.js` into
-  `data/crew-mascots/<hash>-<mood>[-body|-eyes].svg`.
-  - The folder has a darker back panel with a tab, a white sheet of paper peeking out, and the
-    pal's color on the front panel, with the face centered on it.
-  - 8 shapes (folder by default; also round, pebble, bean, squircle, ghost, cat, bear) and 12
-    accessories, in any hex color.
-  - The eyes are their own layer, so they can move.
-  - A pal's stock look is a folder in its color (by harness for hired pals, by a hash of its
-    name otherwise), with its brain's accessory (a crown for the head pal).
-  - A face shows only once the roster has drawn its art (shared `crew.art`): an image that fails
-    to load once isn't retried.
+- **The folder mascots are retired** (DeNon, 2026-11-08): no pal or brain shows one any more. Pals
+  are their pocket pets; brains (harnesses) show Herdr's own program logos (`brainLogo()`:
+  `knownAgents()` entries' `icon`, a one-colour glyph in #C8C8C8 when `tint`, else the picture;
+  Herdr's `icons/<key>.svg`, or its neutral `icons/agent.svg`), 13-14px in the dialogs' selects and
+  lists. `mascot-art.js` stays only for the Customize look dialog (`crew-look`), whose colour tints
+  the pal's pet; that dialog still previews folder shapes and wants its own redesign as a pet picker.
 - **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
   little critter in round LED dots, glowing in the pal's own colour (its look's colour, else its
   stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
@@ -141,8 +136,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     by the roster's art pass, which publishes shared `crew.pets`; the roster also publishes
     shared `crew.petstate` (stuck from `crew-health.json`, PR state from `gh pr list --head
     <branch>` on the space's machine, at most every 2 minutes per folder and branch).
-  - Fallback: a record with `"pet": "none"`, or any pal before its tiles are on disk, shows the
-    folder mascot below.
+  - Every pal has one (an old record's `"pet": "none"` gets the default). Until its tiles are on
+    disk, an empty #131316 box of the same size holds its place.
 - **Demo filter (for screenshots):** `data/crew-demo.json` `{"only": ["Website", …]}` makes that
   window's sidebar show just those pals, and `{"states": {"Website": "pr", …}}` shows those pals'
   pets in that tile state; no file, everyone, live. `preview.png` was made this way in a second
@@ -365,7 +360,7 @@ rectangular segments and tags.
   floats over its terminal.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
-  `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose. A record with `"pet": "none"` shows the folder mascot.
+  `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose.
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.

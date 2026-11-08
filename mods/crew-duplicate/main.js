@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, mascot, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone, ds,
+import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone, ds,
   sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 
 export default class CrewDuplicate extends View {
@@ -110,7 +110,7 @@ export default class CrewDuplicate extends View {
 
     const row = sheetRow()
       .child(sheetSelect(d, "dup-brain", { label: "Brain", value: brainName, open: this.picking === "brain", onClick: toggle("brain"),
-        face: current ? image(mascot(current.key, "calm")).size(16).flex_none() : null }))
+        face: brainLogo(current?.key ?? bot.harness, 13, d, this.agents) }))
       .when(brainKey === "claude", (el) => el.child(sheetSelect(d, "dup-model", { label: "Model", value: modelLabel, open: this.picking === "model", onClick: toggle("model") })))
       .when(this.isRepo, (el) => el.child(sheetToggle(d, "dup-branch", { label: "Own branch", on: this.ownBranch, onClick: () => { this.ownBranch = !this.ownBranch; } })))
       .child(sheetSelect(d, "dup-more", { label: "Category", value: this.category === "+new" ? "New…" : this.category, open: this.picking === "cat", onClick: toggle("cat") }));
@@ -118,9 +118,9 @@ export default class CrewDuplicate extends View {
     let panel = null;
     if (this.picking === "brain") {
       panel = sheetPanel(d, "dup-brains")
-        .child(sheetOption(d, "brain-same", { on: !this.harness, left: image(mascot(bot.harness, "calm")).size(18), label: `Same as ${short}`, sub: bot.harnessName ?? "", onClick: () => { this.harness = null; this.picking = null; } }))
+        .child(sheetOption(d, "brain-same", { on: !this.harness, left: brainLogo(bot.harness, 14, d, this.agents), label: `Same as ${short}`, sub: bot.harnessName ?? "", onClick: () => { this.harness = null; this.picking = null; } }))
         .children(this.agents.filter((x) => x.key !== bot.harness).map((ag, i) => sheetOption(d, `brain-${i}`, { on: this.harness?.key === ag.key,
-          left: image(mascot(ag.key, "calm")).size(18), label: ag.name, onClick: () => { this.harness = ag; this.picking = null; } })));
+          left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, onClick: () => { this.harness = ag; this.picking = null; } })));
     } else if (this.picking === "model") {
       panel = sheetPanel(d, "dup-models")
         .child(sheetOption(d, "model-same", { on: this.model === undefined, label: `Same as ${short}`, sub: palModel ? modelName(palModel) : "", onClick: () => { this.model = undefined; this.picking = null; } }))
