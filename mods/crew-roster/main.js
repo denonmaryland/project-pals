@@ -502,7 +502,9 @@ export default class CrewRoster extends View {
     const grouped = palGroups().length > 0;
     for (const sec of palSections(live)) {
       const gid = sec.group === undefined ? undefined : sec.group?.id ?? null;
-      if (grouped && sec.group !== undefined) list.child(this.groupHeader(sec.group, sec.rows.length, d));
+      const folded = grouped && sec.group !== undefined && Boolean((marks().collapsed ?? {})[gid ?? "_"]);
+      if (grouped && sec.group !== undefined) list.child(this.groupHeader(sec.group, sec.rows.length, d, folded));
+      if (folded) continue;
       list.children(sec.rows.map((r) => this.palRow(r, t, d, gid)));
       if (grouped && sec.group && !sec.rows.length) list.child(this.groupDrop(sec.group.id, d));
     }
@@ -605,7 +607,6 @@ export default class CrewRoster extends View {
       .child(div().flex_1().min_w(0).text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
       .when(fits, (el) => el.child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(label)))
       .tooltip(fits ? bot.name : `${bot.name} · ${label}`));
-    art.child(div().absolute().left(8).top(FY).w(W - 16).h(1).bg("#FFFFFF14"));
     const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
       .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
       .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
@@ -755,17 +756,30 @@ export default class CrewRoster extends View {
     }
     cx.notify();
   }
-  // A group's header: its name (Unassigned for pals with none) and count, small and grey; a drop
-  // target (first in the group); right-click for Rename / Move / Delete / New group.
-  groupHeader(g, n, d) {
+  // A group's header, like a folder (DeNon, after Grok Bot): its name (Unassigned for pals with
+  // none) and count, small and grey, 14 px of air above it. Hovering shows an r4 pill and a chevron
+  // on the right; a click folds the group away or opens it (remembered in crew.marks.collapsed; a
+  // folded group keeps its chevron). A drop target (first in the group); right-click for Rename /
+  // Move / Delete / New group.
+  groupHeader(g, n, d, folded = false) {
     const gid = g?.id ?? null;
+    const key = gid ?? "_";
     const over = this.drag?.active && this.drag.over?.header && (this.drag.over.gid ?? null) === gid;
-    return h_flex().id(`grp-${gid ?? "none"}`).h(28).mt(6).flex_none().items_center().gap(6).pl(8).pr(8).rounded(d.r.sm)
-      .when(Boolean(over), (el) => el.bg(d.hover))
+    const hot = this.hoverGroup === key;
+    return h_flex().id(`grp-${gid ?? "none"}`).h(28).mt(14).flex_none().items_center().gap(6).pl(8).pr(8).rounded(d.r.sm).cursor_pointer()
+      .when(Boolean(over) || hot, (el) => el.bg(d.hover))
+      .on_hover((h, cx) => { const next = h ? key : (this.hoverGroup === key ? null : this.hoverGroup); if (next !== this.hoverGroup) { this.hoverGroup = next; cx.notify(); } })
       .on_mouse_move((e, cx) => this.dragOver(e, cx, { header: true, gid }))
+      .on_click((_e, cx) => {
+        if (this.drag?.active) return;
+        const m = marks();
+        setShared("crew.marks", { ...m, collapsed: { ...(m.collapsed ?? {}), [key]: !folded } });
+        cx.notify();
+      })
       .when(Boolean(g), (el) => el.on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "group", group: gid } }); }))
       .child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(g ? g.name : "Unassigned"))
-      .child(div().text_size(11).line_height("14px").text_color(d.fg4).child(String(n)));
+      .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(n)))
+      .when(hot || folded, (el) => el.child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(11).flex_none().text_color(d.fg3)));
   }
   // An empty group: somewhere to drop.
   groupDrop(gid, d) {

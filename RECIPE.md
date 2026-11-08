@@ -185,7 +185,9 @@ switch) on 2026-11-08. Anything new is drawn in the design-system look: 1px hair
 rectangular segments and tags.
 
 - **Pal groups and order** (DeNon, 2026-11-08, like Grok Bot's): the head pal on top, then named
-  groups ("Personal", "Business", …) under small grey headers (11px #6A6A6C name, #56565A count),
+  groups ("Personal", "Business", …) under small grey headers (11px #6A6A6C name, #56565A count,
+  14px of air above) that work like folders: hovering shows an r4 pill and a chevron on the right,
+  a click folds the group away or opens it (remembered in `crew.marks.collapsed`),
   then "Unassigned" (where new pals land); with no groups made, no headers at all. Inside a group:
   pinned pals first (pin order), then your order, else who needs you most. **Drag** a pal (press,
   move 5px): it dims and a 2px blue line shows where it lands (above or below the row under the
@@ -203,8 +205,7 @@ rectangular segments and tags.
 - **Focus:** the sidebar at 304px (the hero pal and the pal list, as above), no tab strip.
   - **The hero** (hero v2 "2 · Floor", DeNon 2026-11-08): no box. The shown pal's pet and its
     laptop at 90% of the sidebar's width, centred (273x214 at 304; the critter about 165px), drawn on the
-    sidebar itself over the same soft aura (its own "open" tiles, `-o.svg`), standing on a floor: a 6% white hairline 12px
-    in from each side, with a pool of the state's colour under the pet (`pet-floor-<state>.svg`:
+    sidebar itself over the same soft aura (its own "open" tiles, `-o.svg`), standing on a floor: a pool of the state's colour under the pet (no line: DeNon took it out) (`pet-floor-<state>.svg`:
     working blue, done mint, asks you amber and breathing, PR green, merged purple, closing red,
     stuck amber; none at rest or asleep). Nothing moves along the floor (a saber there was tried
     and removed: DeNon found it annoying). The name (16/600) sits in a 30px band at the top, 14px in, the sprite
