@@ -83,10 +83,10 @@ export default class CrewMenu extends View {
       const swatch = (key) => {
         const on = (current ?? null) === key;
         const fill = key ? t[key] : null;
-        return div().id(`sw-${key ?? "none"}`).size(22).flex_none().rounded_full().p(2).cursor_pointer()
+        return div().id(`sw-${key ?? "none"}`).size(22).flex_none().rounded(4).p(2).cursor_pointer()
           .border_2().border_color(on ? t.foreground : "#00000000")
           .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); colorTab(tab, key); this.close(); })
-          .child(div().size_full().rounded_full().flex().items_center().justify_center()
+          .child(div().size_full().rounded(4).flex().items_center().justify_center()
             .when(Boolean(fill), (el) => el.bg(fill))
             .when(!fill, (el) => el.border_1().border_color(a(t.foreground, "40")).child(svg(`${ICON}/x.svg`).size(10).text_color(t.dim))));
       };

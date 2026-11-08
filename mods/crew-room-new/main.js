@@ -70,7 +70,7 @@ export default class CrewRoomNew extends View {
     // Header: the faces of who's coming, overlapping, or a group icon until someone is.
     const faces = picked.length
       ? h_flex().children(picked.slice(0, 4).map((s, i) => div().when(i > 0, (el) => el.ml(-12)).child(mascotEl(botOf(s, c, ps), "calm", 34, t))))
-      : div().size(34).rounded_full().bg(a(t.foreground, "0c")).flex().items_center().justify_center()
+      : div().size(34).rounded(4).bg(a(t.foreground, "0c")).flex().items_center().justify_center()
           .child(svg(`${ICON}/users.svg`).size(17).text_color(t.dim));
     const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
       .child(div().flex_none().child(faces))
@@ -82,7 +82,7 @@ export default class CrewRoomNew extends View {
         .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim)));
 
     // Its name and goal.
-    const named = v_flex().rounded(14).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
+    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
       .child(stop(h_flex().items_center().gap(6).px(16).pt(14).pb(6)
         .child(div().text_size(20).text_color(t.dim).child("#"))
         .child(div().flex_1().child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground)))))
@@ -91,13 +91,13 @@ export default class CrewRoomNew extends View {
     // Who's in it: one row per pal; a picked pal shows which channel joins (click to change).
     // Awake pals first (they can join now); asleep ones after. Room for eight before it scrolls.
     const order = [...all].sort((x, y) => Number(botOf(y, c, ps).awake) - Number(botOf(x, c, ps).awake));
-    const list = v_flex().id("rn-bots").max_h(380).overflow_y_scrollbar().rounded(14).border_1().border_color(a(t.foreground, "10")).py(4);
+    const list = v_flex().id("rn-bots").max_h(380).overflow_y_scrollbar().rounded(8).border_1().border_color(a(t.foreground, "10")).py(4);
     order.forEach((space, i) => {
       const bot = botOf(space, c, ps);
       const on = this.picked.has(space.id);
       const tab = on ? space.tabs.find((x) => x.id === this.picked.get(space.id)) : null;
       const awake = Boolean(tab && leadPane(tab.id, ps)?.program?.agent);
-      const check = div().size(20).flex_none().rounded_full().flex().items_center().justify_center()
+      const check = div().size(20).flex_none().rounded(3).flex().items_center().justify_center()
         .bg(on ? t.accent : a(t.foreground, "00")).border_1().border_color(on ? t.accent : a(t.foreground, "2a"))
         .when(on, (el) => el.child(svg(`${ICON}/check.svg`).size(11).text_color(t.accent_foreground)));
       if (i > 0) list.child(div().h(1).mx(16).bg(a(t.foreground, "0a")));
@@ -136,7 +136,7 @@ export default class CrewRoomNew extends View {
         .child(this.picked.size < 2 ? "Pick at least two pals" : `${this.picked.size} pals`))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("rn-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("rn-go").px(18).py(9).rounded_full().cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
+        .child(div().id("rn-go").px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
           .hover((s) => s.opacity(0.88)).on_click(() => this.create())
           .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child("Open room"))));
 

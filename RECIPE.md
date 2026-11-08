@@ -71,12 +71,18 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
       - `room-view`: the room as a group chat. Your bubbles are on the right in the accent
         color; pals' are on the left with a 30px face and name. It's a centered column at most
         860px wide, with "• • •" typing bubbles.
-      - `chat-view`: the channel as a chat. Every message is selectable markdown (TextView, 14px):
-        links, headings, lists, quotes, inline code; code fences are rounded boxes in JetBrains
+      - `chat-view`: the channel as a chat, in a centred column at most 720px wide in both Focus
+        and Pro. Every message is selectable markdown (TextView, 14px):
+        links, headings, lists, quotes, inline code; code fences are r6 boxes in JetBrains
         Mono 12.5px and tables are bordered grids, both drawn by the mod. A one-paragraph message's
         bubble hugs its text; longer ones fill the bubble width (pals' 680px, yours 540px at most).
+        **Bubble A:** your messages are flat r4 slabs tinted with the accent (`accent` at 15%)
+        with a 2px right edge in the accent. The pal's replies are r4 rectangles grouped into
+        stacks 4px apart, with its pocket pet once per group (36x28 in Focus, 31x24 in Pro) in its
+        live state; groups are 22px apart in Focus and 14px in Pro. Timestamps are quiet, centred,
+        11px in the dim text colour, between groups more than 10 minutes apart.
         Right-click a message: Copy message, and Copy code for each code block. Each stretch of tool calls is a row of 28px
-        pill chips, one per kind with an icon ("Ran 3 commands", "Edited main.js"): a spinner
+        r3 chips with a hairline edge, one per kind with an icon ("Ran 3 commands", "Edited main.js"): a spinner
         while a call has no result and the pal works, "1 failed" in the blocked color; a click
         lists the calls (name, what, ✓ / spinner / failed plus the first lines of a failure's
         output). A finished turn that got a reply ends with a dim footer ("3:41 PM · Worked 36s
@@ -123,8 +129,34 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     name otherwise), with its brain's accessory (a crown for the head pal).
   - A face shows only once the roster has drawn its art (shared `crew.art`): an image that fails
     to load once isn't retried.
+- **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
+  little critter in round LED dots inside a dark r3 status tile (172x135, scaled), glowing in the
+  pal's own colour (its look's colour, else its stock colour). It replaces the folder mascot
+  everywhere a pal's face shows: the Focus hero card (the head pal at full size, with a
+  rectangular state tag), the sidebar list (36x28), the Pro pal rail (38x30) and banner (150 wide),
+  chat avatars, the centred pal chip (25x20), rooms, dialogs.
+  - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
+    (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
+    headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
+    beanie); the head pal is a kit with the crown. The laptop is the profile one.
+  - Eight states, each a pose plus the tile's frame: **rest** (asleep or idle; z's, eyes shut),
+    **working** (at the laptop, blue loader corner), **asks you** (Herdr's blocked; "?" and a mint
+    frame, the tile breathes), **done** (arms up, mint frame), **PR open** (holding a PR card, green
+    edge strips), **merged** (cheering, purple strip), **closing** (waving, red strips: the PR
+    closed unmerged in the last day), **stuck** (X eyes and sweat, amber strips: crewd says it's
+    been working 15+ minutes with an unchanged screen). PR states show only while the pal is idle;
+    merged and closing last a day.
+  - Working moves natively: the paw taps (two frames cross-fade), and from 44px wide bits drift up
+    off the screen and a blue sliver runs along the top edge.
+  - Drawn on demand into `data/crew-pets/<hash>-<state>[-b].svg` (9 files a pet, about 12KB each)
+    by the roster's art pass, which publishes shared `crew.pets`; the roster also publishes
+    shared `crew.petstate` (stuck from `crew-health.json`, PR state from `gh pr list --head
+    <branch>` on the space's machine, at most every 2 minutes per folder and branch).
+  - Fallback: a record with `"pet": "none"`, or any pal before its tiles are on disk, shows the
+    folder mascot below.
 - **Demo filter (for screenshots):** `data/crew-demo.json` `{"only": ["Website", …]}` makes that
-  window's sidebar show just those pals; no file, everyone. `preview.png` was made this way in a second
+  window's sidebar show just those pals, and `{"states": {"Website": "pr", …}}` shows those pals'
+  pets in that tile state; no file, everyone, live. `preview.png` was made this way in a second
   Herdr window (`HERDR_APP_HOME` on a short path, started without the `HC_*` variables), across four
   Omarchy themes.
 - **`pal hire --model haiku|sonnet|opus`** puts `--model` on the hired pal's command line.
@@ -196,7 +228,7 @@ rectangular segments and tags.
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
     `crew-attach`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
-  - Every mod gets `lib/crew.js` (the shared model) and `lib/mascot-art.js` copied in.
+  - Every mod gets `lib/crew.js` (the shared model), `lib/mascot-art.js` and `lib/pets.js` copied in.
 - **Herdr functions:**
   - Data: `spaces`, `panes`, `agents`, `layout`, `shared`/`setShared` (`crew`, `crew.chat`,
     `crew.settings`, `crew.room`, `crew.marks` for pins and tab colors).
@@ -277,7 +309,12 @@ rectangular segments and tags.
 - `pal-room new demo --with "A#x" "B#y"` opens a room in Rooms, and `pal-room say demo "@A hi"`
   shows a typing bubble, then the message.
 - In a Claude Code channel the header shows Chat | Terminal, and Chat shows your last message as
-  a right-hand bubble.
+  a right-hand r4 slab with a 2px accent edge, in a column no wider than 720px, and the pal's
+  reply group with its pocket pet beside the first message.
+- Every pal's face is a pocket pet in its own colour: the working one has the blue loader corner
+  and a tapping paw, and `data/crew-demo.json` `{"states": {"<pal>": "merged"}}` turns that pal's
+  tile purple with the cheering pose. A record with `"pet": "none"` shows the folder mascot.
+- No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.
 - On a fresh setup the pals layout opens in Focus; Ctrl+Shift+M flips to Pro and back, and the

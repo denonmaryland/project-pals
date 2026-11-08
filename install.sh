@@ -41,6 +41,7 @@ for dir in "$src"/mods/crew-*; do
   rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' "$dir/" "$dest/"
   cp "$src/lib/crew.js" "$dest/crew.js"
   cp "$src/lib/mascot-art.js" "$dest/mascot-art.js"
+  cp "$src/lib/pets.js" "$dest/pets.js"
 done
 
 mkdir -p "$home/layouts"

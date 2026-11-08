@@ -85,7 +85,7 @@ export default class CrewHire extends View {
       .child(div().flex_none().text_size(13.5).text_color(t.foreground).child(label))
       .child(right);
     const pick = (which) => (_e, cx) => { this.picking = this.picking === which ? null : which; cx.notify(); };
-    const option = (id, on, left, label, sub, action) => h_flex().id(id).items_center().gap(10).px(10).py(7).rounded(10).cursor_pointer()
+    const option = (id, on, left, label, sub, action) => h_flex().id(id).items_center().gap(10).px(10).py(7).rounded(6).cursor_pointer()
       .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
       .on_click(action)
       .child(left ?? div().size(22))
@@ -109,7 +109,7 @@ export default class CrewHire extends View {
         .child(svg("mods/crew-roster/icons/x.svg").size(13).text_color(t.dim)));
 
     // The one thing that matters: its name, and optionally its first job.
-    const named = v_flex().rounded(14).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
+    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
       .child(stop(div().px(16).pt(14).pb(6).child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground))))
       .child(stop(div().px(6).pb(6).child(Textarea.new(this.brief).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
 
@@ -160,7 +160,7 @@ export default class CrewHire extends View {
     const channelRow = row("hire-channel", "First channel", h_flex().items_center().gap(4)
       .child(div().text_size(13).text_color(t.dim).child("#")).child(inline(this.channel, 150)));
 
-    const settings = v_flex().rounded(14).border_1().border_color(a(t.foreground, "10"))
+    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
       .child(roleRow).when(this.picking === "role", (el) => el.child(roleList))
       .child(hair()).child(brainRow).when(this.picking === "brain", (el) => el.child(brainList))
       .when(Boolean(modelRow), (el) => el.child(hair()).child(modelRow).when(this.picking === "model", (el) => el.child(modelList)))
@@ -178,7 +178,7 @@ export default class CrewHire extends View {
         .child(`${this.role} · ${h?.name ?? "no brain"}${h?.key === "claude" && this.model ? ` (${MODELS.find((m) => m.key === this.model).name})` : ""} · ${this.machine ?? "this computer"}`))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("hire-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("hire-go").px(18).py(9).rounded_full().cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
+        .child(div().id("hire-go").px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
           .hover((s) => s.opacity(0.88)).on_click(() => this.hire())
           .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child(name ? `Hire ${name}` : "Hire"))));
 

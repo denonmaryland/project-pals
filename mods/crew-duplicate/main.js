@@ -98,7 +98,7 @@ export default class CrewDuplicate extends View {
       .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "05"))).on_click(action))
       .child(div().flex_none().text_size(13.5).text_color(t.foreground).child(label))
       .child(right);
-    const pill = (id, text, on, action) => div().id(id).px(11).py(4).rounded_full().cursor_pointer()
+    const pill = (id, text, on, action) => div().id(id).px(11).py(4).rounded(4).cursor_pointer()
       .bg(on ? a(t.foreground, "1a") : a(t.foreground, "00")).hover((s) => s.bg(a(t.foreground, "10")))
       .text_size(12.5).text_color(on ? t.foreground : t.dim).on_click(action).child(text);
 
@@ -113,7 +113,7 @@ export default class CrewDuplicate extends View {
         .child(svg("mods/crew-roster/icons/x.svg").size(13).text_color(t.dim)));
 
     // The one thing that matters: its name, and optionally what it's for.
-    const named = v_flex().rounded(14).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
+    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
       .child(stop(h_flex().items_center().gap(6).px(16).pt(14).pb(6)
         .child(div().text_size(20).text_color(t.dim).child("#"))
         .child(div().flex_1().child(Input.new(this.channel).w_full().text_size(20).text_color(t.foreground)))))
@@ -124,7 +124,7 @@ export default class CrewDuplicate extends View {
     const category = row("dup-cat", "Category", h_flex().gap(2).items_center().flex_wrap().justify_end()
       .children(cats.map((c, i) => pill(`cat-${i}`, c, this.category === c, (_e, cx) => { this.category = c; cx.notify(); })))
       .child(this.category === "+new"
-        ? stop(div().w(120).h(28).px(10).flex().items_center().rounded_full().border_1().border_color(a(t.accent, "66"))
+        ? stop(div().w(120).h(28).px(10).flex().items_center().rounded(4).border_1().border_color(a(t.accent, "66"))
             .child(Input.new(this.newCategory).w_full().text_size(12.5).text_color(t.foreground)))
         : pill("cat-new", "+ New", false, (_e, cx) => { this.category = "+new"; this.newCategory.focus(); cx.notify(); })));
 
@@ -139,7 +139,7 @@ export default class CrewDuplicate extends View {
       ...this.agents.filter((x) => x.key !== bot.harness).map((x) => ({ key: x.key, name: x.name, sub: "", ag: x }))];
     const brainList = v_flex().px(8).pb(8).children(options.map((o, i) => {
       const on = (this.harness?.key ?? null) === o.key;
-      return h_flex().id(`brain-${i}`).items_center().gap(10).px(10).py(7).rounded(10).cursor_pointer()
+      return h_flex().id(`brain-${i}`).items_center().gap(10).px(10).py(7).rounded(6).cursor_pointer()
         .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
         .on_click((_e, cx) => { this.harness = o.ag; this.pickBrain = false; cx.notify(); })
         .child(image(mascot(o.key ?? bot.harness, "calm")).size(22))
@@ -160,7 +160,7 @@ export default class CrewDuplicate extends View {
     const modelOpts = [{ key: undefined, name: `Same as ${bot.name.split(" - ")[0]}`, sub: palModel ? modelName(palModel) : "" }, ...MODELS];
     const modelList = v_flex().px(8).pb(8).children(modelOpts.map((m, i) => {
       const on = this.model === m.key;
-      return h_flex().id(`model-${i}`).items_center().gap(10).px(10).py(7).rounded(10).cursor_pointer()
+      return h_flex().id(`model-${i}`).items_center().gap(10).px(10).py(7).rounded(6).cursor_pointer()
         .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
         .on_click((_e, cx) => { this.model = m.key; this.pickModel = false; cx.notify(); })
         .child(div().flex_1().text_size(13).text_color(t.foreground).child(m.name))
@@ -168,13 +168,13 @@ export default class CrewDuplicate extends View {
         .when(on, (el) => el.child(svg("mods/crew-roster/icons/check.svg").size(13).text_color(t.accent)));
     }));
 
-    const toggle = div().w(36).h(22).p(2).rounded_full().bg(this.ownBranch ? t.accent : a(t.foreground, "22")).flex().items_center()
-      .when(this.ownBranch, (el) => el.justify_end()).child(div().size(18).rounded_full().bg(t.popover));
+    const toggle = div().w(36).h(22).p(2).rounded(4).bg(this.ownBranch ? t.accent : a(t.foreground, "22")).flex().items_center()
+      .when(this.ownBranch, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover));
     const branchRow = row("dup-branch", "Own branch", h_flex().items_center().gap(10)
       .child(div().text_size(12).text_color(t.dim).child(this.ownBranch ? "you review and land it" : "works on the project directly"))
       .child(toggle), (_e, cx) => { this.ownBranch = !this.ownBranch; cx.notify(); });
 
-    const settings = v_flex().rounded(14).border_1().border_color(a(t.foreground, "10"))
+    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
       .child(category).child(hair()).child(brainRow).when(this.pickBrain, (el) => el.child(brainList))
       .when(Boolean(modelRow), (el) => el.child(hair()).child(modelRow).when(this.pickModel, (el) => el.child(modelList)))
       .when(this.isRepo, (el) => el.child(hair()).child(branchRow));
@@ -185,7 +185,7 @@ export default class CrewDuplicate extends View {
         .child(`${bot.memory?.trim() ? "Starts with its memory" : "Shares its project"} · ${bot.machine ?? "this computer"}`))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("dup-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("dup-go").px(18).py(9).rounded_full().cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
+        .child(div().id("dup-go").px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
           .hover((s) => s.opacity(0.88)).on_click((_e, cx) => this.go(cx))
           .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child(this.busy ? "Making its branch…" : "Add channel"))));
 

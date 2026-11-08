@@ -10,8 +10,9 @@ import {
   crew, botOf, sleepers, mascotFor, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
-  loadOps, crewCli, taskOf, findChannel, ensureLooks, chatPref, setChatPref, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
-  layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane } from "./crew.js";
+  loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, chatPref, setChatPref, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
+  layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane,
+  petOf, petReady, petEl, petState, petColor, PET_WORDS } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const RAIL = 64;
@@ -76,6 +77,12 @@ export default class CrewRoster extends View {
     ops(cx);
     cx.timer.every(2500, (cx) => ops(cx));
     this.refreshOps = ops;
+    // Pocket-pet states beyond Herdr's: stuck (crewd's health file) and each branch's PR (gh).
+    // On its own timer so a slow gh never holds up the rest; one pass at a time.
+    const pets = (cx) => { if (this.petBusy) return; this.petBusy = true;
+      cx.spawn(async () => { try { await syncPetState(this.ops.stalled); } catch {} this.petBusy = false; }); };
+    cx.timer.after(1500, (cx) => pets(cx));
+    cx.timer.every(10000, (cx) => pets(cx));
     // Add a task from the Tasks view: "title" or "@Pal title".
     this.taskInput = InputState.new({ placeholder: "Add a task, @Pal to assign it" });
     this.taskInput.on("submit", (_e, cx) => this.addTask(cx));
@@ -234,17 +241,17 @@ export default class CrewRoster extends View {
     const pins = marks().pals ?? {};
     const rank = (r) => (r.bot.god ? 0 : pins[r.bot.id]?.pin ? 1 : 2);
     rows = [...rows].sort((x, y) => rank(x) - rank(y) || (rank(x) === 1 ? pins[x.bot.id].pin - pins[y.bot.id].pin : 0));
-    const icon = (id, name, action, color = t.muted) => div().id(id).size(36).flex().items_center().justify_center().rounded(10).cursor_pointer()
+    const icon = (id, name, action, color = t.muted) => div().id(id).size(36).flex().items_center().justify_center().rounded(6).cursor_pointer()
       .hover((s) => s.bg(a(t.foreground, "10"))).on_click(action).child(svg(`${ICON}/${name}.svg`).size(16).text_color(color));
     return v_flex().id("crew-rail").size_full().items_center().pt(16).pb(12).gap(10).text_color(t.foreground)
       .child(icon("rail-open", "panel-left", () => toggleRail()))
       .when(total > 0, (el) => el.child(div().id("rail-you").relative().cursor_pointer().on_click((_e, cx) => { setShared("crew.view", "you"); toggleRail(); cx.notify(); })
-        .child(div().size(36).flex().items_center().justify_center().rounded(10).hover((s) => s.bg(a(t.foreground, "10")))
+        .child(div().size(36).flex().items_center().justify_center().rounded(6).hover((s) => s.bg(a(t.foreground, "10")))
           .child(div().text_size(15).font_weight(300).text_color(urgent ? t.blocked : t.done).child(String(total))))))
       .child(div().w(28).h(1).bg(a(t.foreground, "14")))
       .child(v_flex().id("rail-list").flex_1().min_h(0).overflow_y_scrollbar().items_center().gap(6)
         // Faces only here, so each one names its pal on hover.
-        .children(rows.map(({ space, bot }) => div().id(`rail-${space.id}`).tooltip(bot.name).relative().size(44).flex().items_center().justify_center().rounded(12).cursor_pointer()
+        .children(rows.map(({ space, bot }) => div().id(`rail-${space.id}`).tooltip(bot.name).relative().size(44).flex().items_center().justify_center().rounded(6).cursor_pointer()
           .when(space.active, (el) => el.bg(a(t.accent, "26")))
           .when(!space.active, (el) => el.hover((s) => s.bg(a(t.foreground, "0c"))))
           .on_click(() => this.go(space))
@@ -255,7 +262,7 @@ export default class CrewRoster extends View {
   }
 
   brand(t) {
-    const icon = (id, name, action) => div().id(id).size(30).flex().items_center().justify_center().rounded_full().cursor_pointer()
+    const icon = (id, name, action) => div().id(id).size(30).flex().items_center().justify_center().rounded(4).cursor_pointer()
       .hover((s) => s.bg(a(t.foreground, "0f"))).on_click(action).child(svg(`${ICON}/${name}.svg`).size(15).text_color(t.dim));
     return h_flex().items_center().justify_between().px(2)
       .child(icon("crew-fold", "panel-left", () => toggleRail()))
@@ -277,20 +284,25 @@ export default class CrewRoster extends View {
     return space.tabs.length > 1 ? `[${ch}] ${what}` : what;
   }
 
-  // The head pal: pinned at the top, its face big and centered.
+  // The head pal as the hero card: its pocket pet at full size on the card's dark inset, then its
+  // name and a state tag (falls back to the big mascot when it has no pet yet).
   hero({ space, bot }, t) {
-    const st = space.status;
-    const badge = st === "blocked" ? t.blocked : st === "done" ? t.done : st === "working" ? t.working : null;
-    const face = div().relative().size(64)
-      .child(mascotEl(bot, mood(st, bot.awake), 64, t))
-      .when(Boolean(badge), (el) => el.child(div().absolute().right(2).bottom(4).size(14).rounded_full().bg(t.background)
-        .flex().items_center().justify_center().child(div().size(9).rounded_full().bg(badge))));
-    // Its channels are the tabs along the top, so clicking only switches to it.
-    return v_flex().id(`hero-${space.id}`).items_center().gap(6).py(4).cursor_pointer().hover((s) => s.opacity(0.9))
+    const d = ds(t);
+    const m = mood(space.status, bot.awake || bot.starting);
+    const p = petOf(bot);
+    const state = petState(bot, m);
+    const color = petColor(state, t);
+    const art = p && petReady(p) ? petEl(p, state, 172) : mascotEl(bot, m, 64, t);
+    return v_flex().id(`hero-${space.id}`).flex_none().rounded(d.r.md).border_1().border_color(space.active ? d.lineStrong : d.line)
+      .overflow_hidden().cursor_pointer().hover((s) => s.bg(d.hover))
       .on_click((_e, cx) => { this.go(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(face)
-      .child(div().text_size(13.5).when(space.active, (el) => el.font_medium()).text_color(space.active ? t.foreground : t.muted).child(bot.name));
+      .child(div().h(151).flex().items_center().justify_center().bg(d.inset).border_b_1().border_color(d.lineSoft).child(art))
+      .child(h_flex().h(36).px(10).gap(8).items_center().justify_between()
+        .child(div().min_w(0).truncate().text_size(13.5).font_medium().text_color(d.fg1).child(bot.name))
+        .child(h_flex().flex_none().h(20).px(6).gap(5).items_center().rounded(d.r.xs).border_1().border_color(a(color, "55"))
+          .child(div().size(6).rounded_full().bg(color))
+          .child(div().text_size(11).text_color(color).child(bot.awake || state !== "rest" ? PET_WORDS[state] : "asleep"))));
   }
 
   // How many channels a pal has, as a quiet pill; a red one when any of them needs you.
@@ -298,7 +310,7 @@ export default class CrewRoster extends View {
     const blocked = space.tabs.filter((tb) => tb.status === "blocked").length;
     const n = space.tabs.length;
     if (!blocked && n < 2) return null;
-    return div().flex_none().px(7).py(2).rounded_full().text_size(11.5)
+    return div().flex_none().px(7).py(2).rounded(4).text_size(11.5)
       .bg(blocked ? a(t.blocked, "22") : a(t.foreground, "0c"))
       .text_color(blocked ? t.blocked : t.dim)
       .child(blocked ? `${blocked} blocked` : `${n} ch`);
@@ -337,7 +349,7 @@ export default class CrewRoster extends View {
       .on_click((_e, cx) => { this.go(space); cx.notify(); })
       // Right-click: pin, look, new channel.
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(mascotEl(bot, mood(st, bot.awake || bot.starting), 40, t))
+      .child(mascotEl(bot, mood(st, bot.awake || bot.starting), 36, t))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(h_flex().min_w(0).gap(6).items_center()
           .child(div().min_w(0).truncate().text_size(14).font_medium().text_color(bot.awake ? t.foreground : t.muted).child(bot.name))
@@ -355,7 +367,7 @@ export default class CrewRoster extends View {
       .on_click(() => this.wake(rec))
       // Right-click: wake, unpin, forget.
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
-      .child(mascotEl(bot, "asleep", 40, t))
+      .child(mascotEl(bot, "asleep", 36, t))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().truncate().text_size(14).font_medium().text_color(t.muted).child(rec.name))
         .child(div().truncate().text_size(12.5).text_color(t.dim).child("closed · click to wake")));
@@ -370,33 +382,33 @@ export default class CrewRoster extends View {
       .child(div().text_size(44).font_weight(200).text_color(t.foreground).child(String(total)))
       .child(div().text_size(14).text_color(t.muted).child("ready for you")));
     if (!this.ops.daemon) {
-      list.child(div().mx(8).mb(8).px(12).py(9).rounded(12).bg(a(t.blocked, "18")).text_size(12).text_color(t.muted)
+      list.child(div().mx(8).mb(8).px(12).py(9).rounded(6).bg(a(t.blocked, "18")).text_size(12).text_color(t.muted)
         .child("crewd isn't running, so messages aren't queued and routines won't fire. systemctl --user start herdr-crew"));
     }
     // Commands a pal wants to run that need you: push, publish, deploy…
     for (const ap of approvals) {
       const f = this.locate(ap.bot);
       const bot = f ? botOf(f.space) : { name: ap.bot, harness: null };
-      list.child(v_flex().id(`ap-${ap.id}`).gap(9).px(12).py(11).rounded(14).bg(a(t.blocked, "12")).border_1().border_color(a(t.blocked, "30"))
+      list.child(v_flex().id(`ap-${ap.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.blocked, "12")).border_1().border_color(a(t.blocked, "30"))
         .child(h_flex().items_center().gap(11)
           .child(mascotEl(bot, "blocked", 32, t))
           .child(v_flex().flex_1().min_w(0).gap(2)
             .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${ap.bot.split(" - ")[0]} wants to ${wantsTo(ap.why || ap.rule)}`))
             .child(div().truncate().text_size(12).text_color(t.dim).child(`#${ap.channel} · ${ago(ap.at)} · ${ap.id}`))))
-        .child(div().px(10).py(7).rounded(9).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
+        .child(div().px(10).py(7).rounded(6).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
         // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
         .child(h_flex().gap(8).justify_between()
-          .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded_full().cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
+          .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
             .on_click((_e, cx) => this.decide(ap, false, cx)).child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
-          .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded_full().cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
+          .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
             .on_click((_e, cx) => this.decide(ap, true, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve")))));
     }
     // Channels that have been "working" with an unchanged screen for a while.
     for (const [term, st] of Object.entries(stalled)) {
       const f = this.locate(`${st.bot}#${st.channel}`);
       if (!f) continue;
-      list.child(h_flex().id(`stall-${term}`).items_center().gap(12).px(12).py(10).rounded(14).cursor_pointer()
+      list.child(h_flex().id(`stall-${term}`).items_center().gap(12).px(12).py(10).rounded(8).cursor_pointer()
         .hover((s) => s.bg(a(t.foreground, "08")))
         .on_click(() => this.go(f.space, f.tab))
         .child(mascotEl(botOf(f.space), "blocked", 36, t))
@@ -412,7 +424,7 @@ export default class CrewRoster extends View {
     waiting.sort((x, y) => (x.tab.status === "blocked" ? 0 : 1) - (y.tab.status === "blocked" ? 0 : 1) || (x.tab.changed_at ?? 0) - (y.tab.changed_at ?? 0));
     for (const w of waiting) {
       const on = w.space.active && w.tab.active;
-      list.child(h_flex().id(`wait-${w.tab.id}`).items_center().gap(12).px(12).py(10).rounded(14).cursor_pointer()
+      list.child(h_flex().id(`wait-${w.tab.id}`).items_center().gap(12).px(12).py(10).rounded(8).cursor_pointer()
         .when(on, (el) => el.bg(a(t.accent, "22")).border_1().border_color(a(t.accent, "33")))
         .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "08"))))
         .on_click(() => this.go(w.space, w.tab))
@@ -430,7 +442,7 @@ export default class CrewRoster extends View {
   taskList(rows, t) {
     const tasks = this.ops.tasks;
     const list = v_flex().gap(16).px(4);
-    list.child(div().h(40).px(14).flex().items_center().rounded(14)
+    list.child(div().h(40).px(14).flex().items_center().rounded(8)
       .bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(Input.new(this.taskInput).w_full().text_size(13).text_color(t.foreground)));
@@ -477,7 +489,7 @@ export default class CrewRoster extends View {
       .child(h_flex().items_baseline().justify_between().px(4).pb(6)
         .child(div().text_size(12).text_color(t.dim).child(label))
         .child(div().text_size(11.5).text_color(t.dim).child(String(these.length))))
-      .child(v_flex().rounded(14).border_1().border_color(a(t.foreground, "10")).overflow_hidden()
+      .child(v_flex().rounded(8).border_1().border_color(a(t.foreground, "10")).overflow_hidden()
         .children(these.map((x, i) => row(x, i === 0))));
 
     let any = false;
@@ -501,7 +513,7 @@ export default class CrewRoster extends View {
       const members = roomMembers(room);
       const on = shown?.id === room.id;
       const busy = members.some((m) => m.status === "working");
-      list.child(v_flex().id(`room-${room.id}`).gap(8).px(12).py(11).rounded(14).cursor_pointer()
+      list.child(v_flex().id(`room-${room.id}`).gap(8).px(12).py(11).rounded(8).cursor_pointer()
         .when(on, (el) => el.bg(a(t.accent, "1f")).border_1().border_color(a(t.accent, "2e")))
         .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "08"))))
         .on_click(() => showRoom(room.id))
@@ -568,12 +580,14 @@ export default class CrewRoster extends View {
     const st = space.status;
     const tab = space.tabs.find((x) => x.active);
     const lead = tab ? leadPane(tab.id) : null;
-    const state = bot.awake ? statusWord(tab?.status ?? st ?? "idle") : bot.starting ? "starting" : "asleep";
-    const stateColor = bot.awake && ["working", "blocked", "done"].includes(tab?.status) ? statusColor(tab.status, t) : d.fg3;
+    // The tag says what the pet shows: its tile state (working, asks you, PR open, stuck, ...).
+    const ps = petState(bot, mood(tab?.status ?? st, bot.awake || bot.starting));
+    const state = bot.starting ? "starting" : !bot.awake && ps === "rest" ? "asleep" : PET_WORDS[ps];
+    const stateColor = ps === "rest" ? d.fg3 : petColor(ps, t);
     return v_flex().id(`banner-${space.id}`).flex_none().mx(-8).gap(8).pb(10).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(div().h(96).flex().items_center().justify_center().bg(d.inset).border_b_1().border_color(d.lineSoft)
-        .child(mascotEl(bot, mood(st, bot.awake || bot.starting), 72, t)))
+      .child(div().h(134).flex().items_center().justify_center().bg(d.inset).border_b_1().border_color(d.lineSoft)
+        .child(mascotEl(bot, mood(tab?.status ?? st, bot.awake || bot.starting), 150, t)))
       .child(h_flex().px(12).items_center().justify_between().gap(8)
         .child(div().min_w(0).truncate().text_size(15).font_semibold().text_color(d.fg1).child(bot.name))
         .child(h_flex().flex_none().h(20).px(6).gap(5).items_center().rounded(d.r.xs).border_1().border_color(a(stateColor, "55"))
@@ -626,7 +640,7 @@ export default class CrewRoster extends View {
       .hover((s) => s.bg(a(t.foreground, "0f"))).on_click(action)
       .child(svg(`${ICON}/${name}.svg`).size(15).text_color(t.dim));
     return h_flex().items_center().justify_between().pt(8).px(4)
-      .child(h_flex().id("crew-hire").items_center().gap(8).py(6).px(8).rounded(9).cursor_pointer()
+      .child(h_flex().id("crew-hire").items_center().gap(8).py(6).px(8).rounded(6).cursor_pointer()
         .hover((s) => s.bg(a(t.foreground, "0c")))
         .on_click(() => this.hire())
         .child(svg(`${ICON}/plus.svg`).size(13).text_color(t.muted))

@@ -22,12 +22,17 @@ import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } fr
 import { markdownView, plain, splitBlocks } from "./markdown.js";
 import { markdownHeight, lineWidth } from "./estimate.js";
 import { spaces, panes, theme, watchFolder, appHome, readTextFile, hc, layout, notify, openOverlay } from "herdr";
-import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, a, tone } from "./crew.js";
+import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, a, tone, ds, layoutMode } from "./crew.js";
 
 const LINE = 21;
-const PAD_Y = 9, NAME = 18, GAP_NEW = 14, GAP_SAME = 4, STAMP = 36, EVENT = 32, TYPING = 54, CARD = 74;
+const PAD_Y = 9, NAME = 18, GAP_SAME = 4, STAMP = 36, EVENT = 32, TYPING = 54, CARD = 74;
 const CHIP = 28, CHIP_GAP = 6, CALL = 24, CALL_OUT = 20, FOOTER = 24;
-const COLUMN = 860, KEEP = 300, MEASURE = 24;
+const COLUMN = 720, KEEP = 300, MEASURE = 24;
+// The design-system chat (docs/design-system): a 720 px column in both modes; replies grouped as r4
+// rectangles with the pal's pocket pet once per group (36x28 in Focus, 31x24 in Pro); your own
+// messages as bubble A, an r4 slab with a 2 px edge in your colour; quiet centred timestamps.
+// Focus is airier between groups than Pro.
+const FACE = { focus: 36, pro: 31 }, GAP = { focus: 22, pro: 14 }, EDGE = 2;
 
 const ICONS = "mods/crew-chat/icons", ROSTER = "mods/crew-roster/icons";
 const clock = (ms) => { const d = new Date(ms), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
@@ -173,7 +178,7 @@ export default class CrewChat extends View {
   // Laying out hundreds of messages every frame is too slow for Herdr's render budget, so the
   // rows are kept until the feed, the width, the status or what's unfolded changes.
   rows(status) {
-    const key = `${this.version}|${this.mver}|${Math.round(Math.min(this.width, COLUMN))}|${status}|${[...this.open].join(",")}`;
+    const key = `${this.version}|${this.mver}|${Math.round(Math.min(this.width, COLUMN))}|${status}|${[...this.open].join(",")}|${layoutMode()}`;
     if (key === this.rowsKey) return this.rowsVal;
     this.rowsKey = key;
     this.rowsVal = this.layout(status);
@@ -181,6 +186,7 @@ export default class CrewChat extends View {
   }
 
   layout(status) {
+    const GAP_NEW = GAP[layoutMode()];
     const width = Math.min(this.width, COLUMN);
     const botMax = Math.max(260, Math.min(680, Math.round(width - 120)));
     const youMax = Math.max(220, Math.min(540, Math.round((width - 120) * 0.72)));
@@ -262,13 +268,14 @@ export default class CrewChat extends View {
     return rows;
   }
 
-  row(r, t, bot) {
-    if (r.kind === "stamp") return h_flex().h(r.h).w_full().items_center().justify_center().child(div().text_size(11.5).text_color(t.dim).child(when(r.at)));
+  row(r, t, bot, mood_) {
+    const d = ds(t), mode = layoutMode(), F = FACE[mode], GAP_NEW = GAP[mode], IN = 28 + F + 10;
+    if (r.kind === "stamp") return h_flex().h(r.h).w_full().items_center().justify_center().child(div().text_size(11).text_color(d.fg3).child(when(r.at)));
     if (r.kind === "event") return h_flex().h(r.h).w_full().items_center().justify_center().px(28).child(div().truncate().text_size(12).text_color(t.dim).child(r.text));
-    if (r.kind === "footer") return h_flex().h(r.h).w_full().items_start().pl(68).pr(28).child(div().truncate().text_size(11.5).text_color(t.dim).child(r.text));
+    if (r.kind === "footer") return h_flex().h(r.h).w_full().items_start().pl(IN).pr(28).child(div().truncate().text_size(11.5).text_color(t.dim).child(r.text));
     if (r.kind === "tools") {
-      const chip = (c) => h_flex().flex_none().h(CHIP).px(10).gap(6).items_center().rounded(CHIP / 2)
-        .bg(a(t.foreground, "08")).border_1().border_color(c.failed ? a(t.blocked, "66") : a(t.foreground, "12"))
+      const chip = (c) => h_flex().flex_none().h(CHIP).px(10).gap(6).items_center().rounded(d.r.xs)
+        .bg(d.inset).border_1().border_color(c.failed ? a(t.blocked, "66") : d.line)
         .child(svg(c.icon).size(13).flex_none().text_color(t.muted))
         .child(div().text_size(12.5).text_color(t.muted).child(c.label))
         .when(c.running, (el) => el.child(svg(`${ROSTER}/spinner.svg`).size(11).text_color(t.working).spin(900)))
@@ -287,35 +294,37 @@ export default class CrewChat extends View {
           .child(mark(x)))
         .when(x.state === "failed" && Boolean(x.out), (el) => el.child(div().h(CALL_OUT).w_full().truncate().pl(2)
           .text_size(11.5).font_family("JetBrains Mono").text_color(a(t.blocked, "cc")).child(x.out.split("\n").join("  ·  "))));
-      return v_flex().h(r.h).w_full().pt(GAP_SAME + 2).pl(68).pr(28).cursor_pointer()
+      return v_flex().h(r.h).w_full().pt(GAP_SAME + 2).pl(IN).pr(28).cursor_pointer()
         .child(h_flex().w_full().flex_wrap().gap(CHIP_GAP).children(r.chips.map(chip)))
         .when(r.open, (el) => el.child(v_flex().w_full().pl(12).pt(4).children(r.items.map(call))));
     }
     if (r.kind === "typing") {
       return h_flex().h(r.h).w_full().items_end().gap(10).pt(GAP_NEW).px(28)
-        .child(mascotEl(bot, "working", 30, t))
-        .child(div().h(36).px(16).flex().items_center().rounded(18).bg(a(t.foreground, "0e"))
+        .child(mascotEl(bot, "working", F, t))
+        .child(div().h(32).px(14).flex().items_center().rounded(d.r.sm).bg(a(t.foreground, "0e"))
           .child(div().w(30).text_size(16).text_color(t.muted).font_family("JetBrains Mono").frames(["•  ", "•• ", "•••", " ••", "  •", "   "], 180).child("•••")));
     }
     if (r.kind === "blocked") {
       return h_flex().h(r.h).w_full().items_end().pt(GAP_NEW).px(28).gap(10)
-        .child(mascotEl(bot, "blocked", 30, t))
-        .child(h_flex().items_center().px(16).py(10).rounded(16).bg(a(t.blocked, "14")).border_1().border_color(a(t.blocked, "30"))
+        .child(mascotEl(bot, "blocked", F, t))
+        .child(h_flex().items_center().px(14).py(10).rounded(d.r.md).bg(a(t.blocked, "14")).border_1().border_color(a(t.blocked, "30"))
           .child(div().text_size(13.5).text_color(t.foreground).child("It's asking you something in the terminal")));
     }
     const { e, you, first, label, tw } = r;
     const note = r.kind === "note";
-    const color = you ? t.accent_foreground : t.foreground;
-    const bubble = v_flex().w(tw + 28).flex_none().px(14).py(PAD_Y).rounded(18).text_size(14).text_color(color)
-      .when(you, (el) => el.bg(t.accent))
-      .when(note, (el) => el.bg(a(t.foreground, "07")).border_1().border_color(a(t.foreground, "12")))
-      .when(!you && !note, (el) => el.bg(a(t.foreground, "0e")))
+    // Bubble A: yours is a flat r4 slab tinted with your colour, its right edge 2 px of it.
+    const color = t.foreground;
+    const bubble = v_flex().w(tw + 28 + (you ? EDGE : 0)).flex_none().px(14).py(PAD_Y).rounded(d.r.sm).text_size(14).text_color(color)
+      .when(you, (el) => el.bg(a(t.accent, "26")).border_r(EDGE).border_color(t.accent))
+      .when(note, (el) => el.bg(d.inset).border_1().border_color(d.line))
+      .when(!you && !note, (el) => el.bg(a(t.foreground, "0d")))
       .child(markdownView(`md-${r.key}`, e.text ?? "", color, tw))
-      .when(Boolean(e.images), (el) => el.child(div().h(LINE).text_size(12.5).text_color(you ? t.accent_foreground : t.dim).child(`${e.images} image${e.images > 1 ? "s" : ""}`)));
+      .when(Boolean(e.images), (el) => el.child(div().h(LINE).text_size(12.5).text_color(d.fg3).child(`${e.images} image${e.images > 1 ? "s" : ""}`)));
     if (you) return v_flex().h(r.h).w_full().items_end().pt(first ? GAP_NEW : GAP_SAME).px(28).child(bubble);
-    const face = first && !note ? mascotEl(bot, "calm", 30, t) : div().size(30);
+    // The pal's pet once per group, in its live state.
+    const face = first && !note ? mascotEl(bot, mood_, F, t) : div().w(F);
     return h_flex().h(r.h).w_full().items_start().gap(10).pt(first ? GAP_NEW : GAP_SAME).px(28)
-      .child(v_flex().w(30).flex_none().pt(label && first ? NAME : 0).child(face))
+      .child(v_flex().w(F).flex_none().pt(label && first ? NAME : 0).child(face))
       .child(v_flex().min_w(0).items_start()
         .when(Boolean(label) && first, (el) => el.child(h_flex().h(NAME).items_center().child(div().text_size(12).text_color(t.dim).child(`from ${label}`))))
         .child(bubble));
@@ -328,7 +337,7 @@ export default class CrewChat extends View {
     const todo = (this.unmeasured ?? []).slice(-MEASURE);
     if (!todo.length) return null;
     return v_flex().absolute().top(0).left(-30000).w(1400).items_start().opacity(0).children(todo.map((m) => {
-      const color = m.you ? t.accent_foreground : t.foreground;
+      const color = t.foreground;
       // Its width on one line: drawn without a width, in a row that doesn't wrap.
       if (m.natural) return h_flex().id(`measure-w-${m.key}`).flex_none().whitespace_nowrap().text_size(14)
         .child(markdownView(`mw-${m.key}`, m.text, color, 1400))
@@ -366,7 +375,7 @@ export default class CrewChat extends View {
       const color = pct >= 85 ? t.blocked : pct >= 65 ? t.working : t.muted;
       const k = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
       facts.push(h_flex().flex_none().items_center().gap(6)
-        .child(div().w(42).h(4).rounded_full().bg(a(t.foreground, "14")).child(div().h_full().w(42 * pct / 100).rounded_full().bg(color)))
+        .child(div().w(42).h(4).rounded(1).bg(a(t.foreground, "14")).child(div().h_full().w(42 * pct / 100).rounded(1).bg(color)))
         .child(fact(`context ${pct}%${cw.context_window_size ? ` of ${k(cw.context_window_size)}` : ""}`)));
     }
     const rl = m?.rate_limits ?? {};
@@ -387,7 +396,7 @@ export default class CrewChat extends View {
       .child(row)
       .when(busy, (el) => el.child(h_flex().flex_none().items_center().gap(8)
         .child(div().text_size(12).text_color(blocked ? t.blocked : t.dim).child(blocked ? "asking you in the terminal" : "working"))
-        .child(div().id("chat-action").px(11).py(3).rounded_full().cursor_pointer()
+        .child(div().id("chat-action").px(10).py(3).rounded(4).cursor_pointer()
           .bg(blocked ? t.solid : a(t.foreground, "10")).hover((s) => s.opacity(0.85))
           .on_click(() => {
             if (blocked) setChatPref(tab.id, false);
@@ -409,6 +418,7 @@ export default class CrewChat extends View {
     if (this.pending) { this.pending = false; if (this.follow) this.scroll.scroll_to_bottom(); }
     if (!space || !tab) return root;
     const bot = botOf(space);
+    const faceMood = mood(tab.status, bot.awake || bot.starting);
 
     const rows = this.rows(tab.status);
     // Earlier messages just went on top: put the message that was first back where it was.
@@ -436,7 +446,7 @@ export default class CrewChat extends View {
           (range) => {
             this.topSeen = range.start === 0;
             if (range.end >= rows.length) this.follow = true;
-            return rows.slice(range.start, range.end).map((r) => this.row(r, t, bot));
+            return rows.slice(range.start, range.end).map((r) => this.row(r, t, bot, faceMood));
           })
           .track_scroll(this.scroll).size_full()
           // Rows can't hold their own click handlers; the list reports which row was clicked.
@@ -452,8 +462,8 @@ export default class CrewChat extends View {
         .when(Boolean(this.unmeasured?.length), (el) => el.child(this.measuring(t)))
         // A round ↓ while you read older messages: back to the newest, following again.
         .child(h_flex().absolute().bottom(12).left(0).right(0).justify_center()
-          .child(div().id("chat-jump").size(34).flex().items_center().justify_center().rounded(17)
-            .bg(t.background).border_1().border_color(a(t.foreground, "30")).shadow_md().text_color(t.foreground)
+          .child(div().id("chat-jump").size(32).flex().items_center().justify_center().rounded(6)
+            .bg(t.background).border_1().border_color(a(t.foreground, "30")).text_color(t.foreground)
             .opacity(this.follow ? 0 : 1).transition("opacity", { duration: 160 })
             .when(!this.follow, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))
             .on_click((_e, cx) => { if (this.follow) return; this.follow = true; this.toBottom(cx); cx.notify(); })

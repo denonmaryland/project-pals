@@ -77,7 +77,7 @@ export default class CrewSide extends View {
     return {
       label: (text, right) => h_flex().items_baseline().justify_between().px(4).pb(6)
         .child(div().text_size(12).text_color(t.dim).child(text)).when(Boolean(right), (el) => el.child(right)),
-      list: () => v_flex().rounded(14).border_1().border_color(a(t.foreground, "10")).overflow_hidden(),
+      list: () => v_flex().rounded(8).border_1().border_color(a(t.foreground, "10")).overflow_hidden(),
       hair: () => div().h(1).mx(14).bg(a(t.foreground, "0a")),
       row: (id, left, right, action) => h_flex().id(id).items_center().justify_between().gap(10).px(14).min_h(40).py(6)
         .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "05"))).on_click(action))
@@ -143,11 +143,11 @@ export default class CrewSide extends View {
   // A stat card: a label, a big number, an optional bar, and one line of detail.
   stat(t, id, label, value, pct, detail, warn) {
     const color = warn ?? t.muted;
-    return v_flex().id(id).flex_1().min_w(0).gap(5).px(12).py(10).rounded(14).bg(a(t.foreground, "07"))
+    return v_flex().id(id).flex_1().min_w(0).gap(5).px(12).py(10).rounded(8).bg(a(t.foreground, "07"))
       .child(div().text_size(11.5).text_color(t.dim).child(label))
       .child(div().truncate().text_size(19).font_weight(300).text_color(t.foreground).child(value))
-      .when(pct != null, (el) => el.child(h_flex().w_full().h(4).rounded_full().bg(a(t.foreground, "12"))
-        .child(div().h_full().rounded_full().bg(color).flex_grow(Math.max(0.02, Math.min(1, pct / 100))))
+      .when(pct != null, (el) => el.child(h_flex().w_full().h(4).rounded(1).bg(a(t.foreground, "12"))
+        .child(div().h_full().rounded(1).bg(color).flex_grow(Math.max(0.02, Math.min(1, pct / 100))))
         .child(div().h_full().flex_grow(Math.max(0, 1 - Math.min(1, pct / 100))))))
       .when(Boolean(detail), (el) => el.child(div().truncate().text_size(11.5).text_color(t.dim).child(detail)));
   }
@@ -181,7 +181,7 @@ export default class CrewSide extends View {
     const lead = tab ? leadPane(tab.id, panes()) : null;
     const brain = bot.awake ? (bot.harnessName ?? "Agent") : "No brain running";
     // Click the face to change its look.
-    const face = div().id("side-face").rounded_full().cursor_pointer().hover((s) => s.opacity(0.85))
+    const face = div().id("side-face").rounded(4).cursor_pointer().hover((s) => s.opacity(0.85))
       .on_click(() => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } }))
       .child(mascotEl(bot, mood(tab?.status, bot.awake), 38, t));
     const header = this.header(t, face, bot.name, [bot.role, brain, bot.machine ?? "this computer"].filter(Boolean).join(" · "));
@@ -189,14 +189,14 @@ export default class CrewSide extends View {
     // The channel: its name, where it works (folder and branch on one line), what it's for, and a way in.
     const brief = tab ? briefOf(bot, tab) : null;
     const folder = (lead?.cwd ?? bot.folder ?? "~").replace(/^\/home\/[^/]+/, "~");
-    const chip = (id, text, action, strong) => div().id(id).px(11).py(5).rounded_full().cursor_pointer()
+    const chip = (id, text, action, strong) => div().id(id).px(11).py(5).rounded(4).cursor_pointer()
       .bg(strong ? a(t.foreground, "12") : a(t.foreground, "07")).hover((s) => s.bg(a(t.foreground, "16"))).on_click(action)
       .child(div().text_size(12).text_color(t.foreground).child(text));
     const channel = v_flex().gap(8)
       .child(div().truncate().text_size(15).font_medium().text_color(t.foreground).child(tab ? `#${channelName(tab)}` : "This channel"))
       .child(h_flex().items_center().gap(6).min_w(0)
         .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child(folder))
-        .when(Boolean(lead?.branch), (el) => el.child(div().flex_none().px(7).py(1).rounded_full().bg(a(t.foreground, "0a"))
+        .when(Boolean(lead?.branch), (el) => el.child(div().flex_none().px(7).py(1).rounded(4).bg(a(t.foreground, "0a"))
           .child(div().text_size(11.5).font_family("JetBrains Mono").text_color(t.muted).child(lead.branch)))))
       .when(Boolean(brief), (el) => el.child(div().text_size(12.5).text_color(t.muted).child(brief)))
       .child(h_flex().gap(6).pt(2)
@@ -249,7 +249,7 @@ export default class CrewSide extends View {
     // Its own branch (a worktree channel): what changed, review, land.
     const d = this.diff && tab && this.diff.tab === tab.id ? this.diff : null;
     const branch = d ? this.section2(t, "Own branch", null, k.text(d.wt.branch, t.dim, 11.5),
-      v_flex().gap(8).px(12).py(10).rounded(14).bg(a(t.foreground, "07"))
+      v_flex().gap(8).px(12).py(10).rounded(8).bg(a(t.foreground, "07"))
         .child(div().text_size(12.5).text_color(t.foreground).child(d.stat || "No changes yet"))
         .child(div().text_size(11.5).text_color(t.dim).child(`${d.commits} commit${d.commits === 1 ? "" : "s"} on ${d.wt.base}${d.dirty ? ` · ${d.dirty} uncommitted` : ""}`))
         .child(h_flex().gap(6).pt(2)
@@ -257,7 +257,7 @@ export default class CrewSide extends View {
           .child(chip("wt-land", `Land on ${d.wt.base}`, (_e, cx) => this.act(["land", `${space.name}#${channelName(tab)}`], `Landed ${d.wt.branch}`, cx))))) : null;
 
     // Light rows: no boxes, just a hover.
-    const lite = (id, left, right, action) => h_flex().id(id).items_center().justify_between().gap(10).px(8).py(7).rounded(10)
+    const lite = (id, left, right, action) => h_flex().id(id).items_center().justify_between().gap(10).px(8).py(7).rounded(6)
       .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "07"))).on_click(action))
       .child(left).when(Boolean(right), (el) => el.child(right));
 
@@ -287,7 +287,7 @@ export default class CrewSide extends View {
     const memory = this.section2(t, "Memory", null, this.longMemory ? k.text(`${this.longMemory} long-term`, t.dim, 11.5) : null,
       v_flex().gap(10)
         .child(div().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .child(Textarea.new(this.memory).w_full().px(12).py(9).rounded(12).text_size(12.5).text_color(t.foreground)
+          .child(Textarea.new(this.memory).w_full().px(12).py(9).rounded(6).text_size(12.5).text_color(t.foreground)
             .bg(a(t.foreground, this.editing ? "0c" : "07"))))
         .when(this.notes.length > 0, (el) => el.child(v_flex().gap(7).px(4)
           .children(this.notes.slice(-3).map((n) => h_flex().gap(8).items_start()

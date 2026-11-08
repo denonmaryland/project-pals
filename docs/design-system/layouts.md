@@ -1,0 +1,113 @@
+# Layouts: Focus and Pro
+
+Status: design proposal (2026-11-08). Nothing here is wired in. Paper boards are on the
+**Design system** page of the pixel-study file:
+
+- **MODE · Focus (default)**: the Grok-leaning fusion (FUSION · A), retinted to the shared DS tokens.
+- **MODE · Pro**: the DS-leaning fusion (FUSION · C), with the shared composer.
+- **MODE · Switching Focus ⇄ Pro**: where the switch lives, what moves where, and a storyboard.
+
+DeNon asked for both fusion layouts, with A as the default. (Orca read "fusion and fusion A" as
+A + C; if DeNon meant B, Pro would swap to B's layout, and the rest of this doc still holds.)
+
+## The idea
+
+One app, two densities. Pro is Focus with its panels opened up, never a different app:
+same tokens, avatars, components, data, and the same composer. Switching only changes widths
+and which nodes are shown. Content never re-orders and a draft never gets lost.
+
+| | **Focus** (default) | **Pro** |
+|---|---|---|
+| For | Talking to one pal, reading, the everyday | Running several pals, reviewing work, watching tools |
+| Left | 304 px sidebar: **hero pal card** (full art), then the **pal list** with avatar, name, `[tag] preview`, time, unread/state dot, and "Hidden pals N" | **Pal rail** 60 px (avatars + state dots, same order) + **list column** 264 px: banner pal card (art cropped to 150 px), the active pal's **channels** with previews, and "Across pals" (working / needs you) |
+| Header | `# channel ▾` picker on the left, **pal name chip centred**, branch chip on the right | **Channel tabs** (30 px, r4), name chip at the right end |
+| Chat | Centred 720 px column, 28 px between groups, airy | Fluid column, 16 px between groups, inline **tool log** under replies |
+| Right | **48 px rail** of icons: Tasks · Files · Branch · Terminal, with a live dot and Expand at the bottom | **Inspector** 320 px: Run / Tasks / Memory tabs, Tasks list, **Changes** with +/− per file, **Terminal** tail, and Fold |
+| Composer | **Shared** (below) | **Shared**, full width |
+| Status bar | working count · usage · **mode switch** · version | Same, plus needs-you count and git ahead/behind |
+
+Hidden in Focus (one click away, never removed): channel tabs, the Changes list, the terminal tail,
+the tool-log detail (a single tool chip shows instead), and the cross-pal summary (state dots in the
+pal list carry it).
+
+### Shared pieces (identical in both)
+
+- **Tokens:** the DS set in `analysis.md`: near-black surfaces, 1 px hairlines, radius 3/4/6/8, Inter + JetBrains Mono.
+  FUSION A's navy tint is dropped; near-black stays until DeNon decides otherwise.
+- **Avatars:** pocket-pet tiles from `tiles.mjs` (r3 corners). Sizes: 36×28 in lists, 31×24 in chat (Pro) or
+  36×28 (Focus), 38×30 in the Pro rail, and 25×20 in the name chip.
+- **Composer:** one component, a r8 box with two rows: the prompt, then `+` · model dropdown · permission dropdown ·
+  (spacer) · mic · voice · send. Only its width differs (720 in Focus, fluid in Pro).
+- **Messages:** grouped stacks of r4 rectangles, the avatar once per group, quiet centred timestamps between groups,
+  and your own messages as **option A** (r4 slab + 2 px edge in your colour) until DeNon picks A or B.
+- **States:** dots/tags as today; "closing" stays as is until DeNon picks grey vs red outline.
+
+## Switching
+
+Four ways in, one setting behind them:
+
+1. **Status bar segmented control** `Focus | Pro`, bottom right, same spot in both modes.
+2. **Shortcut `Ctrl+Shift+M`** (M for mode) toggles. Checked on 2026-11-08: it's free in the user's
+   `~/.config/herdr-app/keys.json`, in every default key compiled into the Herdr binary, and in the installed mods.
+   It's bound in the `global` map like Herdr's other `ctrl-shift-*` keys, so Herdr takes it before any terminal
+   sees it. (In legacy terminal encoding it would read as Ctrl+M, i.e. Enter, which is why it must stay global.)
+   Rejected: `Ctrl+\` is SIGQUIT in terminals, and `Ctrl+Shift+L` is Herdr's own `layout.switch`.
+3. **In place:** the Focus rail's **Expand** opens Pro on the section you were looking at, and Pro's inspector
+   **Fold** returns to Focus.
+4. **Settings › Appearance › Layout:** two picture radio tiles (Focus *default*, Pro), plus an optional
+   "Remember a layout for each pal" (off by default).
+
+**Peek (Focus only):** clicking a rail icon docks one 320 px panel beside the rail, using the same component as
+that Pro inspector section. Esc or a second click closes it; its pin opens Pro with that section. A peek
+is not a mode change and isn't remembered.
+
+**Motion:** 180 ms ease-out on widths only. The sidebar goes 304 → 60 + 264, and the rail goes 48 → 320 (sections fade
+in after 60 ms). The chat column's max-width releases, and scroll stays anchored on the last visible message. With
+reduce-motion on, the switch is instant.
+
+## What gets remembered (per user)
+
+Stored with the other UI prefs in `data/crew-settings.json` (mirrored to shared `crew.settings`, as now):
+
+| Key | Default | Notes |
+|---|---|---|
+| `layoutMode` | `"focus"` | `"focus"` or `"pro"`. Last choice wins and survives restarts and updates. |
+| `layoutPerPal` | `false` | When on, `layoutModeByPal[<pal>]` overrides `layoutMode` for that pal. |
+| `focus.sidebarPx` / `pro.listPx` / `pro.inspectorPx` | 304 / 264 / 320 | Each mode remembers its own drag widths, so switching never fights a resize. |
+| `pro.inspectorTab` | `"run"` | The last inspector tab. |
+
+Not remembered: an open peek, the scroll position, the composer draft (that belongs to the channel, as today).
+Per-pal data under `data/` is never touched by the switch (see AGENTS.md rules of thumb).
+
+## Implementation plan for the mod (not started)
+
+Small steps. Each step ships alone behind `layoutMode` defaulting to today's behaviour until the last one.
+
+1. **Tokens first.** Move the DS colours, radii and spacing into `lib/crew.js` as one `ds` object (dark + light), and
+   swap the hard-coded `rounded(14)`/`rounded(18)` for `ds.r.*`. In `layouts/pals.json`, set the sheet's `radius: 18`
+   to 8 or 0 (hairline split). This is visible but low-risk. Check it with the throwaway-HOME install from AGENTS.md
+   plus `herdr-app shot`.
+2. **One layout, two shapes.** Keep a single `pals.json` (so updates and `layout.reset` stay simple) and add nodes:
+   - `pal-rail` (block, 60 px, a new small mod or a narrow mode of `crew-roster`) left of `sidebar`;
+   - `rail` (block, 48 px, a new `crew-rail` mod) right of `panel`.
+   A mode is then a list of `layout.show`/`layout.hide`/`layout.resize` calls:
+   Focus = hide `pal-rail`, `panel`, and `crew-tabs`; show `rail`; resize `sidebar` 304.
+   Pro = show `pal-rail`, `panel`, and `crew-tabs`; hide `rail`; resize `sidebar` 264 and `panel` 320.
+   The roster already does this kind of thing (`toggleRail()` resizes `sidebar`); reuse that pattern.
+3. **`setMode(mode)` in `lib/crew.js`.** It runs the calls above, writes `layoutMode`, and saves and restores the per-mode widths.
+   The roster calls it on start, so the remembered mode comes back.
+4. **Commands + keys.** Add `mode` / `mode.focus` / `mode.pro` to the roster's `nextCommand()` loop
+   (callable as `crew-roster.mode` from `keys.json`, `herdr-app do` and the command palette). The installer adds
+   `"ctrl-shift-m": "crew-roster.mode"` to the `global` map **only if that key is free**, and never rewrites a user's existing binding.
+5. **Roster renders by mode.** Focus draws the hero card + pal list with previews (the `[tag]` is the channel name or
+   the last task tag). Pro draws the banner card + channel list + "Across pals". Both use the same row and avatar code.
+6. **`crew-header`** shows the channel picker and centred chip in Focus, and the tab strip's chip in Pro (it reads `layoutMode`).
+7. **`crew-side` becomes the inspector** (Run/Tasks/Memory, Changes, Terminal) and also renders a single section,
+   so the Focus **peek** can reuse it. `crew-rail` opens a peek by showing `panel` at 320 with `crew.peek=<section>`.
+8. **`crew-composer`** gets the shared two-row control set (model, permission, mic, voice) in both modes. Mic and voice
+   are UI only until a dictation backend is chosen (likely Softly; that's a cross-project call for Orca).
+9. **Status bar switch + Settings tile**, then flip the default to Focus.
+10. **Checks:** release preflight, `herdr-app check` on each mod, a throwaway-HOME install (fresh, then over an existing one,
+    then `--no-helpers`), and screenshots of both modes and both themes. Shipping needs DeNon's go, per AGENTS.md.
+
+Open before building: the A vs B bubble, closing grey vs red outline, near-black vs navy, and whether "fusion" meant C.

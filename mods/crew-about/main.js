@@ -123,7 +123,7 @@ export default class CrewAbout extends View {
         .on_click((_e, cx) => { if (!on) setMode(id); cx.notify(); })
         .child(pic(parts))
         .child(h_flex().items_center().gap(7).px(2)
-          .child(div().size(12).flex_none().rounded_full().border_1().border_color(on ? t.accent : d.lineStrong).flex().items_center().justify_center()
+          .child(div().size(12).flex_none().rounded(3).border_1().border_color(on ? t.accent : d.lineStrong).flex().items_center().justify_center()
             .when(on, (el) => el.child(div().size(6).rounded_full().bg(t.accent))))
           .child(div().text_size(13).text_color(d.fg1).child(label))
           .when(Boolean(sub), (el) => el.child(div().text_size(12).text_color(d.fg3).child(sub))));
@@ -146,7 +146,7 @@ export default class CrewAbout extends View {
     const ins = this.ins, st = this.state;
     const current = ins.version ?? "?";
     const available = st.latest && newer(st.latest, current);
-    const button = (id, label, primary, action, disabled) => div().id(id).px(16).py(8).rounded_full().cursor_pointer()
+    const button = (id, label, primary, action, disabled) => div().id(id).px(16).py(8).rounded(4).cursor_pointer()
       .bg(disabled ? a(t.foreground, "10") : primary ? t.solid : a(t.foreground, "10")).hover((s) => s.opacity(0.88))
       .on_click(disabled ? () => {} : action)
       .child(div().text_size(13).font_medium().text_color(disabled ? t.dim : primary ? t.solid_foreground : t.foreground).child(label));
@@ -175,7 +175,7 @@ export default class CrewAbout extends View {
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>
         div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1")))) : null;
 
-    const status = v_flex().gap(4).px(16).py(14).rounded(14).bg(a(t.foreground, available ? "0c" : "07"))
+    const status = v_flex().gap(4).px(16).py(14).rounded(8).bg(a(t.foreground, available ? "0c" : "07"))
       .child(div().text_size(14.5).font_medium().text_color(color).child(title))
       .when(Boolean(sub), (el) => el.child(div().text_size(12.5).text_color(this.error ? t.blocked : t.dim).child(sub)))
       .when(Boolean(notes), (el) => el.child(notes))
@@ -202,7 +202,7 @@ export default class CrewAbout extends View {
       .child(v_flex().min_w(0).gap(1).child(div().text_size(13.5).text_color(t.foreground).child(label))
         .when(Boolean(sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(sub))))
       .child(right);
-    const settings = v_flex().rounded(14).border_1().border_color(a(t.foreground, "10"))
+    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
       .child(row("set-owner", "Your name", "What your pals call you", div().w(170).h(30).px(10).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.owner).w_full().text_size(13).text_color(t.foreground))))
@@ -212,8 +212,8 @@ export default class CrewAbout extends View {
         .child(Input.new(this.head).w_full().text_size(13).text_color(t.foreground))))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new channels skip their harness's permission prompts",
-        div().w(36).h(22).p(2).rounded_full().bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
-          .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded_full().bg(t.popover)),
+        div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
+          .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
         (_e, cx) => this.setBypass(!bypass, cx)));
 
     return v_flex().id("crew-about").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))

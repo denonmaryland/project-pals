@@ -46,7 +46,7 @@ export default class CrewAttach extends View {
     if (this.files === null) body.child(div().p(12).text_size(13).text_color(t.dim).child("Finding recent files…"));
     else if (!this.files.length) body.child(div().p(12).text_size(13).text_color(t.dim).child("No recent files. Drag one onto the message box instead."));
     else for (const [i, f] of this.files.entries()) {
-      body.child(h_flex().id(`f-${i}`).items_center().gap(10).px(8).py(7).rounded(10).cursor_pointer()
+      body.child(h_flex().id(`f-${i}`).items_center().gap(10).px(8).py(7).rounded(6).cursor_pointer()
         .hover((s) => s.bg(a(t.foreground, "0d")))
         .on_click(() => this.pick(f))
         .child(div().size(30).flex_none().rounded(7).flex().items_center().justify_center().bg(a(t.foreground, "0c"))

@@ -77,7 +77,7 @@ export default class CrewLook extends View {
     const hair = () => div().h(1).mx(16).bg(a(t.foreground, "0c"));
     const label = (s, right) => h_flex().items_center().justify_between().px(16).pt(12).pb(8)
       .child(div().text_size(13.5).text_color(t.foreground).child(s)).when(Boolean(right), (el) => el.child(right));
-    const tile = (id, on, pic, name, action) => v_flex().id(id).w(62).items_center().gap(3).py(6).rounded(12).cursor_pointer()
+    const tile = (id, on, pic, name, action) => v_flex().id(id).w(62).items_center().gap(3).py(6).rounded(6).cursor_pointer()
       .when(on, (el) => el.bg(a(t.foreground, "10"))).hover((s) => s.bg(a(t.foreground, "08")))
       .on_click(action)
       .child(pic)
@@ -93,19 +93,19 @@ export default class CrewLook extends View {
         .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim)));
 
     // Every mood, as it'll look.
-    const moods = h_flex().justify_around().px(12).py(12).rounded(14).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
+    const moods = h_flex().justify_around().px(12).py(12).rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
       .children([["calm", "Idle"], ["working", "Working"], ["blocked", "Needs you"], ["done", "Done"], ["asleep", "Asleep"]].map(([m, name]) =>
         v_flex().items_center().gap(4).child(this.pic(look, m, 40)).child(div().text_size(11).text_color(t.dim).child(name))));
 
     const swatches = h_flex().flex_wrap().gap(8).px(16).pb(12).children(SWATCHES.map((c, i) => {
       const on = this.draft.color.toLowerCase() === c;
-      return div().id(`sw-${i}`).size(26).rounded_full().flex().items_center().justify_center().cursor_pointer()
+      return div().id(`sw-${i}`).size(26).rounded(4).flex().items_center().justify_center().cursor_pointer()
         .border_2().border_color(on ? t.foreground : a(t.foreground, "00"))
         .on_click((_e, cx) => this.set({ color: c }, cx))
-        .child(div().size(18).rounded_full().bg(c).border_1().border_color(a(t.foreground, "18")));
+        .child(div().size(18).rounded(3).bg(c).border_1().border_color(a(t.foreground, "18")));
     }));
     const hexField = h_flex().items_center().gap(8)
-      .child(div().size(16).rounded_full().bg(this.draft.color).border_1().border_color(a(t.foreground, "22")))
+      .child(div().size(16).rounded(3).bg(this.draft.color).border_1().border_color(a(t.foreground, "22")))
       .child(div().w(96).h(28).px(9).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.hex).w_full().text_size(12.5).font_family("JetBrains Mono").text_color(t.foreground)));
@@ -117,7 +117,7 @@ export default class CrewLook extends View {
       tile(`acc-${key}`, this.draft.accessory === key, this.pic(this.resolved({ ...this.draft, accessory: key }), "calm", 38), name,
         (_e, cx) => this.set({ accessory: key }, cx))));
 
-    const settings = v_flex().rounded(14).border_1().border_color(a(t.foreground, "10"))
+    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
       .child(label("Color", hexField)).child(swatches)
       .child(hair()).child(label("Shape")).child(shapes)
       .child(hair()).child(label("Accessory")).child(accs);
@@ -129,7 +129,7 @@ export default class CrewLook extends View {
         : div())
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("look-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("look-save").px(18).py(9).rounded_full().cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
+        .child(div().id("look-save").px(18).py(9).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
           .on_click(() => this.save())
           .child(div().text_size(13.5).font_medium().text_color(t.solid_foreground).child("Save"))));
 

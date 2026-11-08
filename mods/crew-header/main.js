@@ -76,7 +76,7 @@ export default class CrewHeader extends View {
         .child(mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 22, t))));
       return root.relative()
         .child(div().w(30))
-        .child(h_flex().id("room-pill").items_center().gap(9).pl(6).pr(14).py(5).rounded_full().bg(a(t.foreground, "0c"))
+        .child(h_flex().id("room-pill").items_center().gap(9).pl(6).pr(14).py(5).rounded(4).bg(a(t.foreground, "0c"))
           .child(faces)
           .child(div().text_size(14).font_medium().text_color(t.foreground).child(`#${room.name}`)))
         .child(this.panelButton(t));
@@ -88,7 +88,7 @@ export default class CrewHeader extends View {
     const live = bot.awake && ["working", "blocked", "done"].includes(tab.status);
     // The pal's name chip: face, name, and a dot while its channel is busy.
     const chip = h_flex().id("crew-chip").flex_none().h(30).pl(4).pr(10).gap(8).items_center().rounded(d.r.sm).border_1().border_color(d.line)
-      .child(mascotEl(bot, mood(tab.status, bot.awake || bot.starting), 22, t))
+      .child(mascotEl(bot, mood(tab.status, bot.awake || bot.starting), 25, t))
       .child(div().text_size(13).font_medium().text_color(d.fg1).child(bot.name))
       .when(live, (el) => el.child(div().size(6).rounded_full().bg(statusColor(tab.status, t))));
     const lead = leadPane(tab.id, panes());

@@ -145,7 +145,7 @@ export default class CrewRoom extends View {
       const m = byName.get(r.who);
       return h_flex().h(r.h).w_full().items_end().gap(10).pt(GAP_NEW).px(28)
         .child(m ? mascotEl(m.bot, "working", 30, t) : div().size(30))
-        .child(div().h(36).px(16).flex().items_center().rounded(18).bg(a(t.foreground, "0e"))
+        .child(div().h(36).px(16).flex().items_center().rounded(8).bg(a(t.foreground, "0e"))
           .child(div().w(30).text_size(16).text_color(t.muted).font_family("JetBrains Mono")
             .frames(["•  ", "•• ", "•••", " ••", "  •", "   "], 180).child("•••")))
         .child(div().text_size(11.5).text_color(t.dim).child(`${r.who} is typing`));
@@ -160,7 +160,7 @@ export default class CrewRoom extends View {
     }
     const { e, you, first, lines, to } = r;
     const m = byName.get(e.from);
-    const bubble = v_flex().max_w(r.bubbleMax).px(14).py(PAD_Y).rounded(18)
+    const bubble = v_flex().max_w(r.bubbleMax).px(14).py(PAD_Y).rounded(8)
       .when(you, (el) => el.bg(t.accent))
       .when(!you, (el) => el.bg(a(t.foreground, e.kind === "handoff" ? "16" : "0e")))
       .children(lines.map((l) => div().h(LINE).truncate().text_size(14).line_height(1.45)

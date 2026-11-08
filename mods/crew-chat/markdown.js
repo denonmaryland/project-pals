@@ -60,7 +60,7 @@ export function codeMarkdown(text) {
 }
 
 function codeBox(key, b, color) {
-  return v_flex().w_full().my(6).px(12).py(8).rounded(10).bg(a(color, "0c")).border_1().border_color(a(color, "16"))
+  return v_flex().w_full().my(6).px(12).py(8).rounded(6).bg(a(color, "0c")).border_1().border_color(a(color, "16"))
     .font_family("JetBrains Mono").text_size(12.5)
     .child(TextView.markdown(key, codeMarkdown(b.text)).selectable(true));
 }
@@ -78,7 +78,7 @@ function table(id, b, color, width) {
     .when(head, (el) => el.bg(a(color, "0c")))
     .when(!head, (el) => el.border_t(1).border_color(a(color, "16")))
     .children(Array.from({ length: n }, (_v, c) => cell(`${id}-c${r}-${c}`, cells[c], c, head)));
-  return v_flex().w_full().my(6).rounded(10).border_1().border_color(a(color, "16")).text_size(13.5).overflow_hidden()
+  return v_flex().w_full().my(6).rounded(6).border_1().border_color(a(color, "16")).text_size(13.5).overflow_hidden()
     .child(row(b.head, "h", true))
     .children(b.rows.map((r, i) => row(r, i, false)));
 }

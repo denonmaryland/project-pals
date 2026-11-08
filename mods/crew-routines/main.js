@@ -128,14 +128,14 @@ export default class CrewRoutines extends View {
         .child(div().id("rt-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
           .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
           .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim))),
-      button: (id, label, ready, action) => div().id(id).px(18).py(9).rounded_full().cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
+      button: (id, label, ready, action) => div().id(id).px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
         .hover((s) => s.opacity(0.88)).on_click(action)
         .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child(label)),
     };
   }
 
   clockFace(t) {
-    return div().size(36).flex_none().rounded_full().bg(a(t.foreground, "0c")).flex().items_center().justify_center()
+    return div().size(36).flex_none().rounded(4).bg(a(t.foreground, "0c")).flex().items_center().justify_center()
       .child(svg(`${ICON}/clock.svg`).size(17).text_color(t.muted));
   }
 
@@ -147,7 +147,7 @@ export default class CrewRoutines extends View {
     const space = all.find((s) => s.name === this.bot);
     const bot = space ? botOf(space, c, ps) : null;
 
-    const named = v_flex().rounded(14).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
+    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
       .child(k.stop(div().px(16).pt(14).pb(6).child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground))))
       .child(k.stop(div().px(6).pb(6).child(Textarea.new(this.prompt).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
 
@@ -158,7 +158,7 @@ export default class CrewRoutines extends View {
       isNew ? (_e, cx) => { this.pickBot = !this.pickBot; cx.notify(); } : null);
     const botList = v_flex().px(8).pb(8).children(all.map((sp) => {
       const b = botOf(sp, c, ps), on = this.bot === sp.name;
-      return h_flex().id(`rf-bot-${sp.id}`).items_center().gap(10).px(10).py(6).rounded(10).cursor_pointer()
+      return h_flex().id(`rf-bot-${sp.id}`).items_center().gap(10).px(10).py(6).rounded(6).cursor_pointer()
         .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
         .on_click((_e, cx) => { this.bot = sp.name; this.pickBot = false; cx.notify(); })
         .child(mascotEl(b, mood(sp.status, b.awake), 22, t))
@@ -168,14 +168,14 @@ export default class CrewRoutines extends View {
 
     const whenRow = k.row("rf-when", "When", k.inline(this.when, 210, true));
     const examples = h_flex().flex_wrap().gap(4).px(16).pb(10).justify_end()
-      .children(EXAMPLES.map((x, i) => div().id(`rf-ex-${i}`).px(8).py(2).rounded_full().cursor_pointer()
+      .children(EXAMPLES.map((x, i) => div().id(`rf-ex-${i}`).px(8).py(2).rounded(4).cursor_pointer()
         .hover((s) => s.bg(a(t.foreground, "10")))
         .on_click((_e, cx) => { this.when.set_value(x); cx.notify(); })
         .child(div().text_size(11.5).font_family("JetBrains Mono").text_color(t.dim).child(x))));
     const channelRow = k.row("rf-ch", "Channel", h_flex().items_center().gap(4)
       .child(div().text_size(13).text_color(t.dim).child("#")).child(k.inline(this.channel, 150)));
 
-    const settings = v_flex().rounded(14).border_1().border_color(a(t.foreground, "10"))
+    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
       .child(botRow).when(this.pickBot, (el) => el.child(botList))
       .child(k.hair()).child(whenRow).child(examples)
       .child(k.hair()).child(channelRow);
@@ -195,8 +195,8 @@ export default class CrewRoutines extends View {
   }
 
   toggle(on, t) {
-    return div().w(34).h(20).p(2).rounded_full().bg(on ? t.accent : a(t.foreground, "22")).flex().items_center()
-      .when(on, (el) => el.justify_end()).child(div().size(16).rounded_full().bg(t.popover));
+    return div().w(34).h(20).p(2).rounded(4).bg(on ? t.accent : a(t.foreground, "22")).flex().items_center()
+      .when(on, (el) => el.justify_end()).child(div().size(16).rounded(3).bg(t.popover));
   }
 
   row(r, t, first) {
@@ -260,7 +260,7 @@ export default class CrewRoutines extends View {
         .child(h_flex().items_center().gap(8).pl(4)
           .child(mascotEl(bot, space ? mood(space.status, bot.awake) : "asleep", 20, t))
           .child(div().text_size(12.5).text_color(t.dim).child(name.split(" - ")[0])))
-        .child(v_flex().rounded(14).border_1().border_color(a(t.foreground, "10")).overflow_hidden()
+        .child(v_flex().rounded(8).border_1().border_color(a(t.foreground, "10")).overflow_hidden()
           .children(rs.map((r, i) => this.row(r, t, i === 0)))));
     }
     if (!this.routines.length) {

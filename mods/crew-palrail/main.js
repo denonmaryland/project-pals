@@ -25,7 +25,7 @@ export default class CrewPalRail extends View {
         .when(!space.active, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click(() => { showTabs(); run("space.select", { id: space.id }); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "pal", space: space.id } }); })
-        .child(mascotEl(bot, mood(st, bot.awake || bot.starting), 34, t))
+        .child(mascotEl(bot, mood(st, bot.awake || bot.starting), 38, t))
         .when(Boolean(dot), (el) => el.child(div().absolute().top(3).right(3).size(7).rounded_full().bg(dot).border_1().border_color(t.chrome)));
     };
     const icon = (id, name, label, action) => div().id(id).size(36).flex_none().flex().items_center().justify_center().rounded(d.r.sm)
