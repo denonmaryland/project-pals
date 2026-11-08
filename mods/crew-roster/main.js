@@ -597,6 +597,8 @@ export default class CrewRoster extends View {
     const fits = 28 + (dot ? 13 : 0) + bot.name.length * 9.2 + 14 + label.length * 6.6 <= W;
     const art = div().id("hero-art").relative().w(W).h(FY + 6).flex_none().cursor_pointer().when(light, (el) => el.bg("#0E0E0F"))
       .on_click((_e, cx) => { this.open(space); cx.notify(); });
+    // Depth without an edge: a soft radial aura behind the sprite, fading out to nothing.
+    art.child(div().absolute().left(SX - 14).top(NB - 18).w(SW + 28).h(H + 24).child(image(`${ICON}/pet-aura.svg`).w(SW + 28).h(H + 24)));
     // The pool, drawn as an image so it sits behind the pet (Herdr draws svg() elements over images).
     if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
       .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
@@ -687,7 +689,7 @@ export default class CrewRoster extends View {
     cx.spawn(async () => { try { await rememberModel(space); } catch {} run("space.close", { id: space.id }); });
   }
 
-  // A pal row's pet: bare on the sidebar (its open tiles, no box or hairline), with a small still
+  // A pal row's pet: bare on the sidebar (its open tiles, no box or hairline) over a soft aura, with a small still
   // pool of the state's colour under it, as the hero's floor has (asks you breathes). No edge loader:
   // the paw taps and the bits rise while it works, and the row's dot says so too.
   rowPet(bot, m, t) {
@@ -697,6 +699,9 @@ export default class CrewRoster extends View {
     const h = Math.round(ROW_PET * 108 / 138);
     const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
     return div().relative().w(ROW_PET).h(h).flex_none()
+      // Depth without an edge (DeNon: the old box's depth, not its line): a soft radial aura behind
+      // the pet that fades out to nothing. An image, so it stays behind (svg() would draw over).
+      .child(div().absolute().left(-10).top(-8).w(ROW_PET + 20).h(h + 16).child(image(`${ICON}/pet-aura.svg`).w(ROW_PET + 20).h(h + 16)))
       .when(lit, (el) => el.child(div().absolute().left(-6).top(h - 17).w(ROW_PET + 12).h(24)
         .when(state === "ask", (x) => x.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
         .child(image(`${ICON}/pet-floor-${state}.svg`).w(ROW_PET + 12).h(24))))
