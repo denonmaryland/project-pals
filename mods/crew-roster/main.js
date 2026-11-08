@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane,
-  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag, saberLine, openChannels, rememberModel } from "./crew.js";
+  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus pal rows: the pet 88 wide (about double the 46 before) in an 80 px row.
@@ -568,7 +568,7 @@ export default class CrewRoster extends View {
   // full width). No box: the shown pal's pet and its laptop at the sidebar's full width, standing
   // on a floor (a hairline with a pool of the state's colour under the pet: working blue, done
   // mint, asks you amber and breathing, PR green, merged purple, closing red, stuck amber; none at
-  // rest), and while it works a lightsaber runs along that floor (saberLine). The name sits in a
+  // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
   // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it, the state word after it when it fits). Under the floor: the pal's channels, full width,
   // up to six rows then scrolling, with a search in their header; then four quick actions:
@@ -610,7 +610,6 @@ export default class CrewRoster extends View {
       .when(fits, (el) => el.child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(label)))
       .tooltip(fits ? bot.name : `${bot.name} · ${label}`));
     art.child(div().absolute().left(12).top(FY).w(W - 24).h(1).bg("#FFFFFF14"));
-    if (state === "work") art.child(div().absolute().left(12).top(FY - 4).child(saberLine(W - 24)));
     const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
       .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
       .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()

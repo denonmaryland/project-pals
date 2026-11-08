@@ -189,8 +189,8 @@ rectangular segments and tags.
     sidebar itself (its own "open" tiles, `-o.svg`), standing on a floor: a 6% white hairline 12px
     in from each side, with a pool of the state's colour under the pet (`pet-floor-<state>.svg`:
     working blue, done mint, asks you amber and breathing, PR green, merged purple, closing red,
-    stuck amber; none at rest or asleep). While it works, a lightsaber runs along the floor, right
-    to left and back. The name (16/600) sits in a 30px band at the top, 14px in, the sprite
+    stuck amber; none at rest or asleep). Nothing moves along the floor (a saber there was tried
+    and removed: DeNon found it annoying). The name (16/600) sits in a 30px band at the top, 14px in, the sprite
     starting 8px into it (bun ears, antennas and crowns reach the sprite's top edge, so the name
     can't sit on the sprite), with the full width so it never cuts off: a 7px state dot before it (blue working, amber
     asks you / stuck, green done / PR) and the state word after it ("Working · 4m") when both fit.
@@ -261,9 +261,7 @@ rectangular segments and tags.
 
 ## Watch out
 
-- **The hero's saber line** is the same trick with two pivots, one above the line and one below,
-  so one sweep crosses it right to left and the other left to right, both with trailing tails.
-  The floor pool is an `image()`, not an `svg()`, so it stays behind the pet.
+- **The hero's floor pool** is an `image()`, not an `svg()`, so it stays behind the pet.
 - **The pets' lightsaber is faked:** Herdr can't blur, stroke a path, tint a shadow or clip to a
   rounded shape. A comet-shaped sweep (`pet-saber.svg`, 40 slices) spins about the container's
   centre and shows only through 1.5-10 px strips along its edges, one set of strips per glow
