@@ -70,8 +70,16 @@ function relayFrom(text) {
   return m ? m[1] : null;
 }
 // One line of a note for its folded chip: the first line with words, without the "[pal] Orca" lead.
-const firstLine = (text) => (String(text ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "")
-  .replace(/^\[pal\]\s+\S+(\s+#[\w.-]+)?\s*/, "").replace(/^\[from [^\]]*\]\s*/, "").replace(/[`*_]/g, "");
+function firstLine(text, from) {
+  let line = (String(text ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "").replace(/^\[from [^\]]*\]\s*/, "");
+  if (line.startsWith("[pal] ")) {
+    line = line.slice(6);
+    // The sender's whole name (pal names have spaces: "Project Pals - Herdr Mod #integrate").
+    if (from && line.startsWith(from)) line = line.slice(from.length);
+    else line = line.replace(/^\S+(\s+#[\w.-]+)?/, "");
+  }
+  return line.trim().replace(/[`*_]/g, "");
+}
 const PAL = `${home()}/.local/bin/pal`;
 const unwrap = (text) => text.replace(/<\/?pasted_content(?:\s+id="[^"]*")?\s*>\n?/g, "").trim();
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
@@ -304,14 +312,17 @@ export default class CrewChat extends View {
         i--;
         const groups = toolRows(items);
         const h = M.name ? 4 + groups.length * 26 + 2 : 4 + 22;
-        rows.push({ kind: "tools", key: `t-${items[0]._n}`, items, groups, h: M.same + h });
-        prev = { ...es[i], kind: "bot" };
+        // A turn that opens with tool work: the chips start the group, and the reply after them
+        // still carries the pet (and name line).
+        const opens = far || !prev || prev.kind !== "bot";
+        rows.push({ kind: "tools", key: `t-${items[0]._n}`, items, groups, h: (opens ? M.gap : M.same) + h });
+        prev = { ...es[i], kind: "bot", openGroup: opens };
         continue;
       }
       if (e.kind === "event") { rows.push({ kind: "event", key: `e-${e._n}`, text: e.text, h: EVENT }); prev = e; continue; }
       const you = e.kind === "you";
       const note = e.kind === "note";
-      const first = far || !prev || prev.kind !== e.kind || (note && prev.from !== e.from);
+      const first = far || !prev || prev.kind !== e.kind || (note && prev.from !== e.from) || (e.kind === "bot" && Boolean(prev.openGroup));
       // A note from another pal folds to one line ("↳ Orca: …"); a click opens it.
       const noteKey = `m-${e._n}`;
       if (note && !this.openNotes.has(noteKey)) {
@@ -468,7 +479,7 @@ export default class CrewChat extends View {
     return h_flex().h(28).max_w_full().min_w(0).items_center().gap(6).px(10).rounded(d.r.sm).bg(d.raised).border_1().border_color(d.line)
       .child(div().flex_none().text_size(12).text_color(d.fg3).child("↳"))
       .child(div().flex_none().max_w(220).truncate().text_size(12.5).font_weight(500).text_color(d.body).child(r.e.from ?? "a pal"))
-      .child(div().min_w(0).truncate().text_size(12.5).text_color(d.fg2).child(open ? "" : firstLine(r.e.text)))
+      .child(div().min_w(0).truncate().text_size(12.5).text_color(d.fg2).child(open ? "" : firstLine(r.e.text, r.e.from)))
       .child(div().flex_none().text_size(11).text_color(d.fg4).child(open ? "▴" : "▾"));
   }
 
