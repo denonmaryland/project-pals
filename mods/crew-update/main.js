@@ -14,7 +14,8 @@ import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetFace, headPe
 
 const ICON = "mods/crew-roster/icons";
 const ago = (s) => { const d = Date.now() / 1000 - s; return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`; };
-const day = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch { return ""; } };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const day = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
 
 export default class CrewUpdate extends View {
   init(_props, cx) {
@@ -111,9 +112,9 @@ export default class CrewUpdate extends View {
         .on_click(() => exec("xdg-open", [u.url]).catch(() => {})).child("Full release notes →"));
       body.child(h_flex().items_start().gap(8).pt(4)
         .child(svg(`${ICON}/ds-shield.svg`).size(13).mt(2).flex_none().text_color(d.fg3))
-        .child(text("Downloads the release from GitHub, checks it against its SHA256 sums, keeps your current version for Roll back, then installs. Only Project Pals's own files change.", d.fg3)));
+        .child(div().flex_1().min_w(0).child(text("Downloads the release from GitHub, checks it against its SHA256 sums, keeps your current version for Roll back, then installs. Only Project Pals's own files change.", d.fg3))));
     }
-    if (mode === "running") body.child(h_flex().items_center().gap(8).child(svg(`${ICON}/spinner.svg`).size(14).text_color(d.info).spin(900)).child(text("This takes a few seconds; you can close this and keep working.")));
+    if (mode === "running") body.child(h_flex().items_center().gap(8).child(svg(`${ICON}/spinner.svg`).size(14).flex_none().text_color(d.info).spin(900)).child(div().flex_1().min_w(0).child(text("This takes a few seconds; you can close this and keep working."))));
     if (mode === "failed" || this.error) body.child(div().p(10).rounded(6).bg(d.inset).border_1().border_color(d.lineMid)
       .child(text(this.error ?? run?.error ?? "Something went wrong.", d.warnText)));
     if (mode === "done" || mode === "failed") body.child(h_flex().gap(8)
