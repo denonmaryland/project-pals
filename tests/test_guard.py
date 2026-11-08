@@ -127,6 +127,34 @@ class OwnerGate(unittest.TestCase):
         return subprocess.run([sys.executable, str(bindir / "crew"), *args], capture_output=True, text=True,
                               env=env, stdin=subprocess.DEVNULL)
 
+    def test_a_terminal_typing_yes_is_not_the_owner(self):
+        # The re-check's case: a pseudo-terminal with no terminal ID answering "yes" (review H1).
+        import pty, subprocess
+        bindir = Path(__file__).resolve().parent.parent / "bin"
+        env = {**os.environ, "HOME": TMP, "CREW_DATA": TMP, "HERDR_APP_HOME": TMP}
+        env.pop("HC_TERMINAL_ID", None)
+        lib = Path(TMP) / ".local" / "lib"
+        lib.mkdir(parents=True, exist_ok=True)
+        if not (lib / "herdr-crew").exists():
+            (lib / "herdr-crew").symlink_to(bindir)
+        master, slave = pty.openpty()
+        p = subprocess.Popen([sys.executable, str(bindir / "crew"), "approve", "a-123456"], stdin=slave, stdout=slave, stderr=slave, env=env)
+        os.close(slave)
+        os.write(master, b"yes\n")
+        p.wait(timeout=20)
+        out = b""
+        try:
+            while True:
+                chunk = os.read(master, 4096)
+                if not chunk:
+                    break
+                out += chunk
+        except OSError:
+            pass
+        os.close(master)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(b"only", out)
+
     def test_no_identity_is_not_the_owner(self):
         for env in ({}, {"HC_TERMINAL_ID": "t-unknown-123"}):
             with self.subTest(env=env):

@@ -431,8 +431,9 @@ rectangular segments and tags.
 - **Owner decisions need the owner's click** (Codex review H1): approve / deny, accepting or
   declining a proposal, `pal agents apply`, `pal mission set`, `pal brain where` / `write`. The mod
   writes a one-time token for exactly that command line into `data/crew-clicks/` (`ownerCli` in
-  crew.js) and the pal command consumes it within 2 minutes; at a real terminal outside Herdr a person
-  can type "yes" instead. No terminal ID, or an unknown one, is never the owner. A pal writing into
+  crew.js) and the pal command consumes it within 2 minutes. There's no terminal fallback (a pal can
+  drive a pseudo-terminal and type "yes"): decisions come only from the app. No terminal ID, or an
+  unknown one, is never the owner. A pal writing into
   `crew-clicks` is held (`owner-click`). Same-user processes can still forge one on purpose: this
   guards against accidents and peer influence, not a hostile process.
 - **An AGENTS.md / CLAUDE.md edit approval is for one exact edit** (H2): the request is bound to the

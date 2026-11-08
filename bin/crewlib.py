@@ -242,7 +242,8 @@ def whoami(spaces):
 # setting a mission, moving or rewriting a brain) need the owner. A missing or unrecognised terminal
 # ID is NOT the owner: it fails closed. The app proves a click by writing a one-time token for
 # exactly that command line (data/crew-clicks/<nonce>.json, written by the mod at the click, used
-# once, within CLICK_TTL seconds); a person at a real terminal outside Herdr can type "yes" instead.
+# once, within CLICK_TTL seconds). There is no terminal fallback: a pal can drive a pseudo-terminal and
+# type "yes" as well as a person can (review H1 re-check), so decisions come only from the app.
 # A pal with full permissions could still forge a token on purpose (the approval gate holds shell
 # writes into crew-clicks); this guards against accidents and one pal talking another into it, not
 # against a hostile process running as the same user.
@@ -251,7 +252,7 @@ CLICK_TTL = 120
 
 
 def owner_gate(argv, click=None, what="this"):
-    """Return how the owner decided ("the app" / "a terminal"), or exit refusing."""
+    """Return "the app" when the owner's click token for exactly `argv` is there, else exit refusing."""
     if click:
         if not re.fullmatch(r"[0-9a-f]{16,64}", click):
             die("that isn't a click token")
@@ -261,14 +262,7 @@ def owner_gate(argv, click=None, what="this"):
         if tok and tok.get("args") == argv and now_ms() - tok.get("at", 0) < CLICK_TTL * 1000:
             return "the app"
         die(f"that click expired or was for something else; click again in Project Pals")
-    if not ME and sys.stdin.isatty() and sys.stdout.isatty():
-        try:
-            ans = input(f"{what}: only {OWNER} decides this. Are you {OWNER}? Type yes: ")
-        except EOFError:
-            ans = ""
-        if ans.strip().lower() == "yes":
-            return "a terminal"
-    die(f"only {OWNER} decides this: click it in Project Pals (the Inbox or the profile panel)")
+    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (the Inbox or the profile panel)")
 
 
 def is_bot_terminal(terminal):
