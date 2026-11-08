@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, agents, theme, keys, exec, appHome, readTextFile } from "herdr";
-import { leadPane, layoutMode, setMode, ds, tone, a } from "./crew.js";
+import { leadPane, layoutMode, setMode, ds, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -38,50 +38,55 @@ export default class CrewStatus extends View {
     });
   }
 
+  // Drawn to the boards: Focus 24 px, Pro 26 px; #0E0E0F with a #18181A hairline on top, 12 px in,
+  // 14 px between items, 1x12 #1E1E20 separators, Inter 11 px.
   render() {
     const t = tone(theme());
     const d = ds(t);
     const mode = layoutMode();
+    const pro = mode === "pro";
     const all = agents();
     const working = all.filter((x) => x.status === "working").length;
     const needs = all.filter((x) => x.status === "blocked").length;
-    const text = (s, color = d.fg3) => div().flex_none().text_size(11.5).text_color(color).child(s);
-    const dot = (color) => div().size(6).flex_none().rounded_full().bg(color);
+    const text = (s, color = d.fg2) => div().flex_none().text_size(11).line_height("14px").text_color(color).child(s);
+    const dot = (color) => div().size(6).flex_none().rounded(3).bg(color);
     const sep = () => div().w(1).h(12).flex_none().bg(d.line);
 
     // Usage: the 5-hour and weekly limits of the shown channel, when its agent reports them.
     const rl = this.meta?.rate_limits ?? {};
     const pct = (x) => (x ? `${Math.round(x.used_percentage ?? 0)}%` : null);
     const usage = [rl.five_hour && `5h ${pct(rl.five_hour)}`, rl.seven_day && `week ${pct(rl.seven_day)}`].filter(Boolean).join(" · ");
+    const five = Math.max(0, Math.min(100, rl.five_hour?.used_percentage ?? 0));
 
     // The shortcut, as keys.json binds it (nothing shown when it isn't bound).
     const bound = keys().find((k) => k.action === "crew-roster.mode");
     const hint = bound ? bound.keys.split("-").map((p) => p[0].toUpperCase() + p.slice(1)).join("+") : null;
 
-    const seg = (id, label, icon, on) => h_flex().id(id).h(20).px(7).gap(5).items_center().rounded(d.r.xs).cursor_pointer()
+    const seg = (id, label, icon, on) => h_flex().id(id).h(16).px(7).gap(5).items_center().rounded(2).cursor_pointer()
       .when(on, (el) => el.bg(d.sel))
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { if (!on) setMode(id === "mode-pro" ? "pro" : "focus"); cx.notify(); })
-      .child(svg(`${ICON}/${icon}.svg`).size(12).text_color(on ? d.fg1 : d.fg3))
-      .child(div().text_size(11.5).text_color(on ? d.fg1 : d.fg2).child(label));
+      .child(svg(`${ICON}/${icon}.svg`).size(10).text_color(on ? d.fg1 : d.fg2))
+      .child(div().text_size(11).line_height("14px").font_weight(500).text_color(on ? d.fg1 : d.fg2).child(label));
 
-    const g = mode === "pro" ? this.git : null;
-    return h_flex().id("crew-status").size_full().items_center().justify_between().px(12).gap(12).bg(t.chrome)
-      .child(h_flex().items_center().gap(10).min_w(0)
-        .child(h_flex().items_center().gap(6).child(dot(working ? t.working : a(t.foreground, "30"))).child(text(`${working} working`, working ? d.fg2 : d.fg3)))
-        .when(mode === "pro", (el) => el.child(sep()).child(h_flex().items_center().gap(6)
-          .child(dot(needs ? t.blocked : a(t.foreground, "30"))).child(text(`${needs} need${needs === 1 ? "s" : ""} you`, needs ? d.fg2 : d.fg3))))
-        .when(Boolean(usage), (el) => el.child(sep()).child(text(usage))))
-      .child(h_flex().items_center().gap(10).flex_none()
-        .when(Boolean(g), (el) => el.child(h_flex().items_center().gap(6)
-          .child(svg(`${ICON}/git-branch.svg`).size(12).text_color(d.fg3))
-          .child(div().max_w(220).truncate().text_size(11.5).font_family(d.mono).text_color(d.fg2).child(g.branch))
-          .when(g.ahead != null, (el) => el.child(text(`↑${g.ahead} ↓${g.behind}`))))
-          .child(sep()))
-        .when(Boolean(hint), (el) => el.child(div().text_size(11).font_family(d.mono).text_color(d.fg3).child(hint)))
-        .child(h_flex().id("mode-switch").p(2).gap(2).rounded(d.r.sm).border_1().border_color(d.line)
-          .child(seg("mode-focus", "Focus", "layout-focus", mode === "focus"))
-          .child(seg("mode-pro", "Pro", "layout-pro", mode === "pro")))
-        .when(Boolean(this.version), (el) => el.child(sep()).child(text(`pal ${this.version}`))));
+    const g = pro ? this.git : null;
+    const items = [];
+    items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
+    if (pro) items.push(sep(), h_flex().flex_none().items_center().gap(6).child(dot(needs ? d.warn : d.lineStrong)).child(text(`${needs} need${needs === 1 ? "s" : ""} you`)));
+    if (usage) items.push(sep(), pro
+      ? h_flex().flex_none().items_center().gap(6)
+        .child(div().w(32).h(3).flex_none().bg(d.sel).child(div().h(3).w(Math.round(32 * five / 100)).bg(d.fg2)))
+        .child(text(usage))
+      : text(usage, d.fg3));
+    items.push(div().flex_1());
+    if (g) items.push(div().min_w(0).truncate().text_size(11).line_height("14px").font_family(d.mono).text_color(d.fg3)
+      .child(`${g.branch}${g.ahead != null ? ` ↑${g.ahead} ↓${g.behind}` : ""}`), sep());
+    items.push(h_flex().flex_none().items_center().gap(8)
+      .when(Boolean(hint), (el) => el.child(div().text_size(10).line_height("12px").font_family(d.mono).text_color(d.fg4).child(hint)))
+      .child(h_flex().id("mode-switch").p(1).gap(1).rounded(d.r.xs).bg(d.inset).border_1().border_color(d.line)
+        .child(seg("mode-focus", "Focus", "ds-focus", !pro))
+        .child(seg("mode-pro", "Pro", "ds-pro", pro))));
+    if (this.version) items.push(sep(), text(`pal ${this.version}`));
+    return h_flex().id("crew-status").size_full().items_center().px(12).gap(14).bg(d.bg1).border_t_1().border_color(d.lineSoft).children(items);
   }
 }

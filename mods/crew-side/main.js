@@ -5,11 +5,36 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { spaces, panes, theme, run, exec, appHome, readTextFile, openOverlay, notify } from "herdr";
+import { spaces, panes, theme, run, exec, hc, layout, appHome, readTextFile, openOverlay, notify } from "herdr";
 import { loadOps, crewCli, taskOf, shownRoom, roomMembers, deleteRoom, showTabs, botOf, briefOf, channelName, leadPane, mascotFor, mascotEl, mood, updateBot, statusWord, statusColor, WAVE, ago, a, tone,
   layoutMode, setMode, INSPECTOR_TABS, inspectorTab, setInspectorTab, ds } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+
+function findNode(node, id) {
+  if (node?.id === id) return node;
+  for (const c of node?.children ?? []) { const f = findNode(c, id); if (f) return f; }
+  return null;
+}
+// git diff --numstat HEAD, "@@", then untracked paths → { files: [{path, add, del}], added, removed, untracked: [{path, n}] }.
+// Untracked files are grouped by folder ("tiles/ 8 new"), as the board shows them.
+function parseChanges(out) {
+  const [diff, others] = out.split("@@");
+  const files = diff.split("\n").map((l) => l.split("\t")).filter((x) => x.length >= 3)
+    .map(([a, d, path]) => ({ path, add: a === "-" ? 0 : Number(a), del: d === "-" ? 0 : Number(d) }));
+  const groups = new Map();
+  for (const f of others.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/") + 1) : f;
+    groups.set(dir, (groups.get(dir) ?? 0) + 1);
+  }
+  const untracked = [...groups].map(([path, n]) => ({ path, n }));
+  return { files, untracked, added: files.reduce((n, f) => n + f.add, 0), removed: files.reduce((n, f) => n + f.del, 0) };
+}
+// The terminal's last few lines worth reading: no blank lines, no lines that are only box drawing.
+function tailOf(text, n = 4) {
+  return text.split("\n").map((l) => l.replace(/\s+$/, "")).filter((l) => l.trim() && !/^[\s─━│┃╭╮╰╯┌┐└┘├┤┬┴┼═║╔╗╚╝▔▁>❯›]*$/.test(l)).slice(-n);
+}
+const SECTION_TITLE = { tasks: "Tasks", files: "Changes", branch: "Branch", terminal: "Terminal", run: "Run", memory: "Memory" };
 
 export default class CrewSide extends View {
   init(_props, cx) {
@@ -36,6 +61,17 @@ export default class CrewSide extends View {
       // The channel's Claude Code facts (model, effort, context, usage), saved by crew-statusline.
       const term = tab ? leadPane(tab.id, panes())?.terminal : null;
       try { this.meta = term ? JSON.parse((await readTextFile(`${appHome()}/data/crew-status/${term}.json`)) ?? "null") : null; } catch { this.meta = null; }
+      // Changes (git diff against HEAD, plus untracked files) and the terminal's last lines, for the
+      // Run view; only while the inspector is shown (its timer keeps running when hidden).
+      const lead = tab ? leadPane(tab.id, panes()) : null;
+      if (!this.hidden() && lead?.cwd) {
+        const r = await exec("sh", ["-c", 'cd "$1" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0; git diff --numstat HEAD 2>/dev/null; echo "@@"; git ls-files --others --exclude-standard 2>/dev/null | head -400', "sh", lead.cwd], { on: space.machine }).catch(() => null);
+        this.changes = r?.code === 0 && r.stdout.includes("@@") ? parseChanges(r.stdout) : null;
+      } else if (!lead?.cwd) this.changes = null;
+      if (!this.hidden() && term) {
+        const r = await hc(["read", term]).catch(() => null);
+        this.tail = r?.code === 0 ? tailOf(r.stdout, inspectorTab() === "terminal" ? 16 : 4) : [];
+      }
       if (bot) {
         const slug = bot.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
         const day = new Date(), stamp = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -56,6 +92,8 @@ export default class CrewSide extends View {
       cx.notify();
     });
   }
+
+  hidden() { return Boolean(findNode(layout(), "panel")?.hidden); }
 
   act(args, done, cx) {
     cx.spawn(async (cx) => {
@@ -106,206 +144,170 @@ export default class CrewSide extends View {
         .child(div().truncate().text_size(12).text_color(t.dim).child(sub)));
   }
 
-  // The inspector's top bar: Run / Tasks / Memory as one rectangular segmented control, then
-  // Fold (Pro) or Expand and close (a Focus peek).
-  bar(t, current) {
-    const d = ds(t);
+  // The inspector's top bar (the "MODE · Pro" board): 40 px, a #18181A hairline under it; Run /
+  // Tasks / Memory as one segment (inset #0A0A0B, #1E1E20 edge, 22 px r3 items), then Fold. A Focus
+  // peek shows its section's name instead, with Expand and close.
+  bar(d, current) {
     const pro = layoutMode() === "pro";
-    const seg = (id, label) => div().id(`insp-${id}`).h(24).px(10).flex().items_center().rounded(d.r.xs).cursor_pointer()
+    const seg = (id, label) => div().id(`insp-${id}`).h(22).px(9).flex().items_center().rounded(d.r.xs).cursor_pointer()
       .when(current === id, (el) => el.bg(d.sel))
       .when(current !== id, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { setInspectorTab(id); cx.notify(); })
-      .child(div().text_size(12).when(current === id, (el) => el.font_medium()).text_color(current === id ? d.fg1 : d.fg2).child(label));
-    const btn = (id, icon, label, tip, action) => div().id(id).h(24).px(label ? 8 : 0).when(!label, (el) => el.w(24)).flex().items_center().justify_center().gap(5)
-      .rounded(d.r.xs).cursor_pointer().tooltip(tip).hover((s) => s.bg(d.hover)).on_click(action)
-      .child(svg(`${ICON}/${icon}.svg`).size(12).text_color(d.fg3))
-      .when(Boolean(label), (el) => el.child(div().text_size(12).text_color(d.fg2).child(label)));
-    return h_flex().id("insp-bar").h(44).flex_none().items_center().justify_between().px(12).border_b_1().border_color(d.line)
-      .child(h_flex().p(2).gap(2).rounded(d.r.sm).border_1().border_color(d.line).children(INSPECTOR_TABS.map(([id, label]) => seg(id, label))))
-      .child(pro
-        ? btn("insp-fold", "minimize", "Fold", "Fold back to Focus", () => setMode("focus"))
-        : h_flex().gap(2)
-          .child(btn("insp-expand", "maximize", null, "Open in Pro", () => setMode("pro", { tab: current })))
-          .child(btn("insp-close", "x", null, "Close", () => run("layout.hide", { id: "panel" }))));
+      .child(div().text_size(12).font_weight(500).text_color(current === id ? d.fg1 : d.fg2).child(label));
+    const btn = (id, icon, label, tip, action) => h_flex().id(id).h(24).px(6).gap(6).items_center().rounded(d.r.sm).border_1().border_color(d.line)
+      .cursor_pointer().tooltip(tip).hover((s) => s.bg(d.hover)).on_click(action)
+      .child(svg(`${ICON}/${icon}.svg`).size(12).text_color(d.fg2))
+      .when(Boolean(label), (el) => el.child(div().text_size(11).font_weight(500).text_color(d.fg2).child(label)));
+    const bar = h_flex().id("insp-bar").h(40).flex_none().items_center().gap(8).pl(8).pr(12).border_b_1().border_color(d.lineSoft);
+    if (pro) return bar
+      .child(h_flex().p(2).gap(2).rounded(d.r.sm).bg(d.inset).border_1().border_color(d.line).children(INSPECTOR_TABS.map(([id, label]) => seg(id, label))))
+      .child(div().flex_1())
+      .child(btn("insp-fold", "ds-fold", "Fold", "Fold back to Focus", () => setMode("focus")));
+    const proTab = INSPECTOR_TABS.some(([id]) => id === current) ? current : "run";
+    return bar.pl(14)
+      .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child(SECTION_TITLE[current] ?? "Run"))
+      .child(btn("insp-expand", "ds-expand", "Pro", "Open in Pro", () => setMode("pro", { tab: proTab })))
+      .child(btn("insp-close", "x", null, "Close", () => run("layout.hide", { id: "panel" })));
   }
 
-  // A section: a small label (with a count and an action on the right), then its content.
-  section2(t, label, count, action, content) {
-    return v_flex().gap(8)
-      .child(h_flex().items_center().justify_between().px(2)
-        .child(h_flex().items_baseline().gap(6)
-          .child(div().text_size(12.5).font_medium().text_color(t.muted).child(label))
-          .when(count != null, (el) => el.child(div().text_size(12).text_color(t.dim).child(String(count)))))
-        .when(Boolean(action), (el) => el.child(action)))
-      .when(Boolean(content), (el) => el.child(content));
+  // A section head: 26 px, 12/500 #6A6A6C label, something on the right.
+  head(d, label, right) {
+    return h_flex().h(26).flex_none().items_center().px(6)
+      .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child(label))
+      .when(Boolean(right), (el) => el.child(right));
   }
 
-  // A stat card: a label, a big number, an optional bar, and one line of detail.
-  stat(t, id, label, value, pct, detail, warn) {
-    const color = warn ?? t.muted;
-    return v_flex().id(id).flex_1().min_w(0).gap(5).px(12).py(10).rounded(8).bg(a(t.foreground, "07"))
-      .child(div().text_size(11.5).text_color(t.dim).child(label))
-      .child(div().truncate().text_size(19).font_weight(300).text_color(t.foreground).child(value))
-      .when(pct != null, (el) => el.child(h_flex().w_full().h(4).rounded(1).bg(a(t.foreground, "12"))
-        .child(div().h_full().rounded(1).bg(color).flex_grow(Math.max(0.02, Math.min(1, pct / 100))))
-        .child(div().h_full().flex_grow(Math.max(0, 1 - Math.min(1, pct / 100))))))
-      .when(Boolean(detail), (el) => el.child(div().truncate().text_size(11.5).text_color(t.dim).child(detail)));
+  // Tasks: this pal's open, claimed and blocked tasks, then what it finished today. A claimed one
+  // is lit (#232324, blue dot, 13/500); open ones grey dots; done ones a green check.
+  tasksSection(d, bot) {
+    const mine = this.ops.tasks.filter((x) => taskOf(x, bot.name));
+    const open = mine.filter((x) => ["open", "claimed", "blocked"].includes(x.status))
+      .sort((x, y) => (x.status === "claimed" ? 0 : 1) - (y.status === "claimed" ? 0 : 1));
+    const done = mine.filter((x) => x.status === "done" && Date.now() - (x.updated ?? 0) < 86400000).slice(-3);
+    const row = (x) => {
+      const on = x.status === "claimed";
+      const mark = x.status === "done" ? svg(`${ICON}/ds-check.svg`).size(10).flex_none().text_color(d.ok)
+        : div().size(6).flex_none().rounded(3).bg(on ? d.info : x.status === "blocked" ? d.warn : d.lineStrong);
+      return h_flex().id(`task-${x.id}`).h(30).flex_none().items_center().gap(8).px(8).rounded(d.r.sm)
+        .when(on, (el) => el.bg(d.sel))
+        .child(mark)
+        .child(div().flex_1().min_w(0).truncate().text_size(13).when(on, (el) => el.font_weight(500))
+          .text_color(on ? d.fg1 : x.status === "done" ? d.fg2 : d.body).child(x.title))
+        .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(x.id));
+    };
+    return v_flex().flex_none().pt(8).px(8).pb(4)
+      .child(this.head(d, "Tasks", div().text_size(12).text_color(d.fg4).child(`${open.length} open`)))
+      .children([...open, ...done].map(row));
+  }
+
+  // Changes: the channel's working tree against HEAD, +/− per file, untracked files by folder.
+  changesSection(d, wtActions) {
+    const c = this.changes;
+    const right = h_flex().items_center()
+      .when(Boolean(c), (el) => el
+        .child(div().text_size(12).font_weight(500).text_color(d.okHi).child(`+${c.added}`))
+        .child(div().pl(6).text_size(12).font_weight(500).text_color(d.err).child(`−${c.removed}`)));
+    const rows = c ? [
+      ...c.files.slice(0, 8).map((f, i) => h_flex().id(`chg-${i}`).h(26).flex_none().items_center().gap(8).px(8)
+        .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).text_color(d.body).child(f.path))
+        .when(f.add > 0, (el) => el.child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.okHi).child(`+${f.add}`)))
+        .when(f.del > 0, (el) => el.child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.err).child(`−${f.del}`)))),
+      ...c.untracked.slice(0, Math.max(0, 8 - c.files.length)).map((u, i) => h_flex().id(`new-${i}`).h(26).flex_none().items_center().gap(8).px(8)
+        .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).text_color(d.fg2).child(u.path))
+        .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(u.n > 1 || u.path.endsWith("/") ? `${u.n} new` : "new"))),
+    ] : [];
+    return v_flex().flex_none().pt(8).px(8).pb(4)
+      .child(this.head(d, "Changes", right))
+      .children(rows)
+      .when(Boolean(wtActions), (el) => el.child(wtActions));
+  }
+
+  // Terminal: the channel's last lines, on the inset at the panel's foot.
+  terminalSection(d, lead) {
+    return v_flex().flex_none().gap(3).py(10).px(12).bg(d.inset).border_t_1().border_color(d.line)
+      .child(h_flex().items_center().gap(6).pb(4)
+        .child(svg(`${ICON}/ds-terminal-bold.svg`).size(12).flex_none().text_color(d.fg3))
+        .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Terminal"))
+        .when(Boolean(lead?.branch), (el) => el.child(div().max_w(160).truncate().text_size(11).font_family(d.mono).text_color(d.fg4).child(lead.branch))))
+      .children((this.tail ?? []).map((l, i) => div().id(`tail-${i}`).truncate().text_size(11).line_height("16px").font_family(d.mono)
+        .text_color(/^\s*[$❯%#]\s/.test(l) ? d.fg2 : d.fg3).child(l.trim())));
   }
 
   render() {
     const t = tone(theme());
+    const d = ds(t);
     const k = this.kit(t);
     const space = spaces().find((s) => s.active);
     const tab = space?.tabs.find((x) => x.active);
     const bot = botOf(space);
     const current = inspectorTab();
-    const frame = v_flex().id("crew-side-frame").size_full().text_color(t.foreground);
-    const root = v_flex().id("crew-side").flex_1().min_h(0).overflow_y_scrollbar().pt(16).px(16).pb(24).gap(22).text_color(t.foreground);
+    const frame = v_flex().id("crew-side-frame").size_full().bg(d.bg1).border_l_1().border_color(d.line).text_color(d.fg1);
 
     const room = shownRoom();
-    if (room) return this.roomSide(room, root.size_full(), t, k);
-    // Elements are single-use: the scrolling body joins the frame once it's filled.
-    const done = () => frame.child(this.bar(t, current)).child(root);
+    if (room) return frame.child(this.roomSide(room, v_flex().id("crew-side").flex_1().min_h(0).overflow_y_scrollbar().p(16).gap(22), t, k));
     if (bot && bot.space !== this.botId) {
       if (this.botId && this.editing) this.save();
       this.botId = bot.space;
       this.memory.set_value(bot.memory ?? "");
     }
     if (bot) this.bot = bot;
+    frame.child(this.bar(d, current));
     if (!bot) {
       this.botId = null;
-      root.child(div().px(4).text_size(13).text_color(t.dim).child("Pick a pal on the left to see its details."));
-      return done();
+      return frame.child(div().p(14).text_size(12).text_color(d.fg3).child("Pick a pal on the left to see its details."));
     }
-
     const lead = tab ? leadPane(tab.id, panes()) : null;
-    const brain = bot.awake ? (bot.harnessName ?? "Agent") : "No brain running";
-    // Click the face to change its look.
-    const face = div().id("side-face").rounded(4).cursor_pointer().hover((s) => s.opacity(0.85))
-      .on_click(() => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } }))
-      .child(mascotEl(bot, mood(tab?.status, bot.awake), 38, t));
-    const header = this.header(t, face, bot.name, [bot.role, brain, bot.machine ?? "this computer"].filter(Boolean).join(" · "));
+    const hair = () => div().h(1).mt(6).flex_none().bg(d.line);
 
-    // The channel: its name, where it works (folder and branch on one line), what it's for, and a way in.
-    const brief = tab ? briefOf(bot, tab) : null;
-    const folder = (lead?.cwd ?? bot.folder ?? "~").replace(/^\/home\/[^/]+/, "~");
-    const chip = (id, text, action, strong) => div().id(id).px(11).py(5).rounded(4).cursor_pointer()
-      .bg(strong ? a(t.foreground, "12") : a(t.foreground, "07")).hover((s) => s.bg(a(t.foreground, "16"))).on_click(action)
-      .child(div().text_size(12).text_color(t.foreground).child(text));
-    const channel = v_flex().gap(8)
-      .child(div().truncate().text_size(15).font_medium().text_color(t.foreground).child(tab ? `#${channelName(tab)}` : "This channel"))
-      .child(h_flex().items_center().gap(6).min_w(0)
-        .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child(folder))
-        .when(Boolean(lead?.branch), (el) => el.child(div().flex_none().px(7).py(1).rounded(4).bg(a(t.foreground, "0a"))
-          .child(div().text_size(11.5).font_family("JetBrains Mono").text_color(t.muted).child(lead.branch)))))
-      .when(Boolean(brief), (el) => el.child(div().text_size(12.5).text_color(t.muted).child(brief)))
-      .child(h_flex().gap(6).pt(2)
-        .child(chip("side-take", "Take over terminal", () => lead?.terminal && run("pane.focus", { terminal: lead.terminal }), true)));
+    // A worktree channel's own branch: Review and Land, under Changes (not on the board; shown only
+    // for such channels).
+    const wd = this.diff && tab && this.diff.tab === tab.id ? this.diff : null;
+    const link = (id, label, action) => div().id(id).h(22).px(6).flex().items_center().rounded(d.r.xs).cursor_pointer().border_1().border_color(d.line)
+      .hover((x) => x.bg(d.hover)).on_click(action).child(div().text_size(11).font_weight(500).text_color(d.fg2).child(label));
+    const wtActions = wd ? h_flex().px(8).pt(6).gap(6).items_center()
+      .child(div().flex_1().min_w(0).truncate().text_size(11).font_family(d.mono).text_color(d.fg3).child(`${wd.commits} on ${wd.wt.base}`))
+      .child(link("wt-review", "Review", () => openOverlay({ mod: "crew-review", kind: "dialog", width: 0.86, height: 0.88, props: { space: space.id, tab: tab.id } })))
+      .child(link("wt-land", `Land on ${wd.wt.base}`, (_e, cx) => this.act(["land", `${space.name}#${channelName(tab)}`], `Landed ${wd.wt.branch}`, cx))) : null;
 
-    // At a glance: context, usage, model, session (Claude Code channels, from its status line).
-    const m = this.meta;
-    const tok = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : `${Math.round((n ?? 0) / 1000)}k`);
-    const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const resets = (at) => {
-      if (!at) return null;
-      const d = new Date(at > 1e12 ? at : at * 1000), h = d.getHours();
-      const time = `${h % 12 || 12}${d.getMinutes() ? ":" + String(d.getMinutes()).padStart(2, "0") : ""}${h < 12 ? "am" : "pm"}`;
-      return `resets ${d.toDateString() === new Date().toDateString() ? "" : DAYS[d.getDay()] + " "}${time}`;
-    };
-    const warn = (pct, amber, red) => (pct >= red ? t.blocked : pct >= amber ? t.working : null);
-    const cw = m?.context_window, rl = m?.rate_limits ?? {}, cost = m?.cost;
-    let glance = null;
-    if (m) {
-      const cards = [];
-      if (cw) {
-        const used = (cw.current_usage?.input_tokens ?? 0) + (cw.current_usage?.cache_read_input_tokens ?? 0) + (cw.current_usage?.cache_creation_input_tokens ?? 0);
-        cards.push(this.stat(t, "st-ctx", "Context", `${cw.used_percentage ?? 0}%`, cw.used_percentage ?? 0, `${tok(used)} of ${tok(cw.context_window_size)}`, warn(cw.used_percentage ?? 0, 65, 85)));
-      }
-      const usage = rl.five_hour ?? rl.seven_day;
-      if (usage) {
-        const pct = Math.round(usage.used_percentage ?? 0);
-        cards.push(this.stat(t, "st-use", rl.five_hour ? "5-hour usage" : "Weekly usage", `${pct}%`, pct, resets(usage.resets_at), warn(pct, 70, 90)));
-      }
-      if (m.model?.display_name) {
-        cards.push(this.stat(t, "st-model", "Model", m.model.display_name + (m.fast_mode ? " fast" : ""), null,
-          [m.effort?.level && `${m.effort.level} effort`, m.thinking?.enabled && "thinking"].filter(Boolean).join(" · ")));
-      }
-      if (cost) {
-        const mins = Math.round((cost.total_duration_ms ?? 0) / 60000);
-        const dur = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
-        const lines = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
-        cards.push(this.stat(t, "st-session", "This session", dur, null,
-          [`+${lines(cost.total_lines_added)} −${lines(cost.total_lines_removed)}`, cost.total_cost_usd != null && `$${cost.total_cost_usd.toFixed(2)}`].filter(Boolean).join(" · ")));
-      }
-      if (rl.five_hour && rl.seven_day) {
-        const pct = Math.round(rl.seven_day.used_percentage ?? 0);
-        cards.push(this.stat(t, "st-week", "Weekly usage", `${pct}%`, pct, resets(rl.seven_day.resets_at), warn(pct, 70, 90)));
-      }
-      const grid = v_flex().gap(8);
-      for (let i = 0; i < cards.length; i += 2) grid.child(h_flex().gap(8).child(cards[i]).child(cards[i + 1] ?? div().flex_1()));
-      glance = cards.length ? grid : null;
+    const body = v_flex().id("crew-side").flex_1().min_h(0).overflow_y_scrollbar();
+    if (current === "run") {
+      return frame.child(body.child(this.tasksSection(d, bot)).child(hair()).child(this.changesSection(d, wtActions)))
+        .child(this.terminalSection(d, lead));
     }
-
-    // Its own branch (a worktree channel): what changed, review, land.
-    const d = this.diff && tab && this.diff.tab === tab.id ? this.diff : null;
-    const branch = d ? this.section2(t, "Own branch", null, k.text(d.wt.branch, t.dim, 11.5),
-      v_flex().gap(8).px(12).py(10).rounded(8).bg(a(t.foreground, "07"))
-        .child(div().text_size(12.5).text_color(t.foreground).child(d.stat || "No changes yet"))
-        .child(div().text_size(11.5).text_color(t.dim).child(`${d.commits} commit${d.commits === 1 ? "" : "s"} on ${d.wt.base}${d.dirty ? ` · ${d.dirty} uncommitted` : ""}`))
-        .child(h_flex().gap(6).pt(2)
-          .child(chip("wt-review", "Review", () => openOverlay({ mod: "crew-review", kind: "dialog", width: 0.86, height: 0.88, props: { space: space.id, tab: tab.id } }), true))
-          .child(chip("wt-land", `Land on ${d.wt.base}`, (_e, cx) => this.act(["land", `${space.name}#${channelName(tab)}`], `Landed ${d.wt.branch}`, cx))))) : null;
-
-    // Light rows: no boxes, just a hover.
-    const lite = (id, left, right, action) => h_flex().id(id).items_center().justify_between().gap(10).px(8).py(7).rounded(6)
-      .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "07"))).on_click(action))
-      .child(left).when(Boolean(right), (el) => el.child(right));
-
-    const others = (space?.tabs ?? []).filter((x) => !x.active);
-    const channels = others.length ? this.section2(t, "Other channels", others.length, null,
-      v_flex().children(others.map((x) => lite(`sib-${x.id}`,
-        h_flex().items_center().gap(9).min_w(0).child(mascotEl(bot, mood(x.status, bot.awake), 20, t)).child(k.text(`#${channelName(x)}`, t.foreground, 12.5)),
-        k.mark(x.status), () => run("tab.select", { id: x.id }))))) : null;
-
-    const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskOf(x, bot.name));
-    const tasks = mine.length ? this.section2(t, "Tasks", mine.length, null,
-      v_flex().children(mine.map((x) => lite(`task-${x.id}`,
-        h_flex().items_center().gap(9).min_w(0)
-          .child(div().size(6).flex_none().rounded_full().bg(x.status === "blocked" ? t.blocked : x.status === "claimed" ? t.working : a(t.foreground, "44")))
-          .child(k.text(x.title, t.foreground, 12.5)),
-        k.text(x.id, t.dim, 11.5))))) : null;
-
-    const rs = this.ops.routines.filter((r) => r.bot === bot.name);
-    const openRoutines = (extra) => openOverlay({ mod: "crew-routines", kind: "dialog", width: 520, props: extra });
-    const routines = this.section2(t, "Routines", rs.length || null,
-      k.link("rt-all", rs.length ? "All" : "Add one", () => openRoutines(rs.length ? {} : { new: true, bot: bot.name })),
-      rs.length ? v_flex().children(rs.map((r) => lite(`rt-${r.id}`,
-        v_flex().min_w(0).gap(1).child(k.text(r.name, r.paused ? t.dim : t.foreground, 12.5)).child(k.text(r.paused ? "paused" : r.schedule, t.dim, 11.5)),
-        k.link(`rt-run-${r.id}`, r.run ? "running" : "Run", (_e, cx) => { if (!r.run) this.act(["routine", "run", r.id], `Running ${r.name}`, cx); })))) : null);
-
-    // Memory: what you pin (a quiet field), then the latest things it remembered itself.
-    const memory = this.section2(t, "Memory", null, this.longMemory ? k.text(`${this.longMemory} long-term`, t.dim, 11.5) : null,
-      v_flex().gap(10)
-        .child(div().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .child(Textarea.new(this.memory).w_full().px(12).py(9).rounded(6).text_size(12.5).text_color(t.foreground)
-            .bg(a(t.foreground, this.editing ? "0c" : "07"))))
-        .when(this.notes.length > 0, (el) => el.child(v_flex().gap(7).px(4)
-          .children(this.notes.slice(-3).map((n) => h_flex().gap(8).items_start()
-            .child(div().size(4).mt(7).flex_none().rounded_full().bg(a(t.foreground, "33")))
-            .child(div().flex_1().min_w(0).text_size(12).text_color(t.dim).child(n.length > 150 ? n.slice(0, 150) + "…" : n)))))));
-
     if (current === "tasks") {
-      root.when(Boolean(tasks), (el) => el.child(tasks))
-        .when(!tasks, (el) => el.child(div().px(4).text_size(12.5).text_color(t.dim).child(`No open tasks for ${bot.name}.`)))
-        .child(routines);
-    } else if (current === "memory") root.child(memory);
-    else {
-      root.child(header).child(channel)
-        .when(Boolean(glance), (el) => el.child(glance))
-        .when(Boolean(branch), (el) => el.child(branch))
-        .when(Boolean(channels), (el) => el.child(channels));
+      const rs = this.ops.routines.filter((r) => r.bot === bot.name);
+      const openRoutines = (extra) => openOverlay({ mod: "crew-routines", kind: "dialog", width: 520, props: extra });
+      const addLink = div().id("rt-all").cursor_pointer().hover((x) => x.opacity(0.75))
+        .on_click(() => openRoutines(rs.length ? {} : { new: true, bot: bot.name }))
+        .child(div().text_size(12).text_color(d.fg2).child(rs.length ? "All" : "Add one"));
+      return frame.child(body.child(this.tasksSection(d, bot)).child(hair())
+        .child(v_flex().flex_none().pt(8).px(8).pb(4)
+          .child(this.head(d, "Routines", addLink))
+          .children(rs.map((r) => h_flex().id(`rt-${r.id}`).h(30).flex_none().items_center().gap(8).px(8).rounded(d.r.sm)
+            .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(r.paused ? d.fg2 : d.body).child(r.name))
+            .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(r.paused ? "paused" : r.schedule))))));
     }
-    return done();
+    if (current === "files") return frame.child(body.child(this.changesSection(d, wtActions)));
+    if (current === "terminal") return frame.child(body).child(this.terminalSection(d, lead));
+    if (current === "branch") {
+      return frame.child(body.child(v_flex().flex_none().pt(8).px(8).pb(4)
+        .child(this.head(d, "Branch", null))
+        .child(h_flex().h(26).items_center().gap(8).px(8)
+          .child(svg(`${ICON}/ds-branch.svg`).size(12).flex_none().text_color(d.fg3))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).text_color(d.body).child(lead?.branch ?? "no git branch")))
+        .when(Boolean(lead?.cwd), (el) => el.child(div().px(8).pb(4).truncate().text_size(11).font_family(d.mono).text_color(d.fg3)
+          .child(lead.cwd.replace(/^\/home\/[^/]+/, "~"))))
+        .when(Boolean(wtActions), (el) => el.child(wtActions))));
+    }
+    // Memory: what you pin (a quiet field), then the latest things it remembered itself.
+    return frame.child(body.child(v_flex().flex_none().pt(8).px(8).pb(4).gap(6)
+      .child(this.head(d, "Memory", this.longMemory ? div().text_size(12).text_color(d.fg4).child(`${this.longMemory} long-term`) : null))
+      .child(div().px(6).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(Textarea.new(this.memory).w_full().px(10).py(8).rounded(d.r.sm).text_size(13).text_color(d.body)
+          .bg(this.editing ? d.sel : d.raised).border_1().border_color(d.line)))
+      .children(this.notes.slice(-3).map((n, i) => h_flex().id(`note-${i}`).gap(8).items_start().px(8).py(4)
+        .child(div().size(4).mt(6).flex_none().rounded(1).bg(d.lineStrong))
+        .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(d.fg2).child(n.length > 150 ? n.slice(0, 150) + "…" : n))))));
   }
 
   roomSide(room, root, t, k) {

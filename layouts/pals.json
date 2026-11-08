@@ -7,16 +7,16 @@
     18
   ],
   "preview": "layouts/pals.svg",
-  "background": "chrome",
-  "ui_font": "Adwaita Sans",
+  "background": "#0B0B0C",
+  "ui_font": "Inter",
   "terminal_padding": [
     16,
     14
   ],
   "resizable": false,
   "divider": {
-    "width": 1,
-    "color": "border"
+    "width": 0,
+    "color": "#1E1E20"
   },
   "children": [
     {
@@ -24,7 +24,7 @@
       "type": "row",
       "divider": {
         "width": 0,
-        "color": "chrome"
+        "color": "#1E1E20"
       },
       "children": [
         {
@@ -53,143 +53,116 @@
           }
         },
         {
-          "id": "frame",
+          "id": "work",
           "type": "column",
-          "padding": [
-            8,
-            10
-          ],
           "resizable": false,
+          "background": "#0B0B0C",
           "children": [
             {
               "id": "crew-tabs",
               "type": "block",
+              "hidden": true,
               "size": {
-                "px": 38
+                "px": 40
               },
               "content": {
                 "mod": "crew-tabs"
               },
-              "window_drag": true,
-              "hidden": true
+              "window_drag": true
             },
             {
-              "id": "sheet",
-              "type": "row",
-              "radius": 8,
-              "background": "surface",
-              "border": {
-                "width": 1,
-                "color": "border"
+              "id": "crew-header",
+              "type": "block",
+              "size": {
+                "px": 52
               },
-              "divider": {
-                "width": 1,
-                "color": "border"
+              "content": {
+                "mod": "crew-header"
               },
+              "window_drag": true
+            },
+            {
+              "id": "center",
+              "type": "stack",
+              "active": "tab-view",
               "children": [
                 {
-                  "id": "work",
-                  "type": "column",
-                  "resizable": false,
-                  "children": [
-                    {
-                      "id": "crew-header",
-                      "type": "block",
-                      "size": {
-                        "px": 52
-                      },
-                      "content": {
-                        "mod": "crew-header"
-                      },
-                      "window_drag": true
-                    },
-                    {
-                      "id": "center",
-                      "type": "stack",
-                      "active": "tab-view",
-                      "children": [
-                        {
-                          "id": "tab-view",
-                          "type": "block",
-                          "padding": [
-                            0,
-                            24
-                          ],
-                          "content": {
-                            "tab": "active",
-                            "pane": {
-                              "gap": 8,
-                              "radius": 6,
-                              "background": "background",
-                              "border": {
-                                "width": 1,
-                                "color": "border"
-                              },
-                              "focus": {
-                                "width": 1,
-                                "color": "accent"
-                              },
-                              "lone": true
-                            }
-                          }
-                        },
-                        {
-                          "id": "room-view",
-                          "type": "block",
-                          "content": {
-                            "mod": "crew-room"
-                          }
-                        },
-                        {
-                          "id": "chat-view",
-                          "type": "block",
-                          "content": {
-                            "mod": "crew-chat"
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "id": "crew-composer",
-                      "type": "block",
-                      "size": {
-                        "px": 104
-                      },
-                      "content": {
-                        "mod": "crew-composer"
-                      }
-                    }
-                  ]
-                },
-                {
-                  "id": "panel",
+                  "id": "tab-view",
                   "type": "block",
-                  "hidden": true,
-                  "size": {
-                    "px": 320
-                  },
-                  "min": 260,
-                  "max": 520,
+                  "padding": [
+                    12,
+                    24
+                  ],
                   "content": {
-                    "mod": "crew-side"
+                    "tab": "active",
+                    "pane": {
+                      "gap": 8,
+                      "radius": 4,
+                      "background": "background",
+                      "border": {
+                        "width": 1,
+                        "color": "#1E1E20"
+                      },
+                      "focus": {
+                        "width": 1,
+                        "color": "#3C3C3F"
+                      },
+                      "lone": true
+                    }
                   }
                 },
                 {
-                  "id": "rail",
+                  "id": "room-view",
                   "type": "block",
-                  "size": {
-                    "px": 48
-                  },
-                  "min": 48,
-                  "max": 48,
                   "content": {
-                    "mod": "crew-rail"
+                    "mod": "crew-room"
+                  }
+                },
+                {
+                  "id": "chat-view",
+                  "type": "block",
+                  "content": {
+                    "mod": "crew-chat"
                   }
                 }
               ]
+            },
+            {
+              "id": "crew-composer",
+              "type": "block",
+              "size": {
+                "px": 96
+              },
+              "content": {
+                "mod": "crew-composer"
+              }
             }
-          ],
-          "gap": 6
+          ]
+        },
+        {
+          "id": "panel",
+          "type": "block",
+          "hidden": true,
+          "size": {
+            "px": 320
+          },
+          "min": 260,
+          "max": 520,
+          "content": {
+            "mod": "crew-side"
+          }
+        },
+        {
+          "id": "rail",
+          "type": "block",
+          "size": {
+            "px": 48
+          },
+          "min": 48,
+          "max": 48,
+          "content": {
+            "mod": "crew-rail"
+          }
         }
       ]
     },
@@ -197,10 +170,10 @@
       "id": "status",
       "type": "block",
       "size": {
-        "px": 28
+        "px": 24
       },
-      "min": 28,
-      "max": 28,
+      "min": 24,
+      "max": 26,
       "content": {
         "mod": "crew-status"
       }

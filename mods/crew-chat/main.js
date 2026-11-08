@@ -21,30 +21,37 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
 import { markdownView, plain, splitBlocks } from "./markdown.js";
 import { markdownHeight, lineWidth } from "./estimate.js";
-import { spaces, panes, theme, watchFolder, appHome, readTextFile, hc, layout, notify, openOverlay } from "herdr";
-import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, a, tone, ds, layoutMode } from "./crew.js";
+import { spaces, panes, theme, settings, watchFolder, appHome, readTextFile, hc, layout, notify, openOverlay } from "herdr";
+import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, tone, ds, layoutMode } from "./crew.js";
 
 const LINE = 21;
-const PAD_Y = 9, NAME = 18, GAP_SAME = 4, STAMP = 36, EVENT = 32, TYPING = 54, CARD = 74;
-const CHIP = 28, CHIP_GAP = 6, CALL = 24, CALL_OUT = 20, FOOTER = 24;
-const COLUMN = 720, KEEP = 300, MEASURE = 24;
-// The design-system chat (docs/design-system): a 720 px column in both modes; replies grouped as r4
-// rectangles with the pal's pocket pet once per group (36x28 in Focus, 31x24 in Pro); your own
-// messages as bubble A, an r4 slab with a 2 px edge in your colour; quiet centred timestamps.
-// Focus is airier between groups than Pro.
-const FACE = { focus: 36, pro: 31 }, GAP = { focus: 22, pro: 14 }, EDGE = 2;
+const EVENT = 32, KEEP = 300, MEASURE = 24, EDGE = 2;
+// The two boards' chat. Focus ("MODE · Focus (default)"): a 720 px column, 32 px in, groups 28 px
+// apart, the pet 36x28 (12 px to the text), #161617 bubbles 9/12 padded, 14/22 text, quiet centred
+// stamps. Pro ("MODE · Pro"): fluid, 24 px in, groups 16 px apart, the pet 31x24 (10 px), a name
+// line (13/500 name, 12 px time, "· worked 6m"), #131314 bubbles 6/10 padded, 14/21 text, hairline
+// day dividers, notes from other pals as bare text, and the tool log as a card. Older than today:
+// dimmer text (and in Focus a half-faded pet). Bubble A for yours in both.
+const MODE = {
+  focus: { col: 720, px: 32, py: 24, gap: 28, same: 3, face: 36, faceGap: 12, padX: 12, padY: 9, line: 22, name: 0 },
+  pro: { col: 0, px: 24, py: 16, gap: 16, same: 2, face: 31, faceGap: 10, padX: 10, padY: 6, line: 21, name: 18 },
+};
 
 const ICONS = "mods/crew-chat/icons", ROSTER = "mods/crew-roster/icons";
-const clock = (ms) => { const d = new Date(ms), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
-// A time separator: the clock today, "Yesterday 9:12 AM", else "Mon, Nov 2 · 6:30 PM".
-function when(ms) {
+const clock = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const dayWord = (ms) => {
   const d = new Date(ms), today = new Date();
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((day(today) - day(d)) / 86400000);
-  if (days === 0) return clock(ms);
-  if (days === 1) return `Yesterday ${clock(ms)}`;
-  const date = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", ...(d.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}) });
-  return `${date} · ${clock(ms)}`;
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", ...(d.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}) });
+};
+// Focus stamps read "Today 21:48"; Pro dividers say the day where the day changes, else the time;
+// an older group's name line says "Yesterday 23:46".
+function stampLabel(ms, mode) {
+  if (mode === "focus" || mode === "pro-old") return `${dayWord(ms)} ${clock(ms)}`;
+  return clock(ms);
 }
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const worked = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; };
@@ -55,34 +62,23 @@ function findNode(node, id) {
   return null;
 }
 
-// A stretch of tool calls as chips, one per kind ("Ran 3 commands", "Edited main.js"), in the order
-// they first happened. Each call is running (no result yet, while the pal works), done, failed, or
-// unknown (feeds written before results were recorded).
-const KINDS = {
-  command: { icon: `${ICONS}/terminal.svg`, one: () => "Ran a command", many: (n) => `Ran ${n} commands` },
-  edit: { icon: `${ICONS}/pencil.svg`, one: (w) => `Edited ${w}`, many: (n) => `Edited ${n} files`, files: true },
-  write: { icon: `${ICONS}/pencil.svg`, one: (w) => `Wrote ${w}`, many: (n) => `Wrote ${n} files`, files: true },
-  read: { icon: `${ROSTER}/file.svg`, one: () => "Read a file", many: (n) => `Read ${n} files` },
-  search: { icon: `${ROSTER}/search.svg`, one: () => "Searched the code", many: (n) => `Searched ${n} times` },
-  web: { icon: `${ICONS}/globe.svg`, one: () => "Looked online", many: (n) => `Looked online ${n} times` },
-  agent: { icon: `${ROSTER}/users.svg`, one: () => "Ran a helper", many: (n) => `Ran ${n} helpers` },
-  tool: { icon: `${ICONS}/wrench.svg`, one: (w) => `Used ${w}`, many: (n) => `Used ${n} tools`, files: true },
-};
-function chips(items) {
+// A stretch of tool calls as the tool log's rows: one per tool, in the order first used, with how
+// many times it ran, what the last call was on, and its state (running if any still runs, failed
+// if any failed, else done).
+const VERB = { command: "Bash", edit: "Edit", write: "Write", read: "Read", search: "Search", web: "Web", agent: "Agent" };
+function toolRows(items) {
   const by = new Map();
-  for (const x of items) { const k = KINDS[x.verb] ? x.verb : "tool"; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
-  return [...by].map(([k, xs]) => {
-    const K = KINDS[k], names = new Set(xs.map((x) => x.what));
-    const label = K.files ? (names.size === 1 ? K.one(xs[0].what) : K.many(names.size)) : xs.length === 1 ? K.one() : K.many(xs.length);
-    return { kind: k, icon: K.icon, label, running: xs.some((x) => x.state === "running"), failed: xs.filter((x) => x.state === "failed").length };
+  for (const x of items) {
+    const name = (x.name || VERB[x.verb] || "Tool").replace(/^mcp__(.*?)__/, "$1.");
+    if (!by.has(name)) by.set(name, []);
+    by.get(name).push(x);
+  }
+  return [...by].map(([name, xs]) => {
+    const last = xs[xs.length - 1];
+    const failed = xs.filter((x) => x.state === "failed").length;
+    return { name, n: xs.length, what: last.what && last.what !== last.name ? last.what : null, failed,
+      state: xs.some((x) => x.state === "running") ? "running" : failed ? "failed" : xs.every((x) => x.state === "done") ? "done" : "unknown" };
   });
-}
-// How wide a chip draws (px), to know how many rows of chips a stretch takes.
-const chipW = (c) => 20 + 13 + 6 + c.label.length * 7 + 16 + (c.running ? 17 : 0) + (c.failed ? 56 : 0);
-function chipRows(cs, width) {
-  let rows = 1, x = 0;
-  for (const c of cs) { const w = chipW(c); if (x && x + CHIP_GAP + w > width) { rows++; x = w; } else x += (x ? CHIP_GAP : 0) + w; }
-  return rows;
 }
 
 export default class CrewChat extends View {
@@ -178,43 +174,45 @@ export default class CrewChat extends View {
   // Laying out hundreds of messages every frame is too slow for Herdr's render budget, so the
   // rows are kept until the feed, the width, the status or what's unfolded changes.
   rows(status) {
-    const key = `${this.version}|${this.mver}|${Math.round(Math.min(this.width, COLUMN))}|${status}|${[...this.open].join(",")}|${layoutMode()}`;
+    const key = `${this.version}|${this.mver}|${Math.round(this.width)}|${status}|${layoutMode()}|${settings().zoom ?? 1}|${new Date().toDateString()}`;
     if (key === this.rowsKey) return this.rowsVal;
+    const look = `${layoutMode()}|${settings().zoom ?? 1}`;
+    if (look !== this.look) { this.look = look; this.natural.clear(); }
     this.rowsKey = key;
     this.rowsVal = this.layout(status);
     return this.rowsVal;
   }
 
+  // Rows for the virtual list, with exact heights. A group is a run of messages from one speaker
+  // with no gap of 10+ minutes; its first row carries the pet (and, in Pro, the name line).
   layout(status) {
-    const GAP_NEW = GAP[layoutMode()];
-    const width = Math.min(this.width, COLUMN);
-    const botMax = Math.max(260, Math.min(680, Math.round(width - 120)));
-    const youMax = Math.max(220, Math.min(540, Math.round((width - 120) * 0.72)));
+    const M = MODE[layoutMode()];
+    const width = Math.max(320, (M.col ? Math.min(this.width, M.col + 2 * M.px) : this.width) - 2 * M.px);
+    const inner = width - M.face - M.faceGap;
+    const botMax = Math.max(220, inner - 2 * M.padX);
+    const youMax = Math.max(200, Math.min(560, Math.round(width * 0.72)) - 2 * M.padX - EDGE);
     const unmeasured = [];
     const busy = status === "working" || status === "blocked";
-    const rows = [];
+    const today = new Date().toDateString();
+    const rows = [{ kind: "space", key: "top", h: M.py }];
     if (this.older) rows.push({ kind: "event", key: "older", text: this.loadingOlder ? "Loading earlier messages…" : "Scroll up for earlier messages", h: EVENT });
     let prev = null;
-    // A turn: from your message (or a note to the pal) to the next. A finished one that got a reply
-    // ends with a footer: when it ended, how long it worked, how many tools it used.
+    // A turn: from your message (or a note to the pal) to the next. Its first reply row learns how
+    // long the pal worked once the turn ends ("21:48 · worked 6m" in Pro).
     let turn = null;
     const endTurn = (last) => {
-      if (turn?.reply && last) {
-        const parts = [clock(last.at)];
-        if (last.at - turn.at >= 1000) parts.push(`Worked ${worked(last.at - turn.at)}`);
-        if (turn.tools) parts.push(`${turn.tools} tool${turn.tools === 1 ? "" : "s"}`);
-        rows.push({ kind: "footer", key: `f-${last._n}`, text: parts.join(" · "), h: FOOTER });
-      }
+      if (turn?.first && last && last.at - turn.at >= 1000) turn.first.worked = last.at - turn.at;
       turn = null;
     };
     const es = this.entries;
     for (let i = 0; i < es.length; i++) {
       const e = es[i];
-      if (e.kind === "you" || e.kind === "note") { endTurn(prev); turn = { at: e.at, tools: 0, reply: false }; }
-      const far = !prev || e.at - prev.at > 10 * 60 * 1000 || !sameDay(e.at, prev.at);
-      if (far) rows.push({ kind: "stamp", key: `s-${e._n}`, at: e.at, h: STAMP });
+      if (e.kind === "you" || e.kind === "note") { endTurn(prev); turn = { at: e.at, first: null }; }
+      const dayChange = prev && !sameDay(e.at, prev.at);
+      const far = !prev || e.at - prev.at > 10 * 60 * 1000 || dayChange;
+      if (far && prev) rows.push({ kind: "stamp", key: `s-${e._n}`, at: e.at, day: dayChange, h: M.gap + 14 });
+      const old = new Date(e.at).toDateString() !== today;
       if (e.kind === "tool") {
-        // The whole stretch of tool calls: chips, and (unfolded) one line per call.
         const items = [];
         while (i < es.length && es[i].kind === "tool") {
           const x = es[i++];
@@ -222,111 +220,130 @@ export default class CrewChat extends View {
           items.push({ ...x, state: r ? (r.error ? "failed" : "done") : x.id && busy ? "running" : x.id ? "stopped" : "unknown", out: r?.out ?? "" });
         }
         i--;
-        if (turn) turn.tools += items.length;
-        const key = `t-${items[0]._n}`;
-        const open = this.open.has(key);
-        const cs = chips(items);
-        const lines = open ? items.reduce((n, x) => n + CALL + (x.state === "failed" && x.out ? CALL_OUT : 0), 0) + 6 : 0;
-        const nrows = chipRows(cs, botMax);
-        rows.push({ kind: "tools", key, items, chips: cs, open, h: GAP_SAME + 2 + nrows * CHIP + (nrows - 1) * CHIP_GAP + 4 + lines });
+        const groups = toolRows(items);
+        const h = M.name ? 4 + groups.length * 26 + 2 : 4 + 22;
+        rows.push({ kind: "tools", key: `t-${items[0]._n}`, items, groups, h: M.same + h });
         prev = { ...es[i], kind: "bot" };
         continue;
       }
       if (e.kind === "event") { rows.push({ kind: "event", key: `e-${e._n}`, text: e.text, h: EVENT }); prev = e; continue; }
-      if (e.kind === "bot" && turn) turn.reply = true;
       const you = e.kind === "you";
-      const first = far || !prev || prev.kind !== e.kind || (e.kind === "note" && prev.from !== e.from);
+      const note = e.kind === "note";
+      const first = far || !prev || prev.kind !== e.kind || (note && prev.from !== e.from);
       const max = you ? youMax : botMax;
-      // The text's width: the bubble's at most, or (one short paragraph) about the text's own.
       const text = e.text ?? "";
-      let tw = max - 28;
+      let tw = max;
       if (plain(text)) {
-        // One short paragraph: its natural one-line width, measured (guessed until then).
         const nat = this.natural.get(e._n);
         if (nat == null) unmeasured.push({ key: `${e._n}`, text, you, natural: true });
         const w = nat ?? Math.ceil(lineWidth(text.trim()) * 1.06 + 12);
         if (w < tw) tw = Math.max(16, Math.ceil(w) + 1);
       }
-      // Its height: measured off-screen once per width (see measuring() in render), guessed until then.
-      const mkey = `${e._n}|${tw}`;
+      // Heights are per width, mode (line height) and zoom, so a switch never reuses a wrong one.
+      const mkey = `${e._n}|${tw}|${layoutMode()}|${settings().zoom ?? 1}`;
       let th = this.measured.get(mkey);
       if (th == null) {
         if (!e._est || e._est.w !== tw) e._est = { w: tw, h: markdownHeight(text, tw) };
         th = e._est.h;
         unmeasured.push({ key: mkey, text, tw, you });
       }
-      const label = e.kind === "note" ? e.from : null;
-      const h = (first ? GAP_NEW : GAP_SAME) + (label && first ? NAME : 0) + PAD_Y * 2 + th + (e.images ? LINE : 0);
-      rows.push({ kind: e.kind, key: `m-${e._n}`, e, you, first, label, tw, h });
+      // Pro: a note from another pal is plain text under its name, no bubble.
+      const bare = note && Boolean(M.name);
+      const nameLine = !you && first && M.name ? M.name : 0;
+      const h = (first ? M.gap : M.same) + nameLine + (bare ? 0 : M.padY * 2) + th + (e.images ? LINE : 0);
+      const row = { kind: e.kind, key: `m-${e._n}`, e, you, first, tw, h, old, bare, label: note ? e.from : null };
+      if (!you && !note && turn && !turn.first && first) turn.first = row;
+      rows.push(row);
       prev = e;
     }
-    // The last turn gets its footer once the pal is done with it.
     if (!busy) endTurn(prev);
     this.unmeasured = unmeasured;
-    if (status === "working") rows.push({ kind: "typing", key: "typing", h: TYPING });
-    if (status === "blocked") rows.push({ kind: "blocked", key: "blocked", h: CARD });
+    if (status === "working") rows.push({ kind: "typing", key: "typing", h: M.same + 4 + 16 });
+    if (status === "blocked") rows.push({ kind: "blocked", key: "blocked", h: M.gap + 40 });
+    rows.push({ kind: "space", key: "bottom", h: M.py });
     return rows;
   }
 
   row(r, t, bot, mood_) {
-    const d = ds(t), mode = layoutMode(), F = FACE[mode], GAP_NEW = GAP[mode], IN = 28 + F + 10;
-    if (r.kind === "stamp") return h_flex().h(r.h).w_full().items_center().justify_center().child(div().text_size(11).text_color(d.fg3).child(when(r.at)));
-    if (r.kind === "event") return h_flex().h(r.h).w_full().items_center().justify_center().px(28).child(div().truncate().text_size(12).text_color(t.dim).child(r.text));
-    if (r.kind === "footer") return h_flex().h(r.h).w_full().items_start().pl(IN).pr(28).child(div().truncate().text_size(11.5).text_color(t.dim).child(r.text));
+    const d = ds(t);
+    const mode = layoutMode(), M = MODE[mode];
+    const IN = M.face + M.faceGap;
+    const wrap = (el) => el.w_full().px(M.px);
+    if (r.kind === "space") return div().h(r.h).w_full();
+    if (r.kind === "stamp") {
+      // Focus: a quiet centred time. Pro: a hairline divider with the day (or time) in it.
+      const label = mode === "focus" ? stampLabel(r.at, "focus") : r.day ? dayWord(r.at) : clock(r.at);
+      if (!M.name) return wrap(h_flex().h(r.h).items_end().justify_center())
+        .child(div().h(14).text_size(11).line_height("14px").text_color(d.fg4).child(label));
+      return wrap(h_flex().h(r.h).items_end())
+        .child(h_flex().h(14).w_full().items_center().gap(12)
+          .child(div().flex_1().h(1).bg(d.line))
+          .child(div().text_size(11).line_height("14px").when(Boolean(r.day), (el) => el.font_weight(500)).text_color(r.day ? d.fg3 : d.fg4).child(label))
+          .child(div().flex_1().h(1).bg(d.line)));
+    }
+    if (r.kind === "event") return wrap(h_flex().h(r.h).items_center().justify_center()).child(div().truncate().text_size(12).text_color(d.fg3).child(r.text));
     if (r.kind === "tools") {
-      const chip = (c) => h_flex().flex_none().h(CHIP).px(10).gap(6).items_center().rounded(d.r.xs)
-        .bg(d.inset).border_1().border_color(c.failed ? a(t.blocked, "66") : d.line)
-        .child(svg(c.icon).size(13).flex_none().text_color(t.muted))
-        .child(div().text_size(12.5).text_color(t.muted).child(c.label))
-        .when(c.running, (el) => el.child(svg(`${ROSTER}/spinner.svg`).size(11).text_color(t.working).spin(900)))
-        .when(c.failed > 0, (el) => el.child(div().text_size(12).text_color(t.blocked).child(`${c.failed} failed`)))
-        .child(svg(`${ROSTER}/${r.open ? "chevron-down" : "chevron-right"}.svg`).size(10).text_color(t.dim));
-      const mark = (x) => x.state === "done" ? svg(`${ROSTER}/check.svg`).size(12).flex_none().text_color(t.done)
-        : x.state === "running" ? svg(`${ROSTER}/spinner.svg`).size(11).flex_none().text_color(t.working).spin(900)
-        : x.state === "failed" ? div().flex_none().text_size(12).text_color(t.blocked).child("failed")
-        : x.state === "stopped" ? div().flex_none().text_size(12).text_color(t.dim).child("no result")
-        : div().flex_none();
-      const VERB = { command: "Bash", edit: "Edit", write: "Write", read: "Read", search: "Search", web: "Web", agent: "Agent" };
-      const call = (x) => v_flex().w_full()
-        .child(h_flex().h(CALL).w_full().gap(8).items_center().overflow_hidden()
-          .child(div().flex_none().text_size(12).font_medium().text_color(t.foreground).child(VERB[x.verb] ?? (x.name || "Tool").replace(/^mcp__.*__/, "")))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(x.what && x.what !== x.name ? x.what : ""))
-          .child(mark(x)))
-        .when(x.state === "failed" && Boolean(x.out), (el) => el.child(div().h(CALL_OUT).w_full().truncate().pl(2)
-          .text_size(11.5).font_family("JetBrains Mono").text_color(a(t.blocked, "cc")).child(x.out.split("\n").join("  ·  "))));
-      return v_flex().h(r.h).w_full().pt(GAP_SAME + 2).pl(IN).pr(28).cursor_pointer()
-        .child(h_flex().w_full().flex_wrap().gap(CHIP_GAP).children(r.chips.map(chip)))
-        .when(r.open, (el) => el.child(v_flex().w_full().pl(12).pt(4).children(r.items.map(call))));
+      const mark = (state, size) => state === "failed" ? svg(`${ROSTER}/x.svg`).size(size).flex_none().text_color(d.err)
+        : state === "done" ? svg(`${ROSTER}/ds-check.svg`).size(size).flex_none().text_color(d.ok)
+        : div().size(size).flex_none().rounded(size / 2).bg(d.lineStrong);
+      const ring = (size) => svg(`${ROSTER}/spinner.svg`).size(size).flex_none().text_color(d.info).spin(900);
+      if (!M.name) {
+        // Focus: the stretch as one chip: its last call, "+N" for the rest.
+        const g = r.groups[r.groups.length - 1];
+        const more = r.items.length - 1;
+        return wrap(h_flex().h(r.h).items_end().pl(M.px + IN))
+          .child(h_flex().h(22).min_w(0).items_center().gap(6).px(6).rounded(d.r.xs).border_1().border_color(d.line)
+            .child(g.state === "running" ? ring(10) : mark(g.state, 10))
+            .child(div().min_w(0).truncate().text_size(11).font_family(d.mono).text_color(d.fg2)
+              .child(`${g.name}${g.what ? ` · ${g.what}` : ""}${more > 0 ? `  +${more}` : ""}`)));
+      }
+      // Pro: the tool log, one 26 px row per tool: ✓ / spinner / ✕, its name, what, and a count.
+      return wrap(v_flex().h(r.h).justify_end().pl(M.px + IN))
+        .child(v_flex().w_full().mt(4).rounded(d.r.sm).border_1().border_color(d.line).overflow_hidden()
+          .children(r.groups.map((g, i) => h_flex().h(26).flex_none().items_center().gap(8).px(8)
+            .when(i < r.groups.length - 1, (el) => el.border_b_1().border_color(d.lineSoft))
+            .child(g.state === "running" ? ring(11) : mark(g.state, 11))
+            .child(div().flex_none().max_w(260).truncate().text_size(11).font_family(d.mono).text_color(d.body).child(g.name))
+            .child(div().flex_1().min_w(0).truncate().text_size(11).font_family(d.mono).text_color(d.fg4).child(g.what ?? ""))
+            .child(div().flex_none().text_size(11).line_height("14px")
+              .text_color(g.state === "failed" ? d.err : d.fg4)
+              .child(g.state === "running" ? "running" : g.state === "failed" ? `${g.failed} failed` : g.n > 1 ? `${g.n}×` : "")))));
     }
     if (r.kind === "typing") {
-      return h_flex().h(r.h).w_full().items_end().gap(10).pt(GAP_NEW).px(28)
-        .child(mascotEl(bot, "working", F, t))
-        .child(div().h(32).px(14).flex().items_center().rounded(d.r.sm).bg(a(t.foreground, "0e"))
-          .child(div().w(30).text_size(16).text_color(t.muted).font_family("JetBrains Mono").frames(["•  ", "•• ", "•••", " ••", "  •", "   "], 180).child("•••")));
+      const sq = (o) => div().size(4).flex_none().bg(d.info).opacity(o);
+      return wrap(h_flex().h(r.h).items_end().pl(M.px + IN))
+        .child(h_flex().h(16).items_center().gap(8).px(2)
+          .child(h_flex().gap(3).loop("opacity", { from: 0.45, to: 1, period: 900 }).child(sq(1)).child(sq(0.6)).child(sq(0.3)))
+          .child(div().text_size(12).line_height("16px").text_color(d.fg3).child(M.name ? "typing" : `${bot.name} is typing`)));
     }
     if (r.kind === "blocked") {
-      return h_flex().h(r.h).w_full().items_end().pt(GAP_NEW).px(28).gap(10)
-        .child(mascotEl(bot, "blocked", F, t))
-        .child(h_flex().items_center().px(14).py(10).rounded(d.r.md).bg(a(t.blocked, "14")).border_1().border_color(a(t.blocked, "30"))
-          .child(div().text_size(13.5).text_color(t.foreground).child("It's asking you something in the terminal")));
+      return wrap(h_flex().h(r.h).items_end().gap(M.faceGap))
+        .child(mascotEl(bot, "blocked", M.face, t))
+        .child(h_flex().h(40).items_center().gap(10).px(12).rounded(d.r.sm).bg(d.warn + "1F").border_1().border_color(d.warn + "47")
+          .child(div().text_size(13).text_color(d.body).child("It's asking you something in the terminal"))
+          .child(div().id("chat-open-term").h(24).px(8).flex().items_center().rounded(d.r.xs).bg(d.ctl).cursor_pointer()
+            .hover((s) => s.bg(d.lineStrong)).on_click(() => setChatPref(this.tabId, false))
+            .child(div().text_size(12).font_weight(500).text_color(d.fg1).child("Open terminal"))));
     }
-    const { e, you, first, label, tw } = r;
-    const note = r.kind === "note";
-    // Bubble A: yours is a flat r4 slab tinted with your colour, its right edge 2 px of it.
-    const color = t.foreground;
-    const bubble = v_flex().w(tw + 28 + (you ? EDGE : 0)).flex_none().px(14).py(PAD_Y).rounded(d.r.sm).text_size(14).text_color(color)
-      .when(you, (el) => el.bg(a(t.accent, "26")).border_r(EDGE).border_color(t.accent))
-      .when(note, (el) => el.bg(d.inset).border_1().border_color(d.line))
-      .when(!you && !note, (el) => el.bg(a(t.foreground, "0d")))
-      .child(markdownView(`md-${r.key}`, e.text ?? "", color, tw))
+    const { e, you, first, tw, old, bare } = r;
+    const textColor = you ? (old ? d.body : d.fg1) : old ? d.fg2 : d.body;
+    const content = v_flex().text_size(14).line_height(`${M.line}px`).text_color(textColor)
+      .child(markdownView(`md-${r.key}`, e.text ?? "", textColor, tw))
       .when(Boolean(e.images), (el) => el.child(div().h(LINE).text_size(12.5).text_color(d.fg3).child(`${e.images} image${e.images > 1 ? "s" : ""}`)));
-    if (you) return v_flex().h(r.h).w_full().items_end().pt(first ? GAP_NEW : GAP_SAME).px(28).child(bubble);
-    // The pal's pet once per group, in its live state.
-    const face = first && !note ? mascotEl(bot, mood_, F, t) : div().w(F);
-    return h_flex().h(r.h).w_full().items_start().gap(10).pt(first ? GAP_NEW : GAP_SAME).px(28)
-      .child(v_flex().w(F).flex_none().pt(label && first ? NAME : 0).child(face))
-      .child(v_flex().min_w(0).items_start()
-        .when(Boolean(label) && first, (el) => el.child(h_flex().h(NAME).items_center().child(div().text_size(12).text_color(t.dim).child(`from ${label}`))))
+    // Bubble A: yours an r4 slab in your colour with a 2 px edge of it; the pal's replies r4 rectangles.
+    const bubble = bare ? content.w(tw) : content.w(tw + 2 * M.padX + (you ? EDGE : 0)).flex_none().px(M.padX).py(M.padY).rounded(d.r.sm)
+      .when(you, (el) => el.bg(old ? d.meOld : d.me).border_r(EDGE).border_color(d.meEdge))
+      .when(!you, (el) => el.bg(old || M.name ? d.bubbleOld : d.bubble));
+    if (you) return wrap(v_flex().h(r.h).items_end().pt(first ? M.gap : M.same)).child(bubble);
+    const face = first ? div().flex_none().when(old && !M.name, (el) => el.opacity(0.5)).child(mascotEl(bot, mood_, M.face, t)) : div().w(M.face).flex_none();
+    const who = r.label ?? bot.name;
+    const meta = [clock(e.at), r.worked ? `worked ${worked(r.worked)}` : null].filter(Boolean).join(" · ");
+    return wrap(h_flex().h(r.h).items_start().gap(M.faceGap).pt(first ? M.gap : M.same))
+      .child(r.label && M.name ? div().w(M.face).flex_none() : face)
+      .child(v_flex().flex_1().min_w(0).items_start()
+        .when(first && Boolean(M.name), (el) => el.child(h_flex().h(M.name).items_start().gap(8)
+          .child(div().text_size(13).line_height("16px").font_weight(500).text_color(d.fg1).child(who))
+          .child(div().text_size(12).line_height("16px").text_color(d.fg4).child(old ? stampLabel(e.at, "pro-old") : meta))))
         .child(bubble));
   }
 
@@ -339,7 +356,7 @@ export default class CrewChat extends View {
     return v_flex().absolute().top(0).left(-30000).w(1400).items_start().opacity(0).children(todo.map((m) => {
       const color = t.foreground;
       // Its width on one line: drawn without a width, in a row that doesn't wrap.
-      if (m.natural) return h_flex().id(`measure-w-${m.key}`).flex_none().whitespace_nowrap().text_size(14)
+      if (m.natural) return h_flex().id(`measure-w-${m.key}`).flex_none().whitespace_nowrap().text_size(14).line_height(`${MODE[layoutMode()].line}px`)
         .child(markdownView(`mw-${m.key}`, m.text, color, 1400))
         .on_size_change((size, cx) => {
           if (!(size.width > 0) || this.natural.get(Number(m.key)) === Math.ceil(size.width)) return;
@@ -348,7 +365,7 @@ export default class CrewChat extends View {
           if (this.follow) this.pending = true;
           cx.notify();
         });
-      return v_flex().id(`measure-${m.key}`).w(m.tw).flex_none().text_size(14).text_color(color)
+      return v_flex().id(`measure-${m.key}`).w(m.tw).flex_none().text_size(14).line_height(`${MODE[layoutMode()].line}px`).text_color(color)
         .child(markdownView(`mm-${m.key}`, m.text, color, m.tw))
         .on_size_change((size, cx) => {
           if (!(size.height > 0) || this.measured.get(m.key) === size.height) return;
@@ -360,55 +377,13 @@ export default class CrewChat extends View {
     }));
   }
 
-  // The strip under the chat: which model and effort, how full the context is, how much of your
-  // usage is gone, and (while it works) Stop, or (when it asks) Open terminal.
-  strip(tab, terminal, t) {
-    const m = this.meta;
-    const dot = () => div().text_size(12).text_color(a(t.dim, "88")).child("·");
-    const fact = (text, color) => div().flex_none().text_size(12).text_color(color ?? t.dim).child(text);
-    const facts = [];
-    if (m?.model?.display_name) facts.push(fact(m.model.display_name + (m.fast_mode ? " fast" : ""), t.muted));
-    if (m?.effort?.level) facts.push(fact(`${m.effort.level} effort`));
-    const cw = m?.context_window;
-    if (cw && Number.isFinite(cw.used_percentage)) {
-      const pct = Math.max(0, Math.min(100, cw.used_percentage));
-      const color = pct >= 85 ? t.blocked : pct >= 65 ? t.working : t.muted;
-      const k = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
-      facts.push(h_flex().flex_none().items_center().gap(6)
-        .child(div().w(42).h(4).rounded(1).bg(a(t.foreground, "14")).child(div().h_full().w(42 * pct / 100).rounded(1).bg(color)))
-        .child(fact(`context ${pct}%${cw.context_window_size ? ` of ${k(cw.context_window_size)}` : ""}`)));
-    }
-    const rl = m?.rate_limits ?? {};
-    const reset = (at) => {
-      if (!at) return "";
-      const d = new Date((at > 1e12 ? at : at * 1000)), h = d.getHours();
-      return ` · resets ${d.toDateString() === new Date().toDateString() ? "" : d.toLocaleDateString(undefined, { weekday: "short" }) + " "}${h % 12 || 12}${h < 12 ? "am" : "pm"}`;
-    };
-    if (Number.isFinite(rl.five_hour?.used_percentage)) facts.push(fact(`5-hour ${Math.round(rl.five_hour.used_percentage)}%${reset(rl.five_hour.resets_at)}`, rl.five_hour.used_percentage >= 80 ? t.blocked : t.dim));
-    if (Number.isFinite(rl.seven_day?.used_percentage)) facts.push(fact(`week ${Math.round(rl.seven_day.used_percentage)}%`, rl.seven_day.used_percentage >= 80 ? t.blocked : t.dim));
-
-    const row = h_flex().flex_1().min_w(0).items_center().gap(8).overflow_hidden();
-    facts.forEach((f, i) => { if (i) row.child(dot()); row.child(f); });
-
-    const busy = tab.status === "working" || tab.status === "blocked";
-    const blocked = tab.status === "blocked";
-    return h_flex().w_full().max_w(COLUMN).h(34).flex_none().items_center().gap(12).px(28)
-      .child(row)
-      .when(busy, (el) => el.child(h_flex().flex_none().items_center().gap(8)
-        .child(div().text_size(12).text_color(blocked ? t.blocked : t.dim).child(blocked ? "asking you in the terminal" : "working"))
-        .child(div().id("chat-action").px(10).py(3).rounded(4).cursor_pointer()
-          .bg(blocked ? t.solid : a(t.foreground, "10")).hover((s) => s.opacity(0.85))
-          .on_click(() => {
-            if (blocked) setChatPref(tab.id, false);
-            else if (terminal) hc(["interrupt", terminal]).catch(() => {});
-          })
-          .child(div().text_size(12).font_medium().text_color(blocked ? t.solid_foreground : t.foreground).child(blocked ? "Open terminal" : "Stop")))));
-  }
-
   render(cx) {
     const t = tone(theme());
+    const d = ds(t);
+    const M = MODE[layoutMode()];
     const { space, tab, terminal } = this.target();
-    const root = v_flex().id("crew-chat").size_full().text_color(t.foreground)
+    this.tabId = tab?.id ?? null;
+    const root = v_flex().id("crew-chat").size_full().bg(d.bg0).text_color(d.fg1)
       .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } });
     if (terminal !== this.terminal) this.reload(cx);
     // Coming to this view shows the newest message.
@@ -429,12 +404,12 @@ export default class CrewChat extends View {
     }
     if (!rows.length) {
       return root.items_center().justify_center().gap(8)
-        .child(div().text_size(15).text_color(t.muted).child(`Nothing in #${channelName(tab)} yet`))
-        .child(div().max_w(420).text_center().text_size(12.5).text_color(t.dim)
+        .child(div().text_size(14).text_color(d.fg2).child(`Nothing in #${channelName(tab)} yet`))
+        .child(div().max_w(420).text_center().text_size(12).text_color(d.fg3)
           .child("Its conversation shows here once it's linked: when the agent starts, or after /clear."));
     }
     return root.child(h_flex().flex_1().min_h(0).w_full().justify_center()
-      .child(div().id("chat-box").relative().h_full().w_full().max_w(COLUMN)
+      .child(div().id("chat-box").relative().h_full().w_full().when(Boolean(M.col), (el) => el.max_w(M.col + 2 * M.px))
         // Scrolling up stops following the newest message (the ↓ button fades in); at the top, earlier
         // messages load. Reaching the end again follows again (in the list's range below).
         .on_scroll_wheel((e, cx) => {
@@ -450,7 +425,6 @@ export default class CrewChat extends View {
           })
           .track_scroll(this.scroll).size_full()
           // Rows can't hold their own click handlers; the list reports which row was clicked.
-          .on_item_click((key, cx) => { if (key.startsWith("t-")) { this.open.has(key) ? this.open.delete(key) : this.open.add(key); cx.notify(); } })
           // Right-click a message: copy it, or a code block in it (crew-menu).
           .on_item_secondary_click((key) => {
             const e = key.startsWith("m-") ? this.rowsVal?.find((r) => r.key === key)?.e : null;
@@ -462,12 +436,11 @@ export default class CrewChat extends View {
         .when(Boolean(this.unmeasured?.length), (el) => el.child(this.measuring(t)))
         // A round ↓ while you read older messages: back to the newest, following again.
         .child(h_flex().absolute().bottom(12).left(0).right(0).justify_center()
-          .child(div().id("chat-jump").size(32).flex().items_center().justify_center().rounded(6)
-            .bg(t.background).border_1().border_color(a(t.foreground, "30")).text_color(t.foreground)
+          .child(div().id("chat-jump").size(28).flex().items_center().justify_center().rounded(d.r.sm)
+            .bg(d.raised).border_1().border_color(d.lineStrong).text_color(d.fg1)
             .opacity(this.follow ? 0 : 1).transition("opacity", { duration: 160 })
-            .when(!this.follow, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))
+            .when(!this.follow, (el) => el.cursor_pointer().hover((s) => s.bg(d.sel)))
             .on_click((_e, cx) => { if (this.follow) return; this.follow = true; this.toBottom(cx); cx.notify(); })
-            .child(svg(`${ICONS}/arrow-down.svg`).size(15))))))
-      .child(h_flex().w_full().justify_center().child(this.strip(tab, terminal, t)));
+            .child(svg(`${ICONS}/arrow-down.svg`).size(15))))));
   }
 }

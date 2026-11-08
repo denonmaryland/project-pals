@@ -55,16 +55,22 @@ export default class CrewComposer extends View {
     const term = leadPane(tab.id, panes())?.terminal;
     const argv = (terminals().find((x) => x.address === term)?.argv ?? []).join(" ");
     const bypass = /--dangerously-skip-permissions|--dangerously-bypass-approvals-and-sandbox|--yolo/.test(argv);
+    // The boards' chips: 28 px r4 #2E2E30; the brain's 8 px swatch (Claude's #D97757), its name
+    // 13/500 and model 13 #808082; the permission mode with an amber shield; each with a chevron.
     const chip = (id, kids, tip) => h_flex().id(id).flex_none().h(28).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.ctl).tooltip(tip).children(kids);
+    const caret = () => svg(`${ICON}/ds-chevron-down.svg`).size(12).flex_none().text_color(d.fg2);
+    const claude = /claude/i.test(bot.harness ?? bot.harnessName ?? "");
     return [
       chip("cmp-brain", [
-        div().size(7).rounded(2).bg(t.accent),
-        div().text_size(12.5).text_color(d.fg1).child(bot.harnessName ?? "Agent"),
-        ...(this.model ? [div().text_size(12.5).text_color(d.fg3).child(this.model)] : []),
+        div().size(8).flex_none().rounded(2).bg(claude ? d.claude : t.accent),
+        div().text_size(13).line_height("16px").font_weight(500).text_color(d.fg1).child(bot.harnessName ?? "Agent"),
+        ...(this.model ? [div().text_size(13).line_height("16px").text_color(d.fg2).child(this.model)] : []),
+        caret(),
       ], "What this channel runs"),
       chip("cmp-perm", [
-        svg(`${ICON}/shield.svg`).size(13).text_color(bypass ? t.ansi3 ?? d.fg2 : d.fg2),
-        div().text_size(12.5).text_color(d.fg1).child(bypass ? "Bypass" : "Ask first"),
+        svg(`${ICON}/ds-shield.svg`).size(13).flex_none().text_color(d.warn),
+        div().text_size(13).line_height("16px").font_weight(500).text_color(d.fg1).child(bypass ? "Bypass" : "Ask first"),
+        caret(),
       ], bypass ? "Runs without asking (permissions bypassed)" : "Asks before risky actions"),
     ];
   }
@@ -75,7 +81,7 @@ export default class CrewComposer extends View {
     if (room) return { key: `room:${room.id}`, label: `Message #${room.name}` };
     const space = spaces().find((s) => s.active);
     const tab = space?.tabs.find((x) => x.active);
-    return tab ? { key: `tab:${tab.id}`, label: `Message #${channelName(tab)}` } : { key: "none", label: "Message" };
+    return tab ? { key: `tab:${tab.id}`, label: `Talk to ${botOf(space)?.name ?? space.name} in #${channelName(tab)}…` } : { key: "none", label: "Message" };
   }
 
   make(label) {
@@ -242,29 +248,31 @@ export default class CrewComposer extends View {
     const field = this.field();
     const ready = Boolean(field.value().trim() || this.files.length);
     const d = ds(t);
-    const square = (id, icon, bg, color, action, tip) => div().id(id).size(28).flex_none().rounded(d.r.sm).flex().items_center().justify_center()
-      .cursor_pointer().bg(bg).hover((s) => s.opacity(0.85)).on_click(action).when(Boolean(tip), (el) => el.tooltip(tip))
-      .child(svg(`${ICON}/${icon}.svg`).size(14).text_color(color));
+    const square = (id, icon, size, bg, color, action, tip) => div().id(id).size(28).flex_none().rounded(d.r.sm).flex().items_center().justify_center()
+      .cursor_pointer().when(Boolean(bg), (el) => el.bg(bg)).hover((s) => s.opacity(0.85)).on_click(action).when(Boolean(tip), (el) => el.tooltip(tip))
+      .child(svg(`${ICON}/${icon}.svg`).size(size).text_color(color));
     const soon = (what) => () => notify({ title: `${what} isn't wired up yet`, body: "Voice input is coming; type for now.", level: "info", timeout: 2500 });
+    const focus = layoutMode() === "focus";
 
-    // Two rows in one r8 box: the prompt (and any attachments), then the controls.
-    const card = v_flex().id("crew-compose").w_full().when(layoutMode() === "focus", (el) => el.max_w(720)).gap(8).px(10).pt(10).pb(8).rounded(d.r.lg)
-      .bg(a(t.canvas, "aa")).border_1().border_color(this.typing ? d.lineStrong : d.line)
-      .child(h_flex().w_full().min_h(26).items_center().gap(6).flex_wrap()
+    // The boards' composer: one r8 #1A1A1B box with a #3C3C3F edge, 10/12/10 padding, 8 px between
+    // the prompt (14/22) and the controls; 720 px centred in Focus (16 px under it), the column's
+    // full width in Pro (24 px in, 12 under).
+    const card = v_flex().id("crew-compose").w_full().when(focus, (el) => el.w(720).flex_none()).gap(8).py(10).pl(12).pr(10).rounded(d.r.lg)
+      .bg(d.composer).border_1().border_color(d.lineStrong)
+      .child(h_flex().w_full().min_h(22).items_center().gap(6).flex_wrap()
         .children(this.files.map((f, i) => this.chip(f, i, t)))
-        .child(div().flex_1().min_w(80).flex().items_center().px(2)
+        .child(div().flex_1().min_w(80).flex().items_center()
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .child(Input.new(field).w_full().text_size(14).text_color(t.foreground))))
+          .child(Input.new(field).w_full().text_size(14).line_height("22px").text_color(d.body))))
       .child(h_flex().w_full().items_center().gap(6)
-        .child(square("crew-attach", "plus", d.ctl, d.fg2, () => openOverlay({ mod: "crew-attach", kind: "popup", width: 400, height: 440 }), "Attach a file"))
+        .child(square("crew-attach", "ds-plus", 14, d.ctl, d.body, () => openOverlay({ mod: "crew-attach", kind: "popup", width: 400, height: 440 }), "Attach a file"))
         .children(this.brainChips(t, d))
         .child(div().flex_1())
-        .child(square("crew-mic", "mic", "#00000000", d.fg3, soon("Dictation"), "Dictate (coming soon)"))
-        .child(square("crew-voice", "audio-lines", d.ctl, d.fg2, soon("Voice mode"), "Voice mode (coming soon)"))
-        .child(square("crew-send", "arrow-up", this.sending ? a(t.foreground, "33") : ready ? t.solid : d.ctl,
-          ready ? t.solid_foreground : d.fg3, (_e, cx) => this.send(cx), "Send")));
+        .child(square("crew-mic", "ds-mic", 16, null, d.fg2, soon("Dictation"), "Dictate (coming soon)"))
+        .child(square("crew-voice", "ds-audio", 15, d.ctl, d.body, soon("Voice mode"), "Voice mode (coming soon)"))
+        .child(square("crew-send", "ds-send", 14, d.act, d.actFg, (_e, cx) => this.send(cx), "Send").when(this.sending || !ready, (el) => el.opacity(this.sending ? 0.5 : 0.85))));
 
-    return h_flex().id("crew-composer").size_full().items_center().justify_center().px(24).pb(12).pt(4)
+    return h_flex().id("crew-composer").size_full().items_end().justify_center().bg(d.bg0).px(focus ? 32 : 24).pb(focus ? 16 : 12)
       .on_drop((e, cx) => this.add(e.paths ?? [], cx))
       .child(card);
   }
