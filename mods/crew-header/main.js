@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, theme, focused, layout, run, exec, appHome, openOverlay } from "herdr";
-import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, syncCenter, tone, ds, viewSwitch, palChip } from "./crew.js";
+import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, syncCenter, tone, ds, viewSwitch, palChip, openChannels } from "./crew.js";
 import { setShared, shared } from "herdr";
 
 const ICON = "mods/crew-roster/icons";
@@ -67,7 +67,7 @@ export default class CrewHeader extends View {
     // Left: "# channel ▾" opens the channel picker; right-click renames.
     const picker = h_flex().id("crew-pick").min_w(0).h(30).px(6).ml(-6).gap(6).items_center().rounded(d.r.sm).cursor_pointer()
       .hover((s) => s.bg(d.hover))
-      .on_click(() => openOverlay({ mod: "crew-pick", kind: "popup", width: 260, props: { space: space.id } }))
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openChannels(space.id); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); renameChannel(tab); })
       .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg3).child("#"))
       .child(div().min_w(0).truncate().text_size(13).font_weight(500).text_color(d.body).child(channelName(tab)))
