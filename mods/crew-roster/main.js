@@ -15,8 +15,9 @@ import {
   petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
-// Focus pal rows: the pet 88 wide (about double the 46 before) in an 80 px row.
-const ROW_PET = 88, ROW_H = 80;
+// Focus pal rows: the pet 75 wide, bare (no box), in a 68 px row (DeNon 2026-11-08: twice the old
+// 46, then 15% back down).
+const ROW_PET = 75, ROW_H = 68;
 const RAIL = 64;
 
 function find(node, id) {
@@ -686,8 +687,23 @@ export default class CrewRoster extends View {
     cx.spawn(async () => { try { await rememberModel(space); } catch {} run("space.close", { id: space.id }); });
   }
 
-  // A Focus pal row: 80 px, r6, the pet at 88x69 (DeNon 2026-11-08: "a lot bigger"; dimmed while
-  // it's closed), name + time + dot, "[channel] what it's on".
+  // A pal row's pet: bare on the sidebar (its open tiles, no box or hairline), with a small still
+  // pool of the state's colour under it, as the hero's floor has (asks you breathes). No edge loader:
+  // the paw taps and the bits rise while it works, and the row's dot says so too.
+  rowPet(bot, m, t) {
+    const p = petOf(bot);
+    if (!p || !petReady(p)) return mascotEl(bot, m, ROW_PET, t);
+    const state = petState(bot, m);
+    const h = Math.round(ROW_PET * 108 / 138);
+    const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
+    return div().relative().w(ROW_PET).h(h).flex_none()
+      .when(lit, (el) => el.child(div().absolute().left(-6).top(h - 17).w(ROW_PET + 12).h(24)
+        .when(state === "ask", (x) => x.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
+        .child(image(`${ICON}/pet-floor-${state}.svg`).w(ROW_PET + 12).h(24))))
+      .child(div().absolute().left(0).top(0).child(petEl(p, state, ROW_PET, h, { open: true })));
+  }
+
+  // A Focus pal row: 68 px, r6, the pet bare at 75x59 (DeNon 2026-11-08; dimmed while it's closed), name + time + dot, "[channel] what it's on".
   palRow({ space, bot }, t, d) {
     const st = space.status;
     const on = space.active;
@@ -702,7 +718,7 @@ export default class CrewRoster extends View {
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(mascotEl(bot, mood(st, awake), ROW_PET, t)))
+      .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(this.rowPet(bot, mood(st, awake), t)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().items_center().gap(6)
           .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
@@ -721,7 +737,7 @@ export default class CrewRoster extends View {
       .hover((s) => s.bg(d.hover))
       .on_click(() => this.wake(rec))
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
-      .child(div().flex_none().opacity(0.5).child(mascotEl(bot, "asleep", ROW_PET, t)))
+      .child(div().flex_none().opacity(0.5).child(this.rowPet(bot, "asleep", t)))
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(div().truncate().text_size(14).line_height("18px").text_color(d.fg2).child(rec.name))
         .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg3).child("closed · click to wake")));
