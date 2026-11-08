@@ -1,4 +1,5 @@
-// Project Pals pal menu: opened from the header's pal chip (its ▾). Everything about THE AGENT and
+// Project Pals pal menu (the header's pal chip opened it until the command bar replaced the chip,
+// T18; its rows are palMenuItems, the command bar's empty list). Everything about THE AGENT and
 // THAT PROJECT, not its channels (the hero lists those): its profile, memory and tasks; its project's
 // review and folder; and the pal's actions (Sleep / Wake). Each opens the right-side panel's tab, or the dialog it
 // names. Drawn like crew-pick:
@@ -6,20 +7,11 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, theme, props, closeOverlay, openOverlay, run, exec, setShared, keys, home } from "herdr";
-import {
-  botOf, ds, tone, channelName, crew, taskFor, loadOps, openPanel, closePanel, panelOpen, panelTab, panelState, worktreeOf, openReview,
-  updateBot, rememberModel, wakePal,
-} from "./crew.js";
+import { spaces, theme, props, closeOverlay, home } from "herdr";
+import { botOf, ds, tone, taskFor, loadOps, panelOpen, panelTab, panelState, palMenuItems } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 30;
-
-// The panel's shortcut, as keys.json binds it (Ctrl+Shift+I by default).
-function shortcut() {
-  const k = keys().find((x) => x.action === "crew-roster.profile");
-  return k ? k.keys.split("-").map((p) => p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1)).join("+") : null;
-}
 
 // A folder as people say it: ~ for the home folder (wherever it is: /home/x, /Users/x).
 const tilde = (f) => { const h = home(); return h && (f === h || f.startsWith(`${h}/`)) ? `~${f.slice(h.length)}` : f; };
@@ -39,33 +31,9 @@ export default class CrewPalMenu extends View {
   space() { return spaces().find((s) => s.id === props()?.space) ?? spaces().find((s) => s.active); }
   close() { closeOverlay(props()?.overlay); }
 
-  // [group, id, icon, label, hint, action] rows; a group change draws its small header.
-  items(space, bot) {
-    const tab = space.tabs.find((x) => x.active);
-    const wt = worktreeOf(bot, tab);
-    // The same row again closes the panel; another row switches it.
-    const panel = (key, section) => () => {
-      const st = panelState();
-      if (panelOpen() && panelTab() === key && (st.section ?? null) === (section ?? null)) closePanel();
-      else openPanel(key, section ? { section } : {});
-    };
-    const out = [
-      ["The pal", "profile", "ds-user", "Profile", shortcut(), panel("profile")],
-      // The Vault replaced Notebook, Mission and Brain (DeNon 2026-11-08): one row, opening on Home.
-      ["The pal", "vault", "ds-notebook", "Vault", null, () => (panelOpen() && panelTab() === "vault" ? closePanel() : openPanel("vault", { note: "home" }))],
-      ["The pal", "memory", "ds-memory", "Memory", null, panel("profile", "memory")],
-      // Tasks: add one for this pal and see its open ones (the crew-tasks dialog; Tell merged into it).
-      ["The pal", "tasks", "ds-tasks", "Tasks", this.open ? `${this.open} open` : null, () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })],
-    ];
-    out.push(["The project", "agents", "ds-agents", "AGENTS.md", null, panel("agents")]);
-    if (wt) out.push(["The project", "review", "ds-review", "Review changes", wt.branch ?? `#${channelName(tab)}`, () => openReview(space, tab)]);
-    if (bot.folder ?? space.folder) out.push(["The project", "folder", "ds-folder", "Open folder", null, () => exec("xdg-open", [bot.folder ?? space.folder]).catch(() => {})]);
-    if (!bot.god) out.push(["", "sleep", "ds-moon", "Put to sleep", null, () => {
-      updateBot(bot.record ?? bot, (b) => ({ ...b, folder: b.folder ?? space.folder ?? null, harness: b.harness ?? bot.harness ?? null }));
-      rememberModel(space).catch(() => {}).finally(() => run("space.close", { id: space.id }));
-    }]);
-    return out;
-  }
+  // [group, id, icon, label, hint, action] rows (palMenuItems, shared with the command bar); a
+  // group change draws its small header.
+  items(space, bot) { return palMenuItems(space, bot, this.open); }
 
   pick(item) { this.close(); item[5](); }
 

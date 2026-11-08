@@ -97,28 +97,33 @@ if isinstance(g, dict) and g.get("ctrl-shift-m") == "crew-roster.mode":
     print("removed the old Focus/Pro shortcut (ctrl-shift-m) from keys.json (backup in the install's .crew-backups folder)")
 PY
 fi
-# The profile panel's shortcut (2026-11-08): ctrl-shift-i → crew-roster.profile in keys.json's
-# global map, only when nothing in the file uses ctrl-shift-i yet and the action isn't bound already.
-# keys.json is backed up first; without a keys.json, nothing is written (a new file would replace
-# Herdr's default keys), and the panel still opens from the hero, the menus and the header chip.
-if [[ -f "$home/keys.json" ]] && ! grep -q '"crew-roster.profile"' "$home/keys.json"; then
-  mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
-  python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it)"
+# Project Pals' shortcuts in keys.json's global map: ctrl-shift-i → crew-roster.profile (the profile
+# panel, 2026-11-08) and ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
+# it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line). Each only when
+# nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
+# first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
+# the panel and the command bar still open from the header, the hero and the menus.
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar"; do
+  read -r key action what <<<"$pair"
+  if [[ -f "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
+    mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
+    python3 - "$home/keys.json" "$key" "$action" "$what" <<'PY2' || echo "left keys.json as it was (couldn't read it)"
 import json, os, sys
-path = sys.argv[1]
+path, key, action, what = sys.argv[1:5]
 keys = json.load(open(path))
-used = any(isinstance(m, dict) and "ctrl-shift-i" in m for m in keys.values())
+used = any(isinstance(m, dict) and key in m for m in keys.values())
 if used:
-    print("ctrl-shift-i is taken in keys.json: bind crew-roster.profile to a key of your own for the profile panel")
+    print(f"{key} is taken in keys.json: bind {action} to a key of your own for {what}")
 else:
-    keys.setdefault("global", {})["ctrl-shift-i"] = "crew-roster.profile"
+    keys.setdefault("global", {})[key] = action
     tmp = path + ".crew-tmp"
     with open(tmp, "w") as f:
         json.dump(keys, f, indent=2)
     os.replace(tmp, path)
-    print("added ctrl-shift-i for the profile panel to keys.json (backup in the install's .crew-backups folder)")
-PY
-fi
+    print(f"added {key} for {what} to keys.json (backup in the install's .crew-backups folder)")
+PY2
+  fi
+done
 # The layout used to be called crew, then buddies: move over (backing the old one up) and show the
 # new one if an old one was showing.
 was_shown=""
