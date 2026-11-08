@@ -227,7 +227,7 @@ export default class CrewRoster extends View {
         .children(rows.map(({ space, bot }) => div().id(`rail-${space.id}`).tooltip(bot.name).relative().size(44).flex().items_center().justify_center().rounded(6).cursor_pointer()
           .when(space.active, (el) => el.bg(a(t.accent, "26")))
           .when(!space.active, (el) => el.hover((s) => s.bg(a(t.foreground, "0c"))))
-          .on_click(() => this.go(space))
+          .on_click(() => this.open(space))
           .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
           .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked))))))
       .child(icon("rail-hire", "plus", () => this.hire()))
@@ -454,9 +454,19 @@ export default class CrewRoster extends View {
 
   // What a pal is on, split for the rows: [channel tag, words]. The most recently active channel's
   // terminal title (agents set it to the task), else its state.
+  // The channel a pal's row stands for, and opens: one that needs you, else one that finished,
+  // else one working, else the most recently active; a pal with no agent anywhere, its shown tab.
+  leadTab(space) {
+    const rank = { blocked: 3, done: 2, working: 1 };
+    const best = agents().filter((x) => x.space === space.id)
+      .sort((x, y) => (rank[y.status] ?? 0) - (rank[x.status] ?? 0) || y.seq - x.seq)[0];
+    return (best && space.tabs.find((x) => x.id === best.tab)) ?? space.tabs.find((x) => x.active) ?? space.tabs[0] ?? null;
+  }
+  open(space) { this.go(space, this.leadTab(space)); }
+
   doing(space, bot) {
-    const ag = agents().filter((x) => x.space === space.id).sort((x, y) => y.seq - x.seq)[0];
-    const tab = (ag && space.tabs.find((x) => x.id === ag.tab)) ?? space.tabs.find((x) => x.active) ?? space.tabs[0];
+    const tab = this.leadTab(space);
+    const ag = tab ? agents().filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0] : null;
     const tag = tab ? channelName(tab) : "";
     if (bot.starting) return [tag, "starting · it may be asking you something"];
     if (!bot.awake) return [tag, "asleep"];
@@ -562,9 +572,11 @@ export default class CrewRoster extends View {
     const species = p ? p.species.replace(/^./, (c) => c.toUpperCase()) : null;
     return v_flex().id(`hero-${space.id}`).flex_none().gap(12).p(12).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
+      // The whole card opens the channel it stands for (as a pal row does); its look is in the
+      // right-click menu.
       .child(div().id("hero-art").flex().rounded(d.r.md).border_1().border_color(d.lineMid).overflow_hidden().cursor_pointer()
-        .on_click(() => this.look(space)).child(art))
-      .child(v_flex().gap(6).px(2)
+        .on_click((_e, cx) => { this.open(space); cx.notify(); }).child(art))
+      .child(v_flex().id("hero-text").gap(6).px(2).cursor_pointer().on_click((_e, cx) => { this.open(space); cx.notify(); })
         .child(h_flex().items_center().gap(8)
           .child(div().flex_1().min_w(0).truncate().text_size(17).line_height("22px").font_weight(600).text_color(d.fg1).child(bot.name))
           .child(stateTag(state, d, !bot.awake)))
@@ -585,7 +597,7 @@ export default class CrewRoster extends View {
     return h_flex().id(`bot-${space.id}`).h(52).flex_none().items_center().gap(10).pl(6).pr(8).rounded(d.r.md).cursor_pointer()
       .when(on, (el) => el.bg(d.sel))
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { this.go(space); cx.notify(); })
+      .on_click((_e, cx) => { this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(mascotEl(bot, mood(st, awake), 41, t))
       .child(v_flex().flex_1().min_w(0).gap(2)
@@ -663,7 +675,9 @@ export default class CrewRoster extends View {
         .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
         .child(svg(`${ICON}/ds-plus.svg`).size(13).text_color(d.fg4))));
     const all = agents();
-    for (const tab of space.tabs) {
+    // Channels with an agent first; ones that are just a shell last.
+    const ordered = [...space.tabs.filter((x) => tabHasAgent(x)), ...space.tabs.filter((x) => !tabHasAgent(x))];
+    for (const tab of ordered) {
       const on = tab.active;
       const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
       const shell = !tabHasAgent(tab);
@@ -699,7 +713,7 @@ export default class CrewRoster extends View {
         .child(div().flex_1().text_size(12).line_height("16px").font_weight(500).text_color(d.fg3).child("Across pals"))
         .child(div().text_size(12).line_height("16px").text_color(d.fg3).child([nWork && `${nWork} working`, nStuck && `${nStuck} stuck`].filter(Boolean).join(" · ") || "all quiet")))
       .children(others.slice(0, 4).map(({ space, bot }) => h_flex().id(`across-${space.id}`).h(22).flex_none().items_center().gap(8).cursor_pointer()
-        .hover((s) => s.opacity(0.85)).on_click((_e, cx) => { this.go(space); cx.notify(); })
+        .hover((s) => s.opacity(0.85)).on_click((_e, cx) => { this.open(space); cx.notify(); })
         .child(div().size(6).flex_none().rounded(3).bg(this.liveDot(space.status, d)))
         .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.body).child(`${bot.name} · ${this.doing(space, bot)[1]}`))
         .child(div().flex_none().text_size(11).line_height("14px").text_color(space.status === "blocked" ? d.warnText : d.fg4)

@@ -21,6 +21,8 @@ export default class CrewPick extends View {
   }
 
   space() { return spaces().find((s) => s.id === props()?.space) ?? spaces().find((s) => s.active); }
+  // Channels with an agent first, in their order; ones that are just a shell last.
+  tabs(space) { return [...space.tabs.filter((x) => tabHasAgent(x)), ...space.tabs.filter((x) => !tabHasAgent(x))]; }
   close() { closeOverlay(props()?.overlay); }
   newChannel(space) { this.close(); openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }); }
   open(tab) { showTabs(); if (!tab.active) run("tab.select", { id: tab.id }); this.close(); }
@@ -28,8 +30,9 @@ export default class CrewPick extends View {
   key(e, cx) {
     const space = this.space();
     if (!space) return;
-    const n = space.tabs.length + 1;
-    const at = this.cursor ?? space.tabs.findIndex((x) => x.active);
+    const tabs = this.tabs(space);
+    const n = tabs.length + 1;
+    const at = this.cursor ?? tabs.findIndex((x) => x.active);
     if (e.key === "escape") { this.close(); cx.stop_propagation(); return; }
     if (e.key === "down" || e.key === "up") {
       this.cursor = ((at < 0 ? -1 : at) + (e.key === "down" ? 1 : -1) + n) % n;
@@ -37,8 +40,8 @@ export default class CrewPick extends View {
     }
     if (e.key === "enter") {
       cx.stop_propagation();
-      if (at === space.tabs.length) this.newChannel(space);
-      else if (at >= 0) this.open(space.tabs[at]);
+      if (at === tabs.length) this.newChannel(space);
+      else if (at >= 0) this.open(tabs[at]);
     }
   }
 
@@ -55,7 +58,8 @@ export default class CrewPick extends View {
     const root = v_flex().id("crew-pick").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().p(4).gap(1).rounded(d.r.sm).bg(d.raised).border_1().border_color(d.line).text_color(d.fg1);
     if (!space) return root.child(div().p(8).text_size(12).text_color(d.fg3).child("No pal shown."));
-    const at = this.cursor ?? space.tabs.findIndex((x) => x.active);
+    const tabs = this.tabs(space);
+    const at = this.cursor ?? tabs.findIndex((x) => x.active);
     const row = (id, i) => h_flex().id(id).h(ROW).flex_none().px(8).gap(8).items_center().rounded(3).cursor_pointer()
       .when(at === i, (el) => el.bg(d.sel))
       .on_hover((h, cx) => { if (h && this.cursor !== i) { this.cursor = i; cx.notify(); } });
@@ -63,7 +67,7 @@ export default class CrewPick extends View {
     root.child(h_flex().h(26).flex_none().items_center().px(8)
       .child(div().flex_1().min_w(0).truncate().text_size(12).font_weight(500).text_color(d.fg3).child(space.name))
       .child(div().flex_none().text_size(11).text_color(d.fg4).child(`${space.tabs.length} channel${space.tabs.length === 1 ? "" : "s"}`)));
-    space.tabs.forEach((tab, i) => {
+    tabs.forEach((tab, i) => {
       const on = tab.active;
       const shell = !tabHasAgent(tab);
       const mark = tab.status === "working" ? div().size(6).flex_none().rounded(3).bg(d.info)
@@ -83,7 +87,7 @@ export default class CrewPick extends View {
           .when(on, (el) => el.child(svg(`${ICON}/ds-check.svg`).size(10).text_color(d.fg2)))));
     });
     root.child(div().h(1).mx(4).my(3).flex_none().bg(d.line));
-    root.child(row("pick-new", space.tabs.length)
+    root.child(row("pick-new", tabs.length)
       .on_click(() => this.newChannel(space))
       .child(div().w(10).flex_none().flex().justify_center().child(svg(`${ICON}/ds-plus.svg`).size(12).text_color(d.fg2)))
       .child(div().text_size(13).text_color(d.body).child("New channel")));

@@ -34,8 +34,10 @@ export default class CrewHeader extends View {
     const bot = botOf(space);
     const lead = leadPane(tab.id, panes());
     // Left: "# channel ▾" opens the channel picker; right-click renames.
-    const picker = h_flex().id("crew-pick").min_w(0).h(30).px(6).ml(-6).gap(6).items_center().rounded(d.r.sm).cursor_pointer()
-      .hover((s) => s.bg(d.hover))
+    // It reads as a control: a raised r4 button with a hairline and a chevron, lit on hover.
+    const picker = h_flex().id("crew-pick").min_w(0).h(28).px(8).gap(6).items_center().rounded(d.r.sm).cursor_pointer()
+      .bg(d.raised).border_1().border_color(d.line).tooltip("Switch channel")
+      .hover((s) => s.bg(d.sel).border_color(d.lineStrong))
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openChannels(space.id); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); renameChannel(tab); })
       .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg3).child("#"))
