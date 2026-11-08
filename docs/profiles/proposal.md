@@ -1,28 +1,43 @@
 # Profiles: every pal has a profile, every pal has a mission
 
 **Status:** proposal for DeNon to pick from. Nothing is built. Branch `crew/profiles`, 2026-11-08.
+Revised the same day for DeNon's decision (relayed by Orca): the profiles live in a **right-side
+panel**, hidden until you open one.
 **Board:** `PROFILE · Pal + Mission` (see "The board" at the end). It's drawn as `docs/profiles/board.html`
-for now, because Paper's app wasn't running when this was written.
+and `board.png` for now, because Paper's app wasn't running.
 
 Every pal gets a **profile**: who it is, what it's on, what it has done, what it remembers.
 Every pal also gets a **mission**, with a profile of its own. The mission profile is the hub for
 the pal's **project brain**: a few markdown files (mission, decisions, change log, map, notes),
 plus a tool for the project's `AGENTS.md` / `CLAUDE.md`.
 
-## The picks, in one table
+## Decided, and still to pick
 
-Each row is a decision for DeNon. ★ is my recommendation; the sections below say why.
+**Decided by DeNon** (relayed by Orca, 2026-11-08):
+
+- **P1, where it lives:** a **right-side panel**, hidden by default. It slides out only when you
+  open a profile: from the hero's name, a Profile quick action, the right-click menu, or a
+  shortcut. Esc, its ×, or the same trigger again closes it. It's not a permanent rail
+  (DeNon removed that from Focus on purpose): closed, the terminal has the full width.
+  Section 5 designs it.
+- **The ways in** are those four. Which shortcut key is still a pick (P2).
+
+**To pick.** ★ is my recommendation; the sections below say why. P10–P12 are three
+recommendations of Orca's that DeNon hasn't approved; they're options here, not yeses.
 
 | # | Decision | Options | ★ |
 |---|---|---|---|
-| P1 | Where the profile lives | **A** dialog · **B** full view in the main area · **C** the sidebar | **B** |
-| P2 | How you open it | hero name click, a Profile quick action, right-click → Profile (all three), or fewer | all three |
+| P2 | The panel's shortcut | `Ctrl+Shift+I` (free in keys.json today) · another | `Ctrl+Shift+I` |
 | P3 | Where the mission and brain are stored | **A** pal data (`data/crew-memory/<pal>/brain/`) · **B** the project (`<project>/.pals/`) · **C** A by default, B per pal | **C** |
 | P4 | Who writes the mission | DeNon only, the pal proposes · both freely | DeNon only (the pal keeps Focus and the logs) |
 | P5 | What the SessionStart primer carries | mission summary only · the whole brain | summary only (≤ 1,200 characters) |
 | P6 | Can a pal edit `AGENTS.md` / `CLAUDE.md` itself? | yes, as today · held for approval (a new `agents-file` gate rule) · proposals only | held, plus proposals |
 | P7 | The deep lint (conflicting rules) | off · a button that asks first (sends the files to Claude) | a button |
-| P8 | What "N need you" counts | the Inbox count · only what needs a decision (asks, approvals, stuck, trust) | needs a decision |
+| P8 | What "N need you" counts (if P12 is a yes) | the Inbox count · only what needs a decision (asks, approvals, stuck, trust) | needs a decision |
+| P9 | The panel pushes or covers | **push**: the terminal narrows while it's open · **cover**: it slides over the terminal's right side | **push** |
+| P10 | **Review changes** in a worktree channel's right-click | yes · no | yes |
+| P11 | **The pal's memory** in its profile (pinned note, MEMORY.md, recent notes, Remember) | yes · no | yes |
+| P12 | **"N need you"** in the status bar | yes · no | yes |
 
 ## 0. What's already there
 
@@ -70,31 +85,33 @@ older versions that read only `CLAUDE.md`, and it's the one place Claude-only li
 
 ### What it holds
 
-Top to bottom, on the **Pal** page of the profile view:
+Top to bottom, in the panel's **Profile** tab (420 px wide, so everything is one column):
 
-1. **Identity band.** The pet (120 px wide, over the soft aura, its live state), the name
-   (20/600 #EDEDED), the role (one line, #C8C8C8, click to edit: the record's `role`), and the
-   state word with its 7 px dot ("Working · 4m").
-2. **Facts**, a hairline list of 32 px rows: label in 11 px mono #6A6A6C, value in 13 px #C8C8C8.
+1. **Identity band.** The pet (96 px wide, over the soft aura, its live state) on the left; the
+   name (16/600 #EDEDED), the role (one line, #C8C8C8, click to edit: the record's `role`) and
+   the state word with its 7 px dot ("Working · 4m") on the right.
+2. **Facts**, a hairline list of 30 px rows: label in 11 px mono #6A6A6C (72 px column), value in
+   13 px #C8C8C8.
    - Brain: `Claude Code · opus` (harness, plus the `--model` from its command line when there is one)
    - Folder: `~/Projects/project-pals` (mono; click copies it)
    - Machine: `this computer`, or the machine's name
    - Branch: the lead channel's branch
    - Pet: `kit · headphones`, and a colour swatch; both open `crew-look`
    - Hired: `Nov 5 · by Orca`
-3. **Stats**, four cells in one hairline-split row (value 18/600, label 11 px #808082):
+3. **Stats**, four cells in a hairline-split 2 × 2 grid (value 18/600, label 11 px #808082):
    **Channels** (count), **Tasks done** (last 30 days, from `crew-tasks.json` where
    `claimed_by`/`assignee` is this pal and `status` is done), **Open** (its open tasks),
    **Last active** (the newest `changed_at` across its tabs: "2m ago", "asleep 3d").
-4. **Channels.** One 32 px row each: `#name`, the first line of its brief (the record's
-   `briefs`), its status dot, a `worktree` tag with the branch when it has one, and, on
-   worktree channels, a **Review** button (opens `crew-review`). Click a row to show that channel.
-5. **Memory** (DeNon's yes, folded in): see below.
+4. **Channels.** One 44 px row each, on two lines: its status dot, `#name` and (on worktree
+   channels) a **Review** button on the first line; the first line of its brief (the record's
+   `briefs`) and a `worktree · <branch>` tag under it. Click a row to show that channel; the
+   panel stays open.
+5. **Memory** (P11, awaiting DeNon): see below.
 6. **Routines**: this pal's routines, one row each (`weekdays 09:00 · daily standup`, next run).
 7. **Footer actions**: Tell, + Channel, Customize look, Put to sleep. The same actions as the
    hero, so the profile never strands you.
 
-### Memory, inside the profile
+### Memory, inside the profile (P11: Orca's recommendation, not yet approved)
 
 - **Pinned note**: the record's `memory` field, an editable 3-line box ("Pinned by DeNon").
   It already rides along in every SessionStart, so this just makes it visible and editable.
@@ -107,19 +124,12 @@ Top to bottom, on the **Pal** page of the profile view:
 - Actions: **Remember…** (one line, saved as `pal remember` from DeNon), **Edit MEMORY.md**
   (the editor, saved with a hash check), **Open folder**. **Forget** is on hover per line and
   asks first. It removes the line from that day's note, with a backup.
-- `USER.md` (shared by every pal) shows as one read-only row: "Also knows about you: 14 facts".
+- `USER.md` (shared by every pal) shows as one read-only row: "Also knows 33 facts about you"
+  (today's count).
 
 ### How you open it
 
-All three ways (P2), each `crew-roster.profile` underneath, so it can also take a key:
-
-- **The hero's name**: hover underlines it, click opens the profile. The pet keeps its current
-  click (show the pal).
-- **A Profile quick action.** The row is full at 304 px, so: `+ Channel · Tell · Profile`,
-  then two 28 px icon buttons: tasks (with its count as a small badge) and the moon. Tasks
-  loses its label, not its count.
-- **Right-click** a pal row or the hero: **Profile** goes first in the menu.
-- **Tell stays** a quick action and a footer button. Nothing about it changes.
+DeNon's four ways in. Opening and closing are section 5.
 
 ## 2. The mission
 
@@ -257,7 +267,7 @@ optional one-time action, with a preview.
 
 ## 4. The AGENTS.md / CLAUDE.md tool
 
-It's the **Project files** section of the mission profile.
+It's the panel's **AGENTS.md** tab, the third part of the mission profile.
 
 ### What it shows
 
@@ -267,7 +277,8 @@ It's the **Project files** section of the mission profile.
   project file and what it imports ("~/.claude/CLAUDE.md 25 + CLAUDE.md → @AGENTS.md 90 = 115
   lines"). The global file is read-only here.
 - **View** renders the markdown. **Edit** opens the code editor (`EditorState`, markdown, line
-  numbers).
+  numbers) in the panel. **Wider** (⤢) widens the panel to half the window while you edit or
+  review, and it goes back to its width after Write or Cancel.
 
 ### Lint
 
@@ -336,51 +347,89 @@ write the file. It makes the normal path visible.
 **Remote pals:** `readTextFile` reads on any machine, `writeTextFile` only writes here. For a pal
 on another machine, the tool views and lints; Edit says "Edit on this computer only, for now".
 
-## 5. Where it lives in the UI (P1)
+## 5. Where it lives: the right-side panel (P1, DeNon's decision)
 
-| | **A · Dialog** | **B · Full view** ★ | **C · Sidebar** |
+Closed, nothing changes: the terminal has the full width, and there's no rail. Opening a profile
+slides a panel out on the right, beside the channel's terminal. Closing it gives the width back.
+
+```
+closed                                          open (push, P9 ★)
+┌ sidebar 304 ┬ header 52 ───────────────────┐ ┌ sidebar 304 ┬ header 52 ─────────┬ panel 420 ─────────────────┐
+│ hero        │                              │ │ hero        │                    │ [pet] Project Pals - Her… ×│ 52
+│  name ──────┼── click: open / close        │ │  name       │                    ├────────────────────────────┤
+│  channels   │  terminal, full width        │ │  channels   │  terminal          │ Profile ║ Mission Brain AG…│ 36
+│  + Ch Tell  │                              │ │  + Ch Tell  │  (narrower, never  ├────────────────────────────┤
+│  Profile ───┼── click: open / close        │ │  [Profile]  │   under 480 px)    │ the shown tab's sections,  │
+│ pal list    │                              │ │ pal list    │                    │ stacked, scrolling         │
+│  right-click→ Profile / Mission            │ │             │                    │                            │
+└─────────────┴──────────────────────────────┘ └─────────────┴────────────────────┴────────────────────────────┘
+ status bar 24 (full width)                      status bar 24 (full width)
+```
+
+### Its size and place
+
+- **Width:** 420 px by default. Drag its left edge between 360 and 640; the width is remembered in
+  `crew-settings.json` (`focus.panelPx`, beside the sidebar's `focus.sidebarPx`).
+  At 1440 px wide, that leaves the terminal 716 px (about 85 columns of JetBrains Mono 14).
+- **Height:** from the top of the window to the status bar, so its 52 px header lines up with
+  the channel header, and the status bar stays full width under both.
+- **Layout:** a new block in `pals.json`'s `body` row, after `work`:
+  `{ "id": "profile", "type": "block", "size": { "px": 420 }, "min": 360, "max": 640,
+  "hidden": true, "content": { "mod": "crew-profile" } }`, with the row's 1 px hairline divider.
+  Open is `layout.show {id: "profile"}`, close is `layout.hide`. The roster hides it when the app
+  starts, so every launch starts with the terminal at full width.
+- **Push or cover (P9):** ★ **push**. The terminal narrows while the panel is open, so nothing
+  covers the agent's text, and Herdr's own show/hide does the work. Cover would need an overlay
+  window held to the right edge (Herdr lets people drag those, and floating blocks spring back to
+  edges), and it would hide the terminal's right-hand columns. The one thing push costs: the
+  terminal reflows when the panel opens or closes. Claude Code redraws cleanly when that happens.
+
+### Inside the panel
+
+- **Header (52 px, #0E0E0F, a hairline under it):** the pet chip (30 × 24, the pal's live
+  state), the pal's name (14/600 #EDEDED, truncated), and a 28 px × button on the right.
+- **Tabs (36 px):** four rectangular tabs in one strip, radius 4, the shown one #232324 on a
+  #2C2C2F hairline: **Profile** ‖ **Mission · Brain · AGENTS.md**. A 1 px divider and 8 px
+  of space separate the two groups, so the strip is also the Pal / Mission switch: Profile is the pal's
+  profile, and the other three are the mission profile. AGENTS.md carries its lint badge
+  (an amber count for warnings, red for errors, a blue `+` when a pointer can be created).
+- **Tabs, not one long page.** Stacking all four in 420 px would be a very long scroll, and the
+  editor and the diff need the panel's full height. Inside each tab the sections are stacked,
+  16 px in, split by hairlines, with 10 px uppercase mono labels (#6A6A6C).
+  - **Profile:** identity, facts, stats (2 × 2), channels, memory (P11), routines, then the
+    actions Tell, + Channel, Customize look, Sleep (section 1).
+  - **Mission:** the mission card (statement, goals, done-when, focus), then the last 3 change-log
+    lines and the last 2 decisions, with "All in Brain →" (section 2).
+  - **Brain:** the brain files as rows (Decisions 12, Change log 48, Map → AGENTS.md,
+    Notes 3). A row opens its file in the panel, with ← back to the list; Edit and Save work
+    there too (section 3).
+  - **AGENTS.md:** "What Claude Code loads here", the lint list with its fix buttons, the files
+    with View / Edit, the review diff, Write, and the backups (section 4).
+
+### Opening and closing
+
+| Trigger | Closed | Open on another tab | Open on that tab |
 |---|---|---|---|
-| Shape | a 720 × 640 overlay over the window | a third child of the `center` stack (`profile-view`, beside `tab-view` and `room-view`), filling the main area | the sidebar's list swaps to the profile, like Tasks and Inbox |
-| Room for an editor and a diff | tight | plenty | none: 288 px |
-| The terminal | hidden behind it | one click away: the header's back button, Esc, or any channel | stays visible |
-| Fits how Pals works now | like Hire and Look | like a room: the header changes, the sidebar stays | like Tasks |
+| The hero's name (underlines on hover) | opens on **Profile** | switches to Profile | closes |
+| The **Profile** quick action (looks pressed while the panel is open) | opens on **Profile** | switches to Profile | closes |
+| Right-click a pal or the hero → **Profile** / **Mission** (first in the menu) | opens on that tab | switches | closes |
+| **Ctrl+Shift+I** (P2; `crew-roster.profile`) | opens on the last tab used | closes | closes |
+| × in the panel's header | n/a | closes | closes |
+| **Esc**, while the panel has the keyboard | n/a | closes | closes |
 
-**Why B.** The mission hub is a document editor and a diff viewer, and neither fits in 520 or
-288 px. Rooms already prove the pattern: the center stack switches, the sidebar and hero stay,
-and you're one click from the terminal. A dialog would be fine for the Pal page alone, but then
-the two profiles would live in two places.
-
-### The full view
-
-```
-┌ sidebar 304 ─┬─ header 44: ← #profiles   Project Pals - Herdr Mod · Profile     [Pal | Mission] ┐
-│ hero         │ ┌ left 248 ──────────┬─ content (max 760, 24 in) ───────────────────────────────┐ │
-│ (pet, name,  │ │ pet 120 + aura     │  Pal page:     identity · facts · stats · channels ·      │ │
-│  channels,   │ │ name · role        │                memory · routines                           │ │
-│  quick       │ │ ── Pal             │  Mission page: the mission card, then the open file:       │ │
-│  actions)    │ │ ── Mission         │                view / edit / diff                          │ │
-│              │ │    Mission         │                                                            │ │
-│ pal list     │ │    Decisions  12   │                                                            │ │
-│              │ │    Change log 48   │                                                            │ │
-│              │ │    Map → AGENTS.md │                                                            │ │
-│              │ │    Notes       3   │                                                            │ │
-│              │ │ ── Project files   │                                                            │ │
-│              │ │    AGENTS.md  ▲2   │                                                            │ │
-│              │ │    CLAUDE.md  +    │                                                            │ │
-│              │ └────────────────────┴────────────────────────────────────────────────────────────┘ │
-└──────────────┴─ status bar 24: ● 3 working │ ● 2 need you │ 5h 41% · week 18%          pal 0.9.x ─┘
-```
-
-- **Header (44 px):** a back button with the channel you came from (`← #profiles`), the pal
-  name and "Profile" (or "Mission"), and on the right a rectangular two-segment switch
-  `Pal | Mission` (radius 4, the shown one #232324).
-- **Left column (248 px, #0E0E0F, a hairline on its right):** the pet with its aura, the name
-  and role, then the nav: Pal, Mission, the brain files with counts, and Project files with lint
-  badges (an amber ▲ count for warnings, red for errors, `+` for "can create").
-- **Content (#0B0B0C):** at most 760 px wide, 24 px in, sections split by hairlines with 11 px
-  uppercase mono labels (#6A6A6C, letter-spacing 0.06em). Markdown renders with `TextView`.
-  Edit swaps in the code editor, with Save (or Review, for project files) and Cancel at the
-  section's top right.
+- **The panel follows the shown pal.** Open it, then pick another pal or channel, and it shows that
+  pal's profile on the same tab. So the hero's pal and the panel's pal are always the same.
+- **Esc never comes from the terminal.** Claude Code uses Esc to interrupt, so Esc closes
+  the panel only while the panel holds the keyboard (`"focusable": true`; opening it gives it the
+  keyboard; clicking the terminal takes it back, and then Esc goes to the program).
+- **The slide.** Herdr shows and hides layout blocks at once; it doesn't animate a block's width.
+  So the panel's width appears in one frame, and its content slides 24 px in from the right and fades in
+  (`.transition` on the mod's root, about 160 ms). That's to be confirmed in the build, since
+  `.transition` on a fresh mount isn't proven here. If it doesn't run, the panel just appears, which
+  is still fine.
+- **Keys:** the installer adds `"ctrl-shift-i": "crew-roster.profile"` to keys.json's `global`
+  map only if that key is free there (it is today), with keys.json backed up first.
+  Ctrl+Shift+I isn't one of the ctrl-letters terminal programs rely on.
 
 ### The DS look
 
@@ -391,14 +440,18 @@ UI, JetBrains Mono for paths, labels, counts and `#channels`; the text ladder (#
 (#4CA1F2 working, #34D098 done, #E8AA0A asks/stuck, #F06C6C error). Pets sit on the soft radial
 aura (`pet-aura.svg`), with no box and no outline.
 
-## 6. DeNon's pending yeses, folded in
+## 6. Three proposals awaiting DeNon (P10–P12)
 
-1. **Review changes in a worktree channel's right-click.** `crew-menu` (`what: "tab"`, opened
-   from the hero's channel rows) gets **Review changes** second, under Pin, when the record
+Orca recommended these. DeNon hasn't approved them, so each is a yes/no pick, and none of the
+other picks depends on them (except P8, which only matters if P12 is a yes).
+
+1. **P10 · Review changes in a worktree channel's right-click.** `crew-menu` (`what: "tab"`,
+   opened from the hero's channel rows) gets **Review changes** second, under Pin, when the record
    has `worktrees["#name"]`. It opens `crew-review` with `{space, tab}` at 86% × 88%, the same as
    the profile's Review button. Channels without a worktree don't show it.
-2. **The pal's memory inside the profile:** section 1, "Memory, inside the profile".
-3. **"N need you" in the status bar.** After "N working", a separator, then a 6 px dot and
+2. **P11 · The pal's memory inside its profile:** section 1, "Memory, inside the profile". If
+   it's a no, the Profile tab ends at Channels and Routines, and memory stays in `pal memory`.
+3. **P12 · "N need you" in the status bar.** After "N working", a separator, then a 6 px dot and
    "2 need you": amber for asks and stuck, red when an approval waits. Click opens the Inbox
    (`setShared("crew.view", "you")`). It's hidden at zero.
    - P8, what it counts: ★ only what needs a decision: blocked channels (asks you),
@@ -417,28 +470,33 @@ Internal names stay `crew` (AGENTS.md): new data sits beside the old.
 | Data | per-pal brain setting | the record's `brainIn: "pal" \| "project"` |
 | Data | AGENTS-file backups | `data/crew-backups/agents-files/<slug>/` |
 | Data | proposals (mission, agents files) | `data/crew-proposals/<id>.json` + the staged text |
-| Shared | which profile is shown | `crew.profile` `{space, page: "pal" \| "mission", file}` |
-| Shared | the need-you count | `crew.needs` |
+| Shared | the panel | `crew.panel` `{open, tab: "profile" \| "mission" \| "brain" \| "agents", file}` (the pal is the shown one) |
+| Settings | the panel's width | `crew-settings.json` `focus.panelPx` |
+| Shared | the need-you count (P12) | `crew.needs` |
 | CLI | mission | `pal mission [show] [<pal>]`, `focus "…"`, `tick "…"`, `propose -F f` |
 | CLI | brain | `pal brain ls / show [file] / log "…" / decide "…" --why "…" / note <topic> "…"` |
 | CLI | agents files | `pal agents show / lint [--deep] [--json] / propose <file> -F f / apply` (gated) |
 | Gate | rules | `agents-apply` (`pal agents apply`), `agents-file` (Edit/Write on AGENTS.md / CLAUDE.md, P6) |
 | Hook | SessionStart | the mission block (section 2) |
 | crewd | helpers | a change-log line per task done; the stale-Focus note in the nightly distill |
-| Mod | new | `crew-profile` (the full view; both pages) |
-| Mod | changed | `crew-roster` (name click, Profile action, menu item, `crew.needs`), `crew-menu` (Profile, Review changes), `crew-header` (the profile header), `crew-status` (need you), `layouts/pals.json` (`profile-view`) |
+| Mod | new | `crew-profile` (the panel: header, tabs, all four tabs; `"focusable": true`) |
+| Mod | changed | `crew-roster` (name click, Profile action, menu items, `crew-roster.profile`, hides the panel at start, `crew.needs`), `crew-menu` (Profile, Mission, Review changes), `crew-status` (need you, P12) |
+| Layout | changed | `layouts/pals.json`: the hidden `profile` block in `body` |
+| Keys | added if free | `"ctrl-shift-i": "crew-roster.profile"` (P2) |
 
 ## 8. Build order, once DeNon picks
 
 Each step works by itself and gets installed and checked before the next.
 
-1. **The small yeses:** Review changes in the menu, and "N need you" (`crew.needs`). About half a day.
-2. **The Pal profile:** the `crew-profile` view (Pal page), the header, all three ways in,
-   Memory with the pinned note and Remember. About 1.5 days.
+1. **The panel and the Profile tab:** the `profile` block, `crew-profile` (header, tabs, the
+   Profile tab), the four ways in, open/close/toggle, Esc and focus, the remembered width, and
+   Memory if P11 is a yes. About 2 days.
+2. **The small ones, if DeNon says yes:** Review changes in the menu (P10) and "N need you"
+   (P12, `crew.needs`). About half a day; they don't depend on step 1.
 3. **Mission and brain:** the files, `pal mission` / `pal brain`, the primer block, the Mission
-   page (mission card and file viewer and editor, hash-checked). About 2 days.
-4. **The AGENTS.md tool:** `pal agents lint`, View, Edit → Review → Write with backup, the three
-   fixes, restore. About 2 days.
+   and Brain tabs (mission card, file list, viewer and editor, hash-checked). About 2 days.
+4. **The AGENTS.md tab:** `pal agents lint`, View, Edit → Review → Write with backup, Wider, the
+   three fixes, restore. About 2 days.
 5. **Proposals and gates:** `pal mission propose`, `pal agents propose`, the Inbox cards, the
    `agents-apply` / `agents-file` rules; the deep check; adopting `_Brain/`. About 1.5 days.
 
@@ -467,14 +525,28 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
   `layouts/pals.json`, so it means `layouts/pals.svg`). The check skips git refs, `VAR=` text,
   `X.Y.Z` / `<…>` / `*` / `…`, and checks a bare name only against any file of that name in the
   repo (`git ls-files`). With those rules, 22 paths are checked and all 22 exist.
+- **The terminal can get too narrow.** The sidebar (304) plus the panel (420) leaves a 1,280 px
+  window's terminal 556 px. Under 1,204 px wide (304 + 420 + 480), the panel opens at the
+  width that keeps the terminal at 480 px, down to its 360 px minimum. Below that, it opens
+  anyway, and the terminal is narrower.
+- **Esc belongs to the terminal** whenever the terminal has the keyboard (section 5). A build that
+  closes the panel on every Esc would break Claude Code's interrupt.
+- **Layout clicks remember shown/hidden** (`layouts/.state/`), so a panel left open at quit would
+  come back open. The roster hides it at start to keep "hidden by default" true.
 - **Don't answer the trust question.** The profile can show "waiting on the folder trust
   question" for a new pal. It points at the tab and never answers it (RECIPE).
 
 ## Done when (for the build, not this proposal)
 
-- Clicking the hero's name, the Profile quick action, or right-click → Profile all open the same
-  full view, and `← #channel` or Esc goes back to that channel's terminal.
-- The Pal page shows the record's brain, folder, machine, branch, pet and hire facts, and the
+- With the panel closed, the terminal is as wide as it is today, and no rail or edge shows.
+- The hero's name, the Profile quick action, right-click → Profile and Ctrl+Shift+I each open the
+  panel (420 px, on the right, the terminal narrower beside it). The same trigger again, its ×, or
+  Esc with the panel focused closes it, and the terminal gets its full width back.
+- Esc pressed in the terminal while the panel is open goes to the program, and the panel stays.
+- Switching pals with the panel open shows the new pal's profile on the same tab.
+- A dragged width (say 500) is still 500 after closing and reopening, and after a restart, where
+  the panel starts hidden.
+- The Profile tab shows the record's brain, folder, machine, branch, pet and hire facts, and the
   four stats match `pal team` and `pal task ls`.
 - `pal remember "x"` from a channel shows up under Memory without a reload, and the pinned
   note edited there is in the next session's primer.
@@ -486,19 +558,21 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
   change-log line, and nothing else in the repo changes.
 - For hello-lock, it shows `long` (514) and `prose-pointer`; for softly-promo, `duplicate`.
 - A pal's `Edit` on its AGENTS.md is held in the Inbox (if P6 is on).
-- A worktree channel's right-click shows Review changes; a plain channel's doesn't.
-- The status bar shows "1 need you" while one channel asks, and nothing at zero.
+- If P10 is a yes: a worktree channel's right-click shows Review changes; a plain channel's doesn't.
+- If P12 is a yes: the status bar shows "1 need you" while one channel asks, and nothing at zero.
 - No radius above 8, no oval pills: only dots of 9 px or less are round.
 
 ## The board
 
 `PROFILE · Pal + Mission`, for the Design system page in Paper. **Paper's app wasn't running**
-(its MCP at 127.0.0.1:29979 refused the connection), so the board is drawn here as
-`docs/profiles/board.html`, with a capture at `docs/profiles/board.png`. It's the same
-four frames I'll draw in Paper once the app is open:
+(its MCP at 127.0.0.1:29979 refused the connection, twice), so the board is drawn here as
+`docs/profiles/board.html`, with a capture at `docs/profiles/board.png`. These are the frames I'll
+draw in Paper once the app is open:
 
-1. **Pal profile** (P1 B): the full view on the Pal page, for Project Pals - Herdr Mod.
-2. **Mission profile**: the Mission page with the mission card and the brain files.
-3. **AGENTS.md tool**: the CLAUDE.md pointer fix in Review, with the diff and the lint list.
-4. **The small yeses**: the channel menu with Review changes, the hero's quick actions with
-   Profile, and the status bar with "2 need you".
+1. **Closed → open:** the Focus window with the panel closed (terminal full width), then the same
+   window with the panel open on Profile, with the four triggers marked.
+2. **The four tabs:** Profile, Mission, Brain and AGENTS.md side by side at the panel's 420 px,
+   with the AGENTS.md tab showing the CLAUDE.md pointer fix in review.
+3. **Proposals awaiting DeNon (P10–P12):** the channel menu with Review changes, the pal menu
+   with Profile / Mission, the hero's quick actions with Profile, and the status bar with
+   "2 need you".
