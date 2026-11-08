@@ -10,7 +10,7 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 | Path | What it is |
 |---|---|
 | `mods/crew-*/` | Herdr mods (`mod.json` + `main.js`, plus icons). One per sidebar, header, menu, dialog, etc. |
-| `lib/` | Shared JS (`crew.js`, `mascot-art.js`). **Not imported from a shared place:** `install.sh` copies both files into every mod folder. Edit them here, never the copies in an installed mod. |
+| `lib/` | Shared JS (`crew.js`, `pets.js`). **Not imported from a shared place:** `install.sh` copies both files into every mod folder. Edit them here, never the copies in an installed mod. |
 | `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code hooks, `crew-statusline` the status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
 | `god/AGENTS.md` | The head pal's standing brief, a template (`{{HEAD}}`, `{{OWNER}}`) rendered into `~/.config/herdr-app/data/crew-god/`. |
 | `layouts/pals.json`, `pals.svg` | The `pals` Herdr layout and its icon. |
@@ -61,7 +61,9 @@ There's no unit test suite. Check changes like this:
    Cover a fresh install, a second install over it, `--no-helpers`, and an existing
    `~/.claude/settings.json` that already has a `statusLine`.
 3. **Data sandbox:** `CREW_DATA=/some/dir` points the Python side at another data folder, so you
-   can try `pal task`, `pal remember` and so on without touching real pals.
+   can try `pal task`, `pal remember` and so on without touching the real board or memory. It does
+   NOT stop delivery: a task assigned to a real pal (`--for <Pal>`) or a `pal tell` still reaches that
+   pal's live terminal. Assign test tasks to nobody, or to yourself and expect the message.
 4. **In the app:** after installing for real (only with the owner's OK), Herdr hot-reloads mods
    and layouts. `herdr-app status` shows errors and `herdr-app shot` saves a screenshot.
 

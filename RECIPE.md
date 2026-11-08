@@ -4,7 +4,7 @@ Your coding agents as a crew of pals. Any harness works: Claude Code, Codex, Gro
 opencode, Hermes, Copilot, Cursor, pi.
 
 Every Herdr space is a pal (a project with a brain), and each of its tabs is a channel, a clone
-working on one thing. Pals have living mascot faces that show what they're doing. You can watch
+working on one thing. Pals are pocket pets whose pose shows what they're doing. You can watch
 a channel as a chat instead of a terminal, put pals together in group-chat rooms, and give them
 tasks and scheduled routines. A head pal (named Orchestrator by default; About → Settings or `pal settings head "Name"`
 renames it) oversees everyone.
@@ -86,7 +86,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
       - Other channels, Tasks, Routines, and Memory (a pinned-note field plus the three latest
         remembered facts).
 - **Dialogs** (520px, sized to content, the `popover` color):
-  - Hire a pal, New channel, New room, Routines, Look (mascot editor), About.
+  - Hire a pal, New channel, New room, Routines, Look (the pet's colour), About.
   - Review (86% × 88%, a diff with line comments).
   - Attach (a 400 × 440 popup).
   - All share one look: a small header (face, 17px title, one dim line, ✕), a big name field in
@@ -101,17 +101,16 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - done: happy eyes and a sparkle
   - idle: calm
   - no agent: asleep, dimmed, with a "z"
-- **Mascots:** little folders with faces, drawn by `mascot-art.js` into
-  `data/crew-mascots/<hash>-<mood>[-body|-eyes].svg`.
-  - The folder has a darker back panel with a tab, a white sheet of paper peeking out, and the
-    pal's color on the front panel, with the face centered on it.
-  - 8 shapes (folder by default; also round, pebble, bean, squircle, ghost, cat, bear) and 12
-    accessories, in any hex color.
-  - The eyes are their own layer, so they can move.
-  - A pal's stock look is a folder in its color (by harness for hired pals, by a hash of its
-    name otherwise), with its brain's accessory (a crown for the head pal).
-  - A face shows only once the roster has drawn its art (shared `crew.art`): an image that fails
-    to load once isn't retried.
+- **The folder mascots are retired** (DeNon, 2026-11-08): no pal or brain shows one any more. Pals
+  are their pocket pets; brains (harnesses) show Herdr's own program logos (`brainLogo()`:
+  `knownAgents()` entries' `icon`, a one-colour glyph in #C8C8C8 when `tint`, else the picture;
+  Herdr's `icons/<key>.svg`, or its neutral `icons/agent.svg`), 13-14px in the dialogs' selects and
+  lists. The Look dialog (`crew-look`) is the pet's: a live preview of the pet in seven states
+  (resting, working with its paw tapping, asks you, done, PR open, stuck, asleep dimmed), then its
+  species (8), colour (16 swatches or a hex), what it wears (none or up to two of 10; a third
+  replaces the older one) and its eyes (9), each choice shown as a resting thumbnail of the pet with
+  it; Reset to its default, Cancel, Save (stores `pet` {species, acc, eyes} and `look.color`). No
+  laptop choice: every state uses the profile laptop. (The folder mascots' `mascot-art.js` is gone.)
 - **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
   little critter in round LED dots, glowing in the pal's own colour (its look's colour, else its
   stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
@@ -120,8 +119,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   everywhere a pal's face shows: the Focus hero (no box at all, the sidebar's full width), the
   sidebar list (bare, no box or line: 75x59 in 68px rows over a soft radial aura that fades to
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
-  under it instead of the edge loader; the name, then `[channel]`, then what it's on, each on its own
-  line; half-opacity while the pal is closed or idle-hidden), the header's pal chip (30x24), rooms, dialogs.
+  under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
+  state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
+  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), the header's pal chip (30x24), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
@@ -141,8 +141,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     by the roster's art pass, which publishes shared `crew.pets`; the roster also publishes
     shared `crew.petstate` (stuck from `crew-health.json`, PR state from `gh pr list --head
     <branch>` on the space's machine, at most every 2 minutes per folder and branch).
-  - Fallback: a record with `"pet": "none"`, or any pal before its tiles are on disk, shows the
-    folder mascot below.
+  - Every pal has one (an old record's `"pet": "none"` gets the default). Until its tiles are on
+    disk, an empty #131316 box of the same size holds its place.
 - **Demo filter (for screenshots):** `data/crew-demo.json` `{"only": ["Website", …]}` makes that
   window's sidebar show just those pals, and `{"states": {"Website": "pr", …}}` shows those pals'
   pets in that tile state; no file, everyone, live. `preview.png` was made this way in a second
@@ -198,6 +198,14 @@ rectangular segments and tags.
   Saved in shared `crew.marks` (`groups`, `pals[bot].group/order/pin`, `arranged`), so it
   survives restarts; Herdr's own space order isn't touched. The channel list can't drag: it's a
   virtual list, whose rows can't take their own mouse handlers in Herdr.
+- **Dialogs** ("A · Compact sheet", DeNon 2026-11-08): New channel, Hire a pal, New room, New group
+  and Tasks share one kit (`sheet*` in crew.js): a header row (the pal's bare pet over its aura, a
+  15/600 title, a 12px #808082 line, a quiet ×), 32px r6 fields on #0A0A0B with a #2C2C2F hairline
+  ("#" prefix for names), quiet multi-line boxes, one row of compact 26px selects (label #6A6A6C,
+  value #C8C8C8, chevron) whose list opens under the row, and a footer with a hairline over it: a key
+  hint, Cancel and the primary action as pebbles (the primary a step brighter, steel blue #26364A;
+  dimmed until it's ready). New channel puts Category behind its own select; Hire's selects are
+  Brain, Model, Role and Computer, then the folder (with Browse) and the first channel.
 - **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
   rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
   previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
@@ -228,12 +236,22 @@ rectangular segments and tags.
     (within its group). Pinning and moving move Herdr's own tabs
     (`tab.move`), so the order survives restarts and the `crew-pick` dropdown lists the same.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then r4 quick actions: + Channel (new channel
-    dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Profile (the
-    profile panel, below; it looks pressed while the panel is open on Profile), an icon-only Tasks
-    with this pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to
-    sleep; Herdr asks first). The hero's name opens the profile panel too (underlined on hover).
-    No state pill, no species/brain line; the task text is in its pal row. The header has the pal's
+    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (one flat #1B1B1E face, a 6% white
+    hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest
+    shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
+    `pebble()` in crew.js): + Channel (new channel
+    dialog), Tasks with this pal's open count, an icon-only Profile (the profile panel, below;
+    Ctrl+Shift+I; the hero's name, underlined on hover, opens it too) and an icon-only moon (put to
+    sleep; Herdr asks first). Tasks (Tell merged into it: DeNon, "a Tell is really a task") opens `crew-tasks`
+    (520px): a composer on top (a 13.5px textarea, 3 rows growing to 10; Enter adds, Shift+Enter is
+    a new line; images by pasting, dropping files on the dialog, or the paperclip's recent-files list,
+    copied into `data/crew-attachments`, images only, 10MB and 6 per task, shown as 64x48 thumbnails
+    with ×). Adding makes a real task on the shared board, `pal task add "<first line>" --for <pal>
+    --body "<the rest, and the images' paths>"`, marked from the owner; the pal is told when its turn
+    ends and its "New task" message carries the body, paths included. Then that pal's open tasks
+    (working first, then blocked, then open; a tick finishes one, a click on its title shows its
+    details, notes and who asked), and "All tasks on the board →". Quick questions go in the
+    terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the pal's
   name chip centred with a ▾ (a click opens the pal menu, `crew-palmenu`, below) and the split
   buttons on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
@@ -275,8 +293,8 @@ rectangular segments and tags.
     <branch>` and Review on worktree channels; click shows it); **Memory** (the pinned note,
     editable and saved on blur; what a new session starts with and what the 6,000-character primer
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
-    Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tell, + Channel,
-    Customize look, Put to sleep. In Full, two columns.
+    Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tasks (the
+    `crew-tasks` dialog), + Channel, Customize look, Put to sleep, as pebbles. In Full, two columns.
   - **Notebook:** the pal's journal, newest day first, today live ("live" in mint), All · Hiccups ·
     Lessons, and the week's count ("4 hiccups · ~50m lost"). Each entry: time · #channel · task ·
     how long; did; hiccups (an amber tag, with what they cost); needed (tool / skill / rule /
@@ -336,10 +354,9 @@ rectangular segments and tags.
   on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
   written until the owner accepts (the mission) or writes it after the diff (agent files).
 - **The pal menu** (`crew-palmenu`, the header chip's 300 px popup, crew-pick's look): the pal's
-  name and "harness · folder", then The pal (Profile with its shortcut, Notebook, Memory, Tasks with the
-  open count), The project (Mission, Brain, AGENTS.md, Review changes on a worktree channel, Open
-  folder), then Tell… and
-  Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
+  name and "harness · folder", then The pal (Profile with its shortcut, Notebook, Memory, Tasks with
+  the open count: the `crew-tasks` dialog), The project (Mission, Brain, AGENTS.md, Review changes on
+  a worktree channel, Open folder), then Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
   **"N need you"** (channels asking, approvals waiting, stuck channels; amber, red while an
@@ -387,9 +404,9 @@ rectangular segments and tags.
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
-    `crew-attach`, `crew-tell` (props `space`, `tab`).
+    `crew-attach`, `crew-tasks` (props `space`). The installer retires the old `crew-tell`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
-  - Every mod gets `lib/crew.js` (the shared model), `lib/mascot-art.js` and `lib/pets.js` copied in.
+  - Every mod gets `lib/crew.js` (the shared model) and `lib/pets.js` copied in.
 - **Herdr functions:**
   - Data: `spaces`, `panes`, `agents`, `layout`, `shared`/`setShared` (`crew`,
     `crew.settings`, `crew.room`, `crew.marks` for pins and tab colors).
@@ -411,6 +428,11 @@ rectangular segments and tags.
 
 ## Watch out
 
+- **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
+  pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and
+  whole lines only, up to 16,000 characters (`MEMORY_CAP`), and "(N older notes not loaded; run pal
+  memory to see them)". It used to keep the LAST 6,000 characters, so USER.md, the pinned note and
+  MEMORY.md were cut first. `pal memory <Pal>` prints everything, in the same order.
 - **A project's AGENTS.md / CLAUDE.md change only with the owner's click.** `pal agents apply`
   refuses from a pal's terminal; the approval gate holds a pal's Edit / Write of a file named
   AGENTS.md or CLAUDE.md (`agents-file`, the hook turns it into "edit <path>"; the PreToolUse
@@ -424,10 +446,6 @@ rectangular segments and tags.
 - **Testing proposals in a `CREW_DATA` sandbox from a pal's terminal** still tells the proposer:
   with no crewd for that data, the message is typed into the real terminal. Run such tests with
   `HC_TERMINAL_ID=` for both sides.
-- **The primer's memory cap keeps the END of the text** (`memory_text`, 6,000 characters): when a
-  pal's memory is longer, USER.md, the pinned note and MEMORY.md are cut first, and only the newest
-  notes reach the session. The profile's Memory section says exactly what's cut
-  (`pal memory <Pal> --json`).
 - **The dashboard's terminal is the shown channel's own session in a second view.** Full hides the
   `work` column, so it's the only visible view and sets the terminal's size; closing the dashboard
   gives the size back and Claude Code redraws. `{agent: "focused"}` shows the agent chosen with
@@ -494,7 +512,7 @@ rectangular segments and tags.
   floats over its terminal.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
-  `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose. A record with `"pet": "none"` shows the folder mascot.
+  `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose.
 - With the profile panel closed, the terminal is as wide as before. The hero's name, the Profile
   quick action, right-click → Profile, the pal menu's Profile and Ctrl+Shift+I each open it on the
   right, beside the terminal; the same trigger, × or Esc (panel focused) close it. ⤢ fills the work

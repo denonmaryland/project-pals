@@ -11,7 +11,7 @@ import { div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, agents, run, notify, layout } from "herdr";
 import {
-  botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskOf,
+  botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, pebble,
   panelTab, openPanel, closePanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle, tabHasAgent, leadPane,
   channelOrder, showTabs, dashShown, focusShownAgent, openChannels, TAG_WORDS, wakePal,
 } from "./crew.js";
@@ -75,11 +75,7 @@ export function renderDash(view, part, t, d) {
 function head(view, { space, bot }, t, d) {
   const tab = space.tabs.find((x) => x.active);
   const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
-  const btn = (id, icon, text, tip, act) => h_flex().id(id).h(28).gap(6).px(text ? 10 : 0).when(!text, (el) => el.w(28)).flex_none().items_center().justify_center()
-    .rounded(d.r.sm).border_1().border_color(d.lineMid).cursor_pointer().tooltip(tip).hover((s) => s.bg(d.hover).border_color(d.lineStrong))
-    .on_click((_e, cx) => { act(); cx.notify(); })
-    .child(svg(`${ICON}/${icon}.svg`).size(13).text_color(d.fg2))
-    .when(Boolean(text), (el) => el.child(div().text_size(12).font_weight(500).text_color(d.body).child(text)));
+  const btn = (id, icon, text, tip, act) => pebble(d, { id, icon, label: text, tooltip: tip, onClick: () => act() });
   const tabs = h_flex().items_center().gap(2).pl(8);
   for (const [key, label] of TABS) {
     if (key === "|") { tabs.child(div().w(1).h(16).mx(6).bg(d.lineMid)); continue; }
@@ -105,7 +101,7 @@ function head(view, { space, bot }, t, d) {
   const word = !bot.awake ? "Asleep" : TAG_WORDS[state] ?? "Resting";
   const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
   const dot = { work: d.info, ask: d.warn, stuck: d.warn, done: d.ok, pr: d.ok }[state];
-  const done = view.ops?.tasks?.filter((x) => taskOf(x, bot.name) && x.status === "done").length ?? 0;
+  const done = view.ops?.tasks?.filter((x) => taskFor(x, space.name) && x.status === "done").length ?? 0;
   const hired = bot.hired ? new Date(bot.hired).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
   const facts = [["brain", bot.harnessName ?? "no agent"], ["folder", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~")],
     ["hired", [hired && `${hired}${bot.hiredBy ? ` · by ${bot.hiredBy}` : ""}`, `${done} tasks done`].filter(Boolean).join(" · ")]];
@@ -179,14 +175,14 @@ function left(view, { space, bot }, t, d) {
       .child(div().w(70).flex_none().text_size(10).line_height("16px").font_family(d.mono).text_color(d.fg3).child(`${day.slice(5)} ${mm?.[1] ?? ""}`))
       .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(d.body).child(mm ? mm[3] : l)));
   }
-  if (m.total > m.limit) col.child(div().px(16).pt(6).text_size(11).line_height("15px").text_color(d.warnText)
-    .child(`New sessions get ${m.limit.toLocaleString()} of ${m.total.toLocaleString()} characters.`));
+  if (m.notes_left_out > 0) col.child(div().px(16).pt(6).text_size(11).line_height("15px").text_color(d.fg3)
+    .child(`New sessions get the newest ${m.notes_kept} of ${m.notes_total} notes.`));
   return col;
 }
 
 // ─── board: Now · Next · Blocked · Done ───────────────────────────────────────────────────────
 function board(view, { space, bot }, d) {
-  const tasks = (view.ops?.tasks ?? []).filter((x) => taskOf(x, bot.name));
+  const tasks = (view.ops?.tasks ?? []).filter((x) => taskFor(x, space.name));
   const chanOf = (task) => { const w = String(task.claimed_by || task.assignee || ""); const ch = w.includes("#") ? w.split("#")[1] : null; return ch ? space.tabs.find((x) => channelName(x).toLowerCase() === ch.toLowerCase()) ?? null : null; };
   const all = agents();
   const ps = panes();

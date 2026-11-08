@@ -1,6 +1,6 @@
 // Project Pals pal menu: opened from the header's pal chip (its ▾). Everything about THE AGENT and
 // THAT PROJECT, not its channels (the hero lists those): its profile, memory and tasks; its project's
-// review and folder; and the pal's actions. Each opens the right-side panel's tab, or the dialog it
+// review and folder; and the pal's actions (Sleep / Wake). Each opens the right-side panel's tab, or the dialog it
 // names. Drawn like crew-pick:
 // an r4 #161617 popover, a 1 px hairline, 30 px rows. Keys: ↑/↓ move, Enter opens, Esc closes.
 
@@ -8,7 +8,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, theme, props, closeOverlay, openOverlay, run, exec, setShared, keys } from "herdr";
 import {
-  botOf, ds, tone, channelName, crew, taskOf, loadOps, openPanel, closePanel, panelOpen, panelTab, panelState, worktreeOf, openReview,
+  botOf, ds, tone, channelName, crew, taskFor, loadOps, openPanel, closePanel, panelOpen, panelTab, panelState, worktreeOf, openReview,
   updateBot, rememberModel, wakePal,
 } from "./crew.js";
 
@@ -28,7 +28,7 @@ export default class CrewPalMenu extends View {
     this.cursor = 0;
     this.open = 0;
     cx.spawn(async (cx) => {
-      try { const ops = await loadOps(); const b = botOf(this.space()); this.open = ops.tasks.filter((x) => taskOf(x, b?.name) && ["open", "claimed", "blocked"].includes(x.status)).length; } catch {}
+      try { const ops = await loadOps(); const b = botOf(this.space()); this.open = ops.tasks.filter((x) => taskFor(x, b?.name) && ["open", "claimed", "blocked"].includes(x.status)).length; } catch {}
       cx.notify();
     });
   }
@@ -50,14 +50,14 @@ export default class CrewPalMenu extends View {
       ["The pal", "profile", "ds-user", "Profile", shortcut(), panel("profile")],
       ["The pal", "notebook", "ds-notebook", "Notebook", null, panel("notebook")],
       ["The pal", "memory", "ds-memory", "Memory", null, panel("profile", "memory")],
-      ["The pal", "tasks", "ds-tasks", "Tasks", this.open ? `${this.open} open` : null, () => setShared("crew.view", "tasks")],
+      // Tasks: add one for this pal and see its open ones (the crew-tasks dialog; Tell merged into it).
+      ["The pal", "tasks", "ds-tasks", "Tasks", this.open ? `${this.open} open` : null, () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })],
     ];
     out.push(["The project", "mission", "ds-mission", "Mission", null, panel("mission")]);
     out.push(["The project", "brain", "ds-brain", "Brain", null, panel("brain")]);
     out.push(["The project", "agents", "ds-agents", "AGENTS.md", null, panel("agents")]);
     if (wt) out.push(["The project", "review", "ds-review", "Review changes", wt.branch ?? `#${channelName(tab)}`, () => openReview(space, tab)]);
     if (bot.folder ?? space.folder) out.push(["The project", "folder", "ds-folder", "Open folder", null, () => exec("xdg-open", [bot.folder ?? space.folder]).catch(() => {})]);
-    out.push(["", "tell", "ds-tell", "Tell…", null, () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: tab?.id } })]);
     if (!bot.god) out.push(["", "sleep", "ds-moon", "Put to sleep", null, () => {
       updateBot(bot.record ?? bot, (b) => ({ ...b, folder: b.folder ?? space.folder ?? null, harness: b.harness ?? bot.harness ?? null }));
       rememberModel(space).catch(() => {}).finally(() => run("space.close", { id: space.id }));

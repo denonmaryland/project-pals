@@ -11,7 +11,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView } from "gpui-base";
 import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay, nextCommand, shared, props } from "herdr";
 import {
-  crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskOf, updateBot,
+  crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
   tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS,
 } from "./crew.js";
@@ -187,10 +187,7 @@ export default class CrewProfile extends View {
   // 52 px: the pet chip, the name, ⤢ / ⤡ and ×.
   header(space, bot, d, full) {
     const tab = space.tabs.find((x) => x.active);
-    const btn = (id, icon, tip, act) => div().id(id).size(28).flex().flex_none().items_center().justify_center().rounded(d.r.sm)
-      .border_1().border_color(d.lineMid).cursor_pointer().tooltip(tip).hover((s) => s.bg(d.hover).border_color(d.lineStrong))
-      .on_click((_e, cx) => { act(); cx.notify(); })
-      .child(svg(`${ICON}/${icon}.svg`).size(13).text_color(d.fg2));
+    const btn = (id, icon, tip, act) => pebble(d, { id, icon, tooltip: tip, onClick: () => act() });
     return h_flex().h(52).flex_none().items_center().gap(10).pl(16).pr(10).border_b_1().border_color(d.line)
       .child(mascotEl(bot, mood(tab?.status, bot.awake || bot.starting), 30))
       .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").font_weight(600).text_color(d.fg1).child(bot.name))
@@ -308,7 +305,7 @@ export default class CrewProfile extends View {
   }
 
   stats(space, bot, d, full) {
-    const mine = this.ops.tasks.filter((x) => taskOf(x, bot.name));
+    const mine = this.ops.tasks.filter((x) => taskFor(x, space.name));
     const last = Math.max(0, ...space.tabs.map((x) => x.changed_at ?? 0));
     const cells = [
       [String(space.tabs.length), space.tabs.length === 1 ? "Channel" : "Channels"],
@@ -376,16 +373,14 @@ export default class CrewProfile extends View {
     if (this.showRemember) col.child(div().h(30).px(10).flex().items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineStrong)
       .child(Input.new(this.remember).w_full().text_size(12).text_color(d.fg1)));
     if (!m) return col.child(div().text_size(12).text_color(d.fg3).child("Reading its memory…"));
-    // What reaches a new session.
-    const cut = m.parts.filter((x) => x.kept < x.chars);
-    const over = m.total > m.limit;
+    // What reaches a new session: the pinned note, MEMORY.md and USER.md whole, then the newest notes.
+    const over = m.notes_left_out > 0;
     col.child(h_flex().items_start().gap(8)
       .child(div().mt(5).w(64).h(4).flex_none().rounded(2).bg(d.lineMid)
-        .child(div().h(4).rounded(2).bg(over ? d.warn : d.fg2).w(Math.max(2, Math.round(64 * Math.min(1, m.total / m.limit))))))
+        .child(div().h(4).rounded(2).bg(over ? d.warn : d.fg2).w(Math.max(2, Math.round(64 * Math.min(1, m.primer / m.limit))))))
       .child(div().flex_1().text_size(11).line_height("15px").text_color(over ? d.warnText : d.fg3)
-        .child(over
-          ? `A new session starts with ${m.limit.toLocaleString()} of ${m.total.toLocaleString()} characters: ${cut.map((x) => x.kept ? `part of ${x.label}` : x.label).join(", ")} ${cut.length === 1 ? "is" : "are"} cut.`
-          : `A new session starts with all ${m.total.toLocaleString()} characters (of ${m.limit.toLocaleString()}).`)));
+        .child(`A new session starts with ${m.primer.toLocaleString()} characters: ${m.parts.map((x) => x.label).join(", ") || "nothing pinned or curated"} whole, then `
+          + (m.notes_total ? `the newest ${m.notes_kept} of ${m.notes_total} notes${over ? ` (${m.notes_left_out} older ones left out)` : ""}.` : "no notes yet."))));
     if ((m.memory_md ?? "").trim()) {
       col.child(div().text_size(10).font_family(d.mono).text_color(d.fg3).child("MEMORY.md"));
       col.child(div().px(10).py(6).rounded(d.r.md).border_1().border_color(d.line).text_size(12).text_color(d.body)
@@ -414,15 +409,11 @@ export default class CrewProfile extends View {
   }
 
   actions(space, bot, d) {
-    const tab = space.tabs.find((x) => x.active);
-    const btn = (id, icon, text, act) => h_flex().id(id).h(28).flex_1().items_center().justify_center().gap(6).rounded(d.r.sm)
-      .bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer().hover((s) => s.bg(d.hover).border_color(d.lineStrong))
-      .on_click((_e, cx) => { act(cx); cx.notify(); })
-      .child(svg(`${ICON}/${icon}.svg`).size(12).text_color(d.iconOn))
-      .child(div().text_size(12).font_weight(500).text_color(d.body).child(text));
+    // Pebbles, like the hero's quick actions. Tasks is where a Tell went (DeNon: a Tell is a task).
+    const btn = (id, icon, text, act) => pebble(d, { id, icon, label: text, onClick: act, grow: true });
     return v_flex().gap(6)
       .child(h_flex().gap(6)
-        .child(btn("pf-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: tab?.id } })))
+        .child(btn("pf-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })))
         .child(btn("pf-channel", "ds-plus", "Channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
       .child(h_flex().gap(6)
         .child(btn("pf-look", "ds-user", "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
