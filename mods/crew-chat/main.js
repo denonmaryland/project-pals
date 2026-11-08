@@ -53,6 +53,13 @@ function stampLabel(ms, mode) {
   if (mode === "focus" || mode === "pro-old") return `${dayWord(ms)} ${clock(ms)}`;
   return clock(ms);
 }
+// Claude Code stores pasted text inside <pasted_content id="…">…</pasted_content id="…"> in its
+// session file; the chat shows just the text.
+// on_size_change reports window pixels (after Herdr's zoom); heights and widths given to elements
+// are design pixels (zoom scales them). Measured sizes are turned back into design pixels, so the
+// rows fit at any zoom. (Inferred from rows overlapping at zoom 0.68 and not at 1; check live.)
+const zoom = () => Number(settings().zoom) || 1;
+const unwrap = (text) => text.replace(/<\/?pasted_content(?:\s+id="[^"]*")?\s*>\n?/g, "").trim();
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const worked = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; };
 
@@ -135,7 +142,7 @@ export default class CrewChat extends View {
       const results = new Map();
       for (let n = start; n < all.length; n++) {
         let e = prev.get(n);
-        if (!e) { try { e = JSON.parse(all[n]); e._n = n; } catch { e = null; } }
+        if (!e) { try { e = JSON.parse(all[n]); e._n = n; if (typeof e.text === "string") e.text = unwrap(e.text); } catch { e = null; } }
         if (!e) continue;
         byLine.set(n, e);
         if (e.kind === "result") results.set(e.id, e);
@@ -359,8 +366,9 @@ export default class CrewChat extends View {
       if (m.natural) return h_flex().id(`measure-w-${m.key}`).flex_none().whitespace_nowrap().text_size(14).line_height(`${MODE[layoutMode()].line}px`)
         .child(markdownView(`mw-${m.key}`, m.text, color, 1400))
         .on_size_change((size, cx) => {
-          if (!(size.width > 0) || this.natural.get(Number(m.key)) === Math.ceil(size.width)) return;
-          this.natural.set(Number(m.key), Math.ceil(size.width));
+          const w = Math.ceil(size.width / zoom());
+          if (!(size.width > 0) || this.natural.get(Number(m.key)) === w) return;
+          this.natural.set(Number(m.key), w);
           this.mver++;
           if (this.follow) this.pending = true;
           cx.notify();
@@ -368,8 +376,9 @@ export default class CrewChat extends View {
       return v_flex().id(`measure-${m.key}`).w(m.tw).flex_none().text_size(14).line_height(`${MODE[layoutMode()].line}px`).text_color(color)
         .child(markdownView(`mm-${m.key}`, m.text, color, m.tw))
         .on_size_change((size, cx) => {
-          if (!(size.height > 0) || this.measured.get(m.key) === size.height) return;
-          this.measured.set(m.key, Math.ceil(size.height));
+          const h = Math.ceil(size.height / zoom());
+          if (!(size.height > 0) || this.measured.get(m.key) === h) return;
+          this.measured.set(m.key, h);
           this.mver++;
           if (this.follow) this.pending = true;
           cx.notify();
@@ -384,7 +393,7 @@ export default class CrewChat extends View {
     const { space, tab, terminal } = this.target();
     this.tabId = tab?.id ?? null;
     const root = v_flex().id("crew-chat").size_full().bg(d.bg0).text_color(d.fg1)
-      .on_size_change((size, cx) => { if (Math.abs(size.width - this.width) > 4) { this.width = size.width; cx.notify(); } });
+      .on_size_change((size, cx) => { const w = size.width / zoom(); if (Math.abs(w - this.width) > 4) { this.width = w; cx.notify(); } });
     if (terminal !== this.terminal) this.reload(cx);
     // Coming to this view shows the newest message.
     const shown = findNode(layout(), "center")?.active === "chat-view";

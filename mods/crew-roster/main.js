@@ -5,7 +5,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, agents, terminals, run, theme, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
+import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
   crew, botOf, sleepers, mascotFor, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot,
@@ -489,7 +489,8 @@ export default class CrewRoster extends View {
     const nHidden = dozing.length + asleep.length;
     const showHidden = localStorage.getItem("asleep-open") === "1";
     const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
-      .on_size_change((size, cx) => { if (Math.abs((this.width ?? 0) - size.width) > 1) { this.width = size.width; cx.notify(); } });
+      // Window pixels → design pixels (Herdr's zoom scales what we draw).
+      .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.heroCard(shown, t, d, w));
     const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(2);
     if (this.view() !== "bots") return root.child(this.otherView(list, rows, waiting, t, d));
