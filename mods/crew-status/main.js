@@ -7,7 +7,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, agents, theme, appHome, readTextFile, openOverlay, shared, setShared } from "herdr";
-import { leadPane, ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY, APP_MENU } from "./crew.js";
+import { leadPane, ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY, APP_MENU, needsTooltip } from "./crew.js";
 
 export default class CrewStatus extends View {
   init(_props, cx) {
@@ -60,13 +60,14 @@ export default class CrewStatus extends View {
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU }); })
       .child(svg("mods/crew-roster/icons/settings.svg").size(12).text_color(d.fg2)), sep());
     items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
-    // What needs DeNon (the roster's count: channels that ask, approvals waiting, stuck channels).
+    // What needs DeNon (the roster's count: questions for them, approvals waiting, stuck channels,
+    // proposals; a pal asking another pal isn't counted). The tooltip says why each one counts.
     // Amber; red while an approval waits. A click opens the Inbox. Hidden at zero.
     const needs = shared("crew.needs");
     if (needs?.count > 0) {
       const urgent = needs.approvals > 0;
       items.push(sep(), h_flex().id("crew-needs").flex_none().items_center().gap(6).cursor_pointer()
-        .tooltip([needs.asks && `${needs.asks} asking`, needs.approvals && `${needs.approvals} waiting for your OK`, needs.stuck && `${needs.stuck} stuck`, needs.proposals && `${needs.proposals} proposal${needs.proposals === 1 ? "" : "s"}`].filter(Boolean).join(" · "))
+        .tooltip(needsTooltip(needs))
         .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); setShared("crew.view", "you"); })
         .child(dot(urgent ? d.err : d.warn)).child(text(`${needs.count} need${needs.count === 1 ? "s" : ""} you`, urgent ? d.err : d.warnText)));
     }
