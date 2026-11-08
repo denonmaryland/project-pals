@@ -41,16 +41,31 @@ const RAMP = " .,:;=+*#%@", BLOCK = " ░▒▓█", BRAILLE = "⠀⠁⠃⠇⡇�
 const MONO = '"JetBrains Mono","JetBrainsMono Nerd Font","JetBrainsMono NF",monospace';
 // Drawn as the board's 16 px globe (an 8 × 8 grid; its 14 px row size, 7 × 7, was too faint to read),
 // at 2x. fn(s, i24, j24, f): f = { u (0..1 of the loop), i (frame index), F (frames) }. rot(f) the globe's turn.
+// At row size (16 px) the board's colours vanish: most glyphs are drawn at 12-50 % alpha and the
+// downscale averages the thin strokes with the empty cell around them. So every colour gets a
+// contrast stretch (alpha above .1 more than doubles, capped at 1, so the faintest dots stay faint
+// and lit land goes solid; the tint moves a little toward white) and each glyph is drawn bigger and
+// outlined in its own colour, which thickens it. The order of light and dark is kept. (DeNon, 2026-11-08: "brighter, so they read".)
+const GLYPH = 1.25, STROKE = .14;
+function boost(col) {
+  const m = col.match(/rgba?\(([^)]+)\)/); if (!m) return col;
+  const [r, g, b, a = 1] = m[1].split(",").map(Number);
+  const A = a <= .1 ? a : Math.min(1, .1 + (a - .1) * 2.1);
+  const w = (v) => Math.round(v + (255 - v) * .12);
+  return `rgba(${w(r)},${w(g)},${w(b)},${A.toFixed(3)})`;
+}
 function asciiStyle(id, name, F, delay, fn, { rot = (f) => TAU * f.u, light = null } = {}) {
   return { id, group: "ascii", name, F, delay, size: 32, draw(x, W, f) {
     const cells = 8, cw = W / cells;
-    x.font = `700 ${cw * 1.05}px ${MONO}`; x.textAlign = "center"; x.textBaseline = "middle";
+    x.font = `800 ${cw * GLYPH}px ${MONO}`; x.textAlign = "center"; x.textBaseline = "middle";
+    x.lineWidth = cw * STROKE; x.lineJoin = "round";
     for (let i = 0; i < cells; i++) for (let j = 0; j < cells; j++) {
       const u = (j + .5) / cells * 2 - 1, v = (i + .5) / cells * 2 - 1;
       const s = sph(u * 1.04, v * 1.04, rot(f), light ? light(f) : undefined);
       const r = fn(s, Math.round(i * 24 / cells), Math.round(j * 24 / cells), f);
       if (!r || r.ch === " ") continue;
-      x.fillStyle = r.col; x.fillText(r.ch, (j + .5) * cw, (i + .55) * cw);
+      const col = boost(r.col), cx = (j + .5) * cw, cy = (i + .55) * cw;
+      x.fillStyle = col; x.strokeStyle = col; x.fillText(r.ch, cx, cy); x.strokeText(r.ch, cx, cy);
     }
   } };
 }

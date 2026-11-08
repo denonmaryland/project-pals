@@ -4,7 +4,9 @@ Run: python3 -m unittest tests.test_working_indicators"""
 
 import json
 import re
+import shutil
 import struct
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -58,6 +60,21 @@ class WorkingIndicators(unittest.TestCase):
                 self.assertTrue(alpha, "transparent background")
                 self.assertEqual(sum(durs), meta["ms"], "the loop is as long as it was drawn")
                 self.assertGreaterEqual(min(durs), 33, "no faster than Herdr's ~30 fps")
+
+    @unittest.skipUnless(shutil.which("magick"), "needs ImageMagick")
+    def test_ascii_globes_read_at_row_size(self):
+        # At the 16 px row size the board's colours were 1-10 % opaque (DeNon: too faint); the
+        # renderer's contrast stretch and thicker glyphs took the set to ~34 %. Keep it there.
+        cover = {}
+        for f in sorted(ART.glob("ascii-*.webp")):
+            out = subprocess.run(["magick", f"{f}[0]", "-resize", "16x16", "-channel", "A", "-separate",
+                                  "-format", "%[fx:mean*100]", "info:"], capture_output=True, text=True, check=True)
+            cover[f.stem] = float(out.stdout)
+        self.assertEqual(len(cover), 10)
+        for sid, c in cover.items():
+            with self.subTest(style=sid):
+                self.assertGreater(c, 5, "visible at row size")
+        self.assertGreater(sum(cover.values()) / len(cover), 25, "the set reads at row size")
 
     def test_unknown_setting_falls_back_to_classic(self):
         src = (ROOT / "lib" / "crew.js").read_text()
