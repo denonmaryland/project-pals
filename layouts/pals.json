@@ -125,8 +125,97 @@
               "id": "profile-main",
               "type": "block",
               "content": {
-                "mod": "crew-profile"
+                "mod": "crew-profile",
+                "props": {
+                  "part": "main"
+                }
               }
+            },
+            {
+              "id": "profile-dash",
+              "type": "column",
+              "hidden": true,
+              "resizable": false,
+              "children": [
+                {
+                  "id": "dash-head",
+                  "type": "block",
+                  "content": {
+                    "mod": "crew-profile",
+                    "props": {
+                      "part": "head"
+                    }
+                  },
+                  "size": {
+                    "px": 125
+                  }
+                },
+                {
+                  "id": "dash-body",
+                  "type": "row",
+                  "resizable": false,
+                  "children": [
+                    {
+                      "id": "dash-left",
+                      "type": "block",
+                      "content": {
+                        "mod": "crew-profile",
+                        "props": {
+                          "part": "left"
+                        }
+                      },
+                      "size": {
+                        "px": 340
+                      }
+                    },
+                    {
+                      "id": "dash-right",
+                      "type": "column",
+                      "children": [
+                        {
+                          "id": "dash-board",
+                          "type": "block",
+                          "content": {
+                            "mod": "crew-profile",
+                            "props": {
+                              "part": "board"
+                            }
+                          }
+                        },
+                        {
+                          "id": "dash-tbar",
+                          "type": "block",
+                          "content": {
+                            "mod": "crew-profile",
+                            "props": {
+                              "part": "tbar"
+                            }
+                          },
+                          "size": {
+                            "px": 33
+                          }
+                        },
+                        {
+                          "id": "dash-term",
+                          "type": "block",
+                          "size": {
+                            "px": 300
+                          },
+                          "min": 140,
+                          "padding": [
+                            6,
+                            12
+                          ],
+                          "background": "#0B0B0C",
+                          "content": {
+                            "agent": "focused"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

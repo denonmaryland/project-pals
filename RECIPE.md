@@ -248,8 +248,21 @@ rectangular segments and tags.
   Esc in the terminal stays the program's (it interrupts Claude Code). It always shows the shown pal.
   - Two sizes: **Side**, beside the terminal (420 px by default; drag its edge, 360-640,
     remembered as `focus.panelPx`), and **Full** (⤢ in its header: it hides the `work` column, so
-    the panel fills everything right of the sidebar). Each tab remembers its size. It starts hidden
-    on every launch.
+    the panel fills everything right of the sidebar). Profile opens Full, the project tabs Side;
+    each tab remembers its size. It starts hidden on every launch.
+  - **Profile in Full is the dashboard** (`profile-dash`): the header with the tabs inline, ⤡ Side
+    and ×; a 72 px strip (pet, name, role, state │ brain, folder, hired, tasks done │ the mission
+    and its done-when count, a click opens Mission); then the pal's **channels** (340 px: live state
+    dot, or hollow for no agent; `#name` and how long; what it's on; branch or `worktree · <branch>`
+    with Review) and compact **memory** (pinned, the latest notes, the primer's cut, "All ·
+    Remember…"); the **task board** ("toward: <focus>", Now · Next · Blocked · Done · 7 days: the
+    pal's tasks, plus an activity card for each working channel without a claimed task, its
+    asking and stuck channels in Blocked; 64 px r6 #161617 cards with a channel chip; a task
+    expands to Mark done / Reopen); and the **mini terminal**: a 33 px bar (`TERMINAL`, a `#channel ▾`
+    picker, live, program and state, Open channel ↗) over `dash-term`, an `{agent: "focused"}` block
+    showing the shown channel's agent: the real session, typed into directly. A channel row, a
+    chip or the picker points it at another channel (it shows that channel: `tab.select`, then
+    `agent.focus`). A channel with no agent hides the terminal and offers Wake.
   - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
     and ×. Tabs (36 px, r4, the shown one #232324): **Profile** ‖ **Mission · Brain · AGENTS.md**
     (a 1 px divider between the pal's tab and its project's; AGENTS.md carries the lint's badge:
@@ -330,7 +343,10 @@ rectangular segments and tags.
   - Stack `center` has the children `tab-view` and `room-view`. `showRoom` / `showTabs` switch it
     and show or hide `crew-composer`.
   - The `profile` column (after `work` in `body`, hidden, `min` 360) holds `profile-main`
-    (`crew-profile`). `openPanel` / `closePanel` / `togglePanel` / `setPanelSize` in `crew.js` use
+    (`crew-profile`, props `part: "main"`) and the hidden `profile-dash` column: `dash-head`
+    (125 px), then a row of `dash-left` (340 px) and a column of `dash-board`, `dash-tbar` (33 px)
+    and `dash-term` (300 px, `{agent: "focused"}`), each a `crew-profile` copy with its `part`.
+    `layPanel` shows `profile-dash` instead of `profile-main` only in Full on Profile. `openPanel` / `closePanel` / `togglePanel` / `setPanelSize` in `crew.js` use
     `layout.show` / `layout.hide` / `layout.resize` (`px` for Side, `weight: 1` with `work`
     hidden for Full); shared `crew.panel` holds `{tab, sizes, section, at}`.
 - **Mods:**
@@ -381,6 +397,12 @@ rectangular segments and tags.
   pal's memory is longer, USER.md, the pinned note and MEMORY.md are cut first, and only the newest
   notes reach the session. The profile's Memory section says exactly what's cut
   (`pal memory <Pal> --json`).
+- **The dashboard's terminal is the shown channel's own session in a second view.** Full hides the
+  `work` column, so it's the only visible view and sets the terminal's size; closing the dashboard
+  gives the size back and Claude Code redraws. `{agent: "focused"}` shows the agent chosen with
+  `agent.focus`, else the focused pane's, else the FIRST agent anywhere, so `dash-tbar` hides
+  `dash-term` while the shown channel has no agent. To verify live (2026-11-08, not yet seen): that
+  `agent.focus` doesn't move the view elsewhere, and that a hidden block doesn't keep the size.
 - **The profile panel's focus:** it takes the keyboard on every open (a 250 ms poll of
   `crew.panel.at`, not in render), so Esc closes it; a click in the terminal gives the keyboard back.
   Herdr shows and hides a layout block at once (no slide).
@@ -454,6 +476,9 @@ rectangular segments and tags.
   pointer → Review shows `+1 −0` and "new file"; Write makes CLAUDE.md holding `@AGENTS.md`, a backup
   marked `.absent`, and a change-log line, and nothing else in the repo changes.
 - A pal's Edit of an AGENTS.md is held in the Inbox.
+- Ctrl+Shift+I opens the dashboard over the work area; typing "hi" + Enter in its terminal reaches
+  that channel's Claude Code (closing the dashboard shows it there too); clicking another channel
+  row shows that channel's session; a channel with no agent shows "no agent running" and Wake.
 - The status bar shows "1 needs you" while one channel asks, and nothing at zero.
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the

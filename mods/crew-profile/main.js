@@ -9,13 +9,14 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView } from "gpui-base";
-import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay, nextCommand, shared } from "herdr";
+import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay, nextCommand, shared, props } from "herdr";
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskOf, updateBot,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
   tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS,
 } from "./crew.js";
-import { initProject, ensureProject, loadAgents, missionTab, brainTab, agentsTab, agentsBadge, badgeTag } from "./project.js";
+import { initProject, ensureProject, loadAgents, loadBrain, missionTab, brainTab, agentsTab, agentsBadge, badgeTag } from "./project.js";
+import { initDash, renderDash } from "./dash.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
@@ -39,6 +40,18 @@ export default class CrewProfile extends View {
     this.role.on("blur", (_e, cx) => this.saveRole(cx));
     this.editingRole = false;
     this.showRemember = false;
+    // The Full dashboard's parts (props.part: head, left, board, tbar) are copies of this mod too:
+    // each loads only what it shows (dash.js).
+    this.part = props()?.part ?? "main";
+    if (this.part !== "main") {
+      initDash(this, cx, this.part);
+      if (this.part === "left") this.loadMemory(cx, true);
+      if (this.part === "head") {
+        loadBrain(this, cx, true);
+        cx.timer.every(250, () => { const st = panelState(); if (st.at && st.at !== this.seenAt && this.isOpen()) { this.seenAt = st.at; this.h.focus(); } });
+      }
+      return;
+    }
     const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); } catch {} cx.notify(); });
     ops(cx);
     cx.timer.every(5000, (cx) => { if (this.isOpen()) ops(cx); });
@@ -139,6 +152,12 @@ export default class CrewProfile extends View {
     const t = tone(theme());
     const d = ds(t);
     const s = this.shown();
+    if (this.part !== "main") {
+      // The panel's left edge: a hairline on the parts that touch it (the header and the channels).
+      return div().id(`crew-profile-${this.part}`).size_full().when(this.part === "head" || this.part === "left", (el) => el.border_l_1().border_color(d.line))
+        .track_focus(this.h).on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); closePanel(); } })
+        .child(renderDash(this, this.part, t, d));
+    }
     const root = v_flex().id("crew-profile").size_full().bg(d.bg1).border_l_1().border_color(d.line)
       .track_focus(this.h)
       // Esc: out of an edit or a review first, else close the panel.
