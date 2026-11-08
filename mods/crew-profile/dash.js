@@ -13,7 +13,7 @@ import { spaces, panes, agents, run, notify, layout } from "herdr";
 import {
   botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, pebble,
   panelTab, openPanel, closePanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle, tabHasAgent, leadPane,
-  channelOrder, showTabs, dashShown, focusShownAgent, openChannels, TAG_WORDS, wakePal,
+  channelOrder, showTabs, dashShown, focusShownAgent, openChannels, TAG_WORDS, wakePal, shortDate,
 } from "./crew.js";
 import { loadBrain } from "./project.js";
 
@@ -102,7 +102,7 @@ function head(view, { space, bot }, t, d) {
   const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
   const dot = { work: d.info, ask: d.warn, stuck: d.warn, done: d.ok, pr: d.ok }[state];
   const done = view.ops?.tasks?.filter((x) => taskFor(x, space.name) && x.status === "done").length ?? 0;
-  const hired = bot.hired ? new Date(bot.hired).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
+  const hired = bot.hired ? shortDate(bot.hired) : null;
   const facts = [["brain", bot.harnessName ?? "no agent"], ["folder", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~")],
     ["hired", [hired && `${hired}${bot.hiredBy ? ` · by ${bot.hiredBy}` : ""}`, `${done} tasks done`].filter(Boolean).join(" · ")]];
   const mis = view.brain && view.brainFor === bot.name ? view.brain.mission : null;
@@ -147,7 +147,8 @@ function left(view, { space, bot }, t, d) {
       .when(tab.active, (el) => el.bg(d.sel)).when(!tab.active, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { if (!tab.active) pointAt(space, tab); cx.notify(); })
       .child(h_flex().items_center().gap(8)
-        .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
+        .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : awake ? div().size(7).flex_none().rounded(4).bg(d.fg4)
+          : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
         .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).font_weight(500).text_color(awake ? d.fg1 : d.fg2).child(`#${channelName(tab)}`))
         .child(div().flex_none().text_size(11).text_color(st === "blocked" ? d.warnText : st === "done" ? d.okHi : d.fg3).child(since && since !== "now" ? `${word} ${since}` : word)))
       .child(div().pl(15).truncate().text_size(12).line_height("16px").text_color(awake ? d.body : d.fg3).child(on ?? (awake ? "" : "asleep")))

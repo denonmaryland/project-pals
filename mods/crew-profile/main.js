@@ -13,7 +13,7 @@ import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay,
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
-  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS,
+  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS, shortDate, num,
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, missionTab, brainTab, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
@@ -287,7 +287,7 @@ export default class CrewProfile extends View {
     const lead = tab ? leadPane(tab.id, panes()) : null;
     const model = modelOf(bot.record?.argv);
     const p = petOf(bot);
-    const hired = bot.hired ? new Date(bot.hired).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
+    const hired = bot.hired ? shortDate(bot.hired) : null;
     const rows = [
       ["brain", (bot.harnessName ?? (bot.harness ? bot.harness : "no agent running")) + (model ? ` · ${model}` : ""), false],
       ["folder", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~"), true],
@@ -346,7 +346,8 @@ export default class CrewProfile extends View {
         .when(tab.active, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .child(h_flex().items_center().gap(8)
-          .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
+          .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : awake ? div().size(7).flex_none().rounded(4).bg(d.fg4)
+            : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).font_weight(500).text_color(d.fg1).child(`#${channelName(tab)}`))
           .child(div().flex_none().text_size(11).text_color(status === "blocked" ? d.warnText : d.fg3).child(since && since !== "now" ? `${word} ${since}` : word)))
         .when(Boolean(on), (el) => el.child(div().pl(15).truncate().text_size(12).line_height("16px").text_color(d.body).child(on)))
@@ -378,8 +379,8 @@ export default class CrewProfile extends View {
     col.child(h_flex().items_start().gap(8)
       .child(div().mt(5).w(64).h(4).flex_none().rounded(2).bg(d.lineMid)
         .child(div().h(4).rounded(2).bg(over ? d.warn : d.fg2).w(Math.max(2, Math.round(64 * Math.min(1, m.primer / m.limit))))))
-      .child(div().flex_1().text_size(11).line_height("15px").text_color(over ? d.warnText : d.fg3)
-        .child(`A new session starts with ${m.primer.toLocaleString()} characters: ${m.parts.map((x) => x.label).join(", ") || "nothing pinned or curated"} whole, then `
+      .child(div().flex_1().min_w(0).text_size(11).line_height("15px").text_color(over ? d.warnText : d.fg3)
+        .child(`A new session starts with ${num(m.primer)} characters: ${m.parts.map((x) => x.label).join(", ") || "nothing pinned or curated"} whole, then `
           + (m.notes_total ? `the newest ${m.notes_kept} of ${m.notes_total} notes${over ? ` (${m.notes_left_out} older ones left out)` : ""}.` : "no notes yet."))));
     if ((m.memory_md ?? "").trim()) {
       col.child(div().text_size(10).font_family(d.mono).text_color(d.fg3).child("MEMORY.md"));

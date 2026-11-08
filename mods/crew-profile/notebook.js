@@ -7,7 +7,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { notify } from "herdr";
-import { crewCli, panelTab } from "./crew.js";
+import { crewCli, panelTab, shortDate, shortTime } from "./crew.js";
 
 export function initNotebook(view, cx) {
   view.nb = null; view.nbFor = null; view.nbFilter = "all"; view.nbArmed = null;
@@ -66,7 +66,7 @@ function dreamsView(view, d) {
   body.child(v_flex().py(12).gap(8).border_t_1().border_color(d.line)
     .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg3).child("THIS MONTH"))
     .child(grid)
-    .child(div().text_size(11).text_color(d.fg3).child(`${fmtMin(st.minutes_week)} of hiccups this week${st.last ? ` · last dream ${new Date(st.last).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}`)));
+    .child(div().text_size(11).text_color(d.fg3).child(`${fmtMin(st.minutes_week)} of hiccups this week${st.last ? ` · last dream ${`${shortDate(st.last)} ${shortTime(st.last)}`}` : ""}`)));
   const pats = v_flex().rounded(d.r.md).border_1().border_color(d.line);
   if (!st.patterns.length) pats.child(div().p(10).text_size(12).text_color(d.fg3).child("No patterns yet: they come from the pals' notebook hiccups."));
   st.patterns.slice(0, 20).forEach((p, i) => pats.child(v_flex().id(`dv-${p.id}`).px(10).py(7).gap(2).when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
@@ -137,8 +137,8 @@ export function notebookTab(view, space, bot, d, full) {
   for (const day of nb.days) {
     const entries = day.entries.slice().reverse().filter((e) => f === "all" || (f === "hiccups" ? e.hiccups.length || e.needed.length : e.lesson));
     if (!entries.length) continue;
-    const label = day.day === today ? `Today · ${new Date(day.day + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-      : new Date(day.day + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const label = day.day === today ? `Today · ${shortDate(new Date(day.day + "T12:00").getTime())}`
+      : shortDate(new Date(day.day + "T12:00").getTime(), true);
     body.child(h_flex().pt(12).pb(6).items_center().gap(8).border_t_1().border_color(d.line)
       .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg2).child(label.toUpperCase()))
       .when(day.day === today, (el) => el.child(h_flex().items_center().gap(5).child(div().size(6).rounded(3).bg(d.ok)).child(div().text_size(11).text_color(d.okHi).child("live")))));
