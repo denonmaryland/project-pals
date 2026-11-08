@@ -601,7 +601,35 @@ rectangular segments and tags.
   ctrl-shift-i / ctrl-shift-space / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
   `~/.claude/settings.json` (absence included); Roll back puts back only those still Project Pals'
   own, after a backup, and leaves later edits. A key an older snapshot doesn't list counts as unset
-  there, so rolling back to 0.3.0 takes ctrl-shift-space out again while it's still ours.
+  there, so rolling back to 0.3.0 takes ctrl-shift-space out again while it's still ours. Hook events
+  work the same way (`crewupdate.MANAGED_EVENTS`: SessionStart, PreToolUse, PostToolUse, Stop): an
+  older snapshot lists only the first two, so rolling back to 0.3.x takes Project Pals' PostToolUse
+  and Stop entries out (the person's own hooks on those events stay). The snapshot also records
+  whether `~/.gemini/config/hooks.json` had the `project-pals` key; without it, Roll back removes it.
+- **Only the owner's click speaks as the owner** (the Desk §10.1, 0.4). `[from <owner>]` is written
+  only when the app passes a click token for exactly that command line (`pal tell|ask|task …
+  --click`, from `ownerCli`: Tasks' add and done, Review's notes); a bad or used token is refused,
+  never downgraded. With no pal terminal it's `[from a shell on this computer, not verified as
+  <owner>]` (a terminal that isn't a pal's: `[from terminal tN, …]`); before 0.4, an empty
+  `HC_TERMINAL_ID` meant the owner, so `env -u HC_TERMINAL_ID pal tell` (or a `claude -p` child,
+  which crewd starts without `HC_*`) could pass as them. Bodies can't fake a header: `[from `, `[pal]`
+  and `[dream]` anywhere in a pal's text become `[quoted: …` (`crewlib.unforge`). `pal-room` from a
+  shell won't take the owner's name from `CREW_NAME`. Shell or edit-tool writes into
+  `data/crew-queue/` from a pal are held (`queue-write`, policy defaults version 9).
+- **Messages reach busy pals through hooks** (goodboimax's PR #2 and #3): Claude Code's PostToolUse
+  (`additionalContext`) and Stop (`decision: block`), agy's PreInvocation (`injectSteps`) and Stop
+  (`decision: continue`). Queue files are claimed by renaming to `.taken`, so a hook and crewd never
+  both deliver one. The per-step hooks are installed as `crew-hook-fast <event>`, a `sh` script that
+  starts Python only when `data/crew-queue/<terminal>/` holds a `*.json` or the terminal has no
+  `data/crew-hooked/<terminal>` yet (and keeps that heartbeat fresh), so a pal with nothing waiting
+  pays a few shell builtins per tool call. Idle pals are still typed to, with the draft guard.
+- **Pals start with Claude Code's prompt suggestions off** (`palArgv`, applied by `launchSpec` and
+  `wakePal`): `--settings '{"promptSuggestionEnabled":false}'` on the pal's own command line, never
+  in the stored argv or `~/.claude/settings.json`. `hc read` is plain text, so ghost text looked
+  like an unsent draft and held messages for an hour (2026-11-08). An argv with its own `--settings`
+  is left alone; `"pal_prompt_suggestions": "keep"` in crew-settings.json turns this off. Whether
+  the flag outranks a user setting of `true` is unverified (Claude Code's docs put command-line
+  settings above user settings).
 
 - **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
   pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and
@@ -731,3 +759,12 @@ rectangular segments and tags.
 - The pals layout is Focus only: no pal rail, tab strip, inspector or mode switch, and nothing
   answers Ctrl+Shift+M. The installer removes an old `"ctrl-shift-m": "crew-roster.mode"` from
   keys.json's `global` map, and only that exact binding (keys.json is backed up first).
+- A busy Claude Code pal with unsent text in its input box gets a `pal tell` between its steps,
+  and nothing is typed into the box. An empty-desk PostToolUse starts no Python (`crew-hook-fast`).
+- `env -u HC_TERMINAL_ID pal tell P#c "x"` arrives as "[from a shell on this computer, not verified
+  as <owner>] x"; a task added from the Tasks dialog arrives as "[from <owner>]"
+  (`tests/test_stage1.py`).
+- A Claude Code pal launched or woken from Project Pals shows no grey prompt suggestion in its box
+  (`node tests/test_launch.mjs`).
+- Rolling 0.4 back to 0.3.x leaves `~/.claude/settings.json` with only the person's own PostToolUse
+  and Stop hooks.

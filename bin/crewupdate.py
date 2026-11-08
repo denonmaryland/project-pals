@@ -113,6 +113,16 @@ MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-space", "ctrl-shift-m")
 # The actions those keys are bound to by Project Pals (anything else there is the person's own).
 OUR_ACTIONS = ("crew-roster.", "crew-header.")
 CONFIG_MEMBER = ".crew-config-snapshot.json"
+# The Claude Code hook events Project Pals adds entries to. PostToolUse and Stop came with the hook
+# delivery (0.4, PR #2). A snapshot that doesn't list an event (one taken by an older updater) means
+# Project Pals had no entry there then, as with MANAGED_KEYS, so Roll back takes its entry out.
+MANAGED_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "Stop")
+# Antigravity CLI's hooks file: Project Pals's entries live under its own "project-pals" key.
+AGY_HOOKS_KEY = "project-pals"
+
+
+def _agy_hooks():
+    return Path.home() / ".gemini" / "config" / "hooks.json"
 
 
 def _claude_settings():
@@ -125,10 +135,12 @@ def config_state():
     st = load_json(_claude_settings(), None)
     hooks = (st or {}).get("hooks", {}) if isinstance(st, dict) else {}
     ours = {ev: [e.get("matcher") for e in hooks.get(ev, []) if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
-            for ev in ("SessionStart", "PreToolUse")}
+            for ev in MANAGED_EVENTS}
     sl = (st or {}).get("statusLine") if isinstance(st, dict) else None
+    agy = load_json(_agy_hooks(), None)
     return {"keys_file": keys is not None, "keys": {k: g.get(k) for k in MANAGED_KEYS},
             "settings_file": st is not None, "hooks": ours,
+            "agy_hooks": isinstance(agy, dict) and AGY_HOOKS_KEY in agy,
             "statusline_wrapped": bool(sl and "crew-statusline" in str(sl.get("command", "")))}
 
 
@@ -166,7 +178,11 @@ def restore_config(snap, log=print):
     if isinstance(st, dict):
         before = json.dumps(st, sort_keys=True)
         hooks = st.setdefault("hooks", {})
-        for ev, was in (snap.get("hooks") or {}).items():
+        # Every event Project Pals manages, not only the snapshot's: an older snapshot doesn't list
+        # PostToolUse / Stop, and absent there means Project Pals had no entry then.
+        snap_hooks = snap.get("hooks") or {}
+        for ev in MANAGED_EVENTS:
+            was = snap_hooks.get(ev) or []
             entries = hooks.get(ev, [])
             ours = [e for e in entries if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
             if not was:
@@ -193,6 +209,17 @@ def restore_config(snap, log=print):
             tmp = sp.with_suffix(".crew.tmp")
             tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False) + "\n")
             tmp.replace(sp)
+    # Antigravity CLI: take Project Pals's hooks out when the version rolled back to didn't have them.
+    ap = _agy_hooks()
+    agy = load_json(ap, None)
+    if not snap.get("agy_hooks") and isinstance(agy, dict) and AGY_HOOKS_KEY in agy:
+        BACKUPS.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ap, BACKUPS / f"rollback-{stamp}-agy-hooks.json")
+        agy.pop(AGY_HOOKS_KEY)
+        tmp = ap.with_suffix(".crew.tmp")
+        tmp.write_text(json.dumps(agy, indent=2, ensure_ascii=False) + "\n")
+        tmp.replace(ap)
+        changed.append("hooks.json: removed Project Pals' Antigravity CLI hooks")
     return changed
 
 
@@ -207,7 +234,7 @@ def _snapshot(label):
     home = Path.home()
     app = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
     app += [HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
-    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-statusline")]
+    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline")]
     user += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service"]
     # Without the generated mascots (they're redrawn on install).
     skip = lambda ti: None if "/mascots/" in ti.name and ti.name.endswith(".svg") else ti

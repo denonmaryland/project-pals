@@ -15,7 +15,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, setShared, exec, appHome, home } from "herdr";
-import { botOf, crewCli, loadOps, taskFor, ago, ds, tone, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
+import { botOf, crewCli, ownerCli, loadOps, taskFor, ago, ds, tone, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
@@ -122,7 +122,8 @@ export default class CrewTasks extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        await crewCli(["task", "add", title, "--for", p.space.name, ...(body ? ["--body", body] : [])]);
+        // From you, with a click token (an app call without one is "a shell", not you: Desk §10.1).
+        await ownerCli(["task", "add", title, "--for", p.space.name, ...(body ? ["--body", body] : [])]);
         notify({ title: `Task added for ${p.bot.name}`, body: "It's on the board; it picks it up when its turn ends.", level: "success", timeout: 2500 });
       } catch (e) {
         notify({ title: "Couldn't add the task", body: String(e.message ?? e).slice(0, 200), level: "warning" });
@@ -137,7 +138,7 @@ export default class CrewTasks extends View {
 
   finish(t, cx) {
     cx.spawn(async (cx) => {
-      try { await crewCli(["task", "done", t.id]); }
+      try { await ownerCli(["task", "done", t.id]); }
       catch (e) { notify({ title: "Couldn't finish it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.reload(cx);
     });

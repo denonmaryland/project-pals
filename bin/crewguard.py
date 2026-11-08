@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 8
+DEFAULTS_VERSION = 9
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -48,6 +48,9 @@ DEFAULT = {
         # The owner's one-time click tokens (data/crew-clicks): a pal writing one would be forging a
         # click (review H1).
         {"name": "owner-click", "why": "writes one of the owner's click tokens", "check": "click-writes", "pattern": r"$^"},
+        # crewd's message queue (data/crew-queue): a file written there by hand reaches a pal with
+        # whatever header it claims, "[from <owner>]" included. Pals send with pal tell / ask / task.
+        {"name": "queue-write", "why": "writes into the pals' message queue (send with pal tell instead)", "check": "queue-writes", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -164,7 +167,13 @@ def writes_click(cmd):
         or bool(re.match(r"^edit\s+.*/crew-clicks/", cmd))
 
 
-CHECKS = {"agent-file-writes": writes_agent_file, "click-writes": writes_click}
+def writes_queue(cmd):
+    """A write INTO data/crew-queue (as writes_click); `pal tell` writing its own file isn't a shell write."""
+    return any("crew-queue" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
+        or bool(re.match(r"^edit\s+.*/crew-queue/", cmd))
+
+
+CHECKS = {"agent-file-writes": writes_agent_file, "click-writes": writes_click, "queue-writes": writes_queue}
 
 
 def matches(cmd):

@@ -5,7 +5,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { crewCli, channelName, botOf, mascotEl, a, tone } from "./crew.js";
+import { crewCli, ownerCli, channelName, botOf, mascotEl, a, tone } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 20;
@@ -88,7 +88,7 @@ export default class CrewReview extends View {
       `- ${c.where}${c.quote ? ` (\`${c.quote}\`)` : ""}: ${c.text}`).join("\n") + "\nPlease address these, commit, and say when it's ready.";
     cx.spawn(async (cx) => {
       try {
-        await crewCli(["tell", tg.spec, body]);
+        await ownerCli(["tell", tg.spec, body]);   // from you: a click token (Desk §10.1)
         notify({ title: `Sent ${this.comments.length} note${this.comments.length === 1 ? "" : "s"} to #${channelName(tg.tab)}`, level: "success", timeout: 3000 });
         this.comments = [];
       } catch (e) { notify({ title: "Couldn't send the notes", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }

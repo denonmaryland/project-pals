@@ -82,7 +82,12 @@ def who(meta):
                         return sp["name"], t["name"].lstrip("#"), ME
         except SystemExit:
             pass
-    return (os.environ.get("CREW_NAME") or (f"terminal {ME}" if ME else f"{OWNER}")), None, ME or None
+    # Not a pal: a name given in CREW_NAME, else the terminal, else a plain shell. Never the owner's
+    # name: from the app, the owner posts to rooms directly; from a shell, nobody can prove it's them.
+    given = (os.environ.get("CREW_NAME") or "").strip()
+    if given.lower() == f"{OWNER}".lower():
+        given = ""
+    return (given or (f"terminal {ME}" if ME else crewlib.SHELL_NAME)), None, ME or None
 
 
 def targets(meta, text, only=None):

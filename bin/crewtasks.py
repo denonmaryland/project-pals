@@ -6,7 +6,7 @@ import subprocess
 import time
 
 from crewlib import (DATA, CrewError, OWNER, load_json, save_json, locked, enqueue, find, lead, chan, feed, now_ms,
-                     from_bot, is_agent, hc_terminals)
+                     from_bot, is_agent, hc_terminals, header, unforge, owner_proven)
 
 STORE = DATA / "crew-tasks.json"
 OPEN = ("open", "claimed", "blocked")
@@ -60,6 +60,11 @@ def notify(spec, text, spaces, sender):
     return False
 
 
+def clean(text):
+    """A task's words as a pal reads them: only the owner's own (a click) may look like a header."""
+    return text if owner_proven() else unforge(text)
+
+
 def line(t):
     who = t.get("claimed_by") or t.get("assignee") or "anyone"
     deps = f" after {', '.join(t['deps'])}" if t.get("deps") else ""
@@ -83,8 +88,8 @@ def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=Non
     feed("task", task=t["id"], status="open", title=title, by=me_name, to=assignee)
     blocked_by = [d for d in t["deps"] if get(load(), d)["status"] != "done"]
     if assignee and not blocked_by:
-        notify(assignee, f"{from_bot(me_name) if me else f'[from {OWNER}]'} New task for you: {t['id']} {title}"
-               + (f"\n{body}" if body else "") + f"\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
+        notify(assignee, f"{header(me, me_name)} New task for you: {t['id']} {clean(title)}"
+               + (f"\n{clean(body)}" if body else "") + f"\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
                spaces, me_name)
     return t
 
@@ -99,9 +104,9 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
             open_deps = [d for d in t["deps"] if get(board, d)["status"] != "done"]
             if open_deps:
                 raise CrewError(f"{t['id']} waits on {', '.join(open_deps)}")
-            if t.get("claimed_by") and not same(t["claimed_by"], me or f"{OWNER}") and t["status"] == "claimed":
+            if t.get("claimed_by") and not same(t["claimed_by"], me or me_name) and t["status"] == "claimed":
                 raise CrewError(f"{t['id']} is already claimed by {t['claimed_by']}")
-            t["claimed_by"] = me or f"{OWNER}"
+            t["claimed_by"] = me or me_name
             t["status"] = "claimed"
         if assignee is not None:
             s, tab = find(assignee, spaces)
@@ -132,16 +137,16 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
         unblocked = [x for x in dependents if all(get(board, d)["status"] == "done" for d in x["deps"])]
     if status:
         feed("task", task=t["id"], status=status, title=t["title"], by=me_name)
-    who = from_bot(me_name) if me else f"[from {OWNER}]"
+    who = header(me, me_name)
     creator = t.get("by_spec")
     if status == "done":
         if creator and not same(creator, me or ""):
-            notify(creator, f"{who} {t['id']} is done: {t['title']}" + (f"\nResult: {result}" if result else ""), spaces, me_name)
+            notify(creator, f"{who} {t['id']} is done: {unforge(t['title'])}" + (f"\nResult: {clean(result)}" if result else ""), spaces, me_name)
         for x in unblocked:
-            notify(x.get("assignee"), f"[pal] {x['id']} is unblocked ({t['id']} is done): {x['title']}\n"
+            notify(x.get("assignee"), f"[pal] {x['id']} is unblocked ({t['id']} is done): {unforge(x['title'])}\n"
                    f"(pal task claim {x['id']} to start.)", spaces, "crew")
     elif status == "blocked" and creator and not same(creator, me or ""):
-        notify(creator, f"{who} {t['id']} is blocked: {t['title']}" + (f"\nWhy: {note}" if note else ""), spaces, me_name)
+        notify(creator, f"{who} {t['id']} is blocked: {unforge(t['title'])}" + (f"\nWhy: {clean(note)}" if note else ""), spaces, me_name)
     if assignee is not None and t["status"] == "open":
-        notify(t["assignee"], f"{who} {t['id']} is yours now: {t['title']}" + (f"\n{t['body']}" if t["body"] else ""), spaces, me_name)
+        notify(t["assignee"], f"{who} {t['id']} is yours now: {unforge(t['title'])}" + (f"\n{unforge(t['body'])}" if t["body"] else ""), spaces, me_name)
     return t

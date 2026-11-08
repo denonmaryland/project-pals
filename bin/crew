@@ -90,7 +90,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (owner_gate, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
+from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
@@ -346,7 +346,9 @@ def target(spaces, spec):
 def cmd_tell(spaces, spec, text, now=False):
     space, tab, t = target(spaces, spec)
     me, name = whoami(spaces)
-    head = from_bot(name) if me else f"[from {OWNER}]"
+    head = header(me, name)
+    if not owner_proven():
+        text = unforge(text)
     reply = f'\n(Answer {name} with: pal tell "{me}" "..." if it needs one.)' if me else ""
     meta = {}
     if me:
@@ -367,7 +369,9 @@ def cmd_ask(spaces, spec, text, timeout):
     space, tab, t = target(spaces, spec)
     deadline = time.time() + timeout
     me, name = whoami(spaces)
-    head = from_bot(name) if me else f"[from {OWNER}]"
+    head = header(me, name)
+    if not owner_proven():
+        text = unforge(text)
     import crewchat
     from crewlib import QUEUE, hooked
     status = lambda: (term_info(t).get("status") or {}).get("state")
@@ -1422,6 +1426,10 @@ def main(argv):
     ARGV = list(argv)
     argv = owner_args()   # the click token is checked by require_owner, not parsed as an option
     cmd, rest = argv[0], argv[1:]
+    # The app speaks as the owner only with a click token for exactly this command line (tell, ask and
+    # task: the Tasks dialog, Review's notes). A bad or used token is refused, never downgraded.
+    if click_of() and cmd in ("tell", "ask", "task"):
+        prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
     if cmd == "room":

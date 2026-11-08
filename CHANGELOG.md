@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 (not released yet): the Desk, stage 1
+
+Messages reach busy pals without typing into their input box, and nobody can send a message
+labelled as you without your click.
+
+- **Messages between steps.** A Claude Code or Antigravity CLI pal now gets messages from other
+  pals while it works, between its tool calls, and as its turn ends, so a draft in its input box
+  no longer holds them up. Idle pals and other brains are still typed to, carefully. A pal with
+  nothing waiting pays nothing per step: the hooks start only when something is queued.
+- **`pal ask` reaches busy pals** mid-turn, and replies are read from the pal's session file
+  instead of its screen.
+- **Antigravity CLI (`agy`) is a native brain:** hire it, pick its model, its hooks, the approval
+  gate and shared skills.
+- **Only you speak as you.** A message headed "[from you]" now needs your click in Project Pals
+  (Tasks, Review). From a plain shell it says "not verified as you", and text inside a message
+  can't fake a header. Writing into the message queue by hand is held for your approval.
+- **No grey suggestions in pals' input boxes.** Claude Code pals start with prompt suggestions
+  off (on their own command line; your other Claude Code sessions keep them), so a suggestion can't
+  pass for unsent typing and hold messages.
+- **Roll back covers the new hooks** (and Antigravity CLI's hooks file), leaving your own.
+
+Thanks to **goodboimax** for native Antigravity CLI support and the hook delivery this builds on
+(PR #1, #2 and #3), landed here with his commits as he wrote them.
+
 ## 0.3.1 (not released yet)
 
 - **Pick your working indicator.** Project Pals settings → Working indicator: the mark beside a
