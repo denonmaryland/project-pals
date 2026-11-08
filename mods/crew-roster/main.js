@@ -558,12 +558,14 @@ export default class CrewRoster extends View {
     return list;
   }
 
-  // The Focus hero (hero v2, DeNon's pick 2026-11-08: Orca's mix of variants 1 and 2). No box: the
-  // shown pal's pet with its laptop at the sidebar's full width (bigger than the old card's), its
-  // name under it with a state dot, its channels to the right of the name (one click switches; +N
-  // opens the channel picker), and four quick actions: + Channel, Tell, Tasks (its count), Sleep.
-  // While it works, a lightsaber runs along the hero's bottom line (saberLine). Its task text is in
-  // its pal row below.
+  // The Focus hero (hero v2 "2 · Floor", DeNon's pick 2026-11-08). No box: the shown pal's pet and
+  // its laptop at the sidebar's full width (bigger than the old card's), standing on a floor: a
+  // hairline with a pool of the state's colour under the pet (working blue, done mint, asks you
+  // amber and breathing, PR green, merged purple, closing red, stuck amber; none at rest), and
+  // while it works a lightsaber runs along that floor (saberLine). Under it: the name with the
+  // state ("Working · 4m") on the right, the pal's channels as chips (one click switches; +N opens
+  // the picker), and four quick actions: + Channel, Tell, Tasks (its count), Sleep. Its task text
+  // is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
     const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
@@ -572,9 +574,22 @@ export default class CrewRoster extends View {
     const W = Math.max(160, Math.round(w - 1));
     const H = Math.round(W * 108 / 138);
     const light = d.bg1 !== "#0E0E0F";
-    const art = p && petReady(p) ? petEl(p, state, W, H, { open: true })
-      : div().w(W).h(Math.round(H * 0.7)).flex().items_center().justify_center().child(mascotEl(bot, m, 96, t));
-    const dot = !bot.awake ? null : state === "work" ? d.info : state === "ask" ? d.warn : state === "done" ? d.ok : state === "stuck" ? d.warn : null;
+    const ready = p && petReady(p);
+    const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
+    const FY = H + 2;   // the floor's line
+    const art = div().id("hero-art").relative().w(W).h(FY + 6).flex_none().cursor_pointer().when(light, (el) => el.bg("#0E0E0F"))
+      .on_click((_e, cx) => { this.open(space); cx.notify(); });
+    // The pool, drawn as an image so it sits behind the pet (Herdr draws svg() elements over images).
+    if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
+      .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
+      .child(image(`${ICON}/pet-floor-${state}.svg`).w(W).h(72)));
+    art.child(div().absolute().left(0).top(0).child(ready ? petEl(p, state, W, H, { open: true })
+      : div().w(W).h(H).flex().items_center().justify_center().child(mascotEl(bot, m, 96, t))));
+    art.child(div().absolute().left(12).top(FY).w(W - 24).h(1).bg("#FFFFFF14"));
+    if (state === "work") art.child(div().absolute().left(12).top(FY - 4).child(saberLine(W - 24)));
+    const word = !bot.awake ? "asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
+    const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
+    const tone_ = state === "work" ? [d.info, d.infoText] : state === "ask" || state === "stuck" ? [d.warn, d.warnText] : state === "done" || state === "pr" ? [d.ok, d.okHi] : [null, d.fg3];
     const btn = (id, icon, label, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
       .when(Boolean(label), (el) => el.px(9)).when(!label, (el) => el.w(28))
       .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
@@ -585,53 +600,52 @@ export default class CrewRoster extends View {
       .when(extra != null, (el) => el.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(String(extra))));
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)
       && String(x.claimed_by || x.assignee || "").split("#")[0].split(" - ")[0] === bot.name).length;
-    const root = v_flex().id(`hero-${space.id}`).relative().flex_none().pb(14).border_b_1().border_color(d.line)
+    return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(div().id("hero-art").flex_none().cursor_pointer().when(light, (el) => el.bg("#0E0E0F"))
-        .on_click((_e, cx) => { this.open(space); cx.notify(); }).child(art))
-      .child(h_flex().items_start().gap(10).px(14).pt(8)
-        .child(h_flex().id("hero-name").flex_1().min_w(0).items_center().gap(8).h(26).cursor_pointer()
-          .on_click((_e, cx) => { this.open(space); cx.notify(); })
-          .child(div().min_w(0).truncate().text_size(20).line_height("24px").font_weight(600).text_color(d.fg1).child(bot.name))
-          .when(Boolean(dot), (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot))))
-        .child(this.heroChannels(space, bot, d, Math.round(Math.min(170, Math.max(130, W * 0.52))))))
+      .child(art)
+      .child(h_flex().id("hero-name").items_center().gap(8).px(14).pt(6).h(30).cursor_pointer()
+        .on_click((_e, cx) => { this.open(space); cx.notify(); })
+        .child(div().flex_1().min_w(0).truncate().text_size(20).line_height("24px").font_weight(600).text_color(d.fg1).child(bot.name))
+        .child(h_flex().flex_none().items_center().gap(6)
+          .when(Boolean(tone_[0]), (el) => el.child(div().size(6).rounded(3).bg(tone_[0])))
+          .child(div().text_size(12).line_height("16px").font_weight(500).text_color(tone_[1]).child(since && since !== "now" ? `${word} · ${since}` : word))))
+      .child(this.heroChannels(space, bot, d).mx(14).mt(8))
       .child(h_flex().px(12).pt(12).gap(6)
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)).flex_1())
         .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })).flex_1())
         .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null).flex_1())
         .child(btn("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx)).tooltip("Put to sleep")));
-    if (state === "work") root.child(div().absolute().left(0).bottom(-4).child(saberLine(W)));
-    return root;
   }
 
-  // The hero's channel list: up to three (with an agent first; the shown one always in), a dot while
-  // one works (blue) or needs you (amber), a check when one finished; "+N more" opens the picker.
-  heroChannels(space, bot, d, width) {
+  // The hero's channels as chips: with an agent first, the shown one always in, as many as fit
+  // (about 3 at 304 px), a blue/amber dot while one works or needs you, a green check when one
+  // finished; "+N" opens the channel picker. Click switches, right-click is the channel menu.
+  heroChannels(space, bot, d) {
     const ordered = [...space.tabs.filter((x) => tabHasAgent(x)), ...space.tabs.filter((x) => !tabHasAgent(x))];
-    let shown = ordered.slice(0, 3);
+    const fit = Math.max(2, Math.floor(((this.width ?? 304) - 28 - 30) / 86));
+    let shown = ordered.slice(0, fit);
     const act = ordered.find((x) => x.active);
-    if (act && !shown.includes(act)) shown = [...shown.slice(0, 2), act];
-    const col = v_flex().w(width).flex_none().gap(1)
-      .child(div().h(18).px(6).text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Channels"));
+    if (act && !shown.includes(act)) shown = [...shown.slice(0, fit - 1), act];
+    const row = h_flex().id("hero-channels").items_center().gap(4).overflow_hidden();
     for (const tab of shown) {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      col.child(h_flex().id(`hero-ch-${tab.id}`).h(24).px(6).gap(6).items_center().rounded(d.r.sm).cursor_pointer()
-        .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+      row.child(h_flex().id(`hero-ch-${tab.id}`).h(24).px(8).gap(5).flex_shrink_1().min_w(0).items_center().rounded(d.r.sm).cursor_pointer()
+        .bg(on ? d.sel : d.raised).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
-        .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").font_weight(500)
+        .child(div().flex_none().text_size(11).line_height("14px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
+        .child(div().min_w(0).max_w(92).truncate().text_size(12).line_height("16px").font_weight(500)
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
-        .child(dot ? div().size(6).flex_none().rounded(3).bg(dot)
-          : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok) : div()));
+        .when(Boolean(dot), (el) => el.child(div().size(5).flex_none().rounded(3).bg(dot)))
+        .when(!dot && st === "done", (el) => el.child(svg(`${ICON}/ds-check-thin.svg`).size(10).flex_none().text_color(d.ok))));
     }
     const more = ordered.length - shown.length;
-    if (more > 0) col.child(div().id("hero-ch-more").h(20).px(6).flex().items_center().cursor_pointer()
-      .hover((s) => s.opacity(0.75)).on_click(() => openChannels(space.id))
-      .child(div().text_size(11).line_height("14px").text_color(d.fg4).child(`+${more} more`)));
-    return col;
+    if (more > 0) row.child(div().id("hero-ch-more").flex_none().h(24).px(4).flex().items_center().cursor_pointer()
+      .tooltip("All channels").hover((s) => s.opacity(0.75)).on_click(() => openChannels(space.id))
+      .child(div().text_size(11).line_height("14px").text_color(d.fg4).child(`+${more}`)));
+    return row;
   }
 
   // Put a pal to sleep (the hero's moon; the same as its menu's): keep its record (folder, brain,
