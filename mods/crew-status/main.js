@@ -7,7 +7,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, agents, theme, appHome, readTextFile, openOverlay, shared, setShared } from "herdr";
-import { leadPane, ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY } from "./crew.js";
+import { leadPane, ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY, APP_MENU } from "./crew.js";
 
 export default class CrewStatus extends View {
   init(_props, cx) {
@@ -57,7 +57,7 @@ export default class CrewStatus extends View {
     items.push(div().id("crew-gear").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
       .tooltip("Menu: settings, themes, layouts, hire, routines")
       .hover((s) => s.bg(d.hover))
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 454 }); })
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU }); })
       .child(svg("mods/crew-roster/icons/settings.svg").size(12).text_color(d.fg2)), sep());
     items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
     // What needs DeNon (the roster's count: channels that ask, approvals waiting, stuck channels).
