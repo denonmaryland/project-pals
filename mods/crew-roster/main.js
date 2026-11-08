@@ -15,6 +15,8 @@ import {
   petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag, saberLine, openChannels, rememberModel } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+// Focus pal rows: the pet 88 wide (about double the 46 before) in an 80 px row.
+const ROW_PET = 88, ROW_H = 80;
 const RAIL = 64;
 
 function find(node, id) {
@@ -514,7 +516,7 @@ export default class CrewRoster extends View {
       list.child(h_flex().id("asleep-toggle").h(36).flex_none().items_center().gap(10).pl(6).pr(8).rounded(d.r.md).cursor_pointer()
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { localStorage.setItem("asleep-open", showHidden ? "0" : "1"); cx.notify(); })
-        .child(div().w(41).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(15).text_color(d.icon)))
+        .child(div().w(ROW_PET).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(15).text_color(d.icon)))
         .child(div().flex_1().text_size(13).text_color(d.fg2).child("Hidden pals"))
         .child(div().text_size(12).text_color(d.fg3).child(String(nHidden))));
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
@@ -577,7 +579,9 @@ export default class CrewRoster extends View {
     const p = petOf(bot);
     const state = petState(bot, m);
     const W = Math.max(160, Math.round(w - 1));
-    const H = Math.round(W * 108 / 138);
+    // The sprite at 90% of the width (the rows' bigger pets took the room), centred.
+    const SW = Math.round(W * 0.9), SX = Math.round((W - SW) / 2);
+    const H = Math.round(SW * 108 / 138);
     const light = d.bg1 !== "#0E0E0F";
     const ready = p && petReady(p);
     const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
@@ -596,8 +600,8 @@ export default class CrewRoster extends View {
     if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
       .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
       .child(image(`${ICON}/pet-floor-${state}.svg`).w(W).h(72)));
-    art.child(div().absolute().left(0).top(NB - 8).child(ready ? petEl(p, state, W, H, { open: true })
-      : div().w(W).h(H).flex().items_center().justify_center().child(mascotEl(bot, m, 96, t))));
+    art.child(div().absolute().left(SX).top(NB - 8).child(ready ? petEl(p, state, SW, H, { open: true })
+      : div().w(SW).h(H).flex().items_center().justify_center().child(mascotEl(bot, m, 96, t))));
     // The name, in its own band at the top: the sprite starts just under it (bun ears, antennas and
     // crowns reach the sprite's top edge, so text over the sprite would sit on dots).
     art.child(h_flex().absolute().left(14).top(9).w(W - 28).items_center().gap(7)
@@ -683,7 +687,8 @@ export default class CrewRoster extends View {
     cx.spawn(async () => { try { await rememberModel(space); } catch {} run("space.close", { id: space.id }); });
   }
 
-  // A Focus pal row: 52 px, r6, the pet at 46x36, name + time + dot, "[channel] what it's on".
+  // A Focus pal row: 80 px, r6, the pet at 88x69 (DeNon 2026-11-08: "a lot bigger"; dimmed while
+  // it's closed), name + time + dot, "[channel] what it's on".
   palRow({ space, bot }, t, d) {
     const st = space.status;
     const on = space.active;
@@ -693,32 +698,33 @@ export default class CrewRoster extends View {
     const [tag, what] = this.doing(space, bot);
     const nameColor = on || news ? d.fg1 : awake ? d.body : d.fg2;
     const whatColor = !awake ? d.fg3 : on ? d.fg2 : news ? d.body : d.fg2;
-    return h_flex().id(`bot-${space.id}`).h(52).flex_none().items_center().gap(10).pl(6).pr(8).rounded(d.r.md).cursor_pointer()
+    return h_flex().id(`bot-${space.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(5).pr(8).rounded(d.r.md).cursor_pointer()
       .when(on, (el) => el.bg(d.sel))
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(mascotEl(bot, mood(st, awake), 46, t))
-      .child(v_flex().flex_1().min_w(0).gap(2)
+      .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(mascotEl(bot, mood(st, awake), ROW_PET, t)))
+      .child(v_flex().flex_1().min_w(0).gap(3)
         .child(h_flex().items_center().gap(6)
-          .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
+          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
           .when(palPinned(bot), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
           .child(div().flex_none().text_size(11).line_height("14px").text_color(d.fg3).child(stamp(this.lastChange(space))))
           .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot))))
-        .child(h_flex().min_w(0).text_size(12).line_height("16px")
-          .when(Boolean(tag), (el) => el.child(div().flex_none().text_color(d.fg3).child(`[${tag}]`)))
-          .child(div().flex_1().min_w(0).truncate().pl(tag ? 4 : 0).text_color(whatColor).child(what))));
+        // [channel] and what it's on: up to two lines, then cut.
+        .child(h_flex().min_w(0).items_start().text_size(12).line_height("16px")
+          .when(Boolean(tag), (el) => el.child(div().flex_none().max_w(110).truncate().text_color(d.fg3).child(`[${tag}]`)))
+          .child(div().flex_1().min_w(0).max_h(32).overflow_hidden().pl(tag ? 4 : 0).text_color(whatColor).child(what))));
   }
 
   sleeperRow(rec, t, d) {
     const bot = { ...rec, awake: false };
-    return h_flex().id(`sleep-${rec.id}`).h(52).flex_none().items_center().gap(10).pl(6).pr(8).rounded(d.r.md).cursor_pointer()
+    return h_flex().id(`sleep-${rec.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(5).pr(8).rounded(d.r.md).cursor_pointer()
       .hover((s) => s.bg(d.hover))
       .on_click(() => this.wake(rec))
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
-      .child(mascotEl(bot, "asleep", 46, t))
-      .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(div().truncate().text_size(13).line_height("16px").text_color(d.fg2).child(rec.name))
+      .child(div().flex_none().opacity(0.5).child(mascotEl(bot, "asleep", ROW_PET, t)))
+      .child(v_flex().flex_1().min_w(0).gap(3)
+        .child(div().truncate().text_size(14).line_height("18px").text_color(d.fg2).child(rec.name))
         .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg3).child("closed · click to wake")));
   }
 
