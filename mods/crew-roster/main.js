@@ -627,6 +627,13 @@ export default class CrewRoster extends View {
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
+    // Past four rows, how many are below the box (DeNon: say the list scrolls). The list's renderer
+    // records the last row it drew (this.chEnd, keyed by what's listed); a scroll re-renders shortly
+    // after, so the count follows it, and it's gone at the end.
+    const ROWS = 4, ROW = 30;
+    const listKey = `${space.id}|${q}|${list.length}`;
+    const end = this.chEndKey === listKey ? this.chEnd : ROWS + 1;
+    const below = list.length > ROWS ? (end >= list.length ? 0 : list.length - end + 1) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -638,6 +645,10 @@ export default class CrewRoster extends View {
     } else {
       head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Channels"))
         .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
+        .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
+          .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
+          .on_click((_e, cx) => { this.chScroll.scroll_to_item(list.length - 1); cx.timer.after(80, (cx) => cx.notify()); })
+          .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Search channels")
           .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
@@ -648,7 +659,7 @@ export default class CrewRoster extends View {
     // made stays put). With four or fewer the box hugs its rows. Its rows can't carry handlers (Herdr
     // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
     // on_item_secondary_click, by the channel's tab id.
-    const ROW = 30;   // a 28 px row and its 2 px gap
+    // ROW: a 28 px row and its 2 px gap.
     const row = (tab) => {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
@@ -671,9 +682,13 @@ export default class CrewRoster extends View {
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
     if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
-    const n = list.length, h = Math.min(n, 4) * ROW;
+    // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
+    // there's more. The scrollbar stays drawn while the list overflows.
+    const n = list.length, h = n > ROWS ? ROWS * ROW + 12 : n * ROW;
     box.child(div().relative().h(h)
+      .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
       .child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
+        this.chEnd = range.end; this.chEndKey = listKey;
         const out = [];
         for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
         return out;
@@ -681,7 +696,7 @@ export default class CrewRoster extends View {
         .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
         .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
         .h(h).w_full())
-      .when(n > 4, (el) => el.child(Scrollbar.vertical("hero-ch-list").absolute().top(0).right(-6).w(6).h(h))));
+      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(-6).w(6).h(h))));
     return v_flex().pt(4).child(head).child(box);
   }
 
