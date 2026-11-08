@@ -12,7 +12,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, terminals, theme, hc, notify, exec, appHome, openOverlay, shared, setShared, readTextFile } from "herdr";
+import { spaces, panes, terminals, theme, hc, notify, exec, home, appHome, openOverlay, shared, setShared, readTextFile } from "herdr";
 import { owner, channelName, leadPane, a, shownRoom, roomMembers, roomTargets, appendRoomLog, deliverToRoom, tone, botOf, layoutMode, ds } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -201,7 +201,11 @@ export default class CrewComposer extends View {
     const to = this.target(raw || "");
     if (to.error) { notify({ title: to.error, level: "warning", timeout: 3000 }); return; }
     if (to.tab.status === "blocked") {
-      notify({ title: `${to.who} is waiting on you`, body: "Answer its question in the terminal first.", level: "warning", timeout: 4000 });
+      // A question the chat shows as a card: what you type is its own answer ("Type something.").
+      const lead0 = leadPane(to.tab.id);
+      const p = shared("crew.prompt");
+      if (p && lead0?.terminal === p.terminal && p.kind === "question" && p.type && to.text) return this.answerTyped(p, to.text, cx);
+      notify({ title: `${to.who} is waiting on you`, body: "Answer the card above the box first (or in the terminal).", level: "warning", timeout: 4000 });
       return;
     }
     if (this.files.length && to.space.machine) {
@@ -212,16 +216,45 @@ export default class CrewComposer extends View {
     if (!pane?.terminal) { notify({ title: `${to.who} has no terminal`, level: "warning" }); return; }
     const body = [to.text, ...this.files.map((f) => f.path)].filter(Boolean).join("\n");
     const address = pane.terminal;
+    const field = this.field(), files = this.files;
     this.sending = true;
-    this.field().set_value("");
+    field.set_value("");
     this.files = [];
+    // The chat shows it at once (faded, "Sending…"), until the conversation has it.
+    const at = Date.now();
+    const out = (state, message) => setShared("crew.outbox", { terminal: address, text: to.text || body, at, state, ...(message ? { message } : {}) });
+    out("sending");
     cx.notify();
     cx.spawn(async (cx) => {
+      let failed = null;
       try {
         const r = await hc(["send", address, body]);
-        if (r.code !== 0) notify({ title: `Couldn't reach ${to.who}`, body: (r.stderr || r.stdout).trim().slice(0, 200), level: "error" });
-      } catch (e) {
-        notify({ title: `Couldn't reach ${to.who}`, body: String(e).slice(0, 200), level: "error" });
+        if (r.code !== 0) failed = (r.stderr || r.stdout).trim().slice(0, 200) || "the terminal didn't take it";
+      } catch (e) { failed = String(e?.message ?? e).slice(0, 200); }
+      if (failed) {
+        // Nothing went out: your text comes back to the box, and the chat says why.
+        out("failed", failed);
+        if (!field.value().trim()) field.set_value(raw);
+        if (!this.files.length) this.files = files;
+      } else out("sent");
+      this.sending = false;
+      cx.notify();
+    });
+  }
+
+  // Your own answer to a question card: its "Type something." option, then the text.
+  answerTyped(p, text, cx) {
+    const field = this.field();
+    this.sending = true;
+    field.set_value("");
+    cx.notify();
+    cx.spawn(async (cx) => {
+      let out = null;
+      try { const r = await exec(`${home()}/.local/bin/pal`, ["prompt", p.terminal, "--answer", String(p.type), "--request", p.request, "--text", text]); out = JSON.parse(r.stdout || "null"); }
+      catch (e) { out = { result: "failed", message: String(e?.message ?? e) }; }
+      if (out?.result !== "sent") {
+        if (!field.value().trim()) field.set_value(text);
+        notify({ title: "That answer didn't go through", body: out?.message ?? "", level: "warning", timeout: 5000 });
       }
       this.sending = false;
       cx.notify();

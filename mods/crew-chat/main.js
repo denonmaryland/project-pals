@@ -21,8 +21,8 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
 import { markdownView, plain, splitBlocks } from "./markdown.js";
 import { markdownHeight, lineWidth } from "./estimate.js";
-import { spaces, panes, theme, settings, watchFolder, appHome, readTextFile, hc, layout, notify, openOverlay } from "herdr";
-import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, tone, ds, layoutMode } from "./crew.js";
+import { spaces, panes, terminals, theme, settings, shared, setShared, exec, home, watchFolder, appHome, readTextFile, hc, layout, notify, openOverlay } from "herdr";
+import { botOf, mascotEl, mood, leadPane, channelName, setChatPref, tone, ds, layoutMode, owner } from "./crew.js";
 
 const LINE = 21;
 const EVENT = 32, KEEP = 300, MEASURE = 24, EDGE = 2;
@@ -59,6 +59,20 @@ function stampLabel(ms, mode) {
 // are design pixels (zoom scales them). Measured sizes are turned back into design pixels, so the
 // rows fit at any zoom. (Inferred from rows overlapping at zoom 0.68 and not at 1; check live.)
 const zoom = () => Number(settings().zoom) || 1;
+// A message relayed from another pal ("[pal] Orca #general finished …", "[from Orca, a pal, not
+// DeNon] …") is a note from that pal, not something you wrote: its sender, or null.
+function relayFrom(text) {
+  let m = /^\[pal\]\s+(.+?#[\w.-]+)/.exec(text);
+  if (m) return m[1];
+  m = /^\[from ([^,\]]+?)(?:,[^\]]*)?\]/.exec(text);
+  if (m && !/^you$/i.test(m[1])) return m[1].trim();
+  m = /^\[pal\]\s+(\S+)/.exec(text);
+  return m ? m[1] : null;
+}
+// One line of a note for its folded chip: the first line with words, without the "[pal] Orca" lead.
+const firstLine = (text) => (String(text ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "")
+  .replace(/^\[pal\]\s+\S+(\s+#[\w.-]+)?\s*/, "").replace(/^\[from [^\]]*\]\s*/, "").replace(/[`*_]/g, "");
+const PAL = `${home()}/.local/bin/pal`;
 const unwrap = (text) => text.replace(/<\/?pasted_content(?:\s+id="[^"]*")?\s*>\n?/g, "").trim();
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const worked = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; };
@@ -111,6 +125,12 @@ export default class CrewChat extends View {
       }
     });
     cx.timer.every(1500, (cx) => this.reload(cx));
+    // What the agent asks on screen (a permission or a question), read while it's blocked, as a card
+    // over the composer that answers it here instead of in the terminal (bin/crewprompt.py).
+    this.prompt = null;        // the parsed prompt, for this.promptFor
+    this.promptNote = null;    // { text, error } under the card after an answer
+    this.openNotes = new Set();
+    cx.timer.every(1200, (cx) => this.pollPrompt(cx));
   }
 
   target() {
@@ -118,6 +138,52 @@ export default class CrewChat extends View {
     const tab = space?.tabs.find((x) => x.active);
     const lead = tab ? leadPane(tab.id, panes()) : null;
     return { space, tab, terminal: lead?.terminal ?? null };
+  }
+
+  pollPrompt(cx) {
+    const { tab, terminal } = this.target();
+    const blocked = tab?.status === "blocked" && terminal;
+    if (!blocked) {
+      if (this.prompt || this.promptNote) { this.prompt = null; this.promptNote = null; this.publishPrompt(null); cx.notify(); }
+      return;
+    }
+    if (this.promptBusy) return;
+    this.promptBusy = true;
+    cx.spawn(async (cx) => {
+      let p = null;
+      try { const r = await exec(PAL, ["prompt", terminal]); p = JSON.parse(r.stdout || "null"); } catch { p = null; }
+      this.promptBusy = false;
+      if (p && p.terminal !== this.target().terminal) return;
+      const before = this.prompt?.request ?? null;
+      if ((p?.request ?? null) !== before) { this.promptNote = null; }
+      if (JSON.stringify(p) !== JSON.stringify(this.prompt)) { this.prompt = p; this.publishPrompt(p); cx.notify(); }
+    });
+  }
+
+  // The composer types into a question's "Type something." option while one shows.
+  publishPrompt(p) {
+    const type = p?.kind === "question" ? p.options.find((o) => o.type) : null;
+    const v = p ? { terminal: p.terminal, request: p.request, kind: p.kind, type: type?.n ?? null } : null;
+    if (JSON.stringify(shared("crew.prompt") ?? null) !== JSON.stringify(v)) setShared("crew.prompt", v);
+  }
+
+  answer(n, cx) {
+    const p = this.prompt;
+    if (!p || this.answering) return;
+    this.answering = true;
+    this.promptNote = { text: "Sending…" };
+    cx.notify();
+    cx.spawn(async (cx) => {
+      let out = null;
+      try { const r = await exec(PAL, ["prompt", p.terminal, "--answer", String(n), "--request", p.request]); out = JSON.parse(r.stdout || "null"); }
+      catch (e) { out = { result: "failed", message: String(e?.message ?? e) }; }
+      this.answering = false;
+      if (out?.result === "sent") this.promptNote = { text: "Answer sent. Waiting for the agent." };
+      else if (out?.result === "changed") { this.promptNote = { text: out.message, error: true }; this.prompt = null; }
+      else this.promptNote = { text: out?.message || "That didn't go through. Try again, or answer in the terminal.", error: true };
+      cx.notify();
+      this.pollPrompt(cx);
+    });
   }
 
   reload(cx) {
@@ -142,7 +208,13 @@ export default class CrewChat extends View {
       const results = new Map();
       for (let n = start; n < all.length; n++) {
         let e = prev.get(n);
-        if (!e) { try { e = JSON.parse(all[n]); e._n = n; if (typeof e.text === "string") e.text = unwrap(e.text); } catch { e = null; } }
+        if (!e) { try { e = JSON.parse(all[n]); e._n = n; if (typeof e.text === "string") e.text = unwrap(e.text);
+          if (e.kind === "you") {
+            // herdr-core's own note for another terminal: <hc from="t2 name">…</hc>.
+            const hcm = /^<hc from="([^"]*)">([\s\S]*)<\/hc>\s*$/.exec(e.text ?? "");
+            if (hcm) { const who = hcm[1].split(/\s+/); e.kind = "note"; e.from = who.slice(1).join(" ") || who[0] || "a terminal"; e.text = hcm[2].trim(); }
+            else { const from = relayFrom(e.text ?? ""); if (from && from !== owner()) { e.kind = "note"; e.from = from; } }
+          } } catch { e = null; } }
         if (!e) continue;
         byLine.set(n, e);
         if (e.kind === "result") results.set(e.id, e);
@@ -181,7 +253,8 @@ export default class CrewChat extends View {
   // Laying out hundreds of messages every frame is too slow for Herdr's render budget, so the
   // rows are kept until the feed, the width, the status or what's unfolded changes.
   rows(status) {
-    const key = `${this.version}|${this.mver}|${Math.round(this.width)}|${status}|${layoutMode()}|${settings().zoom ?? 1}|${new Date().toDateString()}`;
+    const o = shared("crew.outbox");
+    const key = `${this.version}|${this.mver}|${Math.round(this.width)}|${status}|${layoutMode()}|${settings().zoom ?? 1}|${new Date().toDateString()}|${o ? `${o.at}:${o.state}` : ""}`;
     if (key === this.rowsKey) return this.rowsVal;
     const look = `${layoutMode()}|${settings().zoom ?? 1}`;
     if (look !== this.look) { this.look = look; this.natural.clear(); }
@@ -237,6 +310,13 @@ export default class CrewChat extends View {
       const you = e.kind === "you";
       const note = e.kind === "note";
       const first = far || !prev || prev.kind !== e.kind || (note && prev.from !== e.from);
+      // A note from another pal folds to one line ("↳ Orca: …"); a click opens it.
+      const noteKey = `m-${e._n}`;
+      if (note && !this.openNotes.has(noteKey)) {
+        rows.push({ kind: "note", key: noteKey, e, folded: true, h: (first ? M.gap : M.same) + 28 });
+        prev = e;
+        continue;
+      }
       const max = you ? youMax : botMax;
       const text = e.text ?? "";
       let tw = max;
@@ -256,8 +336,8 @@ export default class CrewChat extends View {
       }
       // Pro: a note from another pal is plain text under its name, no bubble.
       const bare = note && Boolean(M.name);
-      const nameLine = !you && first && M.name ? M.name : 0;
-      const h = (first ? M.gap : M.same) + nameLine + (bare ? 0 : M.padY * 2) + th + (e.images ? LINE : 0);
+      const nameLine = !you && !note && first && M.name ? M.name : 0;
+      const h = (first ? M.gap : M.same) + nameLine + (note ? 28 + 4 : 0) + (bare ? 0 : M.padY * 2) + th + (e.images ? LINE : 0);
       const row = { kind: e.kind, key: `m-${e._n}`, e, you, first, tw, h, old, bare, label: note ? e.from : null };
       if (!you && !note && turn && !turn.first && first) turn.first = row;
       rows.push(row);
@@ -265,10 +345,26 @@ export default class CrewChat extends View {
     }
     if (!busy) endTurn(prev);
     this.unmeasured = unmeasured;
+    // Your message the moment you send it (crew-composer's "crew.outbox"), until the feed has it.
+    const out = this.outbox(es);
+    if (out) {
+      const text = out.text, tw0 = Math.min(youMax, Math.ceil(lineWidth(text.split("\n")[0]) * 1.06 + 13));
+      const th = markdownHeight(text, Math.max(16, tw0));
+      rows.push({ kind: "you", key: `out-${out.at}`, e: { text, at: out.at, _n: `out-${out.at}` }, you: true, first: true, tw: Math.max(16, tw0),
+        pending: out, h: M.gap + M.padY * 2 + th + 18 });
+    }
     if (status === "working") rows.push({ kind: "typing", key: "typing", h: M.same + 4 + 16 });
-    if (status === "blocked") rows.push({ kind: "blocked", key: "blocked", h: M.gap + 40 });
     rows.push({ kind: "space", key: "bottom", h: M.py });
     return rows;
+  }
+
+  // The message just sent, while the feed doesn't have it yet (and for a minute at most).
+  outbox(es) {
+    const o = shared("crew.outbox");
+    if (!o || o.terminal !== this.terminal || Date.now() - o.at > 60000) return null;
+    const head = String(o.text).trim().slice(0, 40);
+    const seen = es.some((x) => x.kind === "you" && x.at >= o.at - 5000 && String(x.text ?? "").trim().startsWith(head));
+    return seen ? null : o;
   }
 
   row(r, t, bot, mood_) {
@@ -321,7 +417,7 @@ export default class CrewChat extends View {
       return wrap(h_flex().h(r.h).items_end().pl(M.px + IN))
         .child(h_flex().h(16).items_center().gap(8).px(2)
           .child(h_flex().gap(3).loop("opacity", { from: 0.45, to: 1, period: 900 }).child(sq(1)).child(sq(0.6)).child(sq(0.3)))
-          .child(div().text_size(12).line_height("16px").text_color(d.fg3).child(M.name ? "typing" : `${bot.name} is typing`)));
+          .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg3).child(this.doing(bot, M))));
     }
     if (r.kind === "blocked") {
       return wrap(h_flex().h(r.h).items_end().gap(M.faceGap))
@@ -332,6 +428,7 @@ export default class CrewChat extends View {
             .hover((s) => s.bg(d.lineStrong)).on_click(() => setChatPref(this.tabId, false))
             .child(div().text_size(12).font_weight(500).text_color(d.fg1).child("Open terminal"))));
     }
+    if (r.folded) return wrap(h_flex().h(r.h).items_end().pl(M.px + IN)).child(this.noteChip(r, d, false));
     const { e, you, first, tw, old, bare } = r;
     const textColor = you ? (old ? d.body : d.fg1) : old ? d.fg2 : d.body;
     const content = v_flex().text_size(14).line_height(`${M.line}px`).text_color(textColor)
@@ -341,17 +438,96 @@ export default class CrewChat extends View {
     const bubble = bare ? content.w(tw) : content.w(tw + 2 * M.padX + (you ? EDGE : 0)).flex_none().px(M.padX).py(M.padY).rounded(d.r.sm)
       .when(you, (el) => el.bg(old ? d.meOld : d.me).border_r(EDGE).border_color(d.meEdge))
       .when(!you, (el) => el.bg(old || M.name ? d.bubbleOld : d.bubble));
+    if (you && r.pending) {
+      const o = r.pending;
+      const word = o.state === "failed" ? `Didn't send: ${o.message || "the terminal didn't take it"}` : o.state === "sent" ? "Sent · waiting for it to show" : "Sending…";
+      return wrap(v_flex().h(r.h).items_end().pt(M.gap))
+        .child(bubble.opacity(o.state === "failed" ? 1 : 0.6))
+        .child(div().h(18).pt(4).text_size(11).line_height("14px").text_color(o.state === "failed" ? d.err : d.fg4).child(word));
+    }
     if (you) return wrap(v_flex().h(r.h).items_end().pt(first ? M.gap : M.same)).child(bubble);
     const face = first ? div().flex_none().when(old && !M.name, (el) => el.opacity(0.5)).child(mascotEl(bot, mood_, M.face, t)) : div().w(M.face).flex_none();
     const who = r.label ?? bot.name;
     const meta = [clock(e.at), r.worked ? `worked ${worked(r.worked)}` : null].filter(Boolean).join(" · ");
+    if (r.label) return wrap(v_flex().h(r.h).pt(first ? M.gap : M.same).pl(IN).gap(4))
+      .child(this.noteChip(r, d, true))
+      .child(bubble);
     return wrap(h_flex().h(r.h).items_start().gap(M.faceGap).pt(first ? M.gap : M.same))
-      .child(r.label && M.name ? div().w(M.face).flex_none() : face)
+      .child(face)
       .child(v_flex().flex_1().min_w(0).items_start()
         .when(first && Boolean(M.name), (el) => el.child(h_flex().h(M.name).items_start().gap(8)
           .child(div().text_size(13).line_height("16px").font_weight(500).text_color(d.fg1).child(who))
           .child(div().text_size(12).line_height("16px").text_color(d.fg4).child(old ? stampLabel(e.at, "pro-old") : meta))))
         .child(bubble));
+  }
+
+  // A note from another pal, folded: one 28 px line, "↳ Orca #general: first line ▾".
+  noteChip(r, d, open) {
+    return h_flex().h(28).max_w_full().min_w(0).items_center().gap(6).px(10).rounded(d.r.sm).bg(d.raised).border_1().border_color(d.line)
+      .child(div().flex_none().text_size(12).text_color(d.fg3).child("↳"))
+      .child(div().flex_none().max_w(220).truncate().text_size(12.5).font_weight(500).text_color(d.body).child(r.e.from ?? "a pal"))
+      .child(div().min_w(0).truncate().text_size(12.5).text_color(d.fg2).child(open ? "" : firstLine(r.e.text)))
+      .child(div().flex_none().text_size(11).text_color(d.fg4).child(open ? "▴" : "▾"));
+  }
+
+  // What the agent is doing right now, from its own status report ("Running npm test…").
+  doing(bot, M) {
+    const term = terminals().find((x) => x.address === this.terminal);
+    const msg = String(term?.report?.msg ?? term?.status?.msg ?? "").trim();
+    if (msg) return msg.length > 140 ? msg.slice(0, 140) + "…" : msg;
+    return M.name ? "working" : `${bot.name} is working`;
+  }
+
+  // The card over the composer: what the agent asks, answered with a click. A permission shows its
+  // command and every option Claude offers (Yes, Yes and don't ask again, No…); a question its
+  // options with their descriptions, and "type your own answer in the box below" when it takes one.
+  // Unparsed (the trust question, a multi-select): one line and Open terminal.
+  card(tab, d, M) {
+    if (tab?.status !== "blocked") return null;
+    const p = this.prompt;
+    const width = M.col ? (el) => el.w_full().max_w(M.col) : (el) => el.w_full();
+    const box = width(v_flex().id("prompt-card").gap(10).p(12).rounded(d.r.md).bg(d.raised).border_1().border_color(d.lineStrong))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation());
+    const head = (title, label) => h_flex().items_center().gap(8)
+      .child(div().size(8).flex_none().rounded(4).bg(d.warn))
+      .child(div().flex_1().min_w(0).truncate().text_size(13).font_weight(600).text_color(d.fg1).child(title))
+      .child(div().flex_none().text_size(11).text_color(d.fg3).child(label));
+    const openTerm = () => div().id("prompt-term").h(26).px(8).flex().items_center().rounded(d.r.sm).bg(d.ctl).cursor_pointer()
+      .hover((s) => s.bg(d.lineStrong)).on_click(() => setChatPref(this.tabId, false))
+      .child(div().text_size(12).font_weight(500).text_color(d.fg1).child("Open terminal"));
+    if (!p || p.multi) {
+      return box.child(head("It's asking you something in the terminal", p?.multi ? "pick several" : ""))
+        .child(h_flex().justify_end().child(openTerm()));
+    }
+    const note = this.promptNote;
+    if (p.kind === "approval") {
+      box.child(head(p.title, "Permission"));
+      p.detail.forEach((x) => box.child(div().text_size(12).text_color(d.fg2).child(x)));
+      if (p.command) box.child(div().id("prompt-cmd").max_h(140).overflow_y_scrollbar().px(10).py(8).rounded(d.r.sm).bg(d.inset).border_1().border_color(d.line)
+        .child(div().text_size(12).line_height("18px").font_family(d.mono).text_color(d.body).child(p.command)));
+      box.child(div().text_size(13).text_color(d.body).child(p.question));
+      box.child(h_flex().flex_wrap().gap(6).children(p.options.map((o, i) => h_flex().id(`prompt-opt-${o.n}`).h(28).min_w(0).max_w(340).px(10).gap(6)
+        .items_center().rounded(d.r.sm).cursor_pointer().bg(i === 0 ? d.act : d.ctl).hover((s) => s.opacity(0.85))
+        .when(this.answering, (el) => el.opacity(0.5))
+        .on_click((_e, cx) => this.answer(o.n, cx))
+        .child(div().flex_none().text_size(11).font_family(d.mono).text_color(i === 0 ? d.actFg : d.fg3).child(String(o.n)))
+        .child(div().min_w(0).truncate().text_size(13).font_weight(500).text_color(i === 0 ? d.actFg : /^no\b/i.test(o.label) ? d.err : d.fg1).child(o.label)))));
+    } else {
+      box.child(head(p.title, p.steps > 1 ? `Question · ${p.steps} parts` : "Question"));
+      if (p.question) box.child(div().text_size(14).line_height("20px").text_color(d.fg1).child(p.question));
+      const picks = p.options.filter((o) => !o.type && !o.chat);
+      box.child(v_flex().gap(4).children(picks.map((o) => h_flex().id(`prompt-opt-${o.n}`).min_h(32).py(6).px(10).gap(10).items_start()
+        .rounded(d.r.sm).cursor_pointer().bg(d.inset).border_1().border_color(d.line).hover((s) => s.bg(d.sel))
+        .when(this.answering, (el) => el.opacity(0.5))
+        .on_click((_e, cx) => this.answer(o.n, cx))
+        .child(div().flex_none().pt(1).text_size(11).font_family(d.mono).text_color(d.fg3).child(String(o.n)))
+        .child(v_flex().flex_1().min_w(0).gap(1)
+          .child(div().text_size(13).font_weight(500).text_color(d.fg1).child(o.label))
+          .when(Boolean(o.detail), (el) => el.child(div().text_size(12).text_color(d.fg2).child(o.detail)))))));
+      if (p.options.some((o) => o.type)) box.child(div().text_size(11.5).text_color(d.fg3).child("Or type your own answer in the box below."));
+    }
+    if (note) box.child(div().text_size(12).text_color(note.error ? d.err : d.fg3).child(note.text));
+    return box;
   }
 
   // Messages not measured yet, drawn off-screen exactly as their bubble draws them (newest first, a
@@ -417,6 +593,7 @@ export default class CrewChat extends View {
         .child(div().max_w(420).text_center().text_size(12).text_color(d.fg3)
           .child("Its conversation shows here once it's linked: when the agent starts, or after /clear."));
     }
+    const card = this.card(tab, d, M);
     return root.child(h_flex().flex_1().min_h(0).w_full().justify_center()
       .child(div().id("chat-box").relative().h_full().w_full().when(Boolean(M.col), (el) => el.max_w(M.col + 2 * M.px))
         // Scrolling up stops following the newest message (the ↓ button fades in); at the top, earlier
@@ -433,7 +610,14 @@ export default class CrewChat extends View {
             return rows.slice(range.start, range.end).map((r) => this.row(r, t, bot, faceMood));
           })
           .track_scroll(this.scroll).size_full()
-          // Rows can't hold their own click handlers; the list reports which row was clicked.
+          // Rows can't hold their own click handlers; the list reports which row was clicked: a note
+          // from another pal opens and folds.
+          .on_item_click((key, cx) => {
+            const r = this.rowsVal?.find((x) => x.key === key);
+            if (r?.kind !== "note") return;
+            this.openNotes.has(key) ? this.openNotes.delete(key) : this.openNotes.add(key);
+            this.rowsKey = null; cx.notify();
+          })
           // Right-click a message: copy it, or a code block in it (crew-menu).
           .on_item_secondary_click((key) => {
             const e = key.startsWith("m-") ? this.rowsVal?.find((r) => r.key === key)?.e : null;
@@ -450,6 +634,7 @@ export default class CrewChat extends View {
             .opacity(this.follow ? 0 : 1).transition("opacity", { duration: 160 })
             .when(!this.follow, (el) => el.cursor_pointer().hover((s) => s.bg(d.sel)))
             .on_click((_e, cx) => { if (this.follow) return; this.follow = true; this.toBottom(cx); cx.notify(); })
-            .child(svg(`${ICONS}/arrow-down.svg`).size(15))))));
+            .child(svg(`${ICONS}/arrow-down.svg`).size(15))))))
+      .when(Boolean(card), (el) => el.child(h_flex().w_full().flex_none().justify_center().px(M.px).pb(8).child(card)));
   }
 }

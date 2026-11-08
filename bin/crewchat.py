@@ -113,7 +113,18 @@ def parse_user(e, at):
     return results + message(e, text, images, at)
 
 
+PASTED = re.compile(r"</?pasted_content(?:\s+id=\"[^\"]*\")?\s*>\n?")
+HC_NOTE = re.compile(r"^<hc from=\"([^\"]*)\">([\s\S]*)</hc>\s*$")
+
+
 def message(e, text, images, at):
+    # Pasted text comes wrapped in <pasted_content id="…">; a message herdr-core typed for another
+    # terminal is <hc from="t2 name">…</hc>: that one is a note from that sender.
+    text = PASTED.sub("", text).strip()
+    m = HC_NOTE.match(text)
+    if m:
+        who = m.group(1).split()
+        return [{"kind": "note", "from": " ".join(who[1:]) or (who[0] if who else "a terminal"), "text": m.group(2).strip(), "at": at}]
     if e.get("isCompactSummary"):
         return [{"kind": "event", "text": "Earlier conversation was summarized", "at": at}]
     if text.startswith("<command-name>"):
