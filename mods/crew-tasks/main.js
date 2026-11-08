@@ -8,13 +8,13 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces, setShared } from "herdr";
-import { botOf, mascotEl, mood, crewCli, loadOps, taskFor, ago, ds, tone, pebble } from "./crew.js";
+import { botOf, crewCli, loadOps, taskFor, ago, ds, tone, sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
 export default class CrewTasks extends View {
   init(_props, cx) {
-    this.input = InputState.new({ placeholder: "Add a task…" });
+    this.input = InputState.new({ placeholder: `Add a task for ${this.pal()?.bot.name ?? "this pal"}…` });
     this.input.on("change", (_e, cx) => cx.notify());
     this.input.on("submit", (_e, cx) => this.add(cx));
     this.input.focus();
@@ -98,31 +98,19 @@ export default class CrewTasks extends View {
             .child([x.by && `from ${x.by}`, x.created && ago(x.created), x.claimed_by && `claimed by ${x.claimed_by}`].filter(Boolean).join(" · ")))));
     };
 
-    return v_flex().id("crew-tasks").track_focus(this.handle)
-      .on_key_down((e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
-      .w_full().gap(12).p(18).bg(d.bg1).text_color(d.fg1)
-      .child(h_flex().items_center().gap(10)
-        .child(mascotEl(bot, mood(space.status, bot.awake), 40, t))
-        .child(v_flex().flex_1().min_w(0).gap(1)
-          .child(div().text_size(15).line_height("20px").font_weight(600).child(`Tasks for ${bot.name}`))
-          .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg2)
-            .child(mine.length ? `${mine.length} open · it picks new ones up when its turn ends` : "Nothing open · it picks new ones up when its turn ends")))
-        .child(div().id("tk-x").size(24).flex_none().flex().items_center().justify_center().rounded(d.r.sm).cursor_pointer()
-          .hover((s) => s.bg(d.hover)).on_click(() => close())
-          .child(svg(`${ICON}/x.svg`).size(11).text_color(d.fg3))))
-      // Add: one line, Enter adds.
-      .child(h_flex().h(34).pl(10).pr(4).gap(8).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
-        .child(svg(`${ICON}/ds-plus.svg`).size(12).flex_none().text_color(d.fg3))
-        .child(div().flex_1().min_w(0).child(Input.new(this.input).w_full().text_size(13).text_color(d.fg1)))
-        .when(!empty, (el) => el.child(pebble(d, { id: "tk-add", icon: "arrow-up", label: this.busy ? "Adding…" : "Add", onClick: (cx) => this.add(cx) }))))
-      .child(v_flex().id("tk-list").gap(2).max_h(320).overflow_y_scrollbar()
-        .children(mine.map(row))
-        .when(!mine.length, (el) => el.child(div().py(10).px(8).text_size(12).line_height("16px").text_color(d.fg3)
-          .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`))))
-      .child(h_flex().items_center().justify_between().pt(2)
-        .child(div().text_size(11).line_height("14px").text_color(d.fg4).child("Enter adds · Esc closes"))
-        .child(div().id("tk-board").cursor_pointer().hover((s) => s.opacity(0.75))
-          .on_click(() => { setShared("crew.view", "tasks"); close(); })
-          .child(div().text_size(12).line_height("16px").text_color(d.fg2).child("All tasks on the board →"))));
+    return sheet(d, "crew-tasks", this.handle, (e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
+      .child(sheetHeader(d, { id: "tk", face: sheetFace(bot, t), title: `Tasks for ${bot.name}`, onClose: close,
+        sub: mine.length ? `${mine.length} open · it picks new ones up when its turn ends` : "Nothing open · it picks new ones up when its turn ends" }))
+      .child(sheetBody()
+        // Add: one line, Enter adds.
+        .child(sheetField(d, Input.new(this.input).w_full().text_size(13).text_color(d.fg1), { prefix: "+" }))
+        .child(v_flex().id("tk-list").gap(2).max_h(320).overflow_y_scrollbar()
+          .children(mine.map(row))
+          .when(!mine.length, (el) => el.child(div().py(8).px(8).text_size(12).line_height("16px").text_color(d.fg3)
+            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`))))
+        .child(div().id("tk-board").cursor_pointer().hover((s) => s.opacity(0.75)).on_click(() => { setShared("crew.view", "tasks"); close(); })
+          .child(div().text_size(12).line_height("16px").text_color(d.fg2).child("All tasks on the board →"))))
+      .child(sheetFooter(d, { id: "tk", hint: "Enter adds · Esc closes", onCancel: close, cancelLabel: "Close", ready: !empty && !this.busy,
+        primary: this.busy ? "Adding…" : "Add task", onPrimary: (cx) => this.add(cx) }));
   }
 }

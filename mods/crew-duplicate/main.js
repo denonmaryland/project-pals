@@ -5,7 +5,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, mascot, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone } from "./crew.js";
+import { botOf, updateBot, mascot, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone, ds,
+  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 
 export default class CrewDuplicate extends View {
   init(_props, cx) {
@@ -23,9 +24,8 @@ export default class CrewDuplicate extends View {
     this.harness = null; // null: the bot's own brain
     this.same = null;    // the bot's brain as a startable agent (knownAgents entry)
     this.ownBranch = false; // a git worktree on its own branch, reviewed and landed later
-    this.pickBrain = false; // the brain list is open
+    this.picking = null; // "brain" | "model" | "cat": the list open under the selects
     this.model = undefined;  // Claude Code: undefined = same as the pal; else a MODELS key (null = your default)
-    this.pickModel = false;
     this.isRepo = false;    // own branch only makes sense in a git project
     if (this.bot?.folder && !this.bot.machine) {
       exec("git", ["-C", this.bot.folder, "rev-parse", "--is-inside-work-tree"]).then((r) => { this.isRepo = r.code === 0; cx.notify(); }).catch(() => {});
@@ -88,111 +88,62 @@ export default class CrewDuplicate extends View {
     if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
   }
 
+  // "A · Compact sheet" (DeNon's pick): the pal's pet in the header, "# name" and the first task as
+  // fields, then one row of selects (Brain, Model for Claude Code, Own branch in a git project, and
+  // More for the category); a select's list opens under the row.
   render() {
     const t = tone(theme());
+    const d = ds(t);
     const bot = this.bot;
-    if (!bot) return div().p(24).bg(t.popover).text_color(t.dim).child("That pal is gone.");
-    const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
-    const hair = () => div().h(1).mx(16).bg(a(t.foreground, "0c"));
-    const row = (id, label, right, action) => h_flex().id(id).items_center().justify_between().gap(12).px(16).min_h(48)
-      .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "05"))).on_click(action))
-      .child(div().flex_none().text_size(13.5).text_color(t.foreground).child(label))
-      .child(right);
-    const pill = (id, text, on, action) => div().id(id).px(11).py(4).rounded(4).cursor_pointer()
-      .bg(on ? a(t.foreground, "1a") : a(t.foreground, "00")).hover((s) => s.bg(a(t.foreground, "10")))
-      .text_size(12.5).text_color(on ? t.foreground : t.dim).on_click(action).child(text);
-
-    // Header: whose channel this is.
-    const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
-      .child(mascotEl(bot, mood(null, bot.awake), 34, t))
-      .child(v_flex().flex_1().min_w(0).gap(1)
-        .child(div().text_size(17).font_medium().text_color(t.foreground).child("New channel"))
-        .child(div().truncate().text_size(12.5).text_color(t.dim).child(`in ${bot.name}`)))
-      .child(div().id("dup-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
-        .child(svg("mods/crew-roster/icons/x.svg").size(13).text_color(t.dim)));
-
-    // The one thing that matters: its name, and optionally what it's for.
-    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
-      .child(stop(h_flex().items_center().gap(6).px(16).pt(14).pb(6)
-        .child(div().text_size(20).text_color(t.dim).child("#"))
-        .child(div().flex_1().child(Input.new(this.channel).w_full().text_size(20).text_color(t.foreground)))))
-      .child(stop(div().px(6).pb(6).child(Textarea.new(this.brief).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
-
-    // Settings, one line each.
-    const cats = this.categories();
-    const category = row("dup-cat", "Category", h_flex().gap(2).items_center().flex_wrap().justify_end()
-      .children(cats.map((c, i) => pill(`cat-${i}`, c, this.category === c, (_e, cx) => { this.category = c; cx.notify(); })))
-      .child(this.category === "+new"
-        ? stop(div().w(120).h(28).px(10).flex().items_center().rounded(4).border_1().border_color(a(t.accent, "66"))
-            .child(Input.new(this.newCategory).w_full().text_size(12.5).text_color(t.foreground)))
-        : pill("cat-new", "+ New", false, (_e, cx) => { this.category = "+new"; this.newCategory.focus(); cx.notify(); })));
+    if (!bot) return div().p(24).bg(d.bg1).text_color(d.fg2).child("That pal is gone.");
+    const close = () => closeOverlay(props().overlay);
+    const short = bot.name.split(" - ")[0];
+    const toggle = (which) => () => { this.picking = this.picking === which ? null : which; };
 
     const current = this.harness ?? this.same;
-    const brainName = this.harness ? this.harness.name : `${bot.harnessName ?? "Shell"} (same as ${bot.name.split(" - ")[0]})`;
-    const brainRow = row("dup-brain", "Brain", h_flex().items_center().gap(8)
-      .when(Boolean(current), (el) => el.child(image(mascot(current.key, "calm")).size(20)))
-      .child(div().text_size(13).text_color(t.muted).child(brainName))
-      .child(svg(`mods/crew-roster/icons/${this.pickBrain ? "chevron-down" : "chevron-right"}.svg`).size(11).text_color(t.dim)),
-      (_e, cx) => { this.pickBrain = !this.pickBrain; cx.notify(); });
-    const options = [{ key: null, name: `Same as ${bot.name.split(" - ")[0]}`, sub: bot.harnessName ?? "", ag: null },
-      ...this.agents.filter((x) => x.key !== bot.harness).map((x) => ({ key: x.key, name: x.name, sub: "", ag: x }))];
-    const brainList = v_flex().px(8).pb(8).children(options.map((o, i) => {
-      const on = (this.harness?.key ?? null) === o.key;
-      return h_flex().id(`brain-${i}`).items_center().gap(10).px(10).py(7).rounded(6).cursor_pointer()
-        .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
-        .on_click((_e, cx) => { this.harness = o.ag; this.pickBrain = false; cx.notify(); })
-        .child(image(mascot(o.key ?? bot.harness, "calm")).size(22))
-        .child(div().flex_1().text_size(13).text_color(t.foreground).child(o.name))
-        .when(Boolean(o.sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(o.sub)))
-        .when(on, (el) => el.child(svg("mods/crew-roster/icons/check.svg").size(13).text_color(t.accent)));
-    }));
-
-    // Claude Code channels can run on another model than the pal (a cheap helper channel, say).
+    const brainName = this.harness ? this.harness.name : `${bot.harnessName ?? "Shell"} (same)`;
     const brainKey = this.harness?.key ?? bot.harness;
     const palModel = modelOf(bot.record?.argv);
     const modelName = (k) => MODELS.find((m) => m.key === k)?.name ?? k;
-    const modelLabel = this.model === undefined ? `Same as ${bot.name.split(" - ")[0]}${palModel ? ` (${modelName(palModel)})` : ""}` : modelName(this.model);
-    const modelRow = brainKey === "claude" ? row("dup-model", "Model", h_flex().items_center().gap(8)
-      .child(div().text_size(13).text_color(t.muted).child(modelLabel))
-      .child(svg(`mods/crew-roster/icons/${this.pickModel ? "chevron-down" : "chevron-right"}.svg`).size(11).text_color(t.dim)),
-      (_e, cx) => { this.pickModel = !this.pickModel; cx.notify(); }) : null;
-    const modelOpts = [{ key: undefined, name: `Same as ${bot.name.split(" - ")[0]}`, sub: palModel ? modelName(palModel) : "" }, ...MODELS];
-    const modelList = v_flex().px(8).pb(8).children(modelOpts.map((m, i) => {
-      const on = this.model === m.key;
-      return h_flex().id(`model-${i}`).items_center().gap(10).px(10).py(7).rounded(6).cursor_pointer()
-        .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
-        .on_click((_e, cx) => { this.model = m.key; this.pickModel = false; cx.notify(); })
-        .child(div().flex_1().text_size(13).text_color(t.foreground).child(m.name))
-        .when(Boolean(m.sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(m.sub)))
-        .when(on, (el) => el.child(svg("mods/crew-roster/icons/check.svg").size(13).text_color(t.accent)));
-    }));
+    const modelLabel = this.model === undefined ? (palModel ? `${modelName(palModel)} (same)` : "Same") : modelName(this.model);
+    const cats = this.categories();
 
-    const toggle = div().w(36).h(22).p(2).rounded(4).bg(this.ownBranch ? t.accent : a(t.foreground, "22")).flex().items_center()
-      .when(this.ownBranch, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover));
-    const branchRow = row("dup-branch", "Own branch", h_flex().items_center().gap(10)
-      .child(div().text_size(12).text_color(t.dim).child(this.ownBranch ? "you review and land it" : "works on the project directly"))
-      .child(toggle), (_e, cx) => { this.ownBranch = !this.ownBranch; cx.notify(); });
+    const row = sheetRow()
+      .child(sheetSelect(d, "dup-brain", { label: "Brain", value: brainName, open: this.picking === "brain", onClick: toggle("brain"),
+        face: current ? image(mascot(current.key, "calm")).size(16).flex_none() : null }))
+      .when(brainKey === "claude", (el) => el.child(sheetSelect(d, "dup-model", { label: "Model", value: modelLabel, open: this.picking === "model", onClick: toggle("model") })))
+      .when(this.isRepo, (el) => el.child(sheetToggle(d, "dup-branch", { label: "Own branch", on: this.ownBranch, onClick: () => { this.ownBranch = !this.ownBranch; } })))
+      .child(sheetSelect(d, "dup-more", { label: "Category", value: this.category === "+new" ? "New…" : this.category, open: this.picking === "cat", onClick: toggle("cat") }));
 
-    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
-      .child(category).child(hair()).child(brainRow).when(this.pickBrain, (el) => el.child(brainList))
-      .when(Boolean(modelRow), (el) => el.child(hair()).child(modelRow).when(this.pickModel, (el) => el.child(modelList)))
-      .when(this.isRepo, (el) => el.child(hair()).child(branchRow));
+    let panel = null;
+    if (this.picking === "brain") {
+      panel = sheetPanel(d, "dup-brains")
+        .child(sheetOption(d, "brain-same", { on: !this.harness, left: image(mascot(bot.harness, "calm")).size(18), label: `Same as ${short}`, sub: bot.harnessName ?? "", onClick: () => { this.harness = null; this.picking = null; } }))
+        .children(this.agents.filter((x) => x.key !== bot.harness).map((ag, i) => sheetOption(d, `brain-${i}`, { on: this.harness?.key === ag.key,
+          left: image(mascot(ag.key, "calm")).size(18), label: ag.name, onClick: () => { this.harness = ag; this.picking = null; } })));
+    } else if (this.picking === "model") {
+      panel = sheetPanel(d, "dup-models")
+        .child(sheetOption(d, "model-same", { on: this.model === undefined, label: `Same as ${short}`, sub: palModel ? modelName(palModel) : "", onClick: () => { this.model = undefined; this.picking = null; } }))
+        .children(MODELS.map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
+    } else if (this.picking === "cat") {
+      panel = sheetPanel(d, "dup-cats")
+        .children(cats.map((c, i) => sheetOption(d, `cat-${i}`, { on: this.category === c, label: c, onClick: () => { this.category = c; this.picking = null; } })))
+        .child(this.category === "+new"
+          ? div().p(2).child(sheetField(d, Input.new(this.newCategory).w_full().text_size(13).text_color(d.fg1)))
+          : sheetOption(d, "cat-new", { left: svg("mods/crew-roster/icons/ds-plus.svg").size(12).text_color(d.fg3), label: "New category…",
+              onClick: () => { this.category = "+new"; this.newCategory.focus(); } }));
+    }
 
-    const ready = Boolean(this.channel.value().trim());
-    const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(div().min_w(0).truncate().text_size(12).text_color(t.dim)
-        .child(`${bot.memory?.trim() ? "Starts with its memory" : "Shares its project"} · ${bot.machine ?? "this computer"}`))
-      .child(h_flex().gap(14).items_center().flex_none()
-        .child(div().id("dup-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("dup-go").px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
-          .hover((s) => s.opacity(0.88)).on_click((_e, cx) => this.go(cx))
-          .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child(this.busy ? "Making its branch…" : "Add channel"))));
-
-    return v_flex().id("crew-duplicate").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .w_full().bg(t.popover).text_color(t.foreground)
-      .child(header)
-      .child(v_flex().gap(12).px(24).pt(12).child(named).child(settings))
-      .child(footer);
+    const ready = Boolean(this.channel.value().trim()) && !this.busy;
+    return sheet(d, "crew-duplicate", this.handle, (e, cx) => this.key(e, cx))
+      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New channel", onClose: close,
+        sub: `in ${bot.name} · ${bot.machine ?? "this computer"} · ${bot.memory?.trim() ? "starts with its memory" : "shares its project"}` }))
+      .child(sheetBody()
+        .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
+        .child(sheetArea(d, Textarea.new(this.brief).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
+        .child(row)
+        .when(Boolean(panel), (el) => el.child(panel)))
+      .child(sheetFooter(d, { id: "dup", hint: "Enter adds · Esc cancels", onCancel: close, ready,
+        primary: this.busy ? "Making its branch…" : "Add channel", onPrimary: (cx) => this.go(cx) }));
   }
 }

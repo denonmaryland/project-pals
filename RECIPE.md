@@ -198,6 +198,14 @@ rectangular segments and tags.
   Saved in shared `crew.marks` (`groups`, `pals[bot].group/order/pin`, `arranged`), so it
   survives restarts; Herdr's own space order isn't touched. The channel list can't drag: it's a
   virtual list, whose rows can't take their own mouse handlers in Herdr.
+- **Dialogs** ("A · Compact sheet", DeNon 2026-11-08): New channel, Hire a pal, New room, New group
+  and Tasks share one kit (`sheet*` in crew.js): a header row (the pal's bare pet over its aura, a
+  15/600 title, a 12px #808082 line, a quiet ×), 32px r6 fields on #0A0A0B with a #2C2C2F hairline
+  ("#" prefix for names), quiet multi-line boxes, one row of compact 26px selects (label #6A6A6C,
+  value #C8C8C8, chevron) whose list opens under the row, and a footer with a hairline over it: a key
+  hint, Cancel and the primary action as pebbles (the primary a step brighter, steel blue #26364A;
+  dimmed until it's ready). New channel puts Category behind its own select; Hire's selects are
+  Brain, Model, Role and Computer, then the folder (with Browse) and the first channel.
 - **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
   rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
   previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
