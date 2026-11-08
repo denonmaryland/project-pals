@@ -121,7 +121,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
   under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
   state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
-  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), the header's command field (25x20), rooms, dialogs.
+  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), rooms, dialogs.
   - **Pal list style** (Project Pals settings → Pal list style, `crew-palstyle`, saved as
     `palList` in crew-settings.json; DeNon 2026-11-08). The rows above are **Large pets**, the
     default. Ten compact looks from DeNon's board (`crew-boards/compact-pals`) use 22-34px pets
@@ -301,9 +301,12 @@ rectangular segments and tags.
     terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the
   command bar's field centred (T18; DeNon: "this pill is redundant maybe it should be a global
   search / command type of thing, the things that are in the dropdown already there are perfect"):
-  a quiet pebble up to 520 px wide (h30, r7, the pebble face), the shown pal's 25x20 pet, a
-  magnifier, "Search pals, channels, tasks… or run a command" and its shortcut in a small mono key
-  cap; a click or **Ctrl+Shift+Space** (`crew-header.search`) opens the command bar over it (below).
+  a quiet recessed field up to 520 px wide (DeNon: no pet in it; h30, r7, a shade darker than the
+  header (#08080A), a faint dark line inside the top, a very faint light one inside the bottom, no
+  outer shadow; hover a touch lighter; a subtle blue inner ring while the command bar is open,
+  shared `crew.command.open`), a magnifier, "Search pals, channels, tasks… or run a command" and
+  its shortcut as a tiny raised pebble (`keyCap`); a click or **Ctrl+Shift+Space**
+  (`crew-header.search`) opens the command bar over it (below).
   The split buttons are on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
   or prints the branch when you have no status line of your own); no
@@ -434,8 +437,8 @@ rectangular segments and tags.
   on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
   written until the owner accepts (the mission) or writes it after the diff (agent files).
 - **The command bar** (`crew-command`, T18): a 560x552 r4 #161617 popup with a hairline, laid with
-  its top on the header's field and centred on it: the field again, live (the pal's pet, the query,
-  "esc"), then the rows, then a foot ("↑↓ move · ↵ open · esc close"). An empty box lists the pal
+  its field on the header's and centred on it: the field again, live (the same recessed field with
+  its blue ring, 6 px in: a magnifier, the query, "esc" as a tiny pebble), then the rows, then a foot ("↑↓ move · ↵ open · esc close"). An empty box lists the pal
   menu's rows unchanged (`palMenuItems` in crew.js, shared with `crew-palmenu`) under "<Pal> · The
   pal" and "<Pal> · The project", Put to sleep after a hairline, then "Project Pals": New channel
   (for the shown pal), Hire a pal…, New group…, Check for updates, Project Pals settings (the gear's

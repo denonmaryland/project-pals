@@ -1,6 +1,7 @@
 // Project Pals header, drawn to the "MODE · Focus" board: the command bar's field centred (T18:
-// the pal chip was redundant with the hero, so the centre is a search field now, with the shown
-// pal's small pet in it; a click or Ctrl+Shift+Space opens crew-command over it) and the split
+// the pal chip was redundant with the hero, so the centre is a recessed search field now, no pet in
+// it; a click or Ctrl+Shift+Space opens crew-command over it, and the field shows a blue ring while
+// it's open) and the split
 // buttons on the right. The git branch isn't here: it's in the agent's own status line
 // (crew-statusline; DeNon, 2026-11-08). No channel picker on the left: DeNon took it out on
 // 2026-11-08 (channels switch from the hero's list; "no agent" shows there). In a room: the room's
@@ -9,8 +10,8 @@
 
 import { View, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, theme, focused, layout, nextCommand } from "herdr";
-import { shownRoom, roomMembers, botOf, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX } from "./crew.js";
+import { spaces, theme, focused, layout, nextCommand, shared, setShared } from "herdr";
+import { shownRoom, roomMembers, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX } from "./crew.js";
 
 const SIDE = 70;         // the split buttons' side, kept clear on both sides so the field stays centred
 const FIELD_Y = 11;      // (52 - 30) / 2
@@ -21,6 +22,8 @@ export default class CrewHeader extends View {
   init(_props, cx) {
     this.w = 0;           // the header's width (on_size_change)
     this.origin = null;   // its window position, once the pointer has crossed it
+    // Shared values persist: a quit with the command bar open would leave the field's ring on.
+    if (shared("crew.command.open")) setShared("crew.command.open", false);
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -71,11 +74,10 @@ export default class CrewHeader extends View {
           .child(faces)
           .child(div().text_size(13).font_weight(600).text_color(d.fg1).child(`#${room.name}`)));
     }
-    const bot = space && tab ? botOf(space) : null;
     return root
       // An empty left side as wide as the right one, so the field stays centred.
       .child(h_flex().flex_1().flex_basis(0).min_w(0))
-      .child(commandField(bot, tab, d, { w: this.fieldW(), onOpen: (e) => this.open(e) }))
+      .child(commandField(d, { w: this.fieldW(), onOpen: (e) => this.open(e) }))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
         .child(space && tab ? splitButtons(d) : div()));
   }

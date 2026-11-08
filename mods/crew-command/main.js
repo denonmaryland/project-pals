@@ -11,10 +11,10 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, agents, theme, props, closeOverlay, openOverlay, run } from "herdr";
+import { spaces, agents, theme, props, closeOverlay, openOverlay, run, setShared } from "herdr";
 import {
   botOf, ds, tone, crew, taskFor, loadOps, palMenuItems, appMenuItems, sleepers, wakePal, mascotEl, mood, channelName, statusWord,
-  showTabs, openPanel, taskTitle, channelOrder, SEARCH_HINT,
+  showTabs, openPanel, taskTitle, channelOrder, SEARCH_HINT, recessedField, keyCap, COMMAND_PAD,
 } from "./crew.js";
 import { search, pieces } from "./search.js";
 
@@ -33,6 +33,8 @@ export default class CrewCommand extends View {
     this.cursor = 0;
     this.tasks = [];
     this.done = false;
+    // The header's field shows a blue ring while this is open (cleared in close() below).
+    setShared("crew.command.open", true);
     cx.spawn(async (cx) => {
       try { this.tasks = (await loadOps()).tasks ?? []; } catch {}
       cx.notify();
@@ -40,12 +42,14 @@ export default class CrewCommand extends View {
   }
 
   space() { return spaces().find((s) => s.id === props()?.space) ?? spaces().find((s) => s.active); }
-  close() { closeOverlay(props()?.overlay); }
+  dismiss() { closeOverlay(props()?.overlay); }
+  // Herdr calls this when the popup goes, however it goes (Esc, a click beside it, a pick).
+  async close() { setShared("crew.command.open", false); }
 
   run(row) {
     if (this.done || !row) return;
     this.done = true;
-    this.close();
+    this.dismiss();
     row.go();
   }
 
@@ -135,7 +139,7 @@ export default class CrewCommand extends View {
   }
 
   key(e, cx, n) {
-    if (e.key === "escape") { cx.stop_propagation(); this.close(); return; }
+    if (e.key === "escape") { cx.stop_propagation(); this.dismiss(); return; }
     if ((e.key === "down" || e.key === "up") && n) {
       this.cursor = (this.cursor + (e.key === "down" ? 1 : -1) + n) % n;
       cx.stop_propagation(); cx.notify(); return;
@@ -166,9 +170,6 @@ export default class CrewCommand extends View {
 
   render() {
     const d = ds(tone(theme()));
-    const space = this.space();
-    const bot = space ? botOf(space) : null;
-    const tab = space?.tabs.find((x) => x.active);
     const rows = this.rows();
     if (this.cursor >= rows.length) this.cursor = Math.max(0, rows.length - 1);
     const q = this.input.value().trim();
@@ -177,11 +178,13 @@ export default class CrewCommand extends View {
       .overflow_hidden().text_color(d.fg1)
       .on_key_down((e, cx) => this.key(e, cx, rows.length));
 
-    // The field, live: the pal's pet, the query, "esc".
-    root.child(h_flex().h(42).flex_none().items_center().gap(9).pl(8).pr(10).border_b_1().border_color(d.line)
-      .child(bot ? mascotEl(bot, mood(tab?.status, bot.awake || bot.starting), 25) : svg(`${ICON}/ds-search.svg`).size(14).text_color(d.fg3))
-      .child(div().flex_1().min_w(0).child(Input.new(this.input).w_full().text_size(14).text_color(d.fg1)))
-      .child(div().flex_none().text_size(10.5).font_family(d.mono).text_color(d.fg4).child("esc")));
+    // The field, live, where the header's was: the same recessed look with its blue ring (open), a
+    // magnifier, the query, "esc" as a tiny pebble.
+    root.child(div().flex_none().p(COMMAND_PAD).pb(COMMAND_PAD + 1).border_b_1().border_color(d.line)
+      .child(recessedField(d, "cmd-field", { open: true }).w_full().pl(10).pr(5).gap(8)
+        .child(svg(`${ICON}/ds-search.svg`).size(13).flex_none().text_color(d.fg3))
+        .child(div().flex_1().min_w(0).child(Input.new(this.input).w_full().text_size(13).text_color(d.fg1)))
+        .child(keyCap(d, "esc"))));
 
     const list = v_flex().flex_1().min_h(0).p(4).gap(1).overflow_hidden();
     if (!rows.length) {
