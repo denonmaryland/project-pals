@@ -119,8 +119,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   everywhere a pal's face shows: the Focus hero (no box at all, the sidebar's full width), the
   sidebar list (bare, no box or line: 75x59 in 68px rows over a soft radial aura that fades to
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
-  under it instead of the edge loader; the name, then `[channel]`, then what it's on, each on its own
-  line; half-opacity while the pal is closed or idle-hidden), the header's pal chip (30x24), rooms, dialogs.
+  under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
+  state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
+  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), the header's pal chip (30x24), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other

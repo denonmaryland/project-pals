@@ -17,9 +17,9 @@ import {
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
-// Focus pal rows: the pet 75 wide, bare (no box), in a 68 px row (DeNon 2026-11-08: twice the old
+// Focus pal rows: the pet 75 wide, bare (no box), in a 64 px row (two lines of text since 'status first') (DeNon 2026-11-08: twice the old
 // 46, then 15% back down).
-const ROW_PET = 75, ROW_H = 68;
+const ROW_PET = 75, ROW_H = 64;
 const RAIL = 64;
 
 function find(node, id) {
@@ -806,13 +806,12 @@ export default class CrewRoster extends View {
     const st = space.status;
     const on = space.active;
     const awake = bot.awake || bot.starting;
-    const dot = awake ? this.liveDot(st, d) : null;
-    const news = awake && ["working", "blocked", "done"].includes(st);
-    const [tag, what] = this.doing(space, bot);
-    // Hierarchy: name #EDEDED, what it's on #C8C8C8, [channel] #808082 mono; a closed pal's text
-    // never drops below #808082 (its pet dims instead).
+    const [tag] = this.doing(space, bot);
+    // "Status first" (DeNon's pick from the pal-rows board, variant 3): the name (#EDEDED 600) and the
+    // time; then the state word in its colour and " · #channel" in 11 px mono #808082. A closed pal's
+    // text never drops below #808082 (its pet dims instead).
     const nameColor = awake ? d.fg1 : d.fg2;
-    const whatColor = awake ? d.body : d.fg2;
+    const [word, wordColor] = this.stateWord(space, bot, d);
     // Dragging (pals in the groups, not the head pal or hidden ones): press, move 5 px, and a 2 px
     // line shows where it will land (above or below the row under the pointer); release drops it.
     const draggable = gid !== undefined && !bot.god;
@@ -832,14 +831,27 @@ export default class CrewRoster extends View {
       .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(this.rowPet(bot, mood(st, awake), t)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().items_center().gap(6)
-          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
+          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").font_weight(600).text_color(nameColor).child(bot.name))
           .when(palPinned(bot), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
-          .child(div().flex_none().text_size(11).line_height("18px").text_color(d.fg3).child(stamp(this.lastChange(space))))
-          .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot))))
-        // [channel], then what it's on, each on its own full-width line (side by side, a long
-        // channel name squeezed the preview into a narrow column).
-        .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("15px").font_family(d.mono).text_color(d.fg2).child(`[${tag}]`)))
-        .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(whatColor).child(what)));
+          .child(div().flex_none().text_size(11).line_height("18px").text_color(d.fg3).child(stamp(this.lastChange(space)))))
+        .child(h_flex().min_w(0).items_center().overflow_hidden()
+          .child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(word))
+          .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("16px").font_family(d.mono).text_color(d.fg2).child(` · #${tag}`)))));
+  }
+
+  // A pal's state as a word in its colour (the pal rows' second line): its pet's state (petState, so
+  // PR, merged, closing and stuck show too), "Working · 4m" with how long its lead channel has.
+  stateWord(space, bot, d) {
+    if (bot.starting) return ["Starting", d.infoText];
+    if (!bot.awake) return ["Asleep", d.fg2];
+    const st = petState(bot, mood(space.status, true));
+    const lead = this.leadTab(space);
+    const since = lead?.changed_at ? ago(lead.changed_at) : "";
+    return ({
+      work: [since && since !== "now" ? `Working · ${since}` : "Working", d.info],
+      ask: ["Needs you", d.warn], done: ["Done", d.ok], stuck: ["Stuck", d.warn],
+      pr: ["PR open", "#3FBF78"], merged: ["Merged", "#9466F0"], closing: ["Closing", d.err],
+    })[st] ?? ["Resting", d.body];
   }
 
   sleeperRow(rec, t, d) {
@@ -850,8 +862,8 @@ export default class CrewRoster extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
       .child(div().flex_none().opacity(0.5).child(this.rowPet(bot, "asleep", t)))
       .child(v_flex().flex_1().min_w(0).gap(3)
-        .child(div().truncate().text_size(14).line_height("18px").text_color(d.fg2).child(rec.name))
-        .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg2).child("closed · click to wake")));
+        .child(div().truncate().text_size(14).line_height("18px").font_weight(600).text_color(d.fg2).child(rec.name))
+        .child(div().truncate().text_size(12).line_height("16px").font_weight(500).text_color(d.fg2).child("Asleep · click to wake")));
   }
 
   empty(t) {
