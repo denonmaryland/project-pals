@@ -1,4 +1,5 @@
-// Project Pals tabs: the shown pal's channels as tabs along the shell's top edge, above the sheet.
+// Project Pals tabs (Pro; Focus has the header's channel picker instead): the shown pal's channels
+// as tabs along the shell's top edge, above the sheet.
 // Click switches, double-click renames, × (on hover) closes the channel, + adds one. The sidebar lists
 // only pals, so this bar is where channels live: each tab has a status dot (working, needs you,
 // done, idle), so you can see what every channel is up to without leaving the one you're in.
@@ -17,8 +18,8 @@ export default class CrewTabs extends View {
     const t = tone(theme());
     const space = spaces().find((s) => s.active);
     const root = h_flex().id("crew-tabs").size_full().items_center().gap(2).pl(2).pr(6);
-    // The same soft pills as the rest of Project Pals: the shown one filled, the rest quiet text.
-    const pill = (id, on) => h_flex().id(id).h(30).min_w(0).max_w(220).flex_shrink_1().items_center().gap(7).px(12).rounded_full().cursor_pointer()
+    // Rectangular tabs (design system: r4, flat selected fill): the shown one filled, the rest quiet text.
+    const pill = (id, on) => h_flex().id(id).h(28).min_w(0).max_w(220).flex_shrink_1().items_center().gap(7).px(10).rounded(4).cursor_pointer()
       .when(on, (el) => el.bg(a(t.foreground, "0e")))
       .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "07"))));
     const name = (text, on) => div().min_w(0).truncate().text_size(13).text_color(on ? t.foreground : t.dim).child(text);  // room tabs
@@ -32,7 +33,7 @@ export default class CrewTabs extends View {
           // Idle: the channel's own color (grey when it has none), so colors read even in a muted theme.
           .bg(status === "blocked" ? t.blocked : status === "done" ? t.done : color ?? a(t.foreground, "30"))
           .when(status === "blocked", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 })));
-    const plus = (id, action) => div().id(id).size(28).flex_none().ml(2).rounded_full().flex().items_center().justify_center().cursor_pointer()
+    const plus = (id, action) => div().id(id).size(28).flex_none().ml(2).rounded(4).flex().items_center().justify_center().cursor_pointer()
       .hover((s) => s.bg(a(t.foreground, "0a")))
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); action(); })
       .child(svg(`${ICON}/plus.svg`).size(13).text_color(t.dim));
@@ -77,7 +78,7 @@ export default class CrewTabs extends View {
         // A pinned channel shows its pin and has no ✕ (unpin it first, from its menu).
         .when(pin, (el) => el.child(svg(`${ICON}/pin.svg`).size(11).flex_none().text_color(color ?? t.dim)))
         // Close only on hover, so the bar stays calm.
-        .when(hovered && !pin, (el) => el.child(div().id(`tab-x-${tab.id}`).size(18).flex_none().flex().items_center().justify_center().rounded_full()
+        .when(hovered && !pin, (el) => el.child(div().id(`tab-x-${tab.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(3)
           .hover((s) => s.bg(a(t.foreground, "14")))
           .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); run("tab.close", { id: tab.id }); })
           .child(svg(`${ICON}/x.svg`).size(10).text_color(t.dim))));

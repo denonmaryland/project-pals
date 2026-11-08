@@ -1,11 +1,15 @@
-// Project Pals side: details for the shown pal (right pane, hidden until the header's panel button shows it):
-// this channel, its own branch, its other channels, tasks, routines, and what it remembers. In a
-// room: who's in it. Same look as the Project Pals dialogs: a small header, then quiet bordered lists.
+// Project Pals inspector: details for the shown pal, on the right. In Pro it stays open, with tabs:
+// Run (this channel, its usage, its own branch, its other channels), Tasks (its tasks and
+// routines) and Memory; Fold goes back to Focus. In Focus it's a peek: one section opened from
+// the rail, with Expand (Pro on that section) and close. In a room: who's in it.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { spaces, panes, theme, run, exec, appHome, readTextFile, openOverlay, notify } from "herdr";
-import { loadOps, crewCli, taskOf, shownRoom, roomMembers, deleteRoom, showTabs, botOf, briefOf, channelName, leadPane, mascotFor, mascotEl, mood, updateBot, statusWord, statusColor, WAVE, ago, a, tone } from "./crew.js";
+import { loadOps, crewCli, taskOf, shownRoom, roomMembers, deleteRoom, showTabs, botOf, briefOf, channelName, leadPane, mascotFor, mascotEl, mood, updateBot, statusWord, statusColor, WAVE, ago, a, tone,
+  layoutMode, setMode, INSPECTOR_TABS, inspectorTab, setInspectorTab, ds } from "./crew.js";
+
+const ICON = "mods/crew-roster/icons";
 
 export default class CrewSide extends View {
   init(_props, cx) {
@@ -99,10 +103,30 @@ export default class CrewSide extends View {
       .child(lead)
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().truncate().text_size(15).font_medium().text_color(t.foreground).child(title))
-        .child(div().truncate().text_size(12).text_color(t.dim).child(sub)))
-      .child(div().id("side-x").size(28).flex_none().rounded(8).flex().items_center().justify_center().cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => run("layout.toggle", { id: "panel" }))
-        .child(svg("mods/crew-roster/icons/x.svg").size(13).text_color(t.dim)));
+        .child(div().truncate().text_size(12).text_color(t.dim).child(sub)));
+  }
+
+  // The inspector's top bar: Run / Tasks / Memory as one rectangular segmented control, then
+  // Fold (Pro) or Expand and close (a Focus peek).
+  bar(t, current) {
+    const d = ds(t);
+    const pro = layoutMode() === "pro";
+    const seg = (id, label) => div().id(`insp-${id}`).h(24).px(10).flex().items_center().rounded(d.r.xs).cursor_pointer()
+      .when(current === id, (el) => el.bg(d.sel))
+      .when(current !== id, (el) => el.hover((s) => s.bg(d.hover)))
+      .on_click((_e, cx) => { setInspectorTab(id); cx.notify(); })
+      .child(div().text_size(12).when(current === id, (el) => el.font_medium()).text_color(current === id ? d.fg1 : d.fg2).child(label));
+    const btn = (id, icon, label, tip, action) => div().id(id).h(24).px(label ? 8 : 0).when(!label, (el) => el.w(24)).flex().items_center().justify_center().gap(5)
+      .rounded(d.r.xs).cursor_pointer().tooltip(tip).hover((s) => s.bg(d.hover)).on_click(action)
+      .child(svg(`${ICON}/${icon}.svg`).size(12).text_color(d.fg3))
+      .when(Boolean(label), (el) => el.child(div().text_size(12).text_color(d.fg2).child(label)));
+    return h_flex().id("insp-bar").h(44).flex_none().items_center().justify_between().px(12).border_b_1().border_color(d.line)
+      .child(h_flex().p(2).gap(2).rounded(d.r.sm).border_1().border_color(d.line).children(INSPECTOR_TABS.map(([id, label]) => seg(id, label))))
+      .child(pro
+        ? btn("insp-fold", "minimize", "Fold", "Fold back to Focus", () => setMode("focus"))
+        : h_flex().gap(2)
+          .child(btn("insp-expand", "maximize", null, "Open in Pro", () => setMode("pro", { tab: current })))
+          .child(btn("insp-close", "x", null, "Close", () => run("layout.hide", { id: "panel" }))));
   }
 
   // A section: a small label (with a count and an action on the right), then its content.
@@ -134,10 +158,14 @@ export default class CrewSide extends View {
     const space = spaces().find((s) => s.active);
     const tab = space?.tabs.find((x) => x.active);
     const bot = botOf(space);
-    const root = v_flex().id("crew-side").size_full().overflow_y_scrollbar().pt(20).px(16).pb(24).gap(22).text_color(t.foreground);
+    const current = inspectorTab();
+    const frame = v_flex().id("crew-side-frame").size_full().text_color(t.foreground);
+    const root = v_flex().id("crew-side").flex_1().min_h(0).overflow_y_scrollbar().pt(16).px(16).pb(24).gap(22).text_color(t.foreground);
 
     const room = shownRoom();
-    if (room) return this.roomSide(room, root, t, k);
+    if (room) return this.roomSide(room, root.size_full(), t, k);
+    // Elements are single-use: the scrolling body joins the frame once it's filled.
+    const done = () => frame.child(this.bar(t, current)).child(root);
     if (bot && bot.space !== this.botId) {
       if (this.botId && this.editing) this.save();
       this.botId = bot.space;
@@ -146,7 +174,8 @@ export default class CrewSide extends View {
     if (bot) this.bot = bot;
     if (!bot) {
       this.botId = null;
-      return root.child(div().px(4).text_size(13).text_color(t.dim).child("Pick a pal on the left to see its details."));
+      root.child(div().px(4).text_size(13).text_color(t.dim).child("Pick a pal on the left to see its details."));
+      return done();
     }
 
     const lead = tab ? leadPane(tab.id, panes()) : null;
@@ -265,12 +294,18 @@ export default class CrewSide extends View {
             .child(div().size(4).mt(7).flex_none().rounded_full().bg(a(t.foreground, "33")))
             .child(div().flex_1().min_w(0).text_size(12).text_color(t.dim).child(n.length > 150 ? n.slice(0, 150) + "…" : n)))))));
 
-    return root.child(header).child(channel)
-      .when(Boolean(glance), (el) => el.child(glance))
-      .when(Boolean(branch), (el) => el.child(branch))
-      .when(Boolean(channels), (el) => el.child(channels))
-      .when(Boolean(tasks), (el) => el.child(tasks))
-      .child(routines).child(memory);
+    if (current === "tasks") {
+      root.when(Boolean(tasks), (el) => el.child(tasks))
+        .when(!tasks, (el) => el.child(div().px(4).text_size(12.5).text_color(t.dim).child(`No open tasks for ${bot.name}.`)))
+        .child(routines);
+    } else if (current === "memory") root.child(memory);
+    else {
+      root.child(header).child(channel)
+        .when(Boolean(glance), (el) => el.child(glance))
+        .when(Boolean(branch), (el) => el.child(branch))
+        .when(Boolean(channels), (el) => el.child(channels));
+    }
+    return done();
   }
 
   roomSide(room, root, t, k) {

@@ -51,6 +51,35 @@ if ! fc-list 2>/dev/null | grep -qi "Adwaita Sans"; then
   sed -i 's/"ui_font": "Adwaita Sans"/"ui_font": "Geist"/' "$home/layouts/pals.json"
 fi
 [[ -f "$src/layouts/pals.svg" ]] && cp "$src/layouts/pals.svg" "$home/layouts/pals.svg"
+# Ctrl+Shift+M switches Focus ⇄ Pro (crew-roster.mode). It goes in keys.json's global map, so Herdr
+# takes it before a terminal sees it, but only when the key is free in every section and nothing is
+# bound to the mode yet: a key you already use is never changed. keys.json is backed up first.
+# (Any edit makes the file yours: Herdr stops adding its new default shortcuts to it.)
+if [[ -f "$home/keys.json" ]]; then
+  mkdir -p "$backup"; cp -a "$home/keys.json" "$backup/keys.json"
+  python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it); bind ctrl-shift-m to crew-roster.mode yourself"
+import json, os, sys
+path = sys.argv[1]
+keys = json.load(open(path))
+want, action = "ctrl-shift-m", "crew-roster.mode"
+same = lambda k: sorted(k.lower().split("-")) == sorted(want.split("-"))
+used = [(sec, k) for sec, m in keys.items() if isinstance(m, dict) for k in m if same(k)]
+bound = [k for m in keys.values() if isinstance(m, dict) for k, v in m.items() if v == action]
+if bound:
+    print(f"Focus/Pro switch: already on {bound[0]}")
+elif used:
+    print(f"Focus/Pro switch: {want} is taken ({used[0][0]} → {keys[used[0][0]][used[0][1]]}), so it has no key; bind {action} to one in keys.json")
+else:
+    keys.setdefault("global", {})[want] = action
+    tmp = path + ".crew-tmp"
+    with open(tmp, "w") as f:
+        json.dump(keys, f, indent=2)
+    os.replace(tmp, path)
+    print(f"Focus/Pro switch: bound {want} in keys.json (backup in the install's .crew-backups folder)")
+PY
+else
+  echo "Focus/Pro switch: no keys.json yet, so no shortcut; switch from the status bar, or bind ctrl-shift-m to crew-roster.mode"
+fi
 # The layout used to be called crew, then buddies: move over (backing the old one up) and show the
 # new one if an old one was showing.
 was_shown=""

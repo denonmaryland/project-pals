@@ -1,4 +1,8 @@
 // Project Pals composer: message the shown channel, or any pal's channel with "@Pal#channel text".
+// One component in both layout modes: a box with the prompt, then a control row (attach, the
+// channel's brain and model, its permission mode, mic, voice, send). Only its width differs:
+// 720 px centred in Focus, the full column in Pro. Mic and voice are visual only for now (no
+// dictation backend yet); the brain and permission chips say what the channel runs with.
 // It pastes into that channel's terminal with `hc send` (Enter included). A channel that's
 // waiting on you isn't typed into: answer its question in the terminal.
 //
@@ -7,9 +11,9 @@
 // line after the message, which Claude Code, Codex, Grok and the rest read as an attached file.
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, InputState, Input } from "gpui-base";
-import { spaces, theme, hc, notify, exec, appHome, openOverlay, shared, setShared } from "herdr";
-import { owner, channelName, leadPane, a, shownRoom, roomMembers, roomTargets, appendRoomLog, deliverToRoom, tone } from "./crew.js";
+import { h_flex, v_flex, InputState, Input } from "gpui-base";
+import { spaces, panes, terminals, theme, hc, notify, exec, appHome, openOverlay, shared, setShared, readTextFile } from "herdr";
+import { owner, channelName, leadPane, a, shownRoom, roomMembers, roomTargets, appendRoomLog, deliverToRoom, tone, botOf, layoutMode, ds } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
@@ -28,6 +32,41 @@ export default class CrewComposer extends View {
     this.files = []; // { path (absolute, in the store), rel (for image()), name, image }
     this.sending = false;
     this.lastPick = shared("crew.attach.add")?.nonce ?? null;
+    // The shown channel's model, as its agent reports it (crew-statusline), for the brain chip.
+    this.model = null;
+    const meta = (cx) => cx.spawn(async (cx) => {
+      const tab = spaces().find((s) => s.active)?.tabs.find((x) => x.active);
+      const term = tab ? leadPane(tab.id, panes())?.terminal : null;
+      let m = null;
+      try { m = term ? JSON.parse((await readTextFile(`${appHome()}/data/crew-status/${term}.json`)) ?? "null")?.model?.display_name ?? null : null; } catch { m = null; }
+      if (m !== this.model) { this.model = m; cx.notify(); }
+    });
+    meta(cx);
+    cx.timer.every(4000, (cx) => meta(cx));
+  }
+
+  // The brain and permission chips: what the shown channel runs, and whether it asks first.
+  brainChips(t, d) {
+    const space = spaces().find((s) => s.active);
+    const tab = space?.tabs.find((x) => x.active);
+    if (!space || !tab || shownRoom()) return [];
+    const bot = botOf(space);
+    if (!bot?.awake) return [];
+    const term = leadPane(tab.id, panes())?.terminal;
+    const argv = (terminals().find((x) => x.address === term)?.argv ?? []).join(" ");
+    const bypass = /--dangerously-skip-permissions|--dangerously-bypass-approvals-and-sandbox|--yolo/.test(argv);
+    const chip = (id, kids, tip) => h_flex().id(id).flex_none().h(28).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.ctl).tooltip(tip).children(kids);
+    return [
+      chip("cmp-brain", [
+        div().size(7).rounded(2).bg(t.accent),
+        div().text_size(12.5).text_color(d.fg1).child(bot.harnessName ?? "Agent"),
+        ...(this.model ? [div().text_size(12.5).text_color(d.fg3).child(this.model)] : []),
+      ], "What this channel runs"),
+      chip("cmp-perm", [
+        svg(`${ICON}/shield.svg`).size(13).text_color(bypass ? t.ansi3 ?? d.fg2 : d.fg2),
+        div().text_size(12.5).text_color(d.fg1).child(bypass ? "Bypass" : "Ask first"),
+      ], bypass ? "Runs without asking (permissions bypassed)" : "Asks before risky actions"),
+    ];
   }
 
   // Where a message goes now, and that place's field.
@@ -184,7 +223,7 @@ export default class CrewComposer extends View {
   }
 
   chip(f, i, t) {
-    return h_flex().id(`att-${i}`).flex_none().items_center().gap(6).h(28).pl(3).pr(7).rounded(8)
+    return h_flex().id(`att-${i}`).flex_none().items_center().gap(6).h(26).pl(3).pr(7).rounded(4)
       .bg(a(t.foreground, "0c"))
       .child(f.image ? image(f.rel).w(22).h(22).rounded(6).flex_none()
         : div().size(22).flex_none().rounded(6).flex().items_center().justify_center().bg(a(t.foreground, "10"))
@@ -202,23 +241,30 @@ export default class CrewComposer extends View {
 
     const field = this.field();
     const ready = Boolean(field.value().trim() || this.files.length);
-    const round = (id, icon, bg, color, action) => div().id(id).size(32).flex_none().rounded_full().flex().items_center().justify_center()
-      .cursor_pointer().bg(bg).hover((s) => s.opacity(0.85)).on_click(action)
-      .child(svg(`${ICON}/${icon}.svg`).size(15).text_color(color));
+    const d = ds(t);
+    const square = (id, icon, bg, color, action, tip) => div().id(id).size(28).flex_none().rounded(d.r.sm).flex().items_center().justify_center()
+      .cursor_pointer().bg(bg).hover((s) => s.opacity(0.85)).on_click(action).when(Boolean(tip), (el) => el.tooltip(tip))
+      .child(svg(`${ICON}/${icon}.svg`).size(14).text_color(color));
+    const soon = (what) => () => notify({ title: `${what} isn't wired up yet`, body: "Voice input is coming; type for now.", level: "info", timeout: 2500 });
 
-    // The same card as the dialogs' name fields: attach on the left, the field, send on the right.
-    const card = h_flex().id("crew-compose").w_full().max_w(900).min_h(48).items_center().gap(6).px(8).py(8).rounded(16)
-      .bg(a(t.canvas, "aa")).border_1().border_color(this.typing ? a(t.foreground, "26") : a(t.foreground, "10"))
-      .child(round("crew-attach", "plus", a(t.foreground, "0a"), t.muted,
-        () => openOverlay({ mod: "crew-attach", kind: "popup", width: 400, height: 440 })))
-      .children(this.files.map((f, i) => this.chip(f, i, t)))
-      .child(div().flex_1().min_w(80).flex().items_center().pl(4)
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(Input.new(field).w_full().text_size(14).text_color(t.foreground)))
-      .child(round("crew-send", "arrow-up", this.sending ? a(t.foreground, "33") : ready ? t.solid : a(t.foreground, "0f"),
-        ready ? t.solid_foreground : t.dim, (_e, cx) => this.send(cx)));
+    // Two rows in one r8 box: the prompt (and any attachments), then the controls.
+    const card = v_flex().id("crew-compose").w_full().when(layoutMode() === "focus", (el) => el.max_w(720)).gap(8).px(10).pt(10).pb(8).rounded(d.r.lg)
+      .bg(a(t.canvas, "aa")).border_1().border_color(this.typing ? d.lineStrong : d.line)
+      .child(h_flex().w_full().min_h(26).items_center().gap(6).flex_wrap()
+        .children(this.files.map((f, i) => this.chip(f, i, t)))
+        .child(div().flex_1().min_w(80).flex().items_center().px(2)
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .child(Input.new(field).w_full().text_size(14).text_color(t.foreground))))
+      .child(h_flex().w_full().items_center().gap(6)
+        .child(square("crew-attach", "plus", d.ctl, d.fg2, () => openOverlay({ mod: "crew-attach", kind: "popup", width: 400, height: 440 }), "Attach a file"))
+        .children(this.brainChips(t, d))
+        .child(div().flex_1())
+        .child(square("crew-mic", "mic", "#00000000", d.fg3, soon("Dictation"), "Dictate (coming soon)"))
+        .child(square("crew-voice", "audio-lines", d.ctl, d.fg2, soon("Voice mode"), "Voice mode (coming soon)"))
+        .child(square("crew-send", "arrow-up", this.sending ? a(t.foreground, "33") : ready ? t.solid : d.ctl,
+          ready ? t.solid_foreground : d.fg3, (_e, cx) => this.send(cx), "Send")));
 
-    return h_flex().id("crew-composer").size_full().items_center().justify_center().px(30).pb(18).pt(4)
+    return h_flex().id("crew-composer").size_full().items_center().justify_center().px(24).pb(12).pt(4)
       .on_drop((e, cx) => this.add(e.paths ?? [], cx))
       .child(card);
   }

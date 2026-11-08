@@ -40,7 +40,7 @@ Memory and skills
 
 Settings
   pal settings                      who the pals work for, and whether new pals bypass permissions
-  pal settings owner "Name" | bypass on|off
+  pal settings owner "Name" | bypass on|off | layout focus|pro
 
 Updates
   pal version                       what's installed
@@ -697,11 +697,12 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
 
 
 def cmd_settings(rest):
-    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off"""
+    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off | pal settings layout focus|pro"""
     from crewlib import save_settings
     if not rest:
         st = settings()
-        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}")
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\n"
+              f"layout: {'pro' if st.get('layoutMode') == 'pro' else 'focus'}")
         return
     if ME and is_bot_terminal(ME):
         die("settings are the owner's to change, not a pal's")
@@ -710,6 +711,9 @@ def cmd_settings(rest):
         st = save_settings(owner=val)
     elif key == "bypass" and val in ("on", "off"):
         st = save_settings(bypass=val == "on")
+    elif key == "layout" and val in ("focus", "pro"):
+        # The pals layout follows within a few seconds (the roster lays the window out).
+        st = save_settings(layoutMode=val)
     elif key == "head" and val:
         if "#" in val or val.startswith("@"):
             die("a pal's name can't have # in it or start with @")
@@ -726,7 +730,10 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings layout focus|pro')
+    if key == "layout":
+        print(f"layout: {val}")
+        return
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'}")
