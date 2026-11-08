@@ -284,8 +284,9 @@ export default class CrewSide extends View {
         .child(v_flex().flex_none().pt(8).px(8).pb(4)
           .child(this.head(d, "Routines", addLink))
           .children(rs.map((r) => h_flex().id(`rt-${r.id}`).h(30).flex_none().items_center().gap(8).px(8).rounded(d.r.sm)
-            .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(r.paused ? d.fg2 : d.body).child(r.name))
-            .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(r.paused ? "paused" : r.schedule))))));
+            // The name keeps its room; a long schedule ("every 2h 10:00-20:00 weekdays") truncates instead.
+            .child(div().flex_1().min_w(90).truncate().text_size(13).text_color(r.paused ? d.fg2 : d.body).child(r.name))
+            .child(div().flex_shrink_1().min_w(0).max_w(150).truncate().text_size(11).font_family(d.mono).text_color(d.fg3).child(r.paused ? "paused" : r.schedule))))));
     }
     if (current === "files") return frame.child(body.child(this.changesSection(d, wtActions)));
     if (current === "terminal") return frame.child(body).child(this.terminalSection(d, lead));
