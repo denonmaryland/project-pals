@@ -11,6 +11,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
+  canMoveChannel, moveChannel, canMovePal, movePal,
   crew, wakePal, forgetPal, rememberModel, rooms, showRoom, deleteRoom, showTabs } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -29,6 +30,17 @@ export default class CrewMenu extends View {
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); action(cx); this.close(); })
       .child(div().w(16).flex_none().flex().justify_center().when(Boolean(icon), (el) => el.child(svg(`${ICON}/${icon}.svg`).size(14).text_color(color === t.foreground ? t.dim : color))))
       .child(div().text_size(13).text_color(color).child(label));
+    // Move up / Move down side by side in one row (Herdr has no row dragging); a direction that
+    // can't move (an end, or the edge of the pinned group) is dimmed and does nothing.
+    const moves = (id, can, act) => h_flex().h(32).gap(2)
+      .children([[-1, "arrow-up", "Move up"], [1, "arrow-down", "Move down"]].map(([dir, icon, label]) => {
+        const ok = can(dir);
+        return h_flex().id(`${id}-${dir < 0 ? "up" : "down"}`).flex_1().h(32).px(10).gap(8).items_center().rounded(8)
+          .when(ok, (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "0c")))
+            .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); act(dir); this.close(); }))
+          .child(svg(`${ICON}/${icon}.svg`).size(13).flex_none().text_color(ok ? t.dim : a(t.foreground, "30")))
+          .child(div().text_size(13).text_color(ok ? t.foreground : a(t.foreground, "40")).child(label));
+      }));
     const title = (text) => div().px(10).pt(6).pb(6).truncate().text_size(12).text_color(t.dim).child(text);
     const line = () => div().mx(6).my(4).h(1).bg(a(t.foreground, "10"));
     // Something that can't be undone from here: red icon, readable label, and a second click that
@@ -85,6 +97,7 @@ export default class CrewMenu extends View {
       return root
         .child(title(`#${channelName(tab)}`))
         .child(item("m-pin", "pin", pinned ? "Unpin channel" : "Pin channel", () => pinTab(space, tab, !pinned)))
+        .child(moves("m-move", (dir) => canMoveChannel(space, tab, dir), (dir) => moveChannel(space, tab, dir)))
         .child(div().px(10).pt(8).pb(4).text_size(12).text_color(t.dim).child("Color"))
         .child(h_flex().px(8).pb(6).gap(4).flex_wrap().child(swatch(null)).children(TAB_COLORS.map((k) => swatch(k))))
         .child(line())
@@ -97,7 +110,8 @@ export default class CrewMenu extends View {
     const pinned = palPinned(bot);
     return root
       .child(title(bot.name))
-      .when(!bot.god, (el) => el.child(item("m-pin", "pin", pinned ? "Unpin from the top" : "Pin to the top", () => pinPal(bot, !pinned))))
+      .when(!bot.god, (el) => el.child(item("m-pin", "pin", pinned ? "Unpin from the top" : "Pin to the top", () => pinPal(bot, !pinned)))
+        .child(moves("m-move", (dir) => canMovePal(space, dir), (dir) => movePal(space, dir))))
       // Herdr asks for the name; the roster then moves its memory and routines to the new name.
       .child(item("m-rename", null, "Rename", () => run("space.rename", { id: space.id })))
       .child(item("m-look", null, "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))

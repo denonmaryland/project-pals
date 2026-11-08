@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, agents, theme, props, closeOverlay, openOverlay, run } from "herdr";
-import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag } from "./crew.js";
+import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag, channelOrder } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 32;
@@ -22,7 +22,8 @@ export default class CrewPick extends View {
 
   space() { return spaces().find((s) => s.id === props()?.space) ?? spaces().find((s) => s.active); }
   // Channels with an agent first, in their order; ones that are just a shell last.
-  tabs(space) { return [...space.tabs.filter((x) => tabHasAgent(x)), ...space.tabs.filter((x) => !tabHasAgent(x))]; }
+  // The same order as the hero's list: pinned, then your arrangement or the smart order.
+  tabs(space) { return channelOrder(space); }
   close() { closeOverlay(props()?.overlay); }
   newChannel(space) { this.close(); openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }); }
   open(tab) { showTabs(); if (!tab.active) run("tab.select", { id: tab.id }); this.close(); }

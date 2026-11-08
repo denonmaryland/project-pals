@@ -184,6 +184,10 @@ One shape, Focus: DeNon removed the Pro view (pal rail, list column, tab strip, 
 switch) on 2026-11-08. Anything new is drawn in the design-system look: 1px hairlines, radius 3/4/6/8,
 rectangular segments and tags.
 
+- **Pal order:** the head pal first, then pinned pals (pin order), then the rest by who needs you,
+  until you arrange them: right-click a pal → Move up / Move down (within its group; unpinned pals
+  on this computer only), which moves Herdr's spaces (`space.move`) and from then on keeps Herdr's
+  order (`crew.marks.palsArranged`).
 - **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
   rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
   previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
@@ -205,7 +209,13 @@ rectangular segments and tags.
     #232324), up to four (the box hugs fewer); past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, with an always-drawn scrollbar and "+N more" (#808082, rows below the
     box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
-    shown channel is scrolled into view when it changes. Then four r4 quick actions: + Channel (new channel
+    shown channel is scrolled into view when it changes. Order: pinned channels first (in pin order,
+    with a small pin mark), then, once you've arranged that pal's channels, Herdr's tab order, else
+    the smart order (needs you, finished, working, idle agents, plain shells). Right-click a channel:
+    Pin / Unpin and Move up / Move down (within its group). Pinning and moving move Herdr's own tabs
+    (`tab.move`), so the order survives restarts and the `# channel ▾` picker lists the same.
+    No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
+    clicks, so there is no hover pin either. Then four r4 quick actions: + Channel (new channel
     dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
     pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
     asks first). No state pill, no species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's

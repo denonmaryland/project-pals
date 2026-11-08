@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel } from "./crew.js";
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -618,11 +618,12 @@ export default class CrewRoster extends View {
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
   // search: it filters as you type, Esc or × clears and closes it), then one 28 px row per channel
-  // (with an agent first): "#", the name, and a blue/amber dot while it works or needs you, a green
+  // (pinned first, then your order or the smart one): "#", the name, a pin mark, and a blue/amber dot while it works or needs you, a green
   // check when it finished, else when it last changed. The shown one is highlighted. Up to six rows
   // show; more scroll. Click switches, right-click is the channel menu.
   heroChannels(space, bot, d) {
-    const ordered = [...space.tabs.filter((x) => tabHasAgent(x)), ...space.tabs.filter((x) => !tabHasAgent(x))];
+    // Pinned first, then your arrangement or the smart order (channelOrder).
+    const ordered = channelOrder(space, bot);
     const q = this.chSearchOpen ? this.chSearch.value().trim().toLowerCase() : "";
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
@@ -669,6 +670,7 @@ export default class CrewRoster extends View {
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
+        .when(tabPinned(tab), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
         .child(!tabHasAgent(tab) ? noAgentTag(d)
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
