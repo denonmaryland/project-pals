@@ -1,48 +1,23 @@
 // Project Pals channel dropdown: opened from the pal chip (Focus header and Pro tab strip) and from
 // Focus's "# channel ▾". The shown pal's channels, one 32 px row each: "# name", what it's on (its
-// terminal title, else the last message in its chat), a state mark (blue dot working, amber dot
+// terminal title, else its state), a state mark (blue dot working, amber dot
 // needs you, green check done) and when it last changed; the current channel is marked. "+ New
 // channel" at the foot. Drawn in the design system: an r4 #161617 popover with a 1 px hairline and
 // no shadow (frame "none"). Keys: ↑/↓ move, Enter opens, Esc closes; the pointer moves the mark too.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, agents, theme, props, closeOverlay, openOverlay, run, appHome, readTextFile } from "herdr";
-import { channelName, statusWord, leadPane, stamp, ds, tone, showTabs, taskTitle, botOf } from "./crew.js";
+import { spaces, agents, theme, props, closeOverlay, openOverlay, run } from "herdr";
+import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 32;
-
-// The newest message in a chat feed, as one line ("you: …" for yours).
-function lastLine(text) {
-  const lines = (text ?? "").split("\n").filter(Boolean);
-  for (let i = lines.length - 1; i >= 0 && i >= lines.length - 200; i--) {
-    let e = null;
-    try { e = JSON.parse(lines[i]); } catch { continue; }
-    if (!["bot", "you", "note"].includes(e?.kind) || !e.text) continue;
-    const one = e.text.replace(/<\/?pasted_content[^>]*>/g, "").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim();
-    if (one) return e.kind === "you" ? `you: ${one}` : one;
-  }
-  return null;
-}
 
 export default class CrewPick extends View {
   init(_props, cx) {
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.cursor = null;      // index into rows (the channels, then New channel)
-    this.previews = {};      // tab id → last message, for channels whose title says nothing
-    cx.spawn(async (cx) => {
-      const space = this.space();
-      for (const tab of space?.tabs ?? []) {
-        const term = leadPane(tab.id, panes())?.terminal;
-        if (!term) continue;
-        const text = await readTextFile(`${appHome()}/data/crew-chats/${term}.jsonl`).catch(() => null);
-        const line = lastLine(text);
-        if (line) this.previews[tab.id] = line;
-      }
-      cx.notify();
-    });
   }
 
   space() { return spaces().find((s) => s.id === props()?.space) ?? spaces().find((s) => s.active); }
@@ -67,11 +42,11 @@ export default class CrewPick extends View {
     }
   }
 
-  // What a channel is on: its terminal title (agents set it to the task), else its last message.
+  // What a channel is on: its terminal title (agents set it to the task), else its state.
   what(tab) {
     const ag = agents().filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
     const space = this.space();
-    return taskTitle(ag?.title, space?.name, botOf(space)?.name, channelName(tab)) ?? this.previews[tab.id] ?? (ag ? statusWord(ag.status ?? "idle") : "no agent running");
+    return taskTitle(ag?.title, space?.name, botOf(space)?.name, channelName(tab)) ?? (ag ? statusWord(ag.status ?? "idle") : "no agent running");
   }
 
   render() {

@@ -1,46 +1,15 @@
-// Project Pals header (Focus; Pro hides it and uses the tab strip): drawn to the "MODE · Focus"
-// board: a "# channel ▾" picker on the left, the pal's chip centred, its branch on the right (plus
-// Chat | Terminal for channels with a chat feed). In a room: the room's members. It also keeps the
-// center on chat or terminal to match, and publishes whether the shown channel has a chat feed.
+// Project Pals header (Focus; Pro hides it and uses the tab strip), drawn to the "MODE · Focus"
+// board: a "# channel ▾" picker on the left, the pal's chip centred, its branch on the right. In a
+// room: the room's members. Under it is the channel's terminal (terminal-first, DeNon 2026-11-08).
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, theme, focused, layout, run, exec, appHome, openOverlay } from "herdr";
-import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, syncCenter, tone, ds, viewSwitch, palChip, openChannels } from "./crew.js";
-import { setShared, shared } from "herdr";
+import { spaces, panes, theme, focused } from "herdr";
+import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, tone, ds, palChip, openChannels } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
-function findNode(node, id) {
-  if (node?.id === id) return node;
-  for (const c of node?.children ?? []) { const f = findNode(c, id); if (f) return f; }
-  return null;
-}
-
 export default class CrewHeader extends View {
-  init(_props, cx) {
-    this.linked = false;
-    this.terminal = null;
-    // Does the shown channel have a chat feed? And keep the center on chat or terminal to match.
-    cx.timer.every(400, (cx) => {
-      const space = spaces().find((s) => s.active);
-      const tab = space?.tabs.find((x) => x.active);
-      const term = tab ? leadPane(tab.id, panes())?.terminal ?? null : null;
-      if (term !== this.terminal || !this.checked || Date.now() - this.checked > 3000) {
-        this.checked = Date.now();
-        cx.spawn(async (cx) => {
-          const r = term ? await exec("test", ["-s", `${appHome()}/data/crew-chats/${term}.jsonl`]).catch(() => ({ code: 1 })) : { code: 1 };
-          const linked = r.code === 0;
-          if (linked !== this.linked || term !== this.terminal) { this.linked = linked; this.terminal = term; cx.notify(); }
-          // The tab strip (Pro) shows the same Chat | Terminal switch from this.
-          const pub = linked ? term : null;
-          if ((shared("crew.chatlinked") ?? null) !== pub) setShared("crew.chatlinked", pub);
-        });
-      }
-      syncCenter(this.linked && term === this.terminal);
-    });
-  }
-
   render() {
     const t = tone(theme());
     const d = ds(t);
@@ -77,7 +46,6 @@ export default class CrewHeader extends View {
       .child(palChip(bot, tab, d, "focus"))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
         .when(Boolean(lead?.branch), (el) => el.child(div().min_w(0).h(22).px(6).flex().items_center().rounded(d.r.xs).bg(d.raised)
-          .child(div().truncate().text_size(11).font_family(d.mono).text_color(d.fg2).child(lead.branch))))
-        .when(this.linked, (el) => el.child(viewSwitch(tab, d))));
+          .child(div().truncate().text_size(11).font_family(d.mono).text_color(d.fg2).child(lead.branch)))));
   }
 }

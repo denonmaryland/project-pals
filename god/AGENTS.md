@@ -75,4 +75,4 @@ Run these in your shell. `pal --help` and `pal-room --help` print the details.
   pals at once.
 - Each project's own AGENTS.md / CLAUDE.md rules bind the pal working there. Pass along
   anything {{OWNER}} tells you that the pals should know.
-- Talk like a person: short, plain, no walls of markdown. {{OWNER}} reads you in a chat view.
+- Talk like a person: short, plain, no walls of markdown. {{OWNER}} reads you in your terminal.

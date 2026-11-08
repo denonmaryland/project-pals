@@ -7,7 +7,7 @@
 #
 # Helpers: crewd (a user service that queues messages between turns, runs routines, reports back
 # and keeps memory) and Claude Code hooks + status line (pal primer and memory at session start,
-# the approval gate, model/context facts for the chat view). They change files outside Herdr:
+# the approval gate, model/context/usage facts for the status bar). They change files outside Herdr:
 # ~/.config/systemd/user and ~/.claude/settings.json (backed up first).
 #
 # Herdr hot-reloads mods and layouts, so a running window picks this up at once. Previous copies
@@ -62,7 +62,7 @@ for dir in "$src"/mods/crew-*; do
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-for gone in crew-rail; do
+for gone in crew-rail crew-chat; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
@@ -135,6 +135,8 @@ for alias in buddy:pal buddy-room:pal-room botz:pal botz-room:pal-room crew:pal 
   fi
 done
 install -m 644 "$src"/bin/crew*.py "$HOME/.local/lib/herdr-crew/"
+# Modules Project Pals no longer ships (crewchat.py fed the removed chat view).
+rm -f "$HOME/.local/lib/herdr-crew/crewchat.py"
 
 if [[ $helpers -eq 1 ]]; then
   # crewd, as a user service (needs a systemd user session: not in most containers or WSL).

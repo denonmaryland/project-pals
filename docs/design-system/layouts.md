@@ -59,7 +59,7 @@ Four ways in, one setting behind them:
 **No right rail in Focus (DeNon, 2026-11-08).** Focus first had a 48 px rail of icons (Tasks · Files · Branch ·
 Terminal, Expand) that peeked one inspector section beside it. DeNon compared Focus with their Grok Bot app (sidebar,
 chat and composer, the chat taking the full width) and had the rail removed: the chat column recentres in the freed
-width, the terminal is the header's Chat | Terminal, and Tasks, Changes and Branch live in Pro. No peek by default;
+width, and Tasks, Changes and Branch live in Pro. No peek by default;
 if one comes back it opens from the pal-chip dropdown or the header, never a rail.
 
 **Motion:** 180 ms ease-out on widths only. The sidebar goes 304 → 60 + 264, and the inspector opens at 320 (sections fade
@@ -112,3 +112,14 @@ Small steps. Each step ships alone behind `layoutMode` defaulting to today's beh
     then `--no-helpers`), and screenshots of both modes and both themes. Shipping needs DeNon's go, per AGENTS.md.
 
 Open before building: the A vs B bubble, closing grey vs red outline, near-black vs navy, and whether "fusion" meant C.
+
+
+## Terminal-first: the chat view is removed (DeNon, 2026-11-08)
+
+DeNon felt a chat view fights Herdr's nature: the channel's terminal is the main view in both Focus
+and Pro, and a real chat belongs to the parked native app later. Removed: the `crew-chat` mod
+(and its session-file feeds, `bin/crewchat.py`), the Chat | Terminal switch, and the composer for
+channels. The composer stays for rooms only (a room has no terminal). The prompt card that answers
+Claude Code's permission prompts and questions moved to a floating block over the terminal
+(`crew-prompt`). On the Paper boards, everything drawn in the chat column (bubbles, groups, the tool
+log, the channel composer) is history: read that column as the channel's terminal.

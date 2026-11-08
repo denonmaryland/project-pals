@@ -39,14 +39,6 @@ export default class CrewMenu extends View {
       .child(div().w(16).flex_none().flex().justify_center().child(svg(`${ICON}/x.svg`).size(14).text_color(t.blocked)))
       .child(div().text_size(13).text_color(this.armed && armed ? t.blocked : t.foreground).child(this.armed && armed ? armed : label));
 
-    // A chat message (crew-chat): copy it as written, or one of its code blocks.
-    if (p.what === "message") {
-      const codes = p.codes ?? [];
-      const name = (c, i) => codes.length === 1 ? "Copy code" : `Copy code: ${c.split("\n").find((l) => l.trim())?.trim().slice(0, 24) || i + 1}`;
-      return root
-        .child(item("m-copy", "copy", "Copy message", (cx) => cx.write_to_clipboard(p.text ?? "")))
-        .children(codes.map((c, i) => item(`m-code-${i}`, "copy", name(c, i), (cx) => cx.write_to_clipboard(c))));
-    }
 
     // A sleeping pal (no space): wake, unpin, forget.
     if (p.what === "sleeper") {

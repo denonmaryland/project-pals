@@ -117,13 +117,16 @@
                   "content": {
                     "mod": "crew-room"
                   }
-                },
+                }
+              ],
+              "floating": [
                 {
-                  "id": "chat-view",
-                  "type": "block",
+                  "id": "prompt-card",
                   "content": {
-                    "mod": "crew-chat"
-                  }
+                    "mod": "crew-prompt"
+                  },
+                  "edge": "bottom",
+                  "align": "center"
                 }
               ]
             },
@@ -135,7 +138,8 @@
               },
               "content": {
                 "mod": "crew-composer"
-              }
+              },
+              "hidden": true
             }
           ]
         },

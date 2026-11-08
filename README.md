@@ -4,7 +4,7 @@ A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of
 spirit of Grok's bots but for any harness: Claude Code, Codex, Grok CLI, Gemini CLI, opencode,
 Hermes and more.
 
-![Project Pals in Herdr: the pals sidebar, channel tabs and a chat view](preview.png)
+![Project Pals in Herdr: the pals sidebar, channel tabs and a channel](preview.png)
 
 **Linux only for now.** The helpers run as a systemd user service, so macOS (and WSL or containers
 without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
@@ -19,14 +19,14 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 - memory and shared skills
 - branch-per-channel review
 - an approval gate
-- a chat view for channels
+- a card that answers a pal's permission prompt or question with a click (Claude Code)
 
 ## Harnesses
 
 | Harness | Status |
 |---|---|
-| Claude Code | Tested daily: hiring, channels, hooks, the approval gate, status line and chat view |
-| Codex | Tested as a pal. The approval gate, hooks, status line and chat view are Claude Code only |
+| Claude Code | Tested daily: hiring, channels, hooks, the approval gate, status line and prompt cards |
+| Codex | Tested as a pal. The approval gate, hooks, status line and prompt cards are Claude Code only |
 | Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code but not tested yet. The approval gate, hooks and status line are Claude Code only |
 
 Reports from other harnesses are welcome.
@@ -92,8 +92,5 @@ GitHub release.
 
 MIT
 
-The chat view's reading behaviour (following the newest message until you scroll up, tool chips
-with live status, turn footers, loading earlier messages in place) follows
-[flockbook](https://github.com/minchenlee/flockbook)'s chat, and its selectable markdown
-(`mods/crew-chat/markdown.js`, `estimate.js`) is adapted from flockbook's code. MIT,
-© 2026 Min-Chen Lee.
+Answering an agent's permission prompts and questions from a card follows the idea of
+[flockbook](https://github.com/minchenlee/flockbook)'s approval cards (no code of theirs is used).

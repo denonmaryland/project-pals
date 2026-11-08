@@ -9,7 +9,7 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 
 | Path | What it is |
 |---|---|
-| `mods/crew-*/` | Herdr mods (`mod.json` + `main.js`, plus icons). One per sidebar, header, menu, chat view, etc. |
+| `mods/crew-*/` | Herdr mods (`mod.json` + `main.js`, plus icons). One per sidebar, header, menu, prompt card, etc. |
 | `lib/` | Shared JS (`crew.js`, `mascot-art.js`). **Not imported from a shared place:** `install.sh` copies both files into every mod folder. Edit them here, never the copies in an installed mod. |
 | `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code hooks, `crew-statusline` the status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
 | `god/AGENTS.md` | The head pal's standing brief, a template (`{{HEAD}}`, `{{OWNER}}`) rendered into `~/.config/herdr-app/data/crew-god/`. |

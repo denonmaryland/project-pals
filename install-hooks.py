@@ -29,7 +29,7 @@ for event, entry in want.items():
     entries.append(entry)
     changed = True
 # The status line goes through crew-statusline, which saves each channel's model / effort / context /
-# usage for the chat view and then runs the original command (kept in data/crew-statusline-original).
+# usage for the status bar and then runs the original command (kept in data/crew-statusline-original).
 wrapper = str(Path.home() / ".local" / "bin" / "crew-statusline")
 data_dir = Path(os.environ.get("HERDR_APP_HOME", Path.home() / ".config" / "herdr-app")) / "data"
 sl = data.get("statusLine") or {}

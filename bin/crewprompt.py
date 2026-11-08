@@ -1,4 +1,4 @@
-"""What an agent is asking on screen, so the chat view can answer it without the terminal.
+"""What an agent is asking on screen, so the app's prompt card (crew-prompt) can answer it with a click.
 
 Claude Code draws its questions as a block at the foot of the screen (Claude Code 2.1, read with
 `hc read`):

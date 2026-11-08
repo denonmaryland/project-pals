@@ -27,7 +27,6 @@ from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, load_json, s
                      trust_prompt, trust_notice, input_draft, DraftInTheWay)
 import crewskills
 import crewroutines
-import crewchat
 import crewupdate
 import crewguard
 
@@ -96,19 +95,11 @@ class Crewd:
             if time.strftime("%H:%M") == DISTILL_AT:
                 threading.Thread(target=self.nightly, daemon=True).start()
         crewroutines.watch(terms, log)
-        # Chat view feeds: what's new in each linked session; link running ones now and then.
-        try:
-            crewchat.sync(terms, log)
-        except Exception:
-            log("chat sync failed:\n" + traceback.format_exc())
         # Updates: look for a newer release once a day (the About dialog and a sidebar dot show it).
         last = load_json(crewupdate.STATE, {}).get("checked", 0)
         if time.time() - last > 24 * 3600 and time.time() - getattr(self, "last_update_try", 0) > 3600:
             self.last_update_try = time.time()
             threading.Thread(target=self.check_updates, daemon=True).start()
-        if time.time() - getattr(self, "last_guess", 0) > 60:
-            self.last_guess = time.time()
-            threading.Thread(target=self.guess_links, args=(terms,), daemon=True).start()
 
     def check_updates(self):
         try:
@@ -117,12 +108,6 @@ class Crewd:
                 log(f"update available: {info['latest']} (installed {info.get('current')})")
         except Exception as e:
             log(f"update check failed: {e}")
-
-    def guess_links(self, terms):
-        try:
-            crewchat.guess(terms, log)
-        except Exception:
-            log("chat link guess failed:\n" + traceback.format_exc())
 
     # ── turns ending ──
     def transitions(self, terms):

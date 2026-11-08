@@ -63,37 +63,20 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     keeps it plain. In a room, it shows rooms instead (overlapping faces, then `#name`).
   - **Sheet** (radius 18, the `surface` color, 1px border):
     - **Header, 52px:** one line: a 20px face, the pal name (dimmed), `/`, `#channel` (15px,
-      500; click to rename). On the right: a status dot and word, a **Chat | Terminal** switch
-      (shown only when the channel has a chat feed), and the details-panel toggle. In a room
+      500; click to rename). On the right: a status dot and word, and the details-panel toggle. In a room
       it's a centered pill: overlapping faces, then `#room`.
     - **Center stack:**
       - `tab-view`: the channel's terminal (padding 0/24, pane radius 12).
       - `room-view`: the room as a group chat. Your bubbles are on the right in the accent
         color; pals' are on the left with a 30px face and name. It's a centered column at most
         860px wide, with "• • •" typing bubbles.
-      - `chat-view`: the channel as a chat, in a centred column at most 720px wide in both Focus
-        and Pro. Every message is selectable markdown (TextView, 14px):
-        links, headings, lists, quotes, inline code; code fences are r6 boxes in JetBrains
-        Mono 12.5px and tables are bordered grids, both drawn by the mod. A one-paragraph message's
-        bubble hugs its text; longer ones fill the bubble width (pals' 680px, yours 540px at most).
-        **Bubble A:** your messages are flat r4 slabs tinted with the accent (`accent` at 15%)
-        with a 2px right edge in the accent. The pal's replies are r4 rectangles grouped into
-        stacks 4px apart, with its pocket pet once per group (36x28 in Focus, 31x24 in Pro) in its
-        live state; groups are 22px apart in Focus and 14px in Pro. Timestamps are quiet, centred,
-        11px in the dim text colour, between groups more than 10 minutes apart.
-        Right-click a message: Copy message, and Copy code for each code block. Each stretch of tool calls is a row of 28px
-        r3 chips with a hairline edge, one per kind with an icon ("Ran 3 commands", "Edited main.js"): a spinner
-        while a call has no result and the pal works, "1 failed" in the blocked color; a click
-        lists the calls (name, what, ✓ / spinner / failed plus the first lines of a failure's
-        output). A finished turn that got a reply ends with a dim footer ("3:41 PM · Worked 36s
-        · 3 tools"). Separators after a 10-minute gap or a new day: "3:41 PM", "Yesterday 9:12
-        AM", "Mon, Nov 2 · 6:30 PM". It follows the newest message until you scroll up; then a
-        round 34px ↓ button fades in at the bottom and takes you back. Scrolling to the top reads
-        300 more feed lines and keeps your place. Under it, a strip shows model · effort ·
-        context bar · 5-hour/weekly usage, with Working · Stop.
-    - **Composer, 86px:** a 48px rounded card, at most 900px wide: a round +, then "Message
-      #channel" (one draft per channel or room), then a round send button. Files can be dropped
-      in or pasted as images.
+      - (A `chat-view`, the channel read as a chat, was removed on 2026-11-08: Project Pals is
+        terminal-first, and a real chat belongs to the native app.)
+      - **Prompt card** (a floating block over `center`, bottom, centred): when the shown channel
+        is blocked on a Claude Code permission prompt or question, its command and every option
+        (Yes / Yes, don't ask again / No…) or the question's options; a click answers it (below).
+    - **Composer** (rooms only; hidden while a channel is shown): an r8 box, "Message #room"
+      (a draft per room), + to attach and send. Files can be dropped in or pasted as images.
     - **Details panel, 340px, hidden by default:**
       - A header: a 38px face (click it to change the look), the name, and
         "harness · computer".
@@ -178,7 +161,6 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Stuck channels (15 minutes of an unchanged screen) get flagged.
   - Routines run on schedule; a reply of NOTHING_NEW stays quiet.
   - A cheap model reviews channels to save memory notes, distilled nightly.
-  - Chat feeds are built from Claude Code session files.
   - It checks for updates once a day.
 - **Approvals:** with the Claude Code hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
@@ -199,9 +181,8 @@ rectangular segments and tags.
 - **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
   above), no tab strip. The header has a `# channel ▾` picker on the left (a popup of the pal's
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
-  the right (with Chat | Terminal for a channel with a chat feed). Nothing on the right: the chat
-  takes the full width, its 720px column centred (DeNon, 2026-11-08, after Grok Bot: sidebar, chat
-  and composer only). Tasks, Changes and Branch are Pro's; the terminal is Chat | Terminal.
+  the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
+  Grok Bot). Tasks, Changes and Branch are Pro's.
 - **Pro:** a 60px **pal rail** (faces in sidebar order, state dots, + to hire, settings), a 264px
   list column (the shown pal as a banner card, its channels with what each is on, Channels ·
   Rooms · Tasks · Inbox, and "Across pals": who else is working or needs you), the channel tabs
@@ -212,35 +193,36 @@ rectangular segments and tags.
 - **Status bar** (28px, under everything): working count (Pro adds needs-you), the shown channel's
   5-hour and weekly usage, in Pro its branch with ahead/behind, the shortcut, the mode switch and
   the installed version.
-- **Composer** (both modes): one r8 box, the prompt on top, then attach, the channel's brain and
-  model, its permission mode (Bypass / Ask first, read from the terminal's command), mic, voice
-  and send. 720px centred in Focus, full width in Pro. Mic and voice only say they're coming.
+- **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal in both modes; you type in it
+  directly. The composer shows only under a room. The prompt card floats over the terminal
+  when the channel asks something.
 - **Remembered** in `data/crew-settings.json`: `layoutMode`, `focus.sidebarPx`, `pro.listPx`,
   `pro.inspectorPx` and `pro.inspectorTab`. Each mode keeps its own drag widths.
 
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
-  - Stack `center` has the children `tab-view`, `room-view` and `chat-view`.
-  - `crew-header` keeps it on the channel's choice (shared `crew.chat`) unless a room is shown.
+  - Stack `center` has the children `tab-view` and `room-view`, and a floating `prompt-card`
+    (`crew-prompt`) at its bottom edge. `showRoom` / `showTabs` switch it and show or hide
+    `crew-composer`.
   - The `panel` block starts hidden and is toggled with `layout.toggle {id: "panel"}`.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-tabs`, `crew-header`,
-    `crew-room`, `crew-chat`, `crew-composer`, `crew-side`.
+    `crew-room`, `crew-composer` (rooms), `crew-side`, `crew-prompt` (floating).
   - Dialogs: `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
     `crew-attach`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
   - Every mod gets `lib/crew.js` (the shared model), `lib/mascot-art.js` and `lib/pets.js` copied in.
 - **Herdr functions:**
-  - Data: `spaces`, `panes`, `agents`, `layout`, `shared`/`setShared` (`crew`, `crew.chat`,
+  - Data: `spaces`, `panes`, `agents`, `layout`, `shared`/`setShared` (`crew`,
     `crew.settings`, `crew.room`, `crew.marks` for pins and tab colors).
   - Programs and files: `exec`, `hc`, `readTextFile`, `watchFolder`, `knownAgents`.
   - Overlays and notices: `openOverlay`/`closeOverlay`, `notify`, `nextCommand`.
   - Commands: `space.new`, `tab.new`, `tab.select`, `tab.rename`, `tab.close`, `space.select`,
     `layout.select`, `layout.toggle`, `layout.resize`, `pane.focus`, `app.settings`,
     `app.palette`, `mod.open`.
-  - Keyable commands: `crew-roster.hire|channel|routines|look|chat`.
+  - Keyable commands: `crew-roster.hire|channel|routines|look|mode`.
 - **Programs:**
   - The commands `pal` and `pal-room` (Python 3; `crew` and `crew-room` are aliases), plus
     `crewd`, `crew-hook` and `crew-statusline`.
@@ -264,25 +246,14 @@ rectangular segments and tags.
 - **Virtual-list rows can't hold `on_click`:** they render blank. Use the list's
   `on_item_click(key)`, or controls outside the list.
 - **No `InputState.new` during render:** create inputs in `init` or from a timer.
-- **Chat feed lines:** `you`, `bot`, `note`, `event`, `tool` (with the call's `id`) and
-  `result` (`id`, `error`, and for a failure only the first lines of output). The mod skips
-  kinds it doesn't know. Feeds written before `id`s existed show tool chips with no marks.
-- **Follow mode needs the list's range:** the wheel handler (on the list's parent) can only stop
-  following; the list's render callback restarts it when the last row is in range. Never scroll
-  to the bottom from a timer without checking that the reader is still following.
-- **TextView heights can't be computed ahead,** and a virtual list needs them before layout. The
-  chat draws each message once off-screen (opacity 0, left -30000, 24 a frame, newest first) at
-  its bubble's text width, reads `on_size_change`, and uses that height from then on; one-paragraph
-  messages also get their one-line width measured, in a non-wrapping row. `estimate.js` (from
-  flockbook) guesses until then. Measurements are per feed line and width, cleared on a channel
-  switch or a new session.
 - **TextView ignores font weights here:** with the layout's Adwaita Sans (a variable font) and with
   Geist, `**bold**` and headings draw at regular weight. Headings still draw larger.
-- **The chat view must cache its layout:** laying out hundreds of messages every frame makes
-  Herdr abort the render ("could not be re-rendered").
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.
-- **Claude Code's session format isn't public:** unknown entries are skipped. Chat view and
-  approvals cover Claude Code only (Codex and others stay terminal-only and un-gated).
+- **Prompt cards read Claude Code's screen** (`bin/crewprompt.py`, Claude Code 2.1's layout: a
+  full-width rule, the title, the command between dashed rules, numbered options, "Esc to
+  cancel"); a digit answers. Other harnesses and the trust question get no card. Answering
+  (`pal prompt <t> --answer N --request ID`) re-reads the screen first and refuses to run inside
+  any herdr-core terminal, so no pal or helper can answer its own prompts.
 - **Claude Code's folder-trust question stalls new pals:** a pal or worktree channel in a folder
   Claude Code hasn't seen waits on "Quick safety check … one you trust?". Detect it (whitespace-
   insensitive: "Yes, I trust this folder" plus "Accessing workspace" or "Quick safety check") and
@@ -311,9 +282,8 @@ rectangular segments and tags.
 - `pal hire Test --harness claude` makes a space named Test, and your view doesn't move.
 - `pal-room new demo --with "A#x" "B#y"` opens a room in Rooms, and `pal-room say demo "@A hi"`
   shows a typing bubble, then the message.
-- In a Claude Code channel the header shows Chat | Terminal, and Chat shows your last message as
-  a right-hand r4 slab with a 2px accent edge, in a column no wider than 720px, and the pal's
-  reply group with its pocket pet beside the first message.
+- A Claude Code channel blocked on "Do you want to proceed?" shows the prompt card over its
+  terminal; clicking "1 Yes" answers it, and `pal prompt <t>` prints `null` once it's gone.
 - Every pal's face is a pocket pet in its own colour: the working one has the blue loader corner
   and a tapping paw, and `data/crew-demo.json` `{"states": {"<pal>": "merged"}}` turns that pal's
   tile purple with the cheering pose. A record with `"pet": "none"` shows the folder mascot.

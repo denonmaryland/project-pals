@@ -10,7 +10,7 @@ import {
   crew, botOf, sleepers, mascotFor, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
-  loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, chatPref, setChatPref, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
+  loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane,
   petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, petScreen, modelOf, palPinned, taskTitle } from "./crew.js";
 
@@ -96,7 +96,6 @@ export default class CrewRoster extends View {
         const c = await nextCommand();
         if (c === "hire") this.hire();
         else if (c === "routines") this.routines();
-        else if (c === "chat") { const tb = spaces().find((x) => x.active)?.tabs.find((x) => x.active); if (tb) setChatPref(tb.id, !chatPref(tb.id)); }
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
         else if (c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);

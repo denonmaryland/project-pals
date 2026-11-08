@@ -36,13 +36,6 @@ def session_start(event):
     if not me:
         return
     terminal, bot, ch = me
-    # The chat view's link: this channel's conversation lives in this session file.
-    if event.get("transcript_path"):
-        try:
-            import crewchat
-            crewchat.link(terminal, event["transcript_path"], event.get("session_id"), "hook")
-        except Exception:
-            pass
     pinned = (records().get("name:" + bot) or {}).get("memory", "")
     parts = [PRIMER, f"You are {bot}, in channel #{ch}."]
     mem = memory_text(bot, pinned)
