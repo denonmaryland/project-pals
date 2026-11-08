@@ -105,8 +105,13 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   are their pocket pets; brains (harnesses) show Herdr's own program logos (`brainLogo()`:
   `knownAgents()` entries' `icon`, a one-colour glyph in #C8C8C8 when `tint`, else the picture;
   Herdr's `icons/<key>.svg`, or its neutral `icons/agent.svg`), 13-14px in the dialogs' selects and
-  lists. `mascot-art.js` stays only for the Customize look dialog (`crew-look`), whose colour tints
-  the pal's pet; that dialog still previews folder shapes and wants its own redesign as a pet picker.
+  lists. The Look dialog (`crew-look`) is the pet's: a live preview of the pet in seven states
+  (resting, working with its paw tapping, asks you, done, PR open, stuck, asleep dimmed), then its
+  species (8), colour (16 swatches or a hex), what it wears (none or up to two of 10; a third
+  replaces the older one) and its eyes (9), each choice shown as a resting thumbnail of the pet with
+  it; Reset to its default, Cancel, Save (stores `pet` {species, acc, eyes} and `look.color`). No
+  laptop choice: every state uses the profile laptop. `mascot-art.js` is kept only for its colour
+  swatches and hex helpers.
 - **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
   little critter in round LED dots, glowing in the pal's own colour (its look's colour, else its
   stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
