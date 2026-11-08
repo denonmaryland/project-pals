@@ -313,6 +313,12 @@ rectangular segments and tags.
 
 ## Watch out
 
+- **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
+  pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and
+  whole lines only, up to 16,000 characters (`MEMORY_CAP`), and "(N older notes not loaded; run pal
+  memory to see them)". It used to keep the LAST 6,000 characters, so USER.md, the pinned note and
+  MEMORY.md were cut first. `pal memory <Pal>` prints everything, in the same order.
+
 - **The hero's floor pool** is an `image()`, not an `svg()`, so it stays behind the pet.
 - **The pets' lightsaber is faked:** Herdr can't blur, stroke a path, tint a shadow or clip to a
   rounded shape. A comet-shaped sweep (`pet-saber.svg`, 40 slices) spins about the container's

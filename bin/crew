@@ -647,7 +647,8 @@ def cmd_memory(spaces, args):
             print((MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else f"(nothing about {OWNER} yet)")
             return
         space, bot = s, s["name"]
-    print(memory_text(bot, record_of(space).get("memory", ""), days=3, limit=20000) or f"(nothing remembered for {bot} yet)")
+    # Everything (the primer gets the first MEMORY_CAP characters of this, in the same order).
+    print(memory_text(bot, record_of(space).get("memory", ""), days=30, limit=10**7) or f"(nothing remembered for {bot} yet)")
 
 
 def cmd_skill(spaces, rest):
