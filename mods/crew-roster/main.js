@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal } from "./crew.js";
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -605,14 +605,8 @@ export default class CrewRoster extends View {
       .child(div().flex_1().min_w(0).text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label}`));
-    const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
-      .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
-      .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
-      .hover((s) => s.bg(d.hover).border_color(d.lineStrong))
-      .on_click((_e, cx) => { action(cx); cx.notify(); })
-      .child(svg(`${ICON}/${icon}.svg`).size(12).flex_none().text_color(d.iconOn))
-      .when(Boolean(text), (el) => el.child(div().text_size(12).line_height("16px").font_weight(500).text_color(d.body).child(text)))
-      .when(extra != null, (el) => el.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(String(extra))));
+    // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
+    const btn = (id, icon, text, action, extra) => pebble(d, { id, icon, label: text, extra, onClick: action, grow: Boolean(text) });
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)
       && String(x.claimed_by || x.assignee || "").split("#")[0].split(" - ")[0] === bot.name).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
@@ -620,10 +614,10 @@ export default class CrewRoster extends View {
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)).flex_1())
-        .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })).flex_1())
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null).flex_1())
-        .child(btn("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx)).tooltip("Put to sleep")));
+        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
+        .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })))
+        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null))
+        .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
