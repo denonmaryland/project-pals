@@ -129,8 +129,9 @@ class Crewd:
                 feed("blocked", terminal=addr, bot=bot, channel=ch)
                 self.callbacks(addr, t, "blocked")
             if now != "working" and addr in self.stalled:
-                self.stalled.pop(addr, None)
+                st = self.stalled.pop(addr, None)
                 self.save_health()
+                self.notebook_nudge(addr, st, bot, ch)
 
     def callbacks(self, addr, t, what):
         """Whoever handed this pal work (pal tell) hears how it went."""
@@ -264,6 +265,23 @@ class Crewd:
                                    f"Tell {OWNER} only if it needs them.", exclude=addr)
         if changed:
             self.save_health()
+
+    def notebook_nudge(self, addr, st, bot, ch):
+        """A channel that was stuck is moving again: one line asking what was missing, for its notebook.
+        At most once an hour per channel; delivered when its turn ends, like any message."""
+        try:
+            mins = int((now_ms() - (st or {}).get("since", now_ms())) / 60000)
+            last = self.nudged.get(addr, 0) if hasattr(self, "nudged") else 0
+            if not hasattr(self, "nudged"):
+                self.nudged = {}
+            if mins < 15 or time.time() - last < 3600:
+                return
+            self.nudged[addr] = time.time()
+            enqueue(addr, f"You were stuck about {mins}m in #{ch}. If something was missing (a tool, a skill, a rule, context, "
+                          f"access), note it: pal notebook hiccup \"what got in the way (cost: ~{mins}m)\" --needed \"kind: …\"",
+                    sender="crewd", kind="notebook")
+        except Exception as e:
+            log(f"notebook nudge for {bot} #{ch} failed: {e}")
 
     def save_health(self):
         save_json(DATA / "crew-health.json", {"stalled": self.stalled, "trust": self.trust, "drafts": self.drafts})

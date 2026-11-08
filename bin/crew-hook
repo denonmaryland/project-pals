@@ -46,6 +46,15 @@ def session_start(event):
         parts.append(crewbrain.primer_block(bot, rec))
     except Exception:
         pass
+    # The notebook: when to write in it, and the last week's lessons (P18).
+    try:
+        import crewnotebook
+        parts.append(crewnotebook.PRIMER_LINE)
+        lessons = crewnotebook.lessons_block(bot)
+        if lessons:
+            parts.append(lessons)
+    except Exception:
+        pass
     mem = memory_text(bot, pinned)
     if mem:
         parts.append("What you remember (from earlier sessions):\n" + mem)

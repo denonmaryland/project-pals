@@ -1,7 +1,7 @@
 // Project Pals pal menu: opened from the header's pal chip (its ▾). Everything about THE AGENT and
 // THAT PROJECT, not its channels (the hero lists those): its profile, memory and tasks; its project's
 // review and folder; and the pal's actions. Each opens the right-side panel's tab, or the dialog it
-// names. Notebook joins in stage 4. Drawn like crew-pick:
+// names. Drawn like crew-pick:
 // an r4 #161617 popover, a 1 px hairline, 30 px rows. Keys: ↑/↓ move, Enter opens, Esc closes.
 
 import { View, div, svg } from "gpui-kit";
@@ -48,6 +48,7 @@ export default class CrewPalMenu extends View {
     };
     const out = [
       ["The pal", "profile", "ds-user", "Profile", shortcut(), panel("profile")],
+      ["The pal", "notebook", "ds-notebook", "Notebook", null, panel("notebook")],
       ["The pal", "memory", "ds-memory", "Memory", null, panel("profile", "memory")],
       ["The pal", "tasks", "ds-tasks", "Tasks", this.open ? `${this.open} open` : null, () => setShared("crew.view", "tasks")],
     ];

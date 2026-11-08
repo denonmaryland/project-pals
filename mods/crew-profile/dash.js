@@ -18,7 +18,7 @@ import {
 import { loadBrain } from "./project.js";
 
 const ICON = "mods/crew-roster/icons";
-const TABS = [["profile", "Profile"], ["|"], ["mission", "Mission"], ["brain", "Brain"], ["agents", "AGENTS.md"]];
+const TABS = [["profile", "Profile"], ["notebook", "Notebook"], ["|"], ["mission", "Mission"], ["brain", "Brain"], ["agents", "AGENTS.md"]];
 const OPEN = ["open", "claimed", "blocked"];
 
 export function initDash(view, cx, part) {

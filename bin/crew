@@ -43,6 +43,13 @@ Mission, brain and agent files (the profile panel shows them all)
   pal agents propose <file> -F new.md [--note "why"]    a change to AGENTS.md / CLAUDE.md, for the owner to apply
   pal proposals | pal proposal show|accept|decline ID   proposals waiting on the owner (accept/decline: the owner)
 
+Notebook (how the work went; the Dream loop learns from it)
+  pal notebook "did: …" [--hiccup "what got in the way (cost: ~15m)"]… [--needed "skill: …"]… [--lesson "…"] [--task T] [--took 40m]
+  pal notebook hiccup "…" [--needed "tool: …"]    a quick one, mid-work
+  pal notebook [ls] [Pal] [--days 7] [--json]   today's (ls: the last days)
+                                     needed kinds: tool, skill, rule, context, access. Never secrets,
+                                     private data or pasted output (masked or refused)
+
 Memory and skills
   pal remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about the owner)
   pal memory [Pal] [--json]         what's remembered (--json: what a session starts with, for the profile panel)
@@ -566,6 +573,8 @@ def cmd_task(spaces, rest):
         print("noted")
     elif sub == "block" and len(args) >= 2:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="blocked", note=" ".join(args[1:]))))
+        if me:
+            print('What would have unblocked it? Note it: pal notebook hiccup "…" --needed "tool|skill|rule|context|access: …"')
     elif sub == "done" and args:
         result = " ".join(args[1:]) or None
         t = crewtasks.update(args[0], spaces, me, name, status="done", result=result, note=f"done: {result}" if result else None)
@@ -578,6 +587,8 @@ def cmd_task(spaces, rest):
                 brain_log(sp, record_of(sp), sp["name"], f"{t['id']} done: {result or t.get('title', '')}", chan(tb) if "#" in who else None)
             except CrewError:
                 pass
+        if me:
+            print('Anything slow along the way? Note it: pal notebook "did: …" --hiccup "… (cost: ~15m)" --lesson "…"')
     elif sub == "assign" and len(args) >= 2:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, assignee=args[1])))
     elif sub == "cancel" and args:
@@ -993,6 +1004,67 @@ def cmd_proposals(spaces, rest):
         die("pal proposals [ls] [--json] | pal proposal show|accept|decline ID [\"why\"]")
 
 
+def cmd_notebook(spaces, rest):
+    """pal notebook ["did: …"] [--hiccup "…"]… [--needed "kind: …"]… [--lesson "…"] [--task T] [--took 40m]
+       pal notebook hiccup "…" [--needed …]   ·   pal notebook [ls] [Pal] [--days 7] [--json]   ·   pal notebook rm <Pal> <day> <HH:MM> (the owner)"""
+    import crewnotebook
+    sub = rest[0] if rest and rest[0] in ("hiccup", "ls", "rm", "show") else None
+    args = rest[1:] if sub else rest
+    multi = {"hiccup": [], "needed": []}
+    single = {}
+    pos = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--hiccup", "--needed") and i + 1 < len(args):
+            multi[a[2:]].append(args[i + 1]); i += 2
+        elif a in ("--lesson", "--task", "--took", "--pal", "--days", "--did") and i + 1 < len(args):
+            single[a[2:]] = args[i + 1]; i += 2
+        elif a == "--json":
+            single["json"] = True; i += 1
+        elif a.startswith("--"):
+            die(f"unknown option {a}. See pal notebook --help")
+        else:
+            pos.append(a); i += 1
+    me_space, t = my_bot(spaces)
+    if sub in ("ls", "show") or (sub is None and not pos and not any(multi.values()) and not single.get("lesson") and not single.get("did")):
+        space, rec, name = pal_of(spaces, (pos[0] if pos else None) or single.get("pal"))
+        ds = crewnotebook.days(name, int(single.get("days") or (7 if sub == "ls" else 1)))
+        if single.get("json"):
+            print(json.dumps({"pal": name, "days": ds, "week": crewnotebook.week(name)}))
+            return
+        if not ds:
+            print(f"(nothing in {name}'s notebook yet)")
+        for day in ds:
+            print(crewnotebook.day_path(name, day["day"]).read_text().rstrip() + "\n")
+        return
+    if sub == "rm":
+        if not is_owner(spaces):
+            die(f"only {OWNER} removes notebook entries")
+        if len(pos) < 3:
+            die("pal notebook rm <Pal> <YYYY-MM-DD> <HH:MM>")
+        space, rec, name = pal_of(spaces, pos[0])
+        crewnotebook.remove(name, pos[1], pos[2], DATA / "crew-backups" / "notebook" / slug(name))
+        print(f"removed the {pos[2]} entry from {name}'s {pos[1]} (a copy of the day is in crew-backups/notebook/)")
+        return
+    space, rec, name = pal_of(spaces, single.get("pal"))
+    text = " ".join(pos)
+    did = single.get("did")
+    if sub == "hiccup":
+        multi["hiccup"].insert(0, text)
+    elif text:
+        key, _, val = text.partition(":")
+        if key.strip().lower() in ("did", "hiccup", "needed", "lesson") and val.strip():
+            {"did": lambda: None, "hiccup": lambda: multi["hiccup"].insert(0, val.strip()),
+             "needed": lambda: multi["needed"].insert(0, val.strip()), "lesson": lambda: single.setdefault("lesson", val.strip())}[key.strip().lower()]()
+            did = val.strip() if key.strip().lower() == "did" else did
+        else:
+            did = text
+    out = crewnotebook.add(name, did, multi["hiccup"], multi["needed"], single.get("lesson"),
+                           chan(t) if t else None, single.get("task"), single.get("took"), rec.get("folder") or space.get("folder"))
+    print(("added to" if out["merged"] else "wrote") + f" {name}'s notebook: " + " · ".join(l[2:] for l in out["lines"]))
+
+
 def cmd_skill(spaces, rest):
     sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
     if sub in ("ls", "list"):
@@ -1230,6 +1302,8 @@ def main(argv):
         cmd_routine(spaces, rest)
     elif cmd == "mission":
         cmd_mission(spaces, rest)
+    elif cmd == "notebook":
+        cmd_notebook(spaces, rest)
     elif cmd == "brain":
         cmd_brain(spaces, rest)
     elif cmd == "agents":

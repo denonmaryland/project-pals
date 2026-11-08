@@ -4,7 +4,7 @@
 // width back. It always shows the shown pal. Two sizes: Side (beside the terminal, 420 px by
 // default, 360-640, remembered) and Full (the work area). See docs/profiles/proposal.md.
 //
-// Tabs, in two groups: the agent (Profile) ‖ its project (Mission, Brain, AGENTS.md: project.js).
+// Tabs, in two groups: the agent (Profile, Notebook) ‖ its project (Mission, Brain, AGENTS.md: project.js).
 // Profile: identity, facts, stats, channels (Review on worktree channels), memory, routines, actions.
 
 import { View, div, svg, image } from "gpui-kit";
@@ -17,10 +17,11 @@ import {
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, missionTab, brainTab, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
+import { initNotebook, notebookTab } from "./notebook.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
-const TABS = [["profile", "Profile"], ["|"], ["mission", "Mission"], ["brain", "Brain"], ["agents", "AGENTS.md"]];
+const TABS = [["profile", "Profile"], ["notebook", "Notebook"], ["|"], ["mission", "Mission"], ["brain", "Brain"], ["agents", "AGENTS.md"]];
 const STATE_DOT = (d) => ({ work: d.info, ask: d.warn, stuck: d.warn, done: d.ok, pr: d.ok, merged: "#A78BFA", closing: d.err });
 
 export default class CrewProfile extends View {
@@ -66,6 +67,7 @@ export default class CrewProfile extends View {
     });
     // Mission, Brain and AGENTS.md (project.js): their data, editors and timers.
     initProject(this, cx);
+    initNotebook(this, cx);
     // What the shown tab needs, and the AGENTS.md tab's lint badge for the shown pal.
     cx.timer.every(400, (cx) => {
       const s = this.shown();
@@ -175,7 +177,8 @@ export default class CrewProfile extends View {
     return root
       .child(this.header(space, bot, d, full))
       .child(this.tabs(d, bot))
-      .child(tab === "mission" ? scroll(missionTab(this, space, bot, d, full))
+      .child(tab === "notebook" ? scroll(notebookTab(this, space, bot, d, full))
+        : tab === "mission" ? scroll(missionTab(this, space, bot, d, full))
         : tab === "brain" ? scroll(brainTab(this, space, bot, d, full))
         : tab === "agents" ? scroll(agentsTab(this, space, bot, d, full))
         : this.profileTab(space, bot, t, d, full));
@@ -203,7 +206,7 @@ export default class CrewProfile extends View {
     for (const [key, label] of TABS) {
       if (key === "|") { strip.child(div().w(1).h(16).mx(6).bg(d.lineMid)); continue; }
       const on = cur === key;
-      strip.child(h_flex().id(`pf-tab-${key}`).h(26).px(10).gap(6).items_center().rounded(d.r.sm).border_1()
+      strip.child(h_flex().id(`pf-tab-${key}`).h(26).px(8).gap(6).items_center().rounded(d.r.sm).border_1()
         .border_color(on ? d.lineMid : "#00000000").when(on, (el) => el.bg(d.sel))
         .when(!on, (el) => el.cursor_pointer().hover((s) => s.text_color(d.fg1)).on_click((_e, cx) => { this.edit = null; this.review = null; openPanel(key); cx.notify(); }))
         .text_size(12).font_weight(500).text_color(on ? d.fg1 : d.fg2).child(label)

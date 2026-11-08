@@ -264,8 +264,8 @@ rectangular segments and tags.
     chip or the picker points it at another channel (it shows that channel: `tab.select`, then
     `agent.focus`). A channel with no agent hides the terminal and offers Wake.
   - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
-    and ×. Tabs (36 px, r4, the shown one #232324): **Profile** ‖ **Mission · Brain · AGENTS.md**
-    (a 1 px divider between the pal's tab and its project's; AGENTS.md carries the lint's badge:
+    and ×. Tabs (36 px, r4, the shown one #232324): **Profile · Notebook** ‖ **Mission · Brain ·
+    AGENTS.md** (a 1 px divider between the pal's tabs and its project's; AGENTS.md carries the lint's badge:
     red errors, amber warnings, a blue + when a fix is offered). Esc leaves an edit or a review
     first, then closes the panel.
   - **Profile:** the pet (96 px on the soft aura), name, role (click to change: the record's
@@ -277,6 +277,11 @@ rectangular segments and tags.
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tell, + Channel,
     Customize look, Put to sleep. In Full, two columns.
+  - **Notebook:** the pal's journal, newest day first, today live ("live" in mint), All · Hiccups ·
+    Lessons, and the week's count ("4 hiccups · ~50m lost"). Each entry: time · #channel · task ·
+    how long; did; hiccups (an amber tag, with what they cost); needed (tool / skill / rule /
+    context / access); lesson. × then "Click again to delete" removes an entry (the day is copied
+    to `data/crew-backups/notebook/` first).
   - **Mission:** the mission card (statement 16/500; Goals and Done when as checklists you can
     tick; Focus), Edit (the code editor, saved with a hash check), the last 3 change-log lines and
     the last 2 decisions, "All in Brain →". No mission: "Write the mission" (a template). A pal's
@@ -300,12 +305,22 @@ rectangular segments and tags.
   before the memory. The mission's statement, goals and done-when are the owner's: a pal runs `pal
   mission propose`; it keeps `pal mission focus`, ticks goals, and logs with `pal brain log` /
   `decide` / `note`. `pal task done` adds a change-log line to the task's pal.
+- **Notebooks** (`bin/crewnotebook.py`): `data/crew-memory/<pal>/notebook/YYYY-MM-DD.md`, one entry
+  per piece of work (`### 14:32 · #ch · T16 · 40m`, then `- did:`, `- hiccup: … (cost: ~10m)`,
+  `- needed: skill: …`, `- lesson:`; at most 8 lines; the same channel within 10 minutes merges).
+  The pal writes it with `pal notebook` (`hiccup` for a quick one); every SessionStart says when
+  (only after real work) and carries the last 7 days' lessons (at most 400 characters). `pal task
+  done` / `block` print a reminder, and crewd queues one line when a channel that was stuck 15+
+  minutes moves again (once an hour per channel). Guards: key- and token-shaped text is masked
+  (‹masked›); more than 3 lines, or log-looking lines, are refused; paths into someone's home
+  other than config (~/.x), ~/Projects and the pal's project are refused. Days older than 90 roll
+  into `YYYY-MM.md` (lessons only).
 - **Proposals** (`bin/crewproposals.py`, `data/crew-proposals/<id>.json` + `.md`): a pal's
   `pal mission propose` or `pal agents propose <file>` becomes an Inbox card (View opens the panel
   on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
   written until the owner accepts (the mission) or writes it after the diff (agent files).
 - **The pal menu** (`crew-palmenu`, the header chip's 300 px popup, crew-pick's look): the pal's
-  name and "harness · folder", then The pal (Profile with its shortcut, Memory, Tasks with the
+  name and "harness · folder", then The pal (Profile with its shortcut, Notebook, Memory, Tasks with the
   open count), The project (Mission, Brain, AGENTS.md, Review changes on a worktree channel, Open
   folder), then Tell… and
   Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
@@ -476,6 +491,8 @@ rectangular segments and tags.
   pointer → Review shows `+1 −0` and "new file"; Write makes CLAUDE.md holding `@AGENTS.md`, a backup
   marked `.absent`, and a change-log line, and nothing else in the repo changes.
 - A pal's Edit of an AGENTS.md is held in the Inbox.
+- `pal notebook "did: x" --hiccup "y (cost: 10m)"` from a pal adds one entry, shown live in the
+  Notebook tab; a line with `sk-ant-…` comes out ‹masked›; a pasted 20-line log is refused.
 - Ctrl+Shift+I opens the dashboard over the work area; typing "hi" + Enter in its terminal reaches
   that channel's Claude Code (closing the dashboard shows it there too); clicking another channel
   row shows that channel's session; a channel with no agent shows "no agent running" and Wake.
