@@ -261,7 +261,10 @@ rectangular segments and tags.
     Under the floor, the pal's channels at full width: a header ("Channels", the count, and a
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
     rows (`#`, the name, the working indicator or an amber dot, a green check or when it last changed; the shown one
-    #232324), up to four (the box hugs fewer); past four the box is four rows plus the top 12px of the
+    #232324), up to four; the box is ALWAYS four rows plus the 12px peek (132px), whatever the pal has,
+    so switching pals never moves the quick actions or the Pals list (DeNon, 2026-11-08): fewer rows
+    leave the rest blank, with a faint "+ New channel" row (#56565A, opens + Channel) after the last
+    when not searching; past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, with an always-drawn scrollbar in a gutter: while the list overflows the
     rows end 18px in (11px otherwise) and Herdr's thumb sits in the gap, never over a time, pin or
     dot (Herdr draws the thumb 8-16px in from the scroll area's edge whatever box it's given, and
@@ -283,7 +286,9 @@ rectangular segments and tags.
     one), then a grid of 44px tiles with live 24px previews per group; a click applies at once,
     Done keeps it, Cancel or Esc puts back the one you had.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (one flat #1B1B1E face, a 6% white
+    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (Channel and
+    Tasks share the row evenly, flex-basis 0, and Tasks keeps an 18px slot for its count even at zero,
+    so no count or pal switch changes their widths; Profile and Sleep are 28px squares) (one flat #1B1B1E face, a 6% white
     hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest
     shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
     `pebble()` in crew.js): + Channel (new channel

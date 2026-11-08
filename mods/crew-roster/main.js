@@ -682,7 +682,9 @@ export default class CrewRoster extends View {
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
     // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    const btn = (id, icon, text, action, extra) => pebble(d, { id, icon, label: text, extra, onClick: action, grow: Boolean(text) });
+    // Channel and Tasks share the row evenly and Tasks keeps a fixed slot for its count, so a count
+    // appearing or a pal switch never changes their widths (DeNon: nothing in the hero may move).
+    const btn = (id, icon, text, action, extra, slot = 0) => pebble(d, { id, icon, label: text, extra, slot, onClick: action, even: true });
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
@@ -692,7 +694,7 @@ export default class CrewRoster extends View {
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine || null))
+        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine ? (mine > 99 ? "99+" : mine) : null, 18))
         // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
         // Channel and Tasks keep their full labels at 304 px; the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
@@ -742,7 +744,7 @@ export default class CrewRoster extends View {
     }
     // Up to four rows show (DeNon: "at most 4"); more scroll. A virtual list with a scroll handle, so
     // the shown channel is scrolled into view when it changes (not on every render, so a scroll you
-    // made stays put). With four or fewer the box hugs its rows. Its rows can't carry handlers (Herdr
+    // made stays put). The box is always four rows + the peek (see BOX below). Its rows can't carry handlers (Herdr
     // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
     // on_item_secondary_click, by the channel's tab id.
     // ROW: a 28 px row and its 2 px gap.
@@ -767,9 +769,19 @@ export default class CrewRoster extends View {
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
           : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
     };
-    const box = v_flex();
+    // The box is always four rows plus the peek (BOX), whatever the pal has, so switching pals never
+    // moves the quick actions or the Pals list under it (DeNon, 2026-11-08). Fewer rows leave the
+    // rest blank, with a faint "+ New channel" row after the last when there's room (not while
+    // searching).
+    const BOX = ROWS * ROW + 12;
+    const box = v_flex().h(BOX).flex_none().overflow_hidden();
+    const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
+      .child(svg(`${ICON}/ds-plus.svg`).size(11).flex_none().text_color(d.fg4))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New channel")));
     if (!list.length) {
       if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+      else box.child(newRow());
       return v_flex().pt(4).child(head).child(box);
     }
     const act = list.findIndex((x) => x.active);
@@ -777,8 +789,8 @@ export default class CrewRoster extends View {
     if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
     // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
     // there's more. The scrollbar stays drawn while the list overflows, in the rows' gutter.
-    const n = list.length, h = n > ROWS ? ROWS * ROW + 12 : n * ROW;
-    box.child(div().relative().h(h).w_full()
+    const n = list.length, h = n > ROWS ? BOX : n * ROW;
+    box.child(div().relative().h(h).flex_none().w_full()
       .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
       .child(div().pl(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
         this.chRange = [range.start, range.end]; this.chEndKey = listKey;
@@ -790,6 +802,7 @@ export default class CrewRoster extends View {
         .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
         .h(h).w_full()))
       .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(0).w(16).h(h))));
+    if (n < ROWS && !q) box.child(newRow());
     return v_flex().pt(4).child(head).child(box);
   }
 
