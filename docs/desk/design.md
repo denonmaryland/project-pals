@@ -492,8 +492,10 @@ in amber. (Whether `hc` exposes a terminal's pty or pid is **to check**. If it d
   sender can cancel its own `queued` or `held` card, and that's all.
 - New approval-gate rule `desk-writes`: writes into `data/crew-desk/` from a pal terminal are held,
   the same way `click-writes` holds writes into `crew-clicks/`. This covers both shell writes
-  (`crewguard.write_targets`) and Claude Code's Edit/Write/MultiEdit tools, which the installed
-  PreToolUse matcher already sends through `crew-hook`. Pals go through `pal desk`. The CLI's own
+  (`crewguard.write_targets`) and Claude Code's Edit/Write/MultiEdit tools, which
+  `install-hooks.py`'s PreToolUse matcher (`Bash|Edit|Write|MultiEdit|NotebookEdit`) sends through
+  `crew-hook`. Installs done with `--no-helpers` keep an older `Bash`-only matcher until a full
+  install updates it, and DeNon's live settings have exactly that today (checked 2026-11-08). Pals go through `pal desk`. The CLI's own
   writes aren't shell commands, so the gate doesn't see them.
 - People can edit any card, since it's their machine. crewd checks each hand edit (§12.2): status,
   `from*`, `proof` and the receipts can't be changed by hand. They're put back from events.jsonl, with
