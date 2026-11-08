@@ -80,9 +80,18 @@ def tool_what(name, inp):
     return ("tool", name)
 
 
+def result_text(content, n=300):
+    """The first few lines of a tool's output, for the chat's expanded tool rows."""
+    if isinstance(content, list):
+        content = "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    lines = [l.rstrip() for l in str(content or "").replace("\t", "  ").split("\n") if l.strip()]
+    lines = [re.sub(r"</?tool_use_error>", "", REMINDER.sub("", l)) for l in lines[:3]]
+    return "\n".join(l[:n] for l in lines if l.strip())
+
+
 def parse_user(e, at):
     c = (e.get("message") or {}).get("content")
-    texts, images = [], 0
+    texts, images, results = [], 0, []
     if isinstance(c, str):
         texts.append(c)
     elif isinstance(c, list):
@@ -91,11 +100,20 @@ def parse_user(e, at):
                 texts.append(b.get("text", ""))
             elif b.get("type") == "image":
                 images += 1
-            # tool results are the tools' own output: shown through the tool line, not as a message
+            elif b.get("type") == "tool_result" and b.get("tool_use_id"):
+                # A tool's own output: not a message. It marks its call done (or failed) in the chat;
+                # only a failure keeps a few lines of it (why it failed), so the feed stays small.
+                failed = bool(b.get("is_error"))
+                results.append({"kind": "result", "id": b["tool_use_id"], "error": failed,
+                                "out": result_text(b.get("content")) if failed else "", "at": at})
     text = REMINDER.sub("", "\n".join(texts)).strip()
     text = HC_TAG.sub("", text).strip()
     if not text and not images:
-        return []
+        return results
+    return results + message(e, text, images, at)
+
+
+def message(e, text, images, at):
     if e.get("isCompactSummary"):
         return [{"kind": "event", "text": "Earlier conversation was summarized", "at": at}]
     if text.startswith("<command-name>"):
@@ -137,7 +155,7 @@ def parse_claude(line):
             out.append({"kind": "bot", "text": b["text"].strip(), "at": at})
         elif b.get("type") == "tool_use":
             verb, what = tool_what(b.get("name", ""), b.get("input"))
-            out.append({"kind": "tool", "verb": verb, "what": what, "at": at})
+            out.append({"kind": "tool", "verb": verb, "what": what, "name": b.get("name", ""), "id": b.get("id"), "at": at})
     return out
 
 
