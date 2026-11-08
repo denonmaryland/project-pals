@@ -110,6 +110,25 @@
               "hidden": true
             }
           ]
+        },
+        {
+          "id": "profile",
+          "type": "column",
+          "size": {
+            "px": 420
+          },
+          "min": 360,
+          "hidden": true,
+          "background": "#0E0E0F",
+          "children": [
+            {
+              "id": "profile-main",
+              "type": "block",
+              "content": {
+                "mod": "crew-profile"
+              }
+            }
+          ]
         }
       ]
     },

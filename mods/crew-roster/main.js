@@ -12,7 +12,8 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal } from "./crew.js";
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal,
+  togglePanel, panelOpen, panelTab, needsOf } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -77,7 +78,13 @@ export default class CrewRoster extends View {
     cx.timer.every(5000, (cx) => draw(cx));
     // Tasks, approvals, routines and stuck channels (kept by crewd and the crew command).
     this.ops = { approvals: [], tasks: [], routines: [], stalled: {}, daemon: true };
-    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); } catch {} cx.notify(); });
+    const ops = (cx) => cx.spawn(async (cx) => {
+      try { this.ops = await loadOps(); } catch {}
+      // What needs DeNon, for the status bar's "N need you" (published only when it changes).
+      const n = needsOf(spaces(), this.ops), was = shared("crew.needs");
+      if (!was || was.count !== n.count || was.approvals !== n.approvals) setShared("crew.needs", n);
+      cx.notify();
+    });
     ops(cx);
     cx.timer.every(2500, (cx) => ops(cx));
     this.refreshOps = ops;
@@ -96,7 +103,8 @@ export default class CrewRoster extends View {
     this.chSearchOpen = false;
     this.chScroll = VirtualListScrollHandle.new();
     this.chShownKey = null;
-    // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals.
+    // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals,
+    // crew-roster.profile (the profile panel; Ctrl+Shift+I).
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -105,6 +113,8 @@ export default class CrewRoster extends View {
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
         else if (c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
+        // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
+        else if (c === "profile") togglePanel(panelTab());
         cx.notify();
       }
     });
@@ -567,8 +577,9 @@ export default class CrewRoster extends View {
   // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
   // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it; no state word). Under the floor: the pal's channels, full width,
-  // up to six rows then scrolling, with a search in their header; then four quick actions:
-  // + Channel, Tell, Tasks (its count), Sleep. Its task text is in its pal row below.
+  // up to six rows then scrolling, with a search in their header; then the quick actions:
+  // + Channel, Tell, Profile (the right-side panel), Tasks (an icon with its count), Sleep. The
+  // name opens the profile panel too. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
     const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
@@ -602,12 +613,16 @@ export default class CrewRoster extends View {
     // crowns reach the sprite's top edge, so text over the sprite would sit on dots).
     art.child(h_flex().absolute().left(16).top(10).w(W - 32).items_center().gap(7)
       .when(Boolean(dot), (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot)))
-      .child(div().flex_1().min_w(0).text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
+      // The name opens the pal's profile panel (again: closes it); the rest of the art shows the pal.
+      .child(div().flex_1().min_w(0).child(div().id("hero-name").text_size(16).line_height("20px").font_weight(600).text_color(d.fg1)
+        .cursor_pointer().hover((s) => s.underline())
+        .on_click((_e, cx) => { cx.stop_propagation(); togglePanel("profile"); cx.notify(); })
+        .child(bot.name)))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
-      .tooltip(`${bot.name} · ${label}`));
-    const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
-      .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
-      .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
+      .tooltip(`${bot.name} · ${label} · click the name for its profile`));
+    const btn = (id, icon, text, action, extra, on = false) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
+      .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(extra != null ? 40 : 28))
+      .rounded(d.r.sm).bg(on ? d.sel : d.raised).border_1().border_color(on ? d.lineStrong : d.lineMid).cursor_pointer()
       .hover((s) => s.bg(d.hover).border_color(d.lineStrong))
       .on_click((_e, cx) => { action(cx); cx.notify(); })
       .child(svg(`${ICON}/${icon}.svg`).size(12).flex_none().text_color(d.iconOn))
@@ -622,7 +637,9 @@ export default class CrewRoster extends View {
       .child(h_flex().px(8).pt(12).gap(6)
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)).flex_1())
         .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })).flex_1())
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null).flex_1())
+        // Profile: the right-side panel (pressed while it's open on Profile); Tasks keeps its count.
+        .child(btn("hero-profile", "ds-user", "Profile", () => togglePanel("profile"), null, panelOpen() && panelTab() === "profile").flex_1())
+        .child(btn("hero-tasks", "ds-tasks", null, () => setShared("crew.view", "tasks"), mine || null).tooltip("Tasks"))
         .child(btn("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx)).tooltip("Put to sleep")));
   }
 

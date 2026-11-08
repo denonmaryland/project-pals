@@ -1,6 +1,6 @@
 // Project Pals menu: what a right-click offers, as a small popup at the pointer.
-// - A tab: pin it, color it (from the theme's own colors, so it follows the theme), rename, close.
-// - A pal: pin it to the top, rename it (its memory and routines follow the name), change its look,
+// - A tab: pin it, review its branch (a worktree channel), color it (from the theme's own colors, so it follows the theme), rename, close.
+// - A pal: its profile (the right-side panel), pin it to the top, rename it (its memory and routines follow the name), change its look,
 //   add a channel, put it to sleep.
 // - A sleeping pal: wake it, unpin it, or forget it (its memory folder stays on disk).
 // - A room: open it, or close it (its transcript is kept).
@@ -12,7 +12,7 @@ import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
   canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
-  crew, wakePal, forgetPal, rememberModel, rooms, showRoom, deleteRoom, showTabs } from "./crew.js";
+  crew, wakePal, forgetPal, rememberModel, rooms, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -97,6 +97,8 @@ export default class CrewMenu extends View {
       return root
         .child(title(`#${channelName(tab)}`))
         .child(item("m-pin", "pin", pinned ? "Unpin channel" : "Pin channel", () => pinTab(space, tab, !pinned)))
+        // A worktree channel's branch: its diff against where it came from, with comments and Land.
+        .when(Boolean(worktreeOf(botOf(space), tab)), (el) => el.child(item("m-review", "ds-review", "Review changes", () => openReview(space, tab))))
         .child(moves("m-move", (dir) => canMoveChannel(space, tab, dir), (dir) => moveChannel(space, tab, dir)))
         .child(div().px(10).pt(8).pb(4).text_size(12).text_color(t.dim).child("Color"))
         .child(h_flex().px(8).pb(6).gap(4).flex_wrap().child(swatch(null)).children(TAB_COLORS.map((k) => swatch(k))))
@@ -125,6 +127,9 @@ export default class CrewMenu extends View {
     const pinned = palPinned(bot);
     return root
       .child(title(bot.name))
+      // Its profile: the right-side panel (DeNon 2026-11-08).
+      .child(item("m-profile", "ds-user", "Profile", () => togglePanel("profile")))
+      .child(line())
       .when(!bot.god, (el) => el.child(item("m-pin", "pin", pinned ? "Unpin from the top" : "Pin to the top", () => pinPal(bot, !pinned)))
         .child(moves("m-move", (dir) => canMovePal(space, dir), (dir) => movePal(space, dir))))
       // Herdr asks for the name; the roster then moves its memory and routines to the new name.

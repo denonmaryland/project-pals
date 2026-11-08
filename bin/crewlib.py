@@ -452,6 +452,23 @@ def remember(bot_name, fact, channel=None, user=False):
     return path
 
 
+def memory_parts(bot_name, pinned="", days=2):
+    """memory_text's pieces, in order, as (label, text): what the profile panel's Memory shows."""
+    parts = []
+    user = MEMORY / "USER.md"
+    if user.exists():
+        parts.append(("USER.md", user.read_text().strip()))
+    if (pinned or "").strip():
+        parts.append(("Pinned", f"## Pinned by {OWNER}\n{pinned.strip()}"))
+    d = memory_dir(bot_name)
+    if (d / "MEMORY.md").exists():
+        parts.append(("MEMORY.md", f"## {bot_name}'s memory\n" + (d / "MEMORY.md").read_text().strip()))
+    notes = sorted((d / "notes").glob("*.md"))[-days:] if (d / "notes").exists() else []
+    for n in notes:
+        parts.append((f"notes {n.stem}", n.read_text().strip()))
+    return parts
+
+
 def memory_text(bot_name, pinned="", days=2, limit=6000):
     """What a pal should start with: the owner's profile, its pinned and curated memory, recent notes."""
     parts = []

@@ -81,7 +81,7 @@ fi
 # when it's exactly ours (that key, that action, in "global"). keys.json is backed up first; any
 # other binding, or the same action on another key, is left alone.
 if [[ -f "$home/keys.json" ]] && grep -q '"crew-roster.mode"' "$home/keys.json"; then
-  mkdir -p "$backup"; cp -a "$home/keys.json" "$backup/keys.json"
+  mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
   python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it)"
 import json, os, sys
 path = sys.argv[1]
@@ -94,6 +94,28 @@ if isinstance(g, dict) and g.get("ctrl-shift-m") == "crew-roster.mode":
         json.dump(keys, f, indent=2)
     os.replace(tmp, path)
     print("removed the old Focus/Pro shortcut (ctrl-shift-m) from keys.json (backup in the install's .crew-backups folder)")
+PY
+fi
+# The profile panel's shortcut (2026-11-08): ctrl-shift-i → crew-roster.profile in keys.json's
+# global map, only when nothing in the file uses ctrl-shift-i yet and the action isn't bound already.
+# keys.json is backed up first; without a keys.json, nothing is written (a new file would replace
+# Herdr's default keys), and the panel still opens from the hero, the menus and the header chip.
+if [[ -f "$home/keys.json" ]] && ! grep -q '"crew-roster.profile"' "$home/keys.json"; then
+  mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
+  python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it)"
+import json, os, sys
+path = sys.argv[1]
+keys = json.load(open(path))
+used = any(isinstance(m, dict) and "ctrl-shift-i" in m for m in keys.values())
+if used:
+    print("ctrl-shift-i is taken in keys.json: bind crew-roster.profile to a key of your own for the profile panel")
+else:
+    keys.setdefault("global", {})["ctrl-shift-i"] = "crew-roster.profile"
+    tmp = path + ".crew-tmp"
+    with open(tmp, "w") as f:
+        json.dump(keys, f, indent=2)
+    os.replace(tmp, path)
+    print("added ctrl-shift-i for the profile panel to keys.json (backup in the install's .crew-backups folder)")
 PY
 fi
 # The layout used to be called crew, then buddies: move over (backing the old one up) and show the

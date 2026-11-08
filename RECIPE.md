@@ -224,21 +224,53 @@ rectangular segments and tags.
     shown channel is scrolled into view when it changes. Order: pinned channels first (in pin order,
     with a small pin mark), then, once you've arranged that pal's channels, Herdr's tab order, else
     the smart order (needs you, finished, working, idle agents, plain shells). Right-click a channel:
-    Pin / Unpin and Move up / Move down (within its group). Pinning and moving move Herdr's own tabs
-    (`tab.move`), so the order survives restarts and the pal chip's channel dropdown lists the same.
+    Pin / Unpin, Review changes (a worktree channel only: `crew-review`), and Move up / Move down
+    (within its group). Pinning and moving move Herdr's own tabs
+    (`tab.move`), so the order survives restarts and the `crew-pick` dropdown lists the same.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then four r4 quick actions: + Channel (new channel
-    dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
-    pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
-    asks first). No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel
-  dropdown, crew-pick, with New channel) and the split buttons on the right; the git branch is in
+    clicks, so there is no hover pin either. Then r4 quick actions: + Channel (new channel
+    dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Profile (the
+    profile panel, below; it looks pressed while the panel is open on Profile), an icon-only Tasks
+    with this pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to
+    sleep; Herdr asks first). The hero's name opens the profile panel too (underlined on hover).
+    No state pill, no species/brain line; the task text is in its pal row. The header has the pal's
+  name chip centred with a ▾ (a click opens the pal menu, `crew-palmenu`, below) and the split
+  buttons on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
   or prints the branch when you have no status line of your own); no
   channel picker on the left (DeNon took it out: channels switch from the hero's list, which shows
   "no agent"). Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot).
-- **Status bar** (24px, under everything): a quiet gear at its left end, the working count, the
-  shown channel's 5-hour and weekly usage, and the installed version. The gear (and the folded
+- **The profile panel** (DeNon, 2026-11-08; `docs/profiles/proposal.md`): a right-side panel,
+  hidden by default. It opens from the hero's name, the Profile quick action, right-click a pal →
+  Profile, the pal menu, or **Ctrl+Shift+I** (`crew-roster.profile`); Esc while the panel has the
+  keyboard, its × or the same trigger again close it, and the terminal gets its full width back.
+  Esc in the terminal stays the program's (it interrupts Claude Code). It always shows the shown pal.
+  - Two sizes: **Side**, beside the terminal (420 px by default; drag its edge, 360-640,
+    remembered as `focus.panelPx`), and **Full** (⤢ in its header: it hides the `work` column, so
+    the panel fills everything right of the sidebar). Each tab remembers its size. It starts hidden
+    on every launch.
+  - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
+    and ×. Tabs (36 px, r4, the shown one #232324): Profile, for now; Mission, Brain, Notebook
+    and AGENTS.md join in later stages.
+  - **Profile:** the pet (96 px on the soft aura), name, role (click to change: the record's
+    `role`) and state; Facts (brain and `--model`, folder, machine, branch, pet, hired by); four
+    stats (channels, tasks done, open tasks, last active: 2×2, or one row in Full); every channel
+    (its state dot, or a hollow one with no agent; what it's on, else its brief; `worktree ·
+    <branch>` and Review on worktree channels; click shows it); **Memory** (the pinned note,
+    editable and saved on blur; what a new session starts with and what the 6,000-character primer
+    cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
+    Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tell, + Channel,
+    Customize look, Put to sleep. In Full, two columns.
+- **The pal menu** (`crew-palmenu`, the header chip's 300 px popup, crew-pick's look): the pal's
+  name and "harness · folder", then The pal (Profile with its shortcut, Memory, Tasks with the
+  open count), The project (Review changes on a worktree channel, Open folder), then Tell… and
+  Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
+  on is checked, and choosing it closes the panel.
+- **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
+  **"N need you"** (channels asking, approvals waiting, stuck channels; amber, red while an
+  approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
+  `crew.needs`), the shown channel's 5-hour and weekly usage, and the installed version. The gear (and the folded
   rail's) opens the app menu (`crew-appmenu`, a 252x392 popup in the terminal menu's look, with
   shortcuts from keys.json): Hire a pal…, New room…, Inbox, Rooms, Routines, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
@@ -258,7 +290,8 @@ rectangular segments and tags.
   Claude Code)" in red on the agent's pane). A new pane is a shell in the channel's folder and
   belongs to that channel; the channel's agent stays its lead pane (state, "no agent" and `pal tell`
   all read the agent's pane).
-- **Remembered** in `data/crew-settings.json`: `focus.sidebarPx` (the dragged sidebar width).
+- **Remembered** in `data/crew-settings.json`: `focus.sidebarPx` (the dragged sidebar width) and
+  `focus.panelPx` (the profile panel's Side width).
   Pro's old keys (`layoutMode`, `pro`) are dropped the next time the settings are written.
 
 ## Built from
@@ -266,9 +299,14 @@ rectangular segments and tags.
 - **Layout:** `layouts/pals.json`, the tree above.
   - Stack `center` has the children `tab-view` and `room-view`. `showRoom` / `showTabs` switch it
     and show or hide `crew-composer`.
+  - The `profile` column (after `work` in `body`, hidden, `min` 360) holds `profile-main`
+    (`crew-profile`). `openPanel` / `closePanel` / `togglePanel` / `setPanelSize` in `crew.js` use
+    `layout.show` / `layout.hide` / `layout.resize` (`px` for Side, `weight: 1` with `work`
+    hidden for Full); shared `crew.panel` holds `{tab, sizes, section, at}`.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
-    `crew-composer` (rooms), `crew-status`. Popups: `crew-appmenu` (the gear), `crew-termmenu`. Removed with Pro: `crew-palrail`, `crew-tabs`,
+    `crew-composer` (rooms), `crew-status`, `crew-profile` (the profile panel; `focusable`).
+    Popups: `crew-appmenu` (the gear), `crew-termmenu`, `crew-palmenu` (props `space`). Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`,
@@ -283,7 +321,9 @@ rectangular segments and tags.
   - Commands: `space.new`, `tab.new`, `tab.select`, `tab.rename`, `tab.close`, `space.select`,
     `layout.select`, `layout.toggle`, `layout.resize`, `pane.focus`, `app.settings`,
     `app.palette`, `mod.open`.
-  - Keyable commands: `crew-roster.hire|channel|routines|look|mode`.
+  - Keyable commands: `crew-roster.hire|channel|routines|look|profile`. The installer binds
+    `ctrl-shift-i` to `crew-roster.profile` in keys.json's `global` map when no section uses that
+    key yet (keys.json backed up first; no keys.json, no change).
 - **Programs:**
   - The commands `pal` and `pal-room` (Python 3; `crew` and `crew-room` are aliases), plus
     `crewd`, `crew-hook` and `crew-statusline`.
@@ -293,6 +333,14 @@ rectangular segments and tags.
   `crew-settings.json`.
 
 ## Watch out
+
+- **The primer's memory cap keeps the END of the text** (`memory_text`, 6,000 characters): when a
+  pal's memory is longer, USER.md, the pinned note and MEMORY.md are cut first, and only the newest
+  notes reach the session. The profile's Memory section says exactly what's cut
+  (`pal memory <Pal> --json`).
+- **The profile panel's focus:** it takes the keyboard on every open (a 250 ms poll of
+  `crew.panel.at`, not in render), so Esc closes it; a click in the terminal gives the keyboard back.
+  Herdr shows and hides a layout block at once (no slide).
 
 - **The hero's floor pool** is an `image()`, not an `svg()`, so it stays behind the pet.
 - **The pets' lightsaber is faked:** Herdr can't blur, stroke a path, tint a shadow or clip to a
@@ -351,6 +399,12 @@ rectangular segments and tags.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
   `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose. A record with `"pet": "none"` shows the folder mascot.
+- With the profile panel closed, the terminal is as wide as before. The hero's name, the Profile
+  quick action, right-click → Profile, the pal menu's Profile and Ctrl+Shift+I each open it on the
+  right, beside the terminal; the same trigger, × or Esc (panel focused) close it. ⤢ fills the work
+  area; ⤡ goes back.
+- A worktree channel's right-click has Review changes; a plain channel's doesn't.
+- The status bar shows "1 needs you" while one channel asks, and nothing at zero.
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.

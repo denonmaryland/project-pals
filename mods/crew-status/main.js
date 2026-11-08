@@ -1,10 +1,10 @@
 // Project Pals status bar: one 24 px hairline strip under the whole window. Left: the gear (the app
 // menu: hiring, rooms, routines, themes, layouts, Herdr's settings, the palette, updates), how many
-// channels are working and the shown channel's usage. Right: the installed version.
+// channels are working, how many things need you (a click opens the Inbox) and the shown channel's usage. Right: the installed version.
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, agents, theme, appHome, readTextFile, openOverlay } from "herdr";
+import { spaces, panes, agents, theme, appHome, readTextFile, openOverlay, shared, setShared } from "herdr";
 import { leadPane, ds, tone } from "./crew.js";
 
 export default class CrewStatus extends View {
@@ -50,6 +50,16 @@ export default class CrewStatus extends View {
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 424 }); })
       .child(svg("mods/crew-roster/icons/settings.svg").size(12).text_color(d.fg2)), sep());
     items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
+    // What needs DeNon (the roster's count: channels that ask, approvals waiting, stuck channels).
+    // Amber; red while an approval waits. A click opens the Inbox. Hidden at zero.
+    const needs = shared("crew.needs");
+    if (needs?.count > 0) {
+      const urgent = needs.approvals > 0;
+      items.push(sep(), h_flex().id("crew-needs").flex_none().items_center().gap(6).cursor_pointer()
+        .tooltip([needs.asks && `${needs.asks} asking`, needs.approvals && `${needs.approvals} waiting for your OK`, needs.stuck && `${needs.stuck} stuck`].filter(Boolean).join(" · "))
+        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); setShared("crew.view", "you"); })
+        .child(dot(urgent ? d.err : d.warn)).child(text(`${needs.count} need${needs.count === 1 ? "s" : ""} you`, urgent ? d.err : d.warnText)));
+    }
     if (usage) items.push(sep(), text(usage, d.fg3));
     items.push(div().flex_1());
     if (this.version) items.push(text(`pal ${this.version}`));
