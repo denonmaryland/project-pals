@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, a, tone, ds, sheetFace, headPet, workingStyle, workingMark } from "./crew.js";
+import { crewCli, a, tone, ds, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -191,7 +191,14 @@ export default class CrewAbout extends View {
           .child(div().size(18).flex().items_center().justify_center().child(workingMark(ds(t))))
           .child(div().text_size(12.5).text_color(t.muted).child(workingStyle().name))
           .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
-        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }));
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // How the sidebar lists the pals: its own dialog, the looks beside a live preview (crew-palstyle).
+      .child(row("set-pallist", "Pal list style", "How the sidebar lists your pals",
+        h_flex().items_center().gap(8)
+          .child(div().text_size(12.5).text_color(t.muted).child(palListStyle().name))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openPalStyle(); }));
 
     return v_flex().id("crew-about").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().bg(t.popover).text_color(t.foreground)

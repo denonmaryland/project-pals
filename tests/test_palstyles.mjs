@@ -1,0 +1,88 @@
+// The pal list's looks (Project Pals settings → Pal list style): the list, its fallback, and the
+// facts the compact rows show (folder, task counts, progress, the Tree's live channels).
+// Run: node tests/test_palstyles.mjs
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { PAL_LIST_STYLES, palListStyleOf, DEFAULT_PAL_LIST, petHeight, shortFolder, taskCounts, progressOf, liveChannels, chipWord } from "../lib/palstyles.js";
+
+const root = new URL("..", import.meta.url).pathname;
+const read = (p) => readFileSync(root + p, "utf8");
+
+// Large pets first (today's rows, the default), then the board's ten in its order.
+assert.deepEqual(PAL_LIST_STYLES.map((s) => s.name), ["Large pets", "Name + folder", "Two tight lines", "Name wraps", "Rich detail",
+  "Table", "Tree", "Progress", "Folder first", "Grouped", "Mini card"]);
+assert.equal(DEFAULT_PAL_LIST, "large");
+assert.equal(PAL_LIST_STYLES[0].id, "large");
+assert.equal(new Set(PAL_LIST_STYLES.map((s) => s.id)).size, 11, "ids are unique");
+PAL_LIST_STYLES.forEach((s, i) => assert.equal(s.n, i, "numbered as on the board"));
+// The compact looks' pets are 22-34 px, as on the board; Large stays 75.
+assert.deepEqual(PAL_LIST_STYLES.map((s) => s.pet), [75, 32, 26, 30, 28, 22, 26, 28, 30, 24, 34]);
+for (const s of PAL_LIST_STYLES) assert.ok(s.about.length > 20, `${s.id} says what it is`);
+assert.equal(petHeight(32), 25);
+
+// Unknown, missing or old values fall back to Large pets.
+assert.equal(palListStyleOf(undefined).id, "large");
+assert.equal(palListStyleOf("nope").id, "large");
+assert.equal(palListStyleOf("tree").name, "Tree");
+
+// Folders: home as "~"; the relative form drops the usual projects folder only.
+assert.equal(shortFolder("/home/denon/Projects/project-pals", "/home/denon"), "~/Projects/project-pals");
+assert.equal(shortFolder("/home/denon/Projects/project-pals", "/home/denon", true), "project-pals");
+assert.equal(shortFolder("/home/denon/.config/herdr-app/data/crew-god", "/home/denon", true), "~/.config/herdr-app/data/crew-god");
+assert.equal(shortFolder("/home/denonx/x", "/home/denon"), "~/x", "another user's home is still shortened, not treated as ours");
+assert.equal(shortFolder("/srv/app", "/home/denon"), "/srv/app");
+assert.equal(shortFolder(null, "/home/denon"), "");
+assert.equal(shortFolder("/home/denon/Projects/", "/home/denon", true), "~/Projects/", "the projects folder itself stays as is");
+
+// Task counts: open = open, claimed, blocked; done = finished in the last day; others ignored.
+const now = 1_000_000_000_000;
+const tasks = [
+  { assignee: "Softly", status: "open" }, { assignee: "Softly", status: "claimed" }, { assignee: "Softly", status: "blocked" },
+  { assignee: "Softly", status: "done", updated: now - 3600_000 }, { assignee: "Softly", status: "done", updated: now - 3 * 86400_000 },
+  { assignee: "Softly", status: "cancelled" }, { assignee: "Orca", status: "open" },
+];
+const c = taskCounts(tasks, (t) => t.assignee === "Softly", now);
+assert.deepEqual(c, { open: 3, done: 1, total: 4 });
+assert.deepEqual(progressOf(c), { frac: 0.25, label: "1/4 tasks" });
+assert.equal(progressOf(taskCounts([], () => true, now)), null, "no bar without tasks");
+assert.deepEqual(taskCounts(null, () => true, now), { open: 0, done: 0, total: 0 });
+
+// The Tree: only a pal with something working or asking unfolds; asks you first, then working,
+// then done, latest first; capped with a count of the rest.
+assert.deepEqual(liveChannels([{ status: "done" }, { status: "idle" }]), { list: [], more: 0 }, "merely done stays one row");
+const tabs = [
+  { id: "a", status: "working", changed_at: 5 }, { id: "b", status: "done", changed_at: 9 }, { id: "c", status: "blocked", changed_at: 1 },
+  { id: "d", status: "idle", changed_at: 99 }, { id: "e", status: "working", changed_at: 7 }, { id: "f", status: "done", changed_at: 2 },
+];
+const live = liveChannels(tabs, 4);
+assert.deepEqual(live.list.map((t) => t.id), ["c", "e", "a", "b"]);
+assert.equal(live.more, 1);
+assert.deepEqual(liveChannels(undefined), { list: [], more: 0 });
+
+assert.equal(chipWord("Working · 7m"), "Working");
+assert.equal(chipWord("Done"), "Done");
+
+// Wiring: the installer copies palstyles.js next to crew.js in every mod (crew.js imports it); the
+// sidebar draws every pal row through the shared renderer, the setting is "palList", and Project
+// Pals settings opens the dialog.
+assert.match(read("install.sh"), /cp "\$src\/lib\/palstyles\.js" "\$dest\/palstyles\.js"/);
+const crew = read("lib/crew.js");
+assert.match(crew, /from "\.\/palstyles\.js"/);
+assert.match(crew, /palListStyleOf\(shared\("crew\.settings"\)\?\.palList\)/);
+const roster = read("mods/crew-roster/main.js");
+assert.ok((roster.match(/palLookRow\(/g) ?? []).length >= 2, "pal rows and sleeper rows use the shared renderer");
+assert.match(roster, /this\.dragOver\(e, cx, \{ id: bot\.id, gid/, "rows keep dragging");
+assert.match(roster, /on_mouse_down\("right"[^\n]*this\.menu\(space\)/, "rows keep their right-click menu");
+assert.match(roster, /palLookTree\([^\n]*this\.go\(space, tab\)/, "the Tree's channels open their own channel");
+assert.match(read("mods/crew-about/main.js"), /"Pal list style"[\s\S]{0,400}openPalStyle\(\)/);
+const dlg = read("mods/crew-palstyle/main.js");
+assert.match(dlg, /saveUiSettings\(\{ palList: id \}\)/, "a click saves the look");
+assert.match(dlg, /if \(!keep\) this\.pick\(this\.was\)/, "Cancel and Esc put the old look back");
+assert.match(dlg, /palLookRow\(/, "the preview uses the sidebar's renderer");
+assert.equal(JSON.parse(read("mods/crew-palstyle/mod.json")).place, "none");
+
+// Every style has a branch in the renderer (else it would silently draw Large pets).
+const body = crew.slice(crew.indexOf("export function palLookRow("), crew.indexOf("export function palLookTree("));
+for (const s of PAL_LIST_STYLES.slice(1)) assert.ok(body.includes(`case "${s.id}":`), `palLookRow draws ${s.id}`);
+
+console.log("palstyles: ok");

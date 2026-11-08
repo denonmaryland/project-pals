@@ -60,6 +60,8 @@ for dir in "$src"/mods/crew-*; do
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
   cp "$src/lib/pets.js" "$dest/pets.js"
+  # The pal list's looks (Project Pals settings → Pal list style), imported by crew.js.
+  cp "$src/lib/palstyles.js" "$dest/palstyles.js"
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.

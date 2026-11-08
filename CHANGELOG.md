@@ -5,6 +5,11 @@
 - **Pick your working indicator.** Project Pals settings → Working indicator: the mark beside a
   working channel can be the classic dot or one of 30 small animations (pixel spinners, shaded
   spheres, ASCII globes), with live previews. A click applies it.
+- **Pick how your pals are listed.** Project Pals settings → Pal list style: keep the big pets, or
+  pick one of ten compact looks with smaller pets, so the full name, the project folder, the
+  branch, the brain and channel and task counts fit (Name + folder, Two tight lines, Name wraps,
+  Rich detail, Table, Tree with a working pal's live channels, Progress, Folder first, Grouped,
+  Mini card). The dialog previews each one with your own pals; a click applies it.
 
 ## 0.3.0
 

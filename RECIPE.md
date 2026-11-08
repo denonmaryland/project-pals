@@ -122,6 +122,31 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
   state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
   Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), the header's command field (25x20), rooms, dialogs.
+  - **Pal list style** (Project Pals settings → Pal list style, `crew-palstyle`, saved as
+    `palList` in crew-settings.json; DeNon 2026-11-08). The rows above are **Large pets**, the
+    default. Ten compact looks from DeNon's board (`crew-boards/compact-pals`) use 22-34px pets
+    (bare, a scaled aura, no pool) so more fits: 1 Name + folder (32px: name · time, state ·
+    #channel, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
+    state is a dot on the pet), 3 Name wraps (30px: the name may take two lines), 4 Rich detail
+    (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N ch" or "N
+    blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, channels, open tasks, time), 6
+    Tree (26px; a pal with a channel working or asking unfolds its live channels under it, asks
+    you first, then working, then done, at most four and "+N more"; each opens that channel, the
+    working one with the chosen working indicator), 7 Progress (28px: a 3px bar of the pal's
+    tasks, done today of done + open), 8 Folder first (30px: the folder relative to ~/Projects as
+    the mono headline, the name small above, state · branch), 9 Grouped (24px tight rows under
+    the group headers), 10 Mini card (34px: a bordered card, the name may wrap, the folder, a
+    state chip). All real data: the folder from the pal's record or space, the branch of the
+    row's lead channel's pane, channel counts from its tabs, task counts from the board (open,
+    claimed, blocked; done in the last day). Every look keeps the row's behaviour: a click opens
+    the lead channel, right-click its menu, pins (the pin mark), groups and folding, drag to
+    reorder, Hidden pals (a quieter 30px line in the compact looks) and the status-first colours.
+    The sidebar and the dialog's preview draw rows with one renderer (`crew.js palLookRow` /
+    `palLookTree`; the look list and its pure helpers in `lib/palstyles.js`, copied into every
+    mod). The dialog: the eleven looks on the left (number, name, pet size, a check on the chosen
+    one), a live preview of your own pals in the look under the pointer (else the chosen one) at
+    the sidebar's width on the right; a click applies at once, Done keeps it, Cancel or Esc puts
+    back the one you had. Unknown values fall back to Large pets.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
