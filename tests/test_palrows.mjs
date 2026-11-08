@@ -25,13 +25,14 @@ try {
   mod("gpui-kit", `
     const OK = new Set(${JSON.stringify(METHODS)});
     export function el(kind, arg) {
-      const node = { kind, arg, calls: [], kids: [] };
+      const node = { kind, arg, calls: [], args: {}, kids: [] };
       const p = new Proxy(node, { get(t, k) {
         if (k === "node") return t;
         if (typeof k !== "string" || k === "then") return undefined;
         if (!OK.has(k)) throw new Error("not a gpui-kit method: ." + k + "()");
         return (...a) => {
           t.calls.push(k);
+          t.args[k] = a;
           if (k === "child") { if (a[0] != null) t.kids.push(a[0]); }
           else if (k === "children") t.kids.push(...a[0].filter((x) => x != null));
           else if (k === "when") { if (a[0]) a[1](p); }
@@ -151,7 +152,29 @@ try {
     const out = text(dlg.render());
     assert.ok(out.includes("Pal list style") && out.includes(st.name) && out.includes("Hidden pals") && out.includes("Personal"), `dialog previews ${st.id}`);
   }
-  console.log("palrows: ok (11 looks drawn)");
+  // The hero never changes height or its buttons' widths from pal to pal (DeNon, 2026-11-08):
+  // switching from Orca (one channel) to a pal with fifteen must not move the Pals list.
+  fixtures.shared["crew.settings"] = {};
+  Object.assign(roster, { width: 281, chSearch: { value: () => "" }, chSearchOpen: false, chScroll: { scroll_to_item() {} } });
+  const many = { ...fixtures.spaces[0], id: "s9", tabs: Array.from({ length: 15 }, (_, i) => ({ id: `m${i}`, name: `ch${i}`, status: "idle", changed_at: 1, active: i === 0 })) };
+  const one = fixtures.spaces[1];
+  const none = { ...fixtures.spaces[1], id: "s8", tabs: [] };
+  // The hero's shape: every fixed height and width it sets, top-down (text and counts left out).
+  const shape = (p) => { const n = p.node; const own = ["h", "w", "size", "pt", "pb", "flex_grow", "flex_basis", "flex_auto"]
+    .filter((k) => n.args[k]).map((k) => `${k}${JSON.stringify(n.args[k])}`).join(" ");
+    return [own, ...n.kids.filter((k) => k?.node && !String(k.node.args.id?.[0] ?? "").match(/^hero-ch-(m|t)\d/)).map(shape)].join("|"); };
+  const heroOf = (space, open) => { roster.ops.tasks = open ? [{ assignee: space.name, status: "open" }] : []; return roster.heroCard({ space, bot: crew.botOf(space) }, t, d, 281); };
+  const box = (p) => { const n = p.node; if (n.args.h?.[0] === 132) return n; for (const k of n.kids) { const f = k?.node && box(k); if (f) return f; } return null; };
+  for (const [space, open] of [[one, false], [many, true], [none, false], [fixtures.spaces[0], true]]) {
+    const h = heroOf(space, open);
+    const b = box(h);
+    assert.ok(b && b.calls.includes("flex_none") && b.calls.includes("overflow_hidden"), `${space.tabs.length} channels: the channel box is always 4 rows + the peek (132 px)`);
+  }
+  const outline = (p) => shape(p).replace(/h\[(30|120|90|60)\]/g, "h[list]");
+  assert.equal(outline(heroOf(many, true)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(),
+    outline(heroOf(one, false)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(), "the quick actions keep their widths and the Tasks count slot");
+  assert.ok(/w\[18\]/.test(shape(heroOf(one, false))), "Tasks reserves its count slot even with no tasks");
+  console.log("palrows: ok (11 looks drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
