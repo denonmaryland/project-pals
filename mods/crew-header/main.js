@@ -1,13 +1,12 @@
-// Project Pals header, drawn to the "MODE · Focus"
-// board: a "# channel ▾" picker on the left, the pal's chip centred, its branch on the right. In a
+// Project Pals header, drawn to the "MODE · Focus" board: the pal's chip centred (a click opens its
+// channels), its branch and the split buttons on the right. No channel picker on the left: DeNon
+// took it out on 2026-11-08 (channels switch from the hero's list; "no agent" shows there). In a
 // room: the room's members. Under it is the channel's terminal (terminal-first, DeNon 2026-11-08).
 
-import { View, div, svg } from "gpui-kit";
+import { View, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, theme, focused } from "herdr";
-import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, tone, ds, palChip, openChannels, tabHasAgent, noAgentTag, splitButtons } from "./crew.js";
-
-const ICON = "mods/crew-roster/icons";
+import { shownRoom, roomMembers, botOf, mascotEl, mood, leadPane, tone, ds, palChip, splitButtons } from "./crew.js";
 
 export default class CrewHeader extends View {
   render() {
@@ -33,20 +32,9 @@ export default class CrewHeader extends View {
     if (!space || !tab) return root.child(div().text_size(13).text_color(d.fg3).child("No pal open. Hire one on the left."));
     const bot = botOf(space);
     const lead = leadPane(tab.id, panes());
-    // Left: "# channel ▾" opens the channel picker; right-click renames.
-    // It reads as a control: a raised r4 button with a hairline and a chevron, lit on hover.
-    const picker = h_flex().id("crew-pick").min_w(0).h(28).px(8).gap(6).items_center().rounded(d.r.sm).cursor_pointer()
-      .bg(d.raised).border_1().border_color(d.line).tooltip("Switch channel")
-      .hover((s) => s.bg(d.sel).border_color(d.lineStrong))
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openChannels(space.id); })
-      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); renameChannel(tab); })
-      .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg3).child("#"))
-      .child(div().min_w(0).truncate().text_size(13).font_weight(500).text_color(d.body).child(channelName(tab)))
-      .child(svg(`${ICON}/ds-chevron-down.svg`).size(12).flex_none().text_color(d.icon))
-      // A channel with no agent is just a shell: say so right by its name.
-      .when(!tabHasAgent(tab), (el) => el.child(noAgentTag(d)));
     return root
-      .child(h_flex().flex_1().flex_basis(0).min_w(0).items_center().child(picker))
+      // An empty left side as wide as the right one, so the chip stays centred.
+      .child(h_flex().flex_1().flex_basis(0).min_w(0))
       .child(palChip(bot, tab, d))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
         .when(Boolean(lead?.branch), (el) => el.child(div().min_w(0).h(22).px(6).flex().items_center().rounded(d.r.xs).bg(d.raised)

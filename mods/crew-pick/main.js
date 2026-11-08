@@ -1,4 +1,4 @@
-// Project Pals channel dropdown: opened from the header's pal chip and its "# channel ▾", and the
+// Project Pals channel dropdown: opened from the header's pal chip and the
 // hero's "+N". The shown pal's channels, one 32 px row each: "# name", what it's on (its
 // terminal title, else its state), a state mark (blue dot working, amber dot
 // needs you, green check done) and when it last changed; the current channel is marked. "+ New

@@ -211,7 +211,7 @@ rectangular segments and tags.
     and removed: DeNon found it annoying). The name (16/600) sits in a 30px band at the top, 14px in, the sprite
     starting 8px into it (bun ears, antennas and crowns reach the sprite's top edge, so the name
     can't sit on the sprite), with the full width so it never cuts off: a 7px state dot before it (blue working, amber
-    asks you / stuck, green done / PR) and the state word after it ("Working · 4m") when both fit.
+    asks you / stuck, green done / PR); no state word (DeNon took it out; the tooltip names it).
     Under the floor, the pal's channels at full width: a header ("Channels", the count, and a
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
     rows (`#`, the name, a blue/amber dot, a green check or when it last changed; the shown one
@@ -225,14 +225,15 @@ rectangular segments and tags.
     with a small pin mark), then, once you've arranged that pal's channels, Herdr's tab order, else
     the smart order (needs you, finished, working, idle agents, plain shells). Right-click a channel:
     Pin / Unpin and Move up / Move down (within its group). Pinning and moving move Herdr's own tabs
-    (`tab.move`), so the order survives restarts and the `# channel ▾` picker lists the same.
+    (`tab.move`), so the order survives restarts and the pal chip's channel dropdown lists the same.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
     clicks, so there is no hover pin either. Then four r4 quick actions: + Channel (new channel
     dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
     pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
-    asks first). No state pill, no species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's
-  channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
-  the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
+    asks first). No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel
+  dropdown, crew-pick, with New channel), and its branch and the split buttons on the right; no
+  channel picker on the left (DeNon took it out: channels switch from the hero's list, which shows
+  "no agent"). Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot).
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count, the
   shown channel's 5-hour and weekly usage, and the installed version. The gear (and the folded

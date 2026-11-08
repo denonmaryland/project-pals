@@ -566,7 +566,7 @@ export default class CrewRoster extends View {
   // mint, asks you amber and breathing, PR green, merged purple, closing red, stuck amber; none at
   // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
   // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
-  // it, the state word after it when it fits). Under the floor: the pal's channels, full width,
+  // it; no state word). Under the floor: the pal's channels, full width,
   // up to six rows then scrolling, with a search in their header; then four quick actions:
   // + Channel, Tell, Tasks (its count), Sleep. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
@@ -586,10 +586,8 @@ export default class CrewRoster extends View {
     const word = !bot.awake ? "Asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
     const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
     const label = since && since !== "now" ? `${word} · ${since}` : word;
-    const [dot, wordColor] = state === "work" ? [d.info, d.infoText] : state === "ask" || state === "stuck" ? [d.warn, d.warnText]
+    const [dot] = state === "work" ? [d.info, d.infoText] : state === "ask" || state === "stuck" ? [d.warn, d.warnText]
       : state === "done" || state === "pr" ? [d.ok, d.okHi] : [null, d.fg2];
-    // The state word rides after the name only when both fit (Inter 16/600 ~ 9.2 px a char, 12/500 ~ 6.6).
-    const fits = 28 + (dot ? 13 : 0) + bot.name.length * 9.2 + 14 + label.length * 6.6 <= W;
     const art = div().id("hero-art").relative().w(W).h(FY + 6).flex_none().cursor_pointer().when(light, (el) => el.bg("#0E0E0F"))
       .on_click((_e, cx) => { this.open(space); cx.notify(); });
     // Depth without an edge: a soft radial aura behind the sprite, fading out to nothing.
@@ -605,8 +603,8 @@ export default class CrewRoster extends View {
     art.child(h_flex().absolute().left(16).top(10).w(W - 32).items_center().gap(7)
       .when(Boolean(dot), (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot)))
       .child(div().flex_1().min_w(0).text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
-      .when(fits, (el) => el.child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(label)))
-      .tooltip(fits ? bot.name : `${bot.name} · ${label}`));
+      // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
+      .tooltip(`${bot.name} · ${label}`));
     const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
       .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
       .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
