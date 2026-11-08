@@ -196,6 +196,13 @@ rectangular segments and tags.
 - **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal in both modes; you type in it
   directly. The composer shows only under a room. The prompt card floats over the terminal
   when the channel asks something.
+- **Splits:** Herdr's own (Ctrl+Shift+O right, Ctrl+Shift+E down, Ctrl+Shift+X close, Ctrl+Shift+Z
+  zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the Focus header and
+  Pro's tab strip, and the right-click on a terminal (`crew-termmenu`, the layout's
+  `terminal_menu`: split, zoom, copy, paste, right-click routing, close; "Close pane (ends
+  Claude Code)" in red on the agent's pane). A new pane is a shell in the channel's folder and
+  belongs to that channel; the channel's agent stays its lead pane (state, "no agent", `pal tell`,
+  the prompt card all read the agent's pane).
 - **Remembered** in `data/crew-settings.json`: `layoutMode`, `focus.sidebarPx`, `pro.listPx`,
   `pro.inspectorPx` and `pro.inspectorTab`. Each mode keeps its own drag widths.
 

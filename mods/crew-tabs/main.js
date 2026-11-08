@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, run, theme, openOverlay } from "herdr";
-import { mood, mascotEl, channelName, renameChannel, rooms, shownRoom, showRoom, roomMembers, tabPinned, botOf, ds, tone, palChip, tabHasAgent } from "./crew.js";
+import { mood, mascotEl, channelName, renameChannel, rooms, shownRoom, showRoom, roomMembers, tabPinned, botOf, ds, tone, palChip, tabHasAgent, splitButtons } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -75,6 +75,7 @@ export default class CrewTabs extends View {
     }));
     const tab = space.tabs.find((x) => x.active);
     return root.child(strip)
+      .child(splitButtons(d))
       .child(palChip(bot, tab, d, "pro"));
   }
 }

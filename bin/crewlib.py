@@ -180,8 +180,15 @@ def chan(tab):
 
 
 def lead(tab):
+    """A channel's agent terminal, even when the channel is split with shells beside it: the one
+    reporting an agent app, else (an idle agent may report none) the one herdr-core says runs an
+    agent, else the first."""
     terms = [x for x in tab.get("terminals", []) if x]
-    return next((x for x in terms if x.get("app")), None) or (terms[0] if terms else None)
+    hit = next((x for x in terms if x.get("app")), None)
+    if hit or len(terms) < 2:
+        return hit or (terms[0] if terms else None)
+    live = hc_terminals()
+    return next((x for x in terms if is_agent(live.get(x.get("terminal")))), None) or terms[0]
 
 
 def norm(s):

@@ -5,7 +5,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, theme, focused } from "herdr";
-import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, tone, ds, palChip, openChannels, tabHasAgent, noAgentTag } from "./crew.js";
+import { shownRoom, roomMembers, botOf, channelName, renameChannel, mascotEl, mood, leadPane, tone, ds, palChip, openChannels, tabHasAgent, noAgentTag, splitButtons } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -50,6 +50,7 @@ export default class CrewHeader extends View {
       .child(palChip(bot, tab, d, "focus"))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
         .when(Boolean(lead?.branch), (el) => el.child(div().min_w(0).h(22).px(6).flex().items_center().rounded(d.r.xs).bg(d.raised)
-          .child(div().truncate().text_size(11).font_family(d.mono).text_color(d.fg2).child(lead.branch)))));
+          .child(div().truncate().text_size(11).font_family(d.mono).text_color(d.fg2).child(lead.branch))))
+        .child(splitButtons(d)));
   }
 }
