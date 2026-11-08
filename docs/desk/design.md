@@ -801,7 +801,7 @@ of these, plus today's counts. `pal settings desk.<key> <value>` sets them from 
 
 ## 13. The idea partner
 
-An optional pal with the **Idea partner** role, called "Desk" in the vision (the name is open, §17).
+An optional pal with the **Idea partner** role, named **MUSE** (DeNon, §17).
 It's a Herdr space with a Claude Code brain, whose standing brief ships as `partner/AGENTS.md`. That
 brief is rendered with `{{OWNER}}` into `data/crew-partner/AGENTS.md` at hire time, as
 `god/AGENTS.md` is for the head pal (§12.10). DeNon riffs with it in its own channel for as long
@@ -953,6 +953,11 @@ remains only for Codex and other harnesses.
 for Codex and other harnesses.
 
 ## 17. Decisions for DeNon
+
+**Taken (2026-11-08, relayed by Orca from DeNon):** go with every recommendation below, and the idea
+partner is named **MUSE**. Stage 1 is built on `crew/desk` (commits 536439d, 2fef7ae); stages 2–6 are
+not started. The list is kept as it was asked:
+
 
 1. **Owner authority only by click**: the quick-drop, a draft's Send. A shell `pal tell` becomes
    "unverified", even from DeNon's own terminal. (Recommended: yes. It's the one change that closes the
