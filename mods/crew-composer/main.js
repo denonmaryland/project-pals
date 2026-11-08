@@ -21,6 +21,15 @@ const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 export default class CrewComposer extends View {
   init(_props, cx) {
+    // Claude Code's default permission mode, read now and every minute.
+    this.claudeMode = null;
+    const readMode = (cx) => cx.spawn(async (cx) => {
+      let m = null;
+      try { m = JSON.parse((await readTextFile(`${home()}/.claude/settings.json`)) ?? "{}")?.permissions?.defaultMode ?? null; } catch { m = null; }
+      if (m !== this.claudeMode) { this.claudeMode = m; cx.notify(); }
+    });
+    readMode(cx);
+    cx.timer.every(60000, (cx) => readMode(cx));
     // One field per channel or room, each saying where it goes ("Message #pricing"); switching
     // keeps what you'd typed in each, like drafts.
     this.inputs = new Map();
@@ -54,7 +63,12 @@ export default class CrewComposer extends View {
     if (!bot?.awake) return [];
     const term = leadPane(tab.id, panes())?.terminal;
     const argv = (terminals().find((x) => x.address === term)?.argv ?? []).join(" ");
-    const bypass = /--dangerously-skip-permissions|--dangerously-bypass-approvals-and-sandbox|--yolo/.test(argv);
+    // Bypass: its command line says so, else (no mode given there) Claude Code's own default in
+    // ~/.claude/settings.json (this computer's channels only). A Shift+Tab switch in the terminal
+    // isn't seen.
+    const explicit = /--permission-mode[ =](\S+)/.exec(argv)?.[1];
+    const bypass = /--dangerously-skip-permissions|--dangerously-bypass-approvals-and-sandbox|--yolo/.test(argv)
+      || explicit === "bypassPermissions" || (!explicit && !space.machine && /claude/i.test(bot.harness ?? "") && this.claudeMode === "bypassPermissions");
     // The boards' chips: 28 px r4 #2E2E30; the brain's 8 px swatch (Claude's #D97757), its name
     // 13/500 and model 13 #808082; the permission mode with an amber shield; each with a chevron.
     const chip = (id, kids, tip) => h_flex().id(id).flex_none().h(28).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.ctl).tooltip(tip).children(kids);

@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, chatPref, setChatPref, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane,
-  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, petScreen, modelOf, palPinned } from "./crew.js";
+  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, petScreen, modelOf, palPinned, taskTitle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const RAIL = 64;
@@ -251,10 +251,8 @@ export default class CrewRoster extends View {
     const mine = agents().filter((x) => x.space === space.id).sort((x, y) => y.seq - x.seq);
     const ag = mine[0];
     if (!ag) return "";
-    const title = (ag.title ?? "").replace(/^[^\p{L}\p{N}\[(]+/u, "").trim();
     const ch = channelName({ name: ag.tab_name });
-    const boring = !title || /^(claude|claude code|codex|grok|gemini|opencode|bash|zsh)$/i.test(title);
-    const what = boring ? statusWord(ag.status ?? "idle") : title;
+    const what = taskTitle(ag.title, bot.name, space.name, ch) ?? statusWord(ag.status ?? "idle");
     return space.tabs.length > 1 ? `[${ch}] ${what}` : what;
   }
 
@@ -463,9 +461,7 @@ export default class CrewRoster extends View {
     const tag = tab ? channelName(tab) : "";
     if (bot.starting) return [tag, "starting · it may be asking you something"];
     if (!bot.awake) return [tag, "asleep"];
-    const title = (ag?.title ?? "").replace(/^[^\p{L}\p{N}\[(]+/u, "").trim();
-    const boring = !title || /^(claude|claude code|codex|grok|gemini|opencode|bash|zsh)$/i.test(title);
-    return [tag, boring ? statusWord(ag?.status ?? "idle") : title];
+    return [tag, taskTitle(ag?.title, bot.name, space.name, tag) ?? statusWord(ag?.status ?? "idle")];
   }
   lastChange(space) { return Math.max(0, ...space.tabs.map((x) => x.changed_at ?? 0)) || null; }
   liveDot(status, d) { return status === "working" ? d.info : status === "blocked" ? d.warn : status === "done" ? d.ok : null; }
@@ -562,7 +558,8 @@ export default class CrewRoster extends View {
     const state = petState(bot, m);
     const artW = Math.max(120, Math.round(w - 24 - 2));
     const art = p && petReady(p) ? petEl(p, state, artW) : div().h(Math.round(artW * 135 / 172)).w(artW).flex().items_center().justify_center().child(mascotEl(bot, m, 72, t));
-    const what = this.doing(space, bot)[1];
+    const ag0 = agents().filter((x) => x.space === space.id).sort((x, y) => y.seq - x.seq)[0];
+    const what = bot.awake ? taskTitle(ag0?.title, bot.name, space.name, ag0 ? channelName({ name: ag0.tab_name }) : null) : null;
     const species = p ? p.species.replace(/^./, (c) => c.toUpperCase()) : null;
     return v_flex().id(`hero-${space.id}`).flex_none().gap(12).p(12).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
@@ -670,9 +667,7 @@ export default class CrewRoster extends View {
     for (const tab of space.tabs) {
       const on = tab.active;
       const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
-      const title = (ag?.title ?? "").replace(/^[^\p{L}\p{N}\[(]+/u, "").trim();
-      const boring = !title || /^(claude|claude code|codex|grok|gemini|opencode|bash|zsh)$/i.test(title);
-      const what = !bot.awake ? "asleep" : boring ? statusWord(tab.status ?? "idle") : title;
+      const what = !bot.awake ? "asleep" : taskTitle(ag?.title, bot.name, space.name, channelName(tab)) ?? statusWord(tab.status ?? "idle");
       const dot = bot.awake && ["working", "blocked"].includes(tab.status) ? this.liveDot(tab.status, d) : null;
       const done = bot.awake && tab.status === "done";
       const quiet = !bot.awake || (!dot && !done && tab.changed_at && Date.now() - tab.changed_at > 86400000);

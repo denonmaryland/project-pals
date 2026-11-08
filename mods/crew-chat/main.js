@@ -33,8 +33,8 @@ const EVENT = 32, KEEP = 300, MEASURE = 24, EDGE = 2;
 // day dividers, notes from other pals as bare text, and the tool log as a card. Older than today:
 // dimmer text (and in Focus a half-faded pet). Bubble A for yours in both.
 const MODE = {
-  focus: { col: 720, px: 32, py: 24, gap: 28, same: 3, face: 36, faceGap: 12, padX: 12, padY: 9, line: 22, name: 0 },
-  pro: { col: 0, px: 24, py: 16, gap: 16, same: 2, face: 31, faceGap: 10, padX: 10, padY: 6, line: 21, name: 18 },
+  focus: { col: 720, px: 32, py: 24, gap: 28, same: 3, sameText: 12, face: 36, faceGap: 12, padX: 12, padY: 9, line: 22, name: 0 },
+  pro: { col: 0, px: 24, py: 16, gap: 16, same: 2, sameText: 10, face: 31, faceGap: 10, padX: 10, padY: 6, line: 21, name: 18 },
 };
 
 const ICONS = "mods/crew-chat/icons", ROSTER = "mods/crew-roster/icons";
@@ -269,7 +269,9 @@ export default class CrewChat extends View {
     const M = MODE[layoutMode()];
     const width = Math.max(320, (M.col ? Math.min(this.width, M.col + 2 * M.px) : this.width) - 2 * M.px);
     const inner = width - M.face - M.faceGap;
-    const botMax = Math.max(220, inner - 2 * M.padX);
+    // The pal's replies have no bubble (DeNon, 2026-11-08, after flockbook): full-width text beside
+    // its pet, so long answers read like a document. Yours stay bubble A.
+    const botMax = Math.max(220, inner);
     const youMax = Math.max(200, Math.min(560, Math.round(width * 0.72)) - 2 * M.padX - EDGE);
     const unmeasured = [];
     const busy = status === "working" || status === "blocked";
@@ -320,7 +322,7 @@ export default class CrewChat extends View {
       const max = you ? youMax : botMax;
       const text = e.text ?? "";
       let tw = max;
-      if (plain(text)) {
+      if (you && plain(text)) {
         const nat = this.natural.get(e._n);
         if (nat == null) unmeasured.push({ key: `${e._n}`, text, you, natural: true });
         const w = nat ?? Math.ceil(lineWidth(text.trim()) * 1.06 + 12);
@@ -334,10 +336,10 @@ export default class CrewChat extends View {
         th = e._est.h;
         unmeasured.push({ key: mkey, text, tw, you });
       }
-      // Pro: a note from another pal is plain text under its name, no bubble.
-      const bare = note && Boolean(M.name);
+      // No bubble for anything but yours; text runs a paragraph apart within a group.
+      const bare = !you;
       const nameLine = !you && !note && first && M.name ? M.name : 0;
-      const h = (first ? M.gap : M.same) + nameLine + (note ? 28 + 4 : 0) + (bare ? 0 : M.padY * 2) + th + (e.images ? LINE : 0);
+      const h = (first ? M.gap : bare ? M.sameText : M.same) + nameLine + (note ? 28 + 4 : 0) + (bare ? 0 : M.padY * 2) + th + (e.images ? LINE : 0);
       const row = { kind: e.kind, key: `m-${e._n}`, e, you, first, tw, h, old, bare, label: note ? e.from : null };
       if (!you && !note && turn && !turn.first && first) turn.first = row;
       rows.push(row);
@@ -449,10 +451,10 @@ export default class CrewChat extends View {
     const face = first ? div().flex_none().when(old && !M.name, (el) => el.opacity(0.5)).child(mascotEl(bot, mood_, M.face, t)) : div().w(M.face).flex_none();
     const who = r.label ?? bot.name;
     const meta = [clock(e.at), r.worked ? `worked ${worked(r.worked)}` : null].filter(Boolean).join(" · ");
-    if (r.label) return wrap(v_flex().h(r.h).pt(first ? M.gap : M.same).pl(IN).gap(4))
+    if (r.label) return wrap(v_flex().h(r.h).pt(first ? M.gap : M.sameText).pl(IN).gap(4))
       .child(this.noteChip(r, d, true))
       .child(bubble);
-    return wrap(h_flex().h(r.h).items_start().gap(M.faceGap).pt(first ? M.gap : M.same))
+    return wrap(h_flex().h(r.h).items_start().gap(M.faceGap).pt(first ? M.gap : bare ? M.sameText : M.same))
       .child(face)
       .child(v_flex().flex_1().min_w(0).items_start()
         .when(first && Boolean(M.name), (el) => el.child(h_flex().h(M.name).items_start().gap(8)

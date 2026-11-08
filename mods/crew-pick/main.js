@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, agents, theme, props, closeOverlay, openOverlay, run, appHome, readTextFile } from "herdr";
-import { channelName, statusWord, leadPane, stamp, ds, tone, showTabs } from "./crew.js";
+import { channelName, statusWord, leadPane, stamp, ds, tone, showTabs, taskTitle, botOf } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 32;
@@ -70,9 +70,8 @@ export default class CrewPick extends View {
   // What a channel is on: its terminal title (agents set it to the task), else its last message.
   what(tab) {
     const ag = agents().filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
-    const title = (ag?.title ?? "").replace(/^[^\p{L}\p{N}\[(]+/u, "").trim();
-    const boring = !title || /^(claude|claude code|codex|grok|gemini|opencode|bash|zsh)$/i.test(title);
-    return (boring ? this.previews[tab.id] : title) ?? (ag ? statusWord(ag.status ?? "idle") : "no agent running");
+    const space = this.space();
+    return taskTitle(ag?.title, space?.name, botOf(space)?.name, channelName(tab)) ?? this.previews[tab.id] ?? (ag ? statusWord(ag.status ?? "idle") : "no agent running");
   }
 
   render() {
