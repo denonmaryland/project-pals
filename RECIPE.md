@@ -214,6 +214,11 @@ rectangular segments and tags.
 - **Status bar** (28px, under everything): working count (Pro adds needs-you), the shown channel's
   5-hour and weekly usage, in Pro its branch with ahead/behind, the shortcut, the mode switch and
   the installed version.
+- **The terminal sits in the app** (DeNon, 2026-11-08): no card around it. The pals layout sets
+  its own `colors.background` to the column's #0B0B0C (this layout only, not the person's theme),
+  so a terminal's default background is the column itself; programs' own coloured cells keep
+  theirs. No frame around a lone pane (`lone: false`; split panes keep their hairline and focus
+  border); the block is padded 8/16 and terminals 8/8, so text lines up with the header's.
 - **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal in both modes; you type in it
   directly, and you answer its permission prompts and questions there too (no prompt card:
   DeNon removed it on 2026-11-08, since it repeated the terminal's question and covered it). The

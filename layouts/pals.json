@@ -10,9 +10,12 @@
   "terminal_menu": "crew-termmenu",
   "background": "#0B0B0C",
   "ui_font": "Inter",
+  "colors": {
+    "background": "#0B0B0C"
+  },
   "terminal_padding": [
-    16,
-    14
+    8,
+    8
   ],
   "resizable": false,
   "divider": {
@@ -91,15 +94,14 @@
                   "id": "tab-view",
                   "type": "block",
                   "padding": [
-                    12,
-                    24
+                    8,
+                    16
                   ],
                   "content": {
                     "tab": "active",
                     "pane": {
                       "gap": 8,
                       "radius": 4,
-                      "background": "background",
                       "border": {
                         "width": 1,
                         "color": "#1E1E20"
@@ -108,7 +110,7 @@
                         "width": 1,
                         "color": "#3C3C3F"
                       },
-                      "lone": true
+                      "lone": false
                     }
                   }
                 },
