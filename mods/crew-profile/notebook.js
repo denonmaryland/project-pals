@@ -8,6 +8,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { notify } from "herdr";
 import { crewCli, ownerCli, panelNote, shortDate, shortTime } from "./crew.js";
+import { localDay } from "./vaultdata.js";
 
 export function initNotebook(view, cx) {
   view.nb = null; view.nbFor = null; view.nbFilter = "all"; view.nbArmed = null;
@@ -133,7 +134,8 @@ export function notebookTab(view, space, bot, d, full) {
     return body.child(div().pt(4).text_size(12).line_height("17px").text_color(d.fg3)
       .child(`Nothing yet. ${bot.name} writes here after real work: what it did, what got in the way and what it cost, what it would have needed, what it learned.`));
   }
-  const today = new Date().toISOString().slice(0, 10);
+  // Local, like the day files' names (UTC lost "Today · live" every evening west of Greenwich).
+  const today = localDay();
   for (const day of nb.days) {
     const entries = day.entries.slice().reverse().filter((e) => f === "all" || (f === "hiccups" ? e.hiccups.length || e.needed.length : e.lesson));
     if (!entries.length) continue;

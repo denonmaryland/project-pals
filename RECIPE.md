@@ -310,35 +310,46 @@ rectangular segments and tags.
     `crew-tasks` dialog), + Channel, Customize look, Put to sleep, as pebbles. In Full, two columns.
   - **Vault** (DeNon 2026-11-08: it replaced the Notebook, Mission and Brain tabs, which are now
     its notes; their old keys still open them, e.g. `openPanel("mission")`). Opens Full. Full: the
-    file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count,
-    Brain › Decisions / Change log / Map / All brain files, Notes, then On disk with the folder and
-    Open folder) | the note (max 820 px) | on Home, a 260 px rail (This week 2×2, Latest decisions).
+    file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count (the
+    days with entries in the last 14), Brain › Decisions / Change log / Map (left out when AGENTS.md
+    has a layout section) / All brain files, Notes (up to 12), then On disk with the folder, "Plain
+    markdown: it opens in Obsidian." and Open folder) | the note (max 820 px) | on Home, a 260 px
+    rail (This week 2×2, Latest decisions). The tree's counts and brain rows fill in once their data
+    has loaded: the brain loads on Home, Mission or Brain, the journal on Home or Journal, so a
+    Vault opened straight onto Journal shows no brain counts until you visit one of those.
     Side: a Home · Mission · Journal · Brain strip (34 px) over the note.
     `crew-profile.<name>` (keys.json or `herdr-app do`, while the panel shows) opens a tab or note:
-    profile, vault, agents, home, mission, notebook, brain.
-  - **Vault › Home** (`vault.js`, numbers from `vaultdata.js`): "<Pal> / Home.md · ● live"; the
-    name (26/700, Full only) and mission statement (15 px); Brain / Project / Channels ("8 · 3
-    working" in blue) / Owner; the Focus now callout (blue tint: focus 15 px, Goals x of y, Done
-    when x of y, Mission →); Right now (channels working or needing the owner, needing first,
-    amber-tinted; each with its claimed task, else its agent's own title (never a shell's
-    user@host), else its brief; click shows it; three per row in Full); Tasks as NOW (claimed) /
-    NEXT (open) / BLOCKED / DONE TODAY, four columns in Full, rows in Side, Board → opens
-    `crew-tasks`; Today's journal (newest 3: time · channel · task · how long, did, the first
-    hiccup in amber, the first lesson in mint; Journal →); This week (entries and time logged,
-    hiccups and minutes lost, lessons, needs); Latest changes (3, newest first, with the channel).
-  - **Vault › Journal** (was the Notebook tab): the pal's journal, newest day first, today live ("live" in mint), All · Hiccups ·
-    Lessons, and the week's count ("4 hiccups · ~50m lost"). Each entry: time · #channel · task ·
-    how long; did; hiccups (an amber tag, with what they cost); needed (tool / skill / rule /
-    context / access); lesson. × then "Click again to delete" removes an entry (the day is copied
-    to `data/crew-backups/notebook/` first).
+    profile, vault, agents, home, mission, notebook, brain. `vault` (and the header's Vault tab)
+    reopens the last note shown; the pal menu's Vault row always opens Home.
+  - **Vault › Home** (`vault.js`, numbers from `vaultdata.js`): "<Pal> / Home.md · ● live" (Full adds
+    "writes itself from the vault and the board"); the name (26/700, Full only) and mission
+    statement (15 px); Brain / Project / Channels ("8 · 3 working" in blue) / Owner; the Focus now
+    callout (blue tint: focus 15 px, Goals x of y, Done when x of y, Mission →; with no focus it
+    says how the pal sets one, `pal mission focus`, or with no mission how it proposes one); Right
+    now (channels working or needing the owner, needing first, amber-tinted; each with its claimed
+    task, else its agent's own title (never a shell's user@host), else its brief; click shows it;
+    at most 5 in Side, 6 in Full as two rows of three); Tasks as NOW (claimed) / NEXT (open) /
+    BLOCKED / DONE TODAY, four columns in Full (4 rows each), rows in Side (3 each), then "+N
+    more", Board → opens `crew-tasks`; Today's journal (newest 3: time · channel · task · how long,
+    did, the first hiccup in amber, the first lesson in mint; Journal →); This week (entries and
+    time logged, hiccups and minutes lost, lessons, needs, over the last 7 calendar days; in Full
+    it's in the rail); Latest changes (3, newest first, with the channel; Brain →). In Side, Latest
+    decisions (2) closes the note.
+  - **Vault › Journal** (was the Notebook tab): the pal's journal, newest day first, today (the
+    local date, as the day files are named) live ("live" in mint), All · Hiccups · Lessons, and the
+    week's count ("4 hiccups · ~50m lost": from `pal notebook ls`, over the last 7 day files, so
+    with gaps it can differ from Home's This week). Each entry: time · #channel · task · how long;
+    did; hiccups (an amber tag, with what they cost); needed (tool / skill / rule / context /
+    access); lesson. × then "Click again to delete" removes an entry (the day is copied to
+    `data/crew-backups/notebook/` first). The head pal's has a Notebook · Dreams switch.
   - **Vault › Mission:** the mission card (statement 16/500; Goals and Done when as checklists you can
     tick; Focus), Edit (the code editor, saved with a hash check), the last 3 change-log lines and
     the last 2 decisions, "All in Brain →". No mission: "Write the mission" (a template). A pal's
     mission proposal shows here with Decline / View.
   - **Vault › Brain:** the files (Decisions, Change log, Map, or "→ AGENTS.md" when AGENTS.md has a layout
-    section, notes, and an adopted `_Brain/PROJECT_BRAIN.md`), each opening in the panel with ← and
-    Edit; "Brain lives in: Pal data | This project" (moves it, copying files, deleting nothing); who
-    writes it.
+    section, notes, and an adopted `_Brain/PROJECT_BRAIN.md`), each opening in the panel with ← Files
+    and Edit (a `_Brain/` file in the project saves through Review, a diff, like AGENTS.md); "Brain
+    lives in: Pal data | This project" (moves it, copying files, deleting nothing); who writes it.
   - **AGENTS.md:** what Claude Code loads here (global CLAUDE.md + the project's, with imports,
     in lines), the files (View in a read-only editor, Edit), the lint with its fixes (Create
     pointer, Use an import, Make CLAUDE.md the pointer), "Deep check (sends these files to Claude)",
@@ -366,7 +377,7 @@ rectangular segments and tags.
   into `YYYY-MM.md` (lessons only).
 - **The Dream loop** (`bin/crewdream.py`; proposals only): nightly at 03:30 (crewd, after the memory
   distill, one model run at a time) and on demand (`pal dream`, or Dream now in the head pal's
-  Notebook tab → Dreams). (1) Every notebook's hiccup / needed / lesson lines since the last dream,
+  Vault › Journal → Dreams). (1) Every notebook's hiccup / needed / lesson lines since the last dream,
   no model; under 3 new hiccups crew-wide it skips. (2) One Haiku call groups them into patterns
   (`P-n`), reusing the ledger's open ones; if the call fails, word overlap (2+ shared words). (3)
   Patterns seen in 2+ pals, 3+ times or costing 30+ minutes (at most 3) go to the head pal as a
@@ -592,14 +603,14 @@ rectangular segments and tags.
   area; ⤡ goes back.
 - A worktree channel's right-click has Review changes; a plain channel's doesn't.
 - `pal mission set` from a pal is refused; `pal mission propose -F f` puts a card in the Inbox; View
-  shows it in the panel's Mission tab; Accept writes `mission.md`, and the next session's primer
+  shows it in the panel's Vault › Mission; Accept writes `mission.md`, and the next session's primer
   starts with the new mission.
 - For a project with AGENTS.md and no CLAUDE.md, the AGENTS.md tab shows `no-pointer`; Create
   pointer → Review shows `+1 −0` and "new file"; Write makes CLAUDE.md holding `@AGENTS.md`, a backup
   marked `.absent`, and a change-log line, and nothing else in the repo changes.
 - A pal's Edit of an AGENTS.md is held in the Inbox.
 - `pal notebook "did: x" --hiccup "y (cost: 10m)"` from a pal adds one entry, shown live in the
-  Notebook tab; a line with `sk-ant-…` comes out ‹masked›; a pasted 20-line log is refused.
+  Vault › Journal; a line with `sk-ant-…` comes out ‹masked›; a pasted 20-line log is refused.
 - With three pals' notebooks holding the same hiccup, `pal dream --no-model --dry-run` shows one
   qualifying pattern; a real run sends the head pal one `[dream]` digest; `pal dream propose
   --kind skill …` puts one card in the Inbox; Approve saves the skill and `pal dream ls` shows the

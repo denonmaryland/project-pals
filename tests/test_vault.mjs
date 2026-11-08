@@ -1,7 +1,17 @@
 // The Vault's Home note: what it computes from the brain, the notebook and the board.
 // Run: node tests/test_vault.mjs
 import assert from "node:assert/strict";
-import { minutesOf, fmtMinutes, taskColumns, weekStats, todayEntries, homeData, NOTE_KEYS } from "../mods/crew-profile/vaultdata.js";
+import { minutesOf, fmtMinutes, taskColumns, weekStats, todayEntries, homeData, NOTE_KEYS, localDay } from "../mods/crew-profile/vaultdata.js";
+
+// West of Greenwich, so an evening's UTC date is already tomorrow (the dates below are local).
+process.env.TZ = "America/Los_Angeles";
+
+// The Journal's "today" is the local day, as the notebook names its files (it was UTC: after 16:00
+// here the current day lost its "Today · live" label).
+const evening = new Date(2026, 10, 8, 17, 0);
+assert.equal(evening.toISOString().slice(0, 10), "2026-11-09", "the test needs a UTC date that's tomorrow");
+assert.equal(localDay(evening), "2026-11-08");
+assert.equal(localDay(new Date(2026, 0, 5, 0, 30)), "2026-01-05");
 
 // The old tabs' keys stay as notes, so menus that open Mission, Brain or Notebook still land.
 assert.deepEqual(NOTE_KEYS, ["home", "mission", "notebook", "brain"]);

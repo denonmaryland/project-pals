@@ -28,7 +28,9 @@ export function fmtMinutes(min) {
   return h ? `${h}h${m ? ` ${String(m).padStart(2, "0")}m` : ""}` : `${m}m`;
 }
 
-const ymd = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+// A day as the notebook names its files: the local date (crewnotebook.py's strftime), never UTC.
+export const localDay = (t = Date.now()) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const ymd = localDay;
 const startOfDay = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const lessonsOf = (e) => (Array.isArray(e.lessons) ? e.lessons : Array.isArray(e.lesson) ? e.lesson : e.lesson ? [e.lesson] : []);
 const costOf = (h) => (typeof h?.cost === "number" ? h.cost : minutesOf(String(h?.text ?? "").match(/cost:\s*([^)]*)/)?.[1]));
