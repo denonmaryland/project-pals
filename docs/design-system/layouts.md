@@ -19,7 +19,7 @@ and which nodes are shown. Content never re-orders and a draft never gets lost.
 | | **Focus** (default) | **Pro** |
 |---|---|---|
 | For | Talking to one pal, reading, the everyday | Running several pals, reviewing work, watching tools |
-| Left | 304 px sidebar: **hero pal card** (full art), then the **pal list** with avatar, name, `[tag] preview`, time, unread/state dot, and "Hidden pals N" | **Pal rail** 60 px (avatars + state dots, same order) + **list column** 264 px: banner pal card (art cropped to 150 px), the active pal's **channels** with previews, and "Across pals" (working / needs you) |
+| Left | 304 px sidebar: **hero pal** (hero v2: no box, the pet full width, name + channels under it, quick actions), then the **pal list** with avatar, name, `[tag] preview`, time, unread/state dot, and "Hidden pals N" | **Pal rail** 60 px (avatars + state dots, same order) + **list column** 264 px: banner pal card (art cropped to 150 px), the active pal's **channels** with previews, and "Across pals" (working / needs you) |
 | Header | `# channel ▾` picker on the left, **pal name chip centred**, branch chip on the right | **Channel tabs** (30 px, r4), name chip at the right end |
 | Chat | Centred 720 px column, 28 px between groups, airy | Fluid column, 16 px between groups, inline **tool log** under replies |
 | Right | Nothing: the chat takes the full width (the rail was removed 2026-11-08; terminal via Chat · Terminal) | **Inspector** 320 px: Run / Tasks / Memory tabs, Tasks list, **Changes** with +/− per file, **Terminal** tail, and Fold |

@@ -117,8 +117,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
   **faint container**: `#131316` (one step up from the page), a 7% white hairline, radius
   max(4, w/35), the pet centred 4% high and free to break the edge. It replaces the folder mascot
-  everywhere a pal's face shows: the Focus hero card (the sidebar's width less 26 px, with a
-  rectangular state tag), the sidebar list (46x36), the Pro pal rail (44x34) and banner (a wide
+  everywhere a pal's face shows: the Focus hero (no box at all, the sidebar's full width), the
+  sidebar list (46x36), the Pro pal rail (44x34) and banner (a wide
   box, 130 tall), the pal chip (30x24 in Focus, 25x20 in Pro), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
@@ -183,7 +183,17 @@ drafts stay put). Anything new is drawn in the design-system look: 1px hairlines
 rectangular segments and tags.
 
 - **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
-  above), no tab strip. The header has a `# channel ▾` picker on the left (a popup of the pal's
+  above), no tab strip.
+  - **The hero** (hero v2, DeNon 2026-11-08): no box. The shown pal's pet and its laptop at the
+    sidebar's full width (303x237 at 304; the critter about 180px), drawn on the sidebar itself
+    (its own "open" tiles, `-o.svg`). Under it, its name (20/600) with a 7px state dot (blue
+    working, amber asks you or stuck, green done), and to the right of the name its channels:
+    "Channels", up to three `# name` rows (24px, the shown one #232324, a blue/amber dot or green
+    check), "+N more" opening the channel picker. Then four r4 quick actions in a row: + Channel
+    (new channel dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks
+    with this pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep;
+    Herdr asks first). No state pill, no species/brain line; the task text is in its pal row.
+    While it works, a lightsaber runs along the hero's bottom line, right to left and back. The header has a `# channel ▾` picker on the left (a popup of the pal's
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
   the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot). Tasks, Changes and Branch are Pro's.
@@ -244,6 +254,8 @@ rectangular segments and tags.
 
 ## Watch out
 
+- **The hero's saber line** is the same trick with two pivots, one above the line and one below,
+  so one sweep crosses it right to left and the other left to right, both with trailing tails.
 - **The pets' lightsaber is faked:** Herdr can't blur, stroke a path, tint a shadow or clip to a
   rounded shape. A comet-shaped sweep (`pet-saber.svg`, 40 slices) spins about the container's
   centre and shows only through 1.5-10 px strips along its edges, one set of strips per glow
