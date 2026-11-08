@@ -239,9 +239,13 @@ rectangular segments and tags.
     shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
     `pebble()` in crew.js): + Channel (new channel
     dialog), Tasks with this pal's open count, and an icon-only moon (put to sleep; Herdr
-    asks first). Tasks (Tell merged into it: DeNon, "a Tell is really a task") opens `crew-tasks`:
-    "Add a task…" on top (Enter adds a real task on the shared board, `pal task add "…" --for <pal>`,
-    marked from the owner, and the pal is told when its turn ends), then that pal's open tasks
+    asks first). Tasks (Tell merged into it: DeNon, "a Tell is really a task") opens `crew-tasks`
+    (520px): a composer on top (a 13.5px textarea, 3 rows growing to 10; Enter adds, Shift+Enter is
+    a new line; images by pasting, dropping files on the dialog, or the paperclip's recent-files list,
+    copied into `data/crew-attachments`, images only, 10MB and 6 per task, shown as 64x48 thumbnails
+    with ×). Adding makes a real task on the shared board, `pal task add "<first line>" --for <pal>
+    --body "<the rest, and the images' paths>"`, marked from the owner; the pal is told when its turn
+    ends and its "New task" message carries the body, paths included. Then that pal's open tasks
     (working first, then blocked, then open; a tick finishes one, a click on its title shows its
     details, notes and who asked), and "All tasks on the board →". Quick questions go in the
     terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel

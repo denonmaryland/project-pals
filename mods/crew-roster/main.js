@@ -616,7 +616,7 @@ export default class CrewRoster extends View {
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 460, props: { space: space.id } }), mine || null))
+        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine || null))
         .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
 
