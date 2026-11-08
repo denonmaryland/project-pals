@@ -235,7 +235,7 @@ rectangular segments and tags.
     asks you / stuck, green done / PR); no state word (DeNon took it out; the tooltip names it).
     Under the floor, the pal's channels at full width: a header ("Channels", the count, and a
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
-    rows (`#`, the name, a blue/amber dot, a green check or when it last changed; the shown one
+    rows (`#`, the name, the working indicator or an amber dot, a green check or when it last changed; the shown one
     #232324), up to four (the box hugs fewer); past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, with an always-drawn scrollbar in a gutter: while the list overflows the
     rows end 18px in (11px otherwise) and Herdr's thumb sits in the gap, never over a time, pin or
@@ -248,6 +248,15 @@ rectangular segments and tags.
     Pin / Unpin, Review changes (a worktree channel only: `crew-review`), and Move up / Move down
     (within its group). Pinning and moving move Herdr's own tabs
     (`tab.move`), so the order survives restarts and the `crew-pick` dropdown lists the same.
+    The working indicator (here and in `crew-pick`) is the owner's pick in Project Pals settings →
+    Working indicator (`crew-indicator`, saved as `workingIndicator` in crew-settings.json): Classic
+    dot (6px blue, the default) or one of 30 looping animations in four groups, Pixel (10 dithered
+    spinners, 12px), Sphere (10 shaded spheres, 12px) and ASCII (10 character globes, 16px). They
+    are animated WebPs in `mods/crew-roster/working/`, pre-rendered from DeNon's three design boards
+    by `tools/working-indicators/build.sh` and played by Herdr natively; only working rows draw
+    one. The dialog: fake channel rows on top showing the style under the pointer (else the chosen
+    one), then a grid of 44px tiles with live 24px previews per group; a click applies at once,
+    Done keeps it, Cancel or Esc puts back the one you had.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
     clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (one flat #1B1B1E face, a 6% white
     hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest

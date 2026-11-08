@@ -13,7 +13,7 @@ import {
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
-  togglePanel, panelOpen, panelTab, needsOf, openProposalPanel, APP_MENU } from "./crew.js";
+  togglePanel, panelOpen, panelTab, needsOf, openProposalPanel, APP_MENU, workingMark } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -773,6 +773,7 @@ export default class CrewRoster extends View {
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
         .when(tabPinned(tab), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
         .child(!tabHasAgent(tab) ? noAgentTag(d)
+          : st === "working" ? workingMark(d)
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
           : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
