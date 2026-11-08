@@ -5,8 +5,8 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, godMascot, a, tone } from "./crew.js";
+import { theme, props, closeOverlay, notify, appHome, readTextFile, exec, home, shared, keys } from "herdr";
+import { crewCli, godMascot, a, tone, layoutMode, setMode, ds } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -105,6 +105,38 @@ export default class CrewAbout extends View {
     });
   }
 
+  // Settings › Layout: Focus (the default) or Pro, as two picture tiles. The same setting as the
+  // status bar's switch and the shortcut.
+  layoutPicker(t) {
+    const d = ds(t);
+    const mode = layoutMode();
+    const bound = keys().find((k) => k.action === "crew-roster.mode");
+    const hint = bound ? bound.keys.split("-").map((p) => p[0].toUpperCase() + p.slice(1)).join("+") : null;
+    const block = (w, fill) => div().h_full().flex_none().when(w != null, (el) => el.w(w)).when(w == null, (el) => el.flex_1()).bg(fill);
+    // A tiny picture of each shape: Focus = sidebar, chat, thin rail; Pro = rail, list, chat, inspector.
+    const pic = (parts) => h_flex().h(54).w_full().gap(2).p(4).rounded(d.r.sm).bg(t.canvas).border_1().border_color(d.lineSoft)
+      .children(parts.map(([w, strong]) => block(w, strong ? a(t.foreground, "22") : a(t.foreground, "0c")).rounded(2)));
+    const tile = (id, label, sub, parts) => {
+      const on = mode === id;
+      return v_flex().id(`set-layout-${id}`).flex_1().min_w(0).gap(8).p(8).rounded(d.r.md).cursor_pointer()
+        .border_1().border_color(on ? d.lineStrong : d.line).when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+        .on_click((_e, cx) => { if (!on) setMode(id); cx.notify(); })
+        .child(pic(parts))
+        .child(h_flex().items_center().gap(7).px(2)
+          .child(div().size(12).flex_none().rounded_full().border_1().border_color(on ? t.accent : d.lineStrong).flex().items_center().justify_center()
+            .when(on, (el) => el.child(div().size(6).rounded_full().bg(t.accent))))
+          .child(div().text_size(13).text_color(d.fg1).child(label))
+          .when(Boolean(sub), (el) => el.child(div().text_size(12).text_color(d.fg3).child(sub))));
+    };
+    return v_flex().gap(8).pt(10)
+      .child(h_flex().items_baseline().justify_between().px(4)
+        .child(div().text_size(12.5).font_medium().text_color(t.muted).child("Layout"))
+        .when(Boolean(hint), (el) => el.child(div().text_size(11.5).font_family(d.mono).text_color(d.fg3).child(`${hint} switches`))))
+      .child(h_flex().gap(8)
+        .child(tile("focus", "Focus", "default", [[34, true], [null, false], [6, false]]))
+        .child(tile("pro", "Pro", null, [[8, false], [26, true], [null, false], [30, false]])));
+  }
+
   key(e, cx) {
     if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
   }
@@ -192,7 +224,8 @@ export default class CrewAbout extends View {
         .child(div().px(4).text_size(12).text_color(t.dim)
           .child("Updates replace Project Pals's own files only. Your pals, rooms, memory and routines stay as they are, and the previous version is kept so you can roll back."))
         .child(div().px(4).pt(10).text_size(12.5).font_medium().text_color(t.muted).child("Settings"))
-        .child(settings))
+        .child(settings)
+        .child(this.layoutPicker(t)))
       .child(footer);
   }
 }

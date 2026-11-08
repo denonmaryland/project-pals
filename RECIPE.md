@@ -145,6 +145,34 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   `pal.json`, checks it against `SHA256SUMS`, snapshots the installed files, runs `install.sh`,
   and restores the snapshot if any mod fails `herdr-app check`. Roll back is offered.
 
+### Layout modes: Focus (default) and Pro
+
+One layout, two densities; switching only shows, hides and resizes nodes (nothing re-orders, and
+drafts stay put). Anything new is drawn in the design-system look: 1px hairlines, radius 3/4/6/8,
+rectangular segments and tags.
+
+- **Focus** (a fresh setup starts here): the sidebar at 304px (the hero pal and the pal list, as
+  above), no tab strip. The header has a `# channel ▾` picker on the left (a popup of the pal's
+  channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
+  the right. A 48px **rail** on the sheet's right edge has Run, Tasks and Memory icons (Run carries
+  the channel's live dot) and Expand at the bottom. An icon **peeks** that inspector section in a
+  320px panel beside it; clicking it again, or the panel's ×, closes it. A peek isn't remembered.
+- **Pro:** a 60px **pal rail** (faces in sidebar order, state dots, + to hire, settings), a 264px
+  list column (the shown pal as a banner card, its channels with what each is on, Channels ·
+  Rooms · Tasks · Inbox, and "Across pals": who else is working or needs you), the channel tabs
+  above the sheet, and the **inspector** open at 320px with Run / Tasks / Memory tabs and Fold.
+- **Switching:** Ctrl+Shift+M (`crew-roster.mode`), the status bar's `Focus | Pro` segment, Expand
+  (opens Pro on the peeked section) and Fold, About › Settings › Layout (two picture tiles), or
+  `pal settings layout focus|pro` from your own shell (the window follows within 3 seconds).
+- **Status bar** (28px, under everything): working count (Pro adds needs-you), the shown channel's
+  5-hour and weekly usage, in Pro its branch with ahead/behind, the shortcut, the mode switch and
+  the installed version.
+- **Composer** (both modes): one r8 box, the prompt on top, then attach, the channel's brain and
+  model, its permission mode (Bypass / Ask first, read from the terminal's command), mic, voice
+  and send. 720px centred in Focus, full width in Pro. Mic and voice only say they're coming.
+- **Remembered** in `data/crew-settings.json`: `layoutMode`, `focus.sidebarPx`, `pro.listPx`,
+  `pro.inspectorPx` and `pro.inspectorTab`. Each mode keeps its own drag widths.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
@@ -228,3 +256,6 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   a right-hand bubble.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.
+- On a fresh setup the pals layout opens in Focus; Ctrl+Shift+M flips to Pro and back, and the
+  mode and each mode's widths come back after a restart. The installer binds Ctrl+Shift+M only when
+  it's free in every keys.json section (keys.json is backed up first).
