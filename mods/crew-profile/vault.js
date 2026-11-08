@@ -57,8 +57,9 @@ function tree(view, space, bot, d, cur) {
   col.child(div().px(8).pb(8).text_size(10).font_family(d.mono).text_color(d.fg3).truncate().child(`${bot.name.toUpperCase()} · VAULT`));
   const item = (id, label, { on = false, indent = 0, count = null, dot = null, act }) => col.child(
     h_flex().id(id).h(28).pl(8 + indent).pr(8).gap(8).items_center().rounded(d.r.sm)
-      .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { act(cx); cx.notify(); })
+      .when(on, (el) => el.bg(d.sel))
+      // The open note keeps no click: clicking it again would drop an unsaved edit (show()).
+      .when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => { act(cx); cx.notify(); }))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(on ? d.fg1 : indent ? d.body : d.fg1).child(label))
       .when(count != null, (el) => el.child(div().text_size(10).font_family(d.mono).text_color(d.fg3).child(String(count))))
       .when(Boolean(dot), (el) => el.child(div().size(6).rounded(3).bg(dot))));
@@ -104,7 +105,7 @@ function data(view, space, bot) {
   const brain = view.brain && view.brainFor === bot.name ? view.brain : null;
   const nb = view.nb && view.nbFor === bot.name ? view.nb : null;
   const tasks = (view.ops?.tasks ?? []).filter((x) => taskFor(x, space.name));
-  return { ...homeData({ brain, nb, tasks }), loaded: Boolean(brain), nbLoaded: Boolean(nb) };
+  return { ...homeData({ brain, nb, tasks }), loaded: Boolean(brain), nbLoaded: Boolean(nb), tasksLoaded: Boolean(view.opsLoaded) };
 }
 
 function label(d, text) {
@@ -173,6 +174,7 @@ function facts(space, bot, d, full) {
 function focus(view, d, h) {
   const box = v_flex().px(14).py(12).gap(6).rounded(d.r.lg).border_1().border_color(d.info + "40").bg(d.info + "10");
   box.child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.infoText).child("FOCUS NOW"));
+  if (!h.loaded) return box.child(div().text_size(13).text_color(d.fg3).child("Reading the vault…"));
   if (!h.focus) {
     return box.child(div().text_size(13).line_height("19px").text_color(d.fg2)
       .child(h.hasMission ? "No focus set: the pal keeps it current with pal mission focus." : "No mission yet: the pal proposes one with pal mission propose, and you approve it in the Inbox."))
@@ -237,6 +239,7 @@ function taskBoard(space, d, h, full) {
     .child(div().flex_1().min_w(0).text_size(13).line_height("18px").text_color(dim ? d.fg2 : d.body).child(x.title));
   if (!full) {
     const any = cols.some(([, xs]) => xs.length);
+    if (!any && !h.tasksLoaded) return sec.child(div().text_size(12).text_color(d.fg3).child("Reading the board…"));
     if (!any) return sec.child(div().text_size(12).text_color(d.fg3).child("No tasks for this pal."));
     return sec.child(v_flex().gap(6).children(cols.filter(([, xs]) => xs.length).map(([name, xs, col]) => h_flex().items_start().gap(10)
       .child(div().w(76).flex_none().text_size(10).line_height("18px").font_family(d.mono).text_color(col).child(`${name} ${xs.length}`))

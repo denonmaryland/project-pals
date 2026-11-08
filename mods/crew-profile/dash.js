@@ -23,7 +23,7 @@ const OPEN = ["open", "claimed", "blocked"];
 
 export function initDash(view, cx, part) {
   if (part === "board" || part === "head") {
-    const ops = (cx) => cx.spawn(async (cx) => { try { view.ops = await loadOps(); } catch {} cx.notify(); });
+    const ops = (cx) => cx.spawn(async (cx) => { try { view.ops = await loadOps(); view.opsLoaded = true; } catch {} cx.notify(); });
     ops(cx);
     cx.timer.every(4000, (cx) => { if (dashShown()) ops(cx); });
   }
@@ -270,7 +270,7 @@ function act(d, id, text, fn) {
 function taskCmd(view, cx, args) {
   cx.spawn(async (cx) => {
     try { await crewCli(args); } catch (e) { notify({ title: "Couldn't change the task", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-    try { view.ops = await loadOps(); } catch {}
+    try { view.ops = await loadOps(); view.opsLoaded = true; } catch {}
     cx.notify();
   });
 }

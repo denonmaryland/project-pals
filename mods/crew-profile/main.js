@@ -55,7 +55,7 @@ export default class CrewProfile extends View {
       }
       return;
     }
-    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); } catch {} cx.notify(); });
+    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); this.opsLoaded = true; } catch {} cx.notify(); });
     ops(cx);
     cx.timer.every(5000, (cx) => { if (this.isOpen()) ops(cx); });
     cx.timer.every(8000, (cx) => { if (this.isOpen()) this.loadMemory(cx, true); });

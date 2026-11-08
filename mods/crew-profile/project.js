@@ -27,7 +27,8 @@ export function initProject(view, cx) {
   view.editor = EditorState.new({ language: "markdown", soft_wrap: true, font_family: "JetBrains Mono", font_size: 12, folding: false });
   view.viewer = EditorState.new({ language: "markdown", soft_wrap: true, font_family: "JetBrains Mono", font_size: 12, folding: false, readonly: true });
   view.note = InputState.new({ placeholder: "What this change is for (goes in the brain's change log)" });
-  cx.timer.every(8000, (cx) => { if (view.isOpen() && ["home", "mission", "brain"].includes(panelNote())) loadBrain(view, cx, true); });
+  // Journal too: in Full its tree counts the brain's decisions and changes.
+  cx.timer.every(8000, (cx) => { if (view.isOpen() && panelTab() === "vault") loadBrain(view, cx, true); });
   cx.timer.every(15000, (cx) => { if (view.isOpen() && panelTab() === "agents" && !view.edit && !view.review) loadAgents(view, cx, true); });
   cx.timer.every(5000, (cx) => { if (view.isOpen()) loadProposals(view, cx); });
   // A proposal opened from the Inbox (shared crew.panel.proposal): straight to its review.
@@ -42,7 +43,7 @@ export function initProject(view, cx) {
 export function ensureProject(view, cx, bot) {
   followShown(view, view.shown());
   const tab = panelTab();
-  if (["home", "mission", "brain"].includes(panelNote()) && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
+  if (tab === "vault" && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
   if (tab === "agents" && view.agentsFor !== bot.name && !view.agentsLoading) loadAgents(view, cx);
 }
 
@@ -385,15 +386,19 @@ function acceptMission(view, cx, p) {
 
 // Open one brain file in the Brain note (the Vault's tree links here too).
 export function openBrainFile(view, cx, bot, file, project = false) {
+  // Still wanted when it arrives? Another pal, or another note, since the click: drop it.
+  const wanted = () => view.shown()?.bot?.name === bot.name && (project || panelNote() === "brain");
   cx.spawn(async (cx) => {
     try {
       if (project) {
         const text = await readTextFile(`${bot.folder}/${file}`);
         const info = JSON.parse(await crewCli(["agents", "show", bot.name, "--json"]));
+        if (!wanted()) return;
         view.agentsInfo = info; view.agentsFor = bot.name;
         view.brainFile = { file, text, sha: await shaOf(text), project: true };
       } else {
         const r = JSON.parse(await crewCli(["brain", "show", bot.name, file, "--json"]));
+        if (!wanted()) return;
         view.brainFile = { file, text: r.text, sha: r.sha };
       }
     } catch (e) { notify({ title: `Couldn't open ${file}`, body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
