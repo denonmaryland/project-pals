@@ -190,13 +190,17 @@ rectangular segments and tags.
     in from each side, with a pool of the state's colour under the pet (`pet-floor-<state>.svg`:
     working blue, done mint, asks you amber and breathing, PR green, merged purple, closing red,
     stuck amber; none at rest or asleep). While it works, a lightsaber runs along the floor, right
-    to left and back. Under it: the name (20/600) with the state on the right ("● Working · 4m",
-    blue; amber for asks you / stuck; green for done / PR), the pal's channels as r4 chips (24px,
-    `# name` and a dot or check, the shown one #232324, as many as fit, "+N" opens the picker),
-    and four r4 quick actions: + Channel (new channel dialog), Tell (a small dialog that sends
-    `pal tell`, marked from the owner), Tasks with this pal's open count (switches the sidebar to
-    Tasks), and an icon-only moon (put to sleep; Herdr asks first). No state pill, no
-    species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's
+    to left and back. The name (16/600) sits in a 30px band at the top, 14px in, the sprite
+    starting 8px into it (bun ears, antennas and crowns reach the sprite's top edge, so the name
+    can't sit on the sprite), with the full width so it never cuts off: a 7px state dot before it (blue working, amber
+    asks you / stuck, green done / PR) and the state word after it ("Working · 4m") when both fit.
+    Under the floor, the pal's channels at full width: a header ("Channels", the count, and a
+    magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
+    rows (`#`, the name, a blue/amber dot, a green check or when it last changed; the shown one
+    #232324), up to six, then scrolling. Then four r4 quick actions: + Channel (new channel
+    dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
+    pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
+    asks first). No state pill, no species/brain line; the task text is in its pal row. The header has a `# channel ▾` picker on the left (a popup of the pal's
   channels plus New channel; right-click renames), the pal's name chip centred, and its branch on
   the right. Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot). Tasks, Changes and Branch are Pro's.

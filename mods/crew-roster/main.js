@@ -90,6 +90,10 @@ export default class CrewRoster extends View {
     // Add a task from the Tasks view: "title" or "@Pal title".
     this.taskInput = InputState.new({ placeholder: "Add a task, @Pal to assign it" });
     this.taskInput.on("submit", (_e, cx) => this.addTask(cx));
+    // The hero's channel search (its header's magnifier): filters as you type, Esc clears.
+    this.chSearch = InputState.new({ placeholder: "Search channels" });
+    this.chSearch.on("change", (_e, cx) => cx.notify());
+    this.chSearchOpen = false;
     // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -558,14 +562,15 @@ export default class CrewRoster extends View {
     return list;
   }
 
-  // The Focus hero (hero v2 "2 · Floor", DeNon's pick 2026-11-08). No box: the shown pal's pet and
-  // its laptop at the sidebar's full width (bigger than the old card's), standing on a floor: a
-  // hairline with a pool of the state's colour under the pet (working blue, done mint, asks you
-  // amber and breathing, PR green, merged purple, closing red, stuck amber; none at rest), and
-  // while it works a lightsaber runs along that floor (saberLine). Under it: the name with the
-  // state ("Working · 4m") on the right, the pal's channels as chips (one click switches; +N opens
-  // the picker), and four quick actions: + Channel, Tell, Tasks (its count), Sleep. Its task text
-  // is in its pal row below.
+  // The Focus hero (hero v2, DeNon 2026-11-08: "2 · Floor", then the name up top and the channels
+  // full width). No box: the shown pal's pet and its laptop at the sidebar's full width, standing
+  // on a floor (a hairline with a pool of the state's colour under the pet: working blue, done
+  // mint, asks you amber and breathing, PR green, merged purple, closing red, stuck amber; none at
+  // rest), and while it works a lightsaber runs along that floor (saberLine). The name sits in a
+  // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
+  // it, the state word after it when it fits). Under the floor: the pal's channels, full width,
+  // up to six rows then scrolling, with a search in their header; then four quick actions:
+  // + Channel, Tell, Tasks (its count), Sleep. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
     const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
@@ -576,76 +581,99 @@ export default class CrewRoster extends View {
     const light = d.bg1 !== "#0E0E0F";
     const ready = p && petReady(p);
     const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
-    const FY = H + 2;   // the floor's line
+    const NB = 30;      // the name's band over the sprite
+    const FY = NB + H + 2;   // the floor's line
+    const word = !bot.awake ? "Asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
+    const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
+    const label = since && since !== "now" ? `${word} · ${since}` : word;
+    const [dot, wordColor] = state === "work" ? [d.info, d.infoText] : state === "ask" || state === "stuck" ? [d.warn, d.warnText]
+      : state === "done" || state === "pr" ? [d.ok, d.okHi] : [null, d.fg3];
+    // The state word rides after the name only when both fit (Inter 16/600 ~ 9.2 px a char, 12/500 ~ 6.6).
+    const fits = 28 + (dot ? 13 : 0) + bot.name.length * 9.2 + 14 + label.length * 6.6 <= W;
     const art = div().id("hero-art").relative().w(W).h(FY + 6).flex_none().cursor_pointer().when(light, (el) => el.bg("#0E0E0F"))
       .on_click((_e, cx) => { this.open(space); cx.notify(); });
     // The pool, drawn as an image so it sits behind the pet (Herdr draws svg() elements over images).
     if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
       .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
       .child(image(`${ICON}/pet-floor-${state}.svg`).w(W).h(72)));
-    art.child(div().absolute().left(0).top(0).child(ready ? petEl(p, state, W, H, { open: true })
+    art.child(div().absolute().left(0).top(NB - 8).child(ready ? petEl(p, state, W, H, { open: true })
       : div().w(W).h(H).flex().items_center().justify_center().child(mascotEl(bot, m, 96, t))));
+    // The name, in its own band at the top: the sprite starts just under it (bun ears, antennas and
+    // crowns reach the sprite's top edge, so text over the sprite would sit on dots).
+    art.child(h_flex().absolute().left(14).top(9).w(W - 28).items_center().gap(7)
+      .when(Boolean(dot), (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot)))
+      .child(div().flex_1().min_w(0).text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
+      .when(fits, (el) => el.child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(label)))
+      .tooltip(fits ? bot.name : `${bot.name} · ${label}`));
     art.child(div().absolute().left(12).top(FY).w(W - 24).h(1).bg("#FFFFFF14"));
     if (state === "work") art.child(div().absolute().left(12).top(FY - 4).child(saberLine(W - 24)));
-    const word = !bot.awake ? "asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
-    const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
-    const tone_ = state === "work" ? [d.info, d.infoText] : state === "ask" || state === "stuck" ? [d.warn, d.warnText] : state === "done" || state === "pr" ? [d.ok, d.okHi] : [null, d.fg3];
-    const btn = (id, icon, label, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
-      .when(Boolean(label), (el) => el.px(9)).when(!label, (el) => el.w(28))
+    const btn = (id, icon, text, action, extra) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
+      .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(28))
       .rounded(d.r.sm).bg(d.raised).border_1().border_color(d.lineMid).cursor_pointer()
       .hover((s) => s.bg(d.hover).border_color(d.lineStrong))
       .on_click((_e, cx) => { action(cx); cx.notify(); })
       .child(svg(`${ICON}/${icon}.svg`).size(12).flex_none().text_color(d.iconOn))
-      .when(Boolean(label), (el) => el.child(div().text_size(12).line_height("16px").font_weight(500).text_color(d.body).child(label)))
+      .when(Boolean(text), (el) => el.child(div().text_size(12).line_height("16px").font_weight(500).text_color(d.body).child(text)))
       .when(extra != null, (el) => el.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(String(extra))));
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)
       && String(x.claimed_by || x.assignee || "").split("#")[0].split(" - ")[0] === bot.name).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
-      .child(h_flex().id("hero-name").items_center().gap(8).px(14).pt(6).h(30).cursor_pointer()
-        .on_click((_e, cx) => { this.open(space); cx.notify(); })
-        .child(div().flex_1().min_w(0).truncate().text_size(20).line_height("24px").font_weight(600).text_color(d.fg1).child(bot.name))
-        .child(h_flex().flex_none().items_center().gap(6)
-          .when(Boolean(tone_[0]), (el) => el.child(div().size(6).rounded(3).bg(tone_[0])))
-          .child(div().text_size(12).line_height("16px").font_weight(500).text_color(tone_[1]).child(since && since !== "now" ? `${word} · ${since}` : word))))
-      .child(this.heroChannels(space, bot, d).mx(14).mt(8))
-      .child(h_flex().px(12).pt(12).gap(6)
+      .child(this.heroChannels(space, bot, d))
+      .child(h_flex().px(12).pt(10).gap(6)
         .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)).flex_1())
         .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })).flex_1())
         .child(btn("hero-tasks", "ds-tasks", "Tasks", () => setShared("crew.view", "tasks"), mine || null).flex_1())
         .child(btn("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx)).tooltip("Put to sleep")));
   }
 
-  // The hero's channels as chips: with an agent first, the shown one always in, as many as fit
-  // (about 3 at 304 px), a blue/amber dot while one works or needs you, a green check when one
-  // finished; "+N" opens the channel picker. Click switches, right-click is the channel menu.
+  // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
+  // search: it filters as you type, Esc or × clears and closes it), then one 28 px row per channel
+  // (with an agent first): "#", the name, and a blue/amber dot while it works or needs you, a green
+  // check when it finished, else when it last changed. The shown one is highlighted. Up to six rows
+  // show; more scroll. Click switches, right-click is the channel menu.
   heroChannels(space, bot, d) {
     const ordered = [...space.tabs.filter((x) => tabHasAgent(x)), ...space.tabs.filter((x) => !tabHasAgent(x))];
-    const fit = Math.max(2, Math.floor(((this.width ?? 304) - 28 - 30) / 86));
-    let shown = ordered.slice(0, fit);
-    const act = ordered.find((x) => x.active);
-    if (act && !shown.includes(act)) shown = [...shown.slice(0, fit - 1), act];
-    const row = h_flex().id("hero-channels").items_center().gap(4).overflow_hidden();
-    for (const tab of shown) {
+    const q = this.chSearchOpen ? this.chSearch.value().trim().toLowerCase() : "";
+    const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
+    const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
+    const head = h_flex().id("hero-ch-head").h(30).px(14).items_center().gap(6);
+    if (this.chSearchOpen) {
+      head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
+          .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
+          .child(svg(`${ICON}/ds-search.svg`).size(11).flex_none().text_color(d.fg4))
+          .child(Input.new(this.chSearch).flex_1().text_size(12).text_color(d.fg1)))
+        .child(div().id("hero-ch-x").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+          .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
+          .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
+    } else {
+      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Channels"))
+        .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
+        .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+          .hover((s) => s.bg(d.hover)).tooltip("Search channels")
+          .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
+          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
+    }
+    const rows = v_flex().id("hero-ch-list").px(8).gap(1).max_h(6 * 29).overflow_y_scrollbar();
+    for (const tab of list) {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      row.child(h_flex().id(`hero-ch-${tab.id}`).h(24).px(8).gap(5).flex_shrink_1().min_w(0).items_center().rounded(d.r.sm).cursor_pointer()
-        .bg(on ? d.sel : d.raised).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+      rows.child(h_flex().id(`hero-ch-${tab.id}`).h(28).flex_none().px(6).gap(7).items_center().rounded(d.r.sm).cursor_pointer()
+        .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
-        .child(div().flex_none().text_size(11).line_height("14px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
-        .child(div().min_w(0).max_w(92).truncate().text_size(12).line_height("16px").font_weight(500)
+        .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
+        .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
-        .when(Boolean(dot), (el) => el.child(div().size(5).flex_none().rounded(3).bg(dot)))
-        .when(!dot && st === "done", (el) => el.child(svg(`${ICON}/ds-check-thin.svg`).size(10).flex_none().text_color(d.ok))));
+        .child(!tabHasAgent(tab) ? noAgentTag(d)
+          : dot ? div().size(6).flex_none().rounded(3).bg(dot)
+          : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
+          : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
     }
-    const more = ordered.length - shown.length;
-    if (more > 0) row.child(div().id("hero-ch-more").flex_none().h(24).px(4).flex().items_center().cursor_pointer()
-      .tooltip("All channels").hover((s) => s.opacity(0.75)).on_click(() => openChannels(space.id))
-      .child(div().text_size(11).line_height("14px").text_color(d.fg4).child(`+${more}`)));
-    return row;
+    if (q && !list.length) rows.child(div().h(28).px(6).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+    return v_flex().pt(8).child(head).child(rows);
   }
 
   // Put a pal to sleep (the hero's moon; the same as its menu's): keep its record (folder, brain,
