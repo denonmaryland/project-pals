@@ -449,6 +449,20 @@ rectangular segments and tags.
 - **Attachments** (M4, M5, `bin/crewattach.py`): opened without following symlinks, a regular file,
   read at most 10 MB + 1 byte from that handle, the bytes must be an image; a fresh unique name created
   exclusively, so nothing is overwritten and a failure never removes an existing file.
+- **Dream Approve shows the whole proposal first** (H5): the Inbox card loads the full text on "Show
+  the whole proposal"; Approve stays off until then and passes `--text-sha`, the digest of the text
+  shown, which `pal proposal accept` checks (a dream or mission proposal without it, or with
+  another text, is refused).
+- **Private keys never enter a notebook** (H6): a PEM / OpenSSH / PGP private-key block, whole or
+  flattened, is refused by `pal notebook` and by `pal dream intake`.
+- **Notebook paths are checked resolved** (M1): `~`, `..` and symlinks resolved, then containment
+  by whole path components: the pal's project, ~/Projects, and a short list of config trees
+  (`SAFE_CONFIG`). Everything else in a home folder is refused.
+- **Notebook writes hold a per-pal lock and their own temp file** (M2), and every entry has an id
+  (`· e1a2b3` at the end of its heading); deleting removes exactly that entry (M3). An older entry
+  without an id is named "HH:MM #channel" and must match only one.
+- **The dream's housekeeping runs every night** (M7): expired proposals reopen their patterns and
+  quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
 - **Roll back restores Project Pals' config entries** (M6): each snapshot records `keys.json`'s
   ctrl-shift-i / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
   `~/.claude/settings.json` (absence included); Roll back puts back only those still Project Pals'

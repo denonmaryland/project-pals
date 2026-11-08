@@ -394,7 +394,10 @@ export default class CrewRoster extends View {
   dreamCard(pr, t) {
     const m = pr.meta ?? {};
     const what = { skill: `New skill: ${m.name}`, tool: "A tool to build (a task)", process: "A process change (a task)", context: `Context for ${m.pal ?? "a pal"} (a brain note)` }[m.kind] ?? "A fix";
-    const lines = (pr.text ?? "").split("\n").slice(0, 8).join("\n");
+    // The whole text, loaded on demand; Approve stays off until it's been shown, and is bound to its
+    // digest, so a different text can't be approved in its place (review H5).
+    this.shownProposals ??= {};
+    const shown = this.shownProposals[pr.id];
     return v_flex().id(`dr-${pr.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.accent, "10")).border_1().border_color(a(t.accent, "30"))
       .child(h_flex().items_center().gap(8)
         .child(div().px(5).h(16).flex().items_center().rounded(3).border_1().border_color(a(t.accent, "55")).text_size(10).font_family("JetBrains Mono").text_color(t.accent).child(`dream · ${m.kind}`))
@@ -402,18 +405,27 @@ export default class CrewRoster extends View {
       .child(div().text_size(14).font_medium().text_color(t.foreground).child(what))
       .child(div().text_size(12).text_color(t.muted).child(`${m.summary} · ${m.count}x, ${m.pals?.length ?? 0} pal(s), ~${m.minutes}m lost`))
       .children((m.quotes ?? []).map((q, i) => div().id(`dr-q-${pr.id}-${i}`).pl(8).border_l_2().border_color(a(t.foreground, "22")).text_size(12).text_color(t.dim).child(`“${q}”`)))
-      .when(Boolean(pr.text), (el) => el.child(div().px(10).py(7).rounded(6).bg(a(t.canvas, "aa")).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(lines)))
+      .child(shown
+        ? v_flex().id(`dr-text-${pr.id}`).max_h(320).overflow_y_scrollbar().px(10).py(7).rounded(6).bg(a(t.canvas, "aa"))
+          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " ")))
+        : div().id(`dr-show-${pr.id}`).px(10).py(7).rounded(6).border_1().border_color(a(t.foreground, "22")).cursor_pointer().hover((s) => s.bg(a(t.foreground, "08")))
+          .on_click((_e, cx) => cx.spawn(async (cx) => {
+            try { const p = JSON.parse(await crewCli(["proposal", "show", pr.id])); this.shownProposals[pr.id] = { text: p.text ?? "", sha: p.text_sha }; }
+            catch (e) { notify({ title: "Couldn't load it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+            cx.notify();
+          }))
+          .child(div().text_size(12).text_color(t.muted).child("Show the whole proposal (needed before Approve)")))
       .when(Boolean(pr.note), (el) => el.child(div().text_size(12).text_color(t.muted).child(pr.note)))
       .child(h_flex().gap(8).justify_between()
         .child(div().id(`dr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-          .on_click((_e, cx) => cx.spawn(async (cx) => { try { await crewCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
+          .on_click((_e, cx) => cx.spawn(async (cx) => { try { await ownerCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
           .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
-        .child(div().id(`dr-ok-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
-          .on_click((_e, cx) => cx.spawn(async (cx) => {
-            try { const out = await crewCli(["proposal", "accept", pr.id]); notify({ title: "Approved", body: out.trim().split("\n")[0].slice(0, 200), level: "success", timeout: 3500 }); }
+        .child(div().id(`dr-ok-${pr.id}`).px(14).py(6).rounded(4).when(!shown, (el) => el.opacity(0.4)).when(Boolean(shown), (el) => el.cursor_pointer().hover((s) => s.opacity(0.88))).bg(t.solid)
+          .on_click((_e, cx) => { if (!shown) return; cx.spawn(async (cx) => {
+            try { const out = await ownerCli(["proposal", "accept", pr.id, "--text-sha", shown.sha]); notify({ title: "Approved", body: out.trim().split("\n")[0].slice(0, 200), level: "success", timeout: 3500 }); }
             catch (e) { notify({ title: "Couldn't apply it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
             this.refreshOps(cx);
-          }))
+          }); })
           .child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve"))));
   }
 

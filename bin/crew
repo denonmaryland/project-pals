@@ -993,12 +993,13 @@ def tell_proposer(spaces, pid, accepted, why=None):
 def cmd_proposals(spaces, rest):
     import crewproposals, crewbrain
     sub = rest[0] if rest else "ls"
-    pos, o = opts(rest[1:], ("note",), ("json",))
+    pos, o = opts(rest[1:], ("note", "text-sha"), ("json",))
     if sub == "ls":
         ps = crewproposals.all_("pending")
         print(json.dumps(ps) if o.get("json") else "\n".join(f"{p['id']} {p['kind']} {p['pal']}: {p.get('file') or ''} from {p['by']}" for p in ps) or "(no proposals waiting)")
     elif sub == "show" and pos:
-        print(json.dumps(crewproposals.get(pos[0])))
+        p = crewproposals.get(pos[0])
+        print(json.dumps({**p, "text_sha": crewproposals.text_sha(p)}))
     elif sub in ("accept", "decline") and pos:
         require_owner("Decide a proposal")
         p = crewproposals.get(pos[0])
@@ -1015,6 +1016,7 @@ def cmd_proposals(spaces, rest):
             print(f"declined {p['id']}")
             return
         if p["kind"] == "dream":
+            crewproposals.check_reviewed(p, o.get("text-sha"))   # review H5: the text the owner saw
             print(apply_dream(spaces, p))
             crewproposals.decide(p["id"], "accepted", via="cli")
             import crewdream
@@ -1025,6 +1027,7 @@ def cmd_proposals(spaces, rest):
         space, rec, name = pal_of(spaces, p["pal"])
         rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
         if p["kind"] == "mission":
+            crewproposals.check_reviewed(p, o.get("text-sha"))
             d = crewbrain.brain_dir(name, rec)
             if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
                 die("the mission changed since this was proposed; open it in the profile panel and compare")
@@ -1081,13 +1084,12 @@ def cmd_notebook(spaces, rest):
             print(crewnotebook.day_path(name, day["day"]).read_text().rstrip() + "\n")
         return
     if sub == "rm":
-        if not is_owner(spaces):
-            die(f"only {OWNER} removes notebook entries")
+        require_owner("Remove a notebook entry")
         if len(pos) < 3:
-            die("pal notebook rm <Pal> <YYYY-MM-DD> <HH:MM>")
+            die("pal notebook rm <Pal> <YYYY-MM-DD> <entry id | \"HH:MM #channel\">")
         space, rec, name = pal_of(spaces, pos[0])
-        crewnotebook.remove(name, pos[1], pos[2], DATA / "crew-backups" / "notebook" / slug(name))
-        print(f"removed the {pos[2]} entry from {name}'s {pos[1]} (a copy of the day is in crew-backups/notebook/)")
+        crewnotebook.remove(name, pos[1], " ".join(pos[2:]), DATA / "crew-backups" / "notebook" / slug(name))
+        print(f"removed entry {' '.join(pos[2:])} from {name}'s {pos[1]} (a copy of the day is in crew-backups/notebook/)")
         return
     space, rec, name = pal_of(spaces, single.get("pal"))
     text = " ".join(pos)

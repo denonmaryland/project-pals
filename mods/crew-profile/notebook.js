@@ -7,7 +7,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { notify } from "herdr";
-import { crewCli, panelTab, shortDate, shortTime } from "./crew.js";
+import { crewCli, ownerCli, panelTab, shortDate, shortTime } from "./crew.js";
 
 export function initNotebook(view, cx) {
   view.nb = null; view.nbFor = null; view.nbFilter = "all"; view.nbArmed = null;
@@ -143,7 +143,7 @@ export function notebookTab(view, space, bot, d, full) {
       .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg2).child(label.toUpperCase()))
       .when(day.day === today, (el) => el.child(h_flex().items_center().gap(5).child(div().size(6).rounded(3).bg(d.ok)).child(div().text_size(11).text_color(d.okHi).child("live")))));
     entries.forEach((e, i) => {
-      const key = `${day.day}-${e.time}-${e.channel ?? ""}`;
+      const key = e.id ?? `${day.day}-${e.time}-${e.channel ?? ""}-${i}`;
       const armed = view.nbArmed === key;
       const head = [e.time, e.channel, e.task, e.took].filter(Boolean).join(" · ");
       const ent = v_flex().id(`nb-e-${key}`).gap(4).py(8).when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
@@ -154,7 +154,8 @@ export function notebookTab(view, space, bot, d, full) {
               if (!armed) { view.nbArmed = key; cx.notify(); return; }
               view.nbArmed = null;
               cx.spawn(async (cx) => {
-                try { await crewCli(["notebook", "rm", bot.name, day.day, e.time]); } catch (err) { notify({ title: "Couldn't remove it", body: String(err.message ?? err).slice(0, 200), level: "warning" }); }
+                // Exactly this entry: its id (older entries: its time and channel; review M3).
+                try { await ownerCli(["notebook", "rm", bot.name, day.day, e.id ?? `${e.time} ${e.channel ?? ""}`.trim()]); } catch (err) { notify({ title: "Couldn't remove it", body: String(err.message ?? err).slice(0, 200), level: "warning" }); }
                 loadNotebook(view, cx, true);
               });
             })

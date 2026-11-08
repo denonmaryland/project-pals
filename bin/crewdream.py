@@ -151,14 +151,9 @@ def dream(force=False, model=True, dry=False, log=print):
         since = state.get("since_day") or time.strftime("%Y-%m-%d", time.localtime(time.time() - 7 * 86400))
         lines = [l for l in collect(since) if key(l) not in seen]
         new_hiccups = [l for l in lines if l["kind"] == "hiccup"]
-        if len(new_hiccups) < MIN_NEW and not force:
-            if not dry:
-                state["last"] = now_ms()
-                save_json(STATE, state)
-                event("skipped", new=len(new_hiccups))
-            return {"skipped": True, "new": len(new_hiccups)}
         known = patterns()
-        # A proposal that expired unanswered puts its pattern back in play.
+        # Housekeeping every night, quiet or not (review M7): an expired proposal reopens its pattern,
+        # and a watched fix with no hiccup for WATCH_DAYS is resolved.
         import crewproposals
         crewproposals.all_()   # marks week-old pending ones expired
         for p in known.values():
@@ -166,6 +161,20 @@ def dream(force=False, model=True, dry=False, log=print):
                 pr = load_json(crewproposals.DIR / f"{p['proposal']}.json", {})
                 if pr.get("status") in ("expired", None):
                     p["status"] = "open"
+        resolved_now = []
+        if len(new_hiccups) < MIN_NEW and not force:
+            for p in known.values():
+                if p["status"] == "watching" and p.get("accepted_at") and now_ms() - p["accepted_at"] > WATCH_DAYS * 86400000:
+                    p["status"], p["resolved"] = "resolved", time.strftime("%Y-%m-%d")
+                    resolved_now.append(p["id"])
+            if not dry:
+                save_patterns(known)
+                for pid in resolved_now:
+                    event("resolved", pattern=pid)
+                state["last"] = now_ms()
+                save_json(STATE, state)
+                event("skipped", new=len(new_hiccups))
+            return {"skipped": True, "new": len(new_hiccups), "resolved": resolved_now}
         try:
             groups = group_model(lines, known) if model and lines else group_offline(lines, known)
             how = "model" if model else "offline"
@@ -306,6 +315,8 @@ def intake(pattern_id, text):
     p = patterns().get(pattern_id)
     if not p:
         raise CrewError(f"no pattern {pattern_id}")
+    if crewnotebook.has_private_key(text):
+        raise CrewError("that draft holds a private key: never; take it out (and rotate it if it was real)")
     body = "\n".join(crewnotebook.SECRET.sub("‹masked›", l) for l in text.splitlines())
     INTAKE.mkdir(parents=True, exist_ok=True)
     path = INTAKE / f"{time.strftime('%Y-%m-%d')}-{slug(p['summary'])[:50]}.md"

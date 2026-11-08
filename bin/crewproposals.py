@@ -45,6 +45,22 @@ def get(pid):
     return p
 
 
+def text_sha(p):
+    import hashlib
+    return hashlib.sha256((p.get("text") or "").encode()).hexdigest()
+
+
+def check_reviewed(p, given):
+    """Accepting needs the digest of the text the owner was shown (review H5): another text, or none
+    given for a dream proposal, is refused."""
+    if given is None:
+        if p.get("kind") == "dream":
+            raise CrewError("open the whole proposal in the Inbox first (its text wasn't shown)")
+        return
+    if given != text_sha(p):
+        raise CrewError("the proposal's text isn't the one you were shown; look at it again")
+
+
 def decide(pid, status, note=None, via=None):
     p = load_json(DIR / f"{pid}.json", None)
     if not p:

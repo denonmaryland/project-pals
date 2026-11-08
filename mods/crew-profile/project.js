@@ -374,7 +374,7 @@ function saveMission(view, cx, bot, b) {
 
 function acceptMission(view, cx, p) {
   cx.spawn(async (cx) => {
-    try { await ownerCli(["proposal", "accept", p.id]); notify({ title: "Mission accepted", body: "The pal is told.", level: "success", timeout: 2500 }); view.missionProposal = null; setShared("crew.panel", { ...panelState(), proposal: null }); }
+    try { await ownerCli(["proposal", "accept", p.id, ...(p.text_sha ? ["--text-sha", p.text_sha] : [])]); notify({ title: "Mission accepted", body: "The pal is told.", level: "success", timeout: 2500 }); view.missionProposal = null; setShared("crew.panel", { ...panelState(), proposal: null }); }
     catch (e) { notify({ title: "Couldn't accept it", body: String(e.message ?? e).slice(0, 240), level: "warning", timeout: 6000 }); }
     loadBrain(view, cx, true);
     cx.notify();
