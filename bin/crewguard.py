@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 7
+DEFAULTS_VERSION = 8
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -47,7 +47,7 @@ DEFAULT = {
          "check": "agent-file-writes", "pattern": r"$^"},
         # The owner's one-time click tokens (data/crew-clicks): a pal writing one would be forging a
         # click (review H1).
-        {"name": "owner-click", "why": "writes one of the owner's click tokens", "anywhere": True, "pattern": r"crew-clicks"},
+        {"name": "owner-click", "why": "writes one of the owner's click tokens", "check": "click-writes", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -158,7 +158,13 @@ def writes_agent_file(cmd):
     return any(AGENT_FILE.search(os.path.normpath(t.strip("'\""))) for t in write_targets(cmd))
 
 
-CHECKS = {"agent-file-writes": writes_agent_file}
+def writes_click(cmd):
+    """A write INTO data/crew-clicks (redirect, tee, cp/mv onto it, …); mentioning it isn't one."""
+    return any("crew-clicks" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
+        or bool(re.match(r"^edit\s+.*/crew-clicks/", cmd))
+
+
+CHECKS = {"agent-file-writes": writes_agent_file, "click-writes": writes_click}
 
 
 def matches(cmd):

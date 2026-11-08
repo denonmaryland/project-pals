@@ -153,6 +153,15 @@ class OwnerGate(unittest.TestCase):
 
     def test_forging_a_click_is_held(self):
         self.assertEqual(rule("echo '{}' > ~/.config/herdr-app/data/crew-clicks/abc.json"), "owner-click")
+        self.assertEqual(rule("cp t.json ~/.config/herdr-app/data/crew-clicks/"), "owner-click")
+        self.assertEqual(rule("tee data/crew-clicks/x.json < t"), "owner-click")
+        self.assertEqual(rule("edit /home/x/.config/herdr-app/data/crew-clicks/a.json"), "owner-click")
+
+    def test_mentioning_clicks_isnt_held(self):
+        # A false positive seen live (2026-11-08): a memory note naming the folder was held.
+        self.assertIsNone(rule('pal remember "owner decisions need click tokens (data/crew-clicks)"'))
+        self.assertIsNone(rule("grep -r crew-clicks bin/"))
+        self.assertIsNone(rule("ls ~/.config/herdr-app/data/crew-clicks"))
 
 
 if __name__ == "__main__":
