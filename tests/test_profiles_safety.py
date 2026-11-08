@@ -9,7 +9,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-TMP = tempfile.mkdtemp(prefix="pals-prof-")
+# The fake home sits under the real one (~/.cache/pals-tests), whatever TMPDIR is: the notebook's path
+# guard only looks at home-like paths (/home/…, /Users/…, ~), so a home under /tmp would let the
+# Paths tests' private paths through unnoticed.
+_BASE = os.path.join(os.path.expanduser("~"), ".cache", "pals-tests")
+os.makedirs(_BASE, exist_ok=True)
+TMP = tempfile.mkdtemp(prefix="pals-prof-", dir=_BASE)
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ["HOME"] = TMP
