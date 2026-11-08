@@ -60,18 +60,60 @@ EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 AGENT_FILES = ("AGENTS.md", "CLAUDE.md")
 
 
+def planned_edit(tool, inp, path):
+    """(the file now or None, what the edit would make it or None when it can't be worked out)."""
+    try:
+        base = Path(path).read_text()
+    except (OSError, UnicodeDecodeError):
+        base = None
+    if tool == "Write":
+        return base, inp.get("content") or ""
+    if tool in ("Edit", "MultiEdit") and base is not None:
+        new = base
+        for e in (inp.get("edits") or [inp]):
+            old, rep = e.get("old_string") or "", e.get("new_string") or ""
+            if not old or old not in new:
+                return base, None
+            new = new.replace(old, rep) if e.get("replace_all") else new.replace(old, rep, 1)
+        return base, new
+    return base, None
+
+
+def edit_request(tool, inp, path):
+    """An edit of AGENTS.md / CLAUDE.md as a guarded "command" bound to the path, the exact edit and the
+    file it applies to (Codex review H2): an approval lets THIS edit through once; another payload, or
+    the file having changed, is a new request. The Inbox card shows the diff."""
+    import difflib
+    import hashlib
+    h = lambda t: hashlib.sha256(t.encode()).hexdigest()[:12] if t is not None else "none"
+    base, new = planned_edit(tool, inp, path)
+    payload = json.dumps({"tool": tool, **inp}, sort_keys=True)
+    cmd = f"edit {path} [edit {h(payload)}, base {h(base)}]"
+    if new is not None:
+        diff = "".join(difflib.unified_diff((base or "").splitlines(True), new.splitlines(True),
+                                            "a/" + os.path.basename(path), "b/" + os.path.basename(path), n=2))
+    else:
+        diff = f"({tool}: the change couldn't be worked out ahead; its input)\n" + payload[:4000]
+    return cmd, {"diff": diff[:20000], "path": path, "edit_hash": h(payload), "base_hash": h(base)}
+
+
 def pre_tool_use(event):
     tool = event.get("tool_name")
     inp = event.get("tool_input") or {}
+    extra = None
     if tool == "Bash":
         cmd = inp.get("command") or ""
     elif tool in EDIT_TOOLS:
-        # An edit of a project's AGENTS.md / CLAUDE.md is held like a guarded command ("edit <path>",
-        # the agents-file rule): the owner changes those with a click (P6). Anything else: no hook work.
+        # An edit of a project's AGENTS.md / CLAUDE.md is held like a guarded command (the
+        # agents-file rule): the owner changes those with a click (P6). An edit of the owner's click
+        # tokens is held too. Anything else: no hook work.
         path = inp.get("file_path") or inp.get("notebook_path") or ""
-        if os.path.basename(path) not in AGENT_FILES:
+        if "/crew-clicks/" in path:
+            cmd = f"edit {path}"
+        elif os.path.basename(path) in AGENT_FILES:
+            cmd, extra = edit_request(tool, inp, path)
+        else:
             return
-        cmd = f"edit {path}"
     else:
         return
     import crewguard
@@ -81,10 +123,10 @@ def pre_tool_use(event):
     if not me:
         return
     t, bot, ch = me
-    held = crewguard.check(t, bot, ch, cmd)
+    held = crewguard.check(t, bot, ch, cmd, extra)
     if not held:
         return
-    again = "make the same edit again" if tool != "Bash" else "run the same command again"
+    again = "make exactly the same edit again (a different edit is a new request)" if tool != "Bash" else "run the same command again"
     reason = (f"Held for {OWNER}'s approval ({held['id']}): this {held['why'] or held['rule']}. "
               f"{OWNER} approves or declines in the Inbox, and you'll be told either way; then {again}. "
               f"Meanwhile carry on with anything else, or stop and say what you're waiting on. "

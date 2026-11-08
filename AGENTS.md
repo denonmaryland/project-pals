@@ -34,8 +34,11 @@ CrewAI's `crew` alone, for example). Don't remove these aliases or the old-layou
 
 ## Testing
 
-There's no unit test suite. Check changes like this:
+Check changes like this:
 
+0. **Regression tests:** `python3 -m unittest discover -s tests` and `node tests/test_bind.mjs`
+   (the approval gate, the owner's click, attachments, Roll back, the panel's edit binding). They
+   use throwaway `CREW_DATA` and homes; the release preflight runs them. Add a test with every fix.
 1. **Syntax and mods:** the `./release` preflight does `bash -n` on the scripts, `py_compile` on
    the Python, `json.tool` on the JSON and `node --check` on the JS. `herdr-app check <installed mod folder>`
    loads a mod once and reports errors. `install.sh` runs it on every mod at the end.

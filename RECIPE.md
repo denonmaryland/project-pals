@@ -381,6 +381,32 @@ rectangular segments and tags.
 
 ## Watch out
 
+- **Owner decisions need the owner's click** (Codex review H1): approve / deny, accepting or
+  declining a proposal, `pal agents apply`, `pal mission set`, `pal brain where` / `write`. The mod
+  writes a one-time token for exactly that command line into `data/crew-clicks/` (`ownerCli` in
+  crew.js) and the pal command consumes it within 2 minutes; at a real terminal outside Herdr a person
+  can type "yes" instead. No terminal ID, or an unknown one, is never the owner. A pal writing into
+  `crew-clicks` is held (`owner-click`). Same-user processes can still forge one on purpose: this
+  guards against accidents and peer influence, not a hostile process.
+- **An AGENTS.md / CLAUDE.md edit approval is for one exact edit** (H2): the request is bound to the
+  path, a hash of the edit and a hash of the file it applies to, and the Inbox card shows the
+  resulting diff. A different payload, or the file having changed, is a new request.
+- **Shell writes to AGENTS.md / CLAUDE.md are found by a parse** (H3, `write_targets` in
+  crewguard.py): redirects in both heredoc orders and to quoted paths with spaces, `tee`, `sed`/`perl
+  -i`, `cp`/`mv`/`install`/`ln`/`rsync` destinations, `dd of=`, inside `sh -c` too. Policy defaults
+  version 7. Anything cleverer (a script, python) isn't caught: the gate isn't a boundary.
+- **The profile panel binds every edit and review to its pal** (H4, `bind.js`): space, name,
+  folder and a generation that bumps when the shown pal changes. A late diff for another pal is
+  dropped, Write and Save refuse a changed target, and `pal agents apply --folder --staged-sha`
+  checks both again. The role and pinned note save to the record they were opened for.
+- **Attachments** (M4, M5, `bin/crewattach.py`): opened without following symlinks, a regular file,
+  read at most 10 MB + 1 byte from that handle, the bytes must be an image; a fresh unique name created
+  exclusively, so nothing is overwritten and a failure never removes an existing file.
+- **Roll back restores Project Pals' config entries** (M6): each snapshot records `keys.json`'s
+  ctrl-shift-i / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
+  `~/.claude/settings.json` (absence included); Roll back puts back only those still Project Pals'
+  own, after a backup, and leaves later edits.
+
 - **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
   pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and
   whole lines only, up to 16,000 characters (`MEMORY_CAP`), and "(N older notes not loaded; run pal

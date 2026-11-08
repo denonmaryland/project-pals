@@ -6,7 +6,8 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, EditorState, Editor, TextView, InputState, Input } from "gpui-base";
 import { exec, appHome, writeTextFile, readTextFile, notify, shared, setShared } from "herdr";
-import { crewCli, openPanel, panelState, panelTab, setPanelSize, panelFull, pebble } from "./crew.js";
+import { targetOf, followShown, stillTarget } from "./bind.js";
+import { crewCli, ownerCli, openPanel, panelState, panelTab, setPanelSize, panelFull, pebble } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const slugOf = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x";
@@ -35,8 +36,10 @@ export function initProject(view, cx) {
   });
 }
 
-// The shown pal changed, or the tab opened: what to (re)load.
+// The shown pal changed, or the tab opened: what to (re)load. A change of pal drops any edit or
+// review that belonged to the previous one (bind.js).
 export function ensureProject(view, cx, bot) {
+  followShown(view, view.shown());
   const tab = panelTab();
   if (["mission", "brain"].includes(tab) && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
   if (tab === "agents" && view.agentsFor !== bot.name && !view.agentsLoading) loadAgents(view, cx);
@@ -113,15 +116,19 @@ async function diffRows(fromPath, toPath) {
 // Open the review for a project file: the diff of `text` against what's there now.
 function startReview(view, cx, { file, text, expect, label, proposal = null, note = "" }) {
   const s = view.shown();
-  const folder = view.agentsInfo?.folder ?? s?.bot.folder;
+  const folder = (view.agentsFor === s?.bot.name ? view.agentsInfo?.folder : null) ?? s?.bot.folder;
   if (!folder) return;
+  // Bound to this pal and folder now; a result that arrives after the shown pal changed is dropped.
+  const target = targetOf(s, folder), gen = view.gen;
   cx.spawn(async (cx) => {
     try {
       const staged = await stage(text, `${s.bot.name}-${file}`);
+      const stagedSha = await shaFile(staged);
       const cur = `${folder}/${file}`;
       const exists = (await readTextFile(cur).catch(() => null)) !== null;
       const d = await diffRows(exists ? cur : null, staged);
-      view.review = { file, staged, expect, label, proposal, created: !exists, ...d };
+      if (!stillTarget(view, { target, gen }, view.shown(), folder)) return;
+      view.review = { file, staged, stagedSha, expect, label, proposal, created: !exists, target, gen, ...d };
       view.note.set_value(note);
       view.edit = null;
     } catch (e) { notify({ title: "Couldn't make the diff", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
@@ -133,14 +140,21 @@ function writeReview(view, cx) {
   const s = view.shown();
   const r = view.review;
   if (!s || !r || view.writing) return;
+  // Only to the pal and folder the review was made for (review H4); the CLI checks them again.
+  if (!stillTarget(view, r, s, r.target.folder)) {
+    view.review = null;
+    notify({ title: "Not written", body: "The shown pal changed since this review was made. Open it again.", level: "warning", timeout: 5000 });
+    return;
+  }
   view.writing = true;
   cx.spawn(async (cx) => {
     try {
-      const args = ["agents", "apply", s.bot.name, r.file, "--from", r.staged, "--expect", r.expect];
+      const args = ["agents", "apply", r.target.name, r.file, "--from", r.staged, "--expect", r.expect,
+        "--folder", r.target.folder, "--staged-sha", r.stagedSha];
       const note = view.note.value().trim();
       if (note) args.push("--note", note);
       if (r.proposal) args.push("--proposal", r.proposal);
-      await crewCli(args);
+      await ownerCli(args);
       notify({ title: `Wrote ${r.file}`, body: "Backed up first. Not committed: ask the pal to commit it.", level: "success", timeout: 3500 });
       view.review = null;
       setShared("crew.panel", { ...panelState(), proposal: null });
@@ -171,7 +185,7 @@ function openProposal(view, cx, pid) {
 
 function decline(view, cx, pid) {
   cx.spawn(async (cx) => {
-    try { await crewCli(["proposal", "decline", pid]); notify({ title: "Declined", body: "The pal is told.", level: "info", timeout: 2500 }); } catch (e) { notify({ title: "Couldn't decline it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+    try { await ownerCli(["proposal", "decline", pid]); notify({ title: "Declined", body: "The pal is told.", level: "info", timeout: 2500 }); } catch (e) { notify({ title: "Couldn't decline it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
     if (view.review?.proposal === pid) view.review = null;
     if (view.missionProposal?.id === pid) view.missionProposal = null;
     setShared("crew.panel", { ...panelState(), proposal: null });
@@ -331,15 +345,25 @@ export function missionTab(view, space, bot, d, full) {
 function editMission(view, b) {
   const tpl = "# Mission\nWhat this pal is for, in a sentence or two.\n\n## Goals\n- [ ] \n\n## Focus\n\n\n## Done when\n- [ ] \n";
   view.editor.set_value(b.mission_text ?? tpl);
-  view.edit = { kind: "mission", file: "mission.md", sha: b.mission_sha };
+  view.edit = { kind: "mission", file: "mission.md", sha: b.mission_sha, target: targetOf(view.shown()), gen: view.gen };
+}
+
+// Refuse a save whose pal is no longer the one shown (review H4).
+function stale(view, e) {
+  if (stillTarget(view, e, view.shown(), e?.target?.folder)) return false;
+  view.edit = null;
+  notify({ title: "Not saved", body: "The shown pal changed while you were editing. Open it again.", level: "warning", timeout: 5000 });
+  return true;
 }
 
 function saveMission(view, cx, bot, b) {
+  const e = view.edit;
+  if (stale(view, e)) return;
   const text = view.editor.value();
   cx.spawn(async (cx) => {
     try {
-      const staged = await stage(text, `${bot.name}-mission`);
-      await crewCli(["mission", "set", bot.name, "--file", staged, "--expect", view.edit.sha]);
+      const staged = await stage(text, `${e.target.name}-mission`);
+      await ownerCli(["mission", "set", e.target.name, "--file", staged, "--expect", e.sha]);
       view.edit = null;
       notify({ title: "Mission saved", body: "New sessions start with it.", level: "success", timeout: 2500 });
     } catch (e) { notify({ title: "Didn't save the mission", body: String(e.message ?? e).slice(0, 240), level: "warning", timeout: 6000 }); }
@@ -350,7 +374,7 @@ function saveMission(view, cx, bot, b) {
 
 function acceptMission(view, cx, p) {
   cx.spawn(async (cx) => {
-    try { await crewCli(["proposal", "accept", p.id]); notify({ title: "Mission accepted", body: "The pal is told.", level: "success", timeout: 2500 }); view.missionProposal = null; setShared("crew.panel", { ...panelState(), proposal: null }); }
+    try { await ownerCli(["proposal", "accept", p.id]); notify({ title: "Mission accepted", body: "The pal is told.", level: "success", timeout: 2500 }); view.missionProposal = null; setShared("crew.panel", { ...panelState(), proposal: null }); }
     catch (e) { notify({ title: "Couldn't accept it", body: String(e.message ?? e).slice(0, 240), level: "warning", timeout: 6000 }); }
     loadBrain(view, cx, true);
     cx.notify();
@@ -382,7 +406,7 @@ export function brainTab(view, space, bot, d, full) {
         .child(link(d, "pp-bback", "← Files", () => { view.brainFile = null; }))
         .child(link(d, "pp-bedit", "Edit", () => {
           view.editor.set_value(f.text ?? "");
-          view.edit = { kind: f.project ? "brain-project" : "brain", file: f.file, sha: f.sha };
+          view.edit = { kind: f.project ? "brain-project" : "brain", file: f.file, sha: f.sha, target: targetOf(view.shown()), gen: view.gen };
         }))));
   }
   const rows = v_flex().rounded(d.r.md).border_1().border_color(d.line);
@@ -423,7 +447,7 @@ export function brainTab(view, space, bot, d, full) {
     seg.child(div().id(`pp-where-${key}`).h(26).px(12).flex().items_center().when(key === "project", (el) => el.border_l_1().border_color(d.lineMid))
       .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => {
         cx.spawn(async (cx) => {
-          try { const out = await crewCli(["brain", "where", bot.name, key]); notify({ title: "Brain moved", body: out.trim().slice(0, 200), level: "success", timeout: 3500 }); }
+          try { const out = await ownerCli(["brain", "where", bot.name, key]); notify({ title: "Brain moved", body: out.trim().slice(0, 200), level: "success", timeout: 3500 }); }
           catch (e) { notify({ title: "Couldn't move it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
           loadBrain(view, cx, true);
         });
@@ -440,6 +464,12 @@ export function brainTab(view, space, bot, d, full) {
   return body;
 }
 
+// The sha256 of a file's bytes (what `pal agents apply --staged-sha` compares with).
+async function shaFile(path) {
+  const r = await exec("sha256sum", ["--", path]);
+  return r.stdout.trim().split(/\s+/)[0];
+}
+
 async function shaOf(text) {
   // The sha the writer compares with (sha256 of the text; "none" for no file).
   if (text === null || text === undefined) return "none";
@@ -449,13 +479,14 @@ async function shaOf(text) {
 
 function saveBrainFile(view, cx, bot) {
   const e = view.edit;
+  if (stale(view, e)) return;
   const text = view.editor.value();
   cx.spawn(async (cx) => {
     try {
-      const staged = await stage(text, `${bot.name}-${e.file}`);
-      await crewCli(["brain", "write", bot.name, e.file, "--file", staged, "--expect", e.sha]);
+      const staged = await stage(text, `${e.target.name}-${e.file}`);
+      await ownerCli(["brain", "write", e.target.name, e.file, "--file", staged, "--expect", e.sha]);
       view.edit = null;
-      const r = JSON.parse(await crewCli(["brain", "show", bot.name, e.file, "--json"]));
+      const r = JSON.parse(await crewCli(["brain", "show", e.target.name, e.file, "--json"]));
       view.brainFile = { file: e.file, text: r.text, sha: r.sha };
       notify({ title: `Saved ${e.file}`, level: "success", timeout: 2000 });
     } catch (err) { notify({ title: `Didn't save ${e.file}`, body: String(err.message ?? err).slice(0, 240), level: "warning", timeout: 6000 }); }
@@ -495,7 +526,7 @@ export function agentsTab(view, space, bot, d, full) {
         .child(link(d, `pp-aview-${slugOf(f.file)}`, "View", () => { view.viewing = view.viewing === f.file ? null : f.file; view.viewer.set_value(a.texts?.[f.file] ?? ""); }))
         .when(!bot.machine, (el) => el.child(link(d, `pp-aedit-${slugOf(f.file)}`, "Edit", () => {
           view.editor.set_value(a.texts?.[f.file] ?? "");
-          view.edit = { kind: "agents", file: f.file, sha: f.sha };
+          view.edit = { kind: "agents", file: f.file, sha: f.sha, target: targetOf(view.shown()), gen: view.gen };
         })))));
     if (view.viewing === f.file && f.exists) files.child(div().h(full ? 480 : 320).mb(8).rounded(d.r.md).border_1().border_color(d.line).bg(d.inset).overflow_hidden()
       .child(Editor.new(view.viewer).size_full()));

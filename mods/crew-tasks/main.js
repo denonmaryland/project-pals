@@ -14,14 +14,18 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, setShared, exec, appHome } from "herdr";
+import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, setShared, exec, appHome, home } from "herdr";
 import { botOf, crewCli, loadOps, taskFor, ago, ds, tone, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
-const MAX_BYTES = 10 * 1024 * 1024, MAX_FILES = 6;
-const stamp = () => new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+const MAX_FILES = 6;   // and 10 MB each (crewattach.py)
+// The attachment helper (bin/crewattach.py, installed with the pal command's modules).
+async function attachCli(args) {
+  const r = await exec("python3", [`${home()}/.local/lib/herdr-crew/crewattach.py`, ...args]);
+  try { return { ...JSON.parse(r.stdout.trim().split("\n").pop() || "{}"), code: r.code }; } catch { return { error: r.stderr.trim() || "the attachment helper failed", code: r.code || 1 }; }
+}
 
 export default class CrewTasks extends View {
   init(_props, cx) {
@@ -64,12 +68,15 @@ export default class CrewTasks extends View {
         const name = src.split("/").pop();
         if (this.files.length >= MAX_FILES) { notify({ title: `${MAX_FILES} images at most`, level: "info", timeout: 2500 }); break; }
         if (!IMAGE.test(name)) { notify({ title: `${name} isn't an image`, body: "Tasks take images (png, jpg, gif, webp, bmp).", level: "info", timeout: 3000 }); continue; }
-        const file = `${stamp()}-${Math.random().toString(36).slice(2, 6)}-${name.replace(/[^\w.-]+/g, "_")}`;
         try {
-          const r = await exec("sh", ["-c", '[ "$(stat -c %s -- "$2")" -le "$4" ] || exit 4; mkdir -p "$1" && cp -- "$2" "$1/$3"', "sh", dir, src, file, String(MAX_BYTES)]);
-          if (r.code === 4) { notify({ title: `${name} is over 10 MB`, level: "info", timeout: 3000 }); continue; }
-          if (r.code !== 0) throw new Error(r.stderr.trim());
-          this.files.push({ path: `${dir}/${file}`, rel: `${STORE}/${file}`, name });
+          // crewattach.py opens it without following symlinks, checks it's a regular file of at most
+          // 10 MB whose bytes are an image, and writes it under a fresh unique name (review M4, M5).
+          const out = await attachCli(["copy", src, dir]);
+          if (out.code === 4) { notify({ title: `${name} is over 10 MB`, level: "info", timeout: 3000 }); continue; }
+          if (out.code === 5 || out.code === 6) { notify({ title: `Couldn't attach ${name}`, body: out.error, level: "info", timeout: 3000 }); continue; }
+          if (!out.path) throw new Error(out.error ?? "it didn't copy");
+          const file = out.path.split("/").pop();
+          this.files.push({ path: out.path, rel: `${STORE}/${file}`, name });
         } catch (e) { notify({ title: `Couldn't attach ${name}`, body: String(e).slice(0, 160), level: "warning" }); }
       }
       cx.notify();
@@ -81,14 +88,15 @@ export default class CrewTasks extends View {
     if (this.files.length >= MAX_FILES) return notify({ title: `${MAX_FILES} images at most`, level: "info", timeout: 2500 });
     cx.spawn(async (cx) => {
       const dir = `${appHome()}/${STORE}`;
-      const file = `${stamp()}-pasted.png`;
       try {
-        const r = await exec("sh", ["-c",
-          'type=$(wl-paste --list-types 2>/dev/null | grep -m1 "^image/") || exit 3; mkdir -p "$1" && wl-paste --type "$type" > "$1/$2" && [ "$(stat -c %s -- "$1/$2")" -le "$3" ] || { rm -f "$1/$2"; exit 4; }', "sh", dir, file, String(MAX_BYTES)]);
-        if (r.code === 3) return notify({ title: "Nothing to paste", body: "The clipboard has no text or image.", level: "info", timeout: 2500 });
-        if (r.code === 4) return notify({ title: "That image is over 10 MB", level: "info", timeout: 2500 });
-        if (r.code !== 0) throw new Error(r.stderr.trim());
-        this.files.push({ path: `${dir}/${file}`, rel: `${STORE}/${file}`, name: "Pasted image" });
+        // A unique name per paste (two quick pastes never share a file), size-capped while reading.
+        const out = await attachCli(["paste", dir]);
+        if (out.code === 3) return notify({ title: "Nothing to paste", body: "The clipboard has no text or image.", level: "info", timeout: 2500 });
+        if (out.code === 4) return notify({ title: "That image is over 10 MB", level: "info", timeout: 2500 });
+        if (out.code === 5) return notify({ title: "That isn't an image", level: "info", timeout: 2500 });
+        if (!out.path) throw new Error(out.error ?? "it didn't paste");
+        const file = out.path.split("/").pop();
+        this.files.push({ path: out.path, rel: `${STORE}/${file}`, name: "Pasted image" });
       } catch (e) { notify({ title: "Couldn't paste the image", body: String(e).slice(0, 160), level: "warning" }); }
       cx.notify();
     });
