@@ -118,7 +118,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   **faint container**: `#131316` (one step up from the page), a 7% white hairline, radius
   max(4, w/35), the pet centred 4% high and free to break the edge. It replaces the folder mascot
   everywhere a pal's face shows: the Focus hero (no box at all, the sidebar's full width), the
-  sidebar list (88x69 in 80px rows, half-opacity while the pal is closed or idle-hidden), the Pro pal rail (44x34) and banner (a wide
+  sidebar list (88x69 in 80px rows: the name, then `[channel]`, then what it's on, each on its own
+  line; half-opacity while the pal is closed or idle-hidden), the Pro pal rail (44x34) and banner (a wide
   box, 130 tall), the pal chip (30x24 in Focus, 25x20 in Pro), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude

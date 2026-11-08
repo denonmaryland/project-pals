@@ -703,16 +703,16 @@ export default class CrewRoster extends View {
       .on_click((_e, cx) => { this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(mascotEl(bot, mood(st, awake), ROW_PET, t)))
-      .child(v_flex().flex_1().min_w(0).gap(3)
+      .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().items_center().gap(6)
           .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
           .when(palPinned(bot), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
           .child(div().flex_none().text_size(11).line_height("14px").text_color(d.fg3).child(stamp(this.lastChange(space))))
           .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot))))
-        // [channel] and what it's on: up to two lines, then cut.
-        .child(h_flex().min_w(0).items_start().text_size(12).line_height("16px")
-          .when(Boolean(tag), (el) => el.child(div().flex_none().max_w(110).truncate().text_color(d.fg3).child(`[${tag}]`)))
-          .child(div().flex_1().min_w(0).max_h(32).overflow_hidden().pl(tag ? 4 : 0).text_color(whatColor).child(what))));
+        // [channel], then what it's on, each on its own full-width line (side by side, a long
+        // channel name squeezed the preview into a narrow column).
+        .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg3).child(`[${tag}]`)))
+        .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(whatColor).child(what)));
   }
 
   sleeperRow(rec, t, d) {
