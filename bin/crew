@@ -78,7 +78,7 @@ sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
-                     memory_text, memory_parts, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
+                     memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
                      trust_prompt, trust_notice)
 import crewtasks
 import crewroutines
@@ -659,31 +659,23 @@ def cmd_remember(spaces, args):
 def cmd_memory(spaces, args):
     args, o = opts(args, (), ("json",))
     if o.get("json"):
-        # For the profile panel: the pieces a session starts with, how much of each survives the
-        # primer's cap (it keeps the end of the text), and the last 3 days of notes.
+        # For the profile panel: what a session starts with (and what's left out), MEMORY.md, the
+        # last 3 days of notes newest first, and how many facts about the owner every pal shares.
         if not args:
             die("pal memory <Pal> --json")
         space, _ = find(args[0], spaces)
         bot, pinned = space["name"], record_of(space).get("memory", "")
-        parts = memory_parts(bot, pinned)
-        limit = 6000
-        total = len("\n\n".join(t for _, t in parts))
-        start, out = 0, []
-        cut_before = max(0, total - limit)
-        for label, text in parts:
-            end = start + len(text)
-            kept = max(0, end - max(start, cut_before))
-            out.append({"label": label, "chars": len(text), "kept": min(len(text), kept)})
-            start = end + 2
+        rep = memory_report(bot, pinned)
         d = memory_dir(bot)
         notes = []
         for n in (sorted((d / "notes").glob("*.md"))[-3:] if (d / "notes").exists() else [])[::-1]:
             lines = [l[2:] for l in n.read_text().splitlines() if l.startswith("- ")]
             notes.append({"day": n.stem, "lines": lines[::-1]})
-        print(json.dumps({"bot": bot, "pinned": pinned, "limit": limit, "total": total, "parts": out,
+        user = MEMORY / "USER.md"
+        print(json.dumps({"bot": bot, "pinned": pinned, **rep,
                           "memory_md": (d / "MEMORY.md").read_text() if (d / "MEMORY.md").exists() else "",
                           "notes": notes, "folder": str(d),
-                          "user_facts": sum(1 for p in parts if p[0] == "USER.md" for l in p[1].splitlines() if l.startswith("- "))}))
+                          "user_facts": sum(1 for l in (user.read_text().splitlines() if user.exists() else []) if l.startswith("- "))}))
         return
     if args:
         space, _ = find(args[0], spaces)
@@ -694,7 +686,8 @@ def cmd_memory(spaces, args):
             print((MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else f"(nothing about {OWNER} yet)")
             return
         space, bot = s, s["name"]
-    print(memory_text(bot, record_of(space).get("memory", ""), days=3, limit=20000) or f"(nothing remembered for {bot} yet)")
+    # Everything (the primer gets the first MEMORY_CAP characters of this, in the same order).
+    print(memory_text(bot, record_of(space).get("memory", ""), days=30, limit=10**7) or f"(nothing remembered for {bot} yet)")
 
 
 # ─── Mission, brain, agent files, proposals (docs/profiles/proposal.md) ─────────────────────────

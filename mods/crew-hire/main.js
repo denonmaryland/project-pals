@@ -5,14 +5,15 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, machines, notify, pickFolder } from "herdr";
-import { crew, saveCrew, newId, mascot, ROLES, COMPANY, a, withBypass, MODELS, withModel, tone } from "./crew.js";
+import { crew, saveCrew, newId, brainLogo, ROLES, COMPANY, a, withBypass, MODELS, withModel, tone, ds, pebble,
+  sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 import { spaces } from "herdr";
 
 export default class CrewHire extends View {
   init(_props, cx) {
     this.name = InputState.new({ placeholder: "Name it" });
     this.channel = InputState.new({ placeholder: "general", value: "general" });
-    this.folder = InputState.new({ placeholder: "~/Projects/…" });
+    this.folder = InputState.new({ placeholder: "Project folder (optional): ~/Projects/…" });
     this.brief = TextareaState.new({ placeholder: "What's its first job? (optional)", rows: 2 });
     this.brief.set_auto_grow(2, 6);
     this.picking = null; // "role" | "brain" | "machine" | "model": the open list
@@ -75,117 +76,61 @@ export default class CrewHire extends View {
     if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
   }
 
+  // "A · Compact sheet": the would-be pal's face (its brain's mascot) in the header, its name and
+  // first job as fields, then one row of selects (Brain, Model for Claude Code, Role, Computer when
+  // you have several), the project folder (with Browse) and its first channel.
   render() {
     const t = tone(theme());
-    const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
-    const hair = () => div().h(1).mx(16).bg(a(t.foreground, "0c"));
-    const chev = (open) => svg(`mods/crew-roster/icons/${open ? "chevron-down" : "chevron-right"}.svg`).size(11).text_color(t.dim);
-    const row = (id, label, right, action) => h_flex().id(id).items_center().justify_between().gap(12).px(16).min_h(48)
-      .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "05"))).on_click(action))
-      .child(div().flex_none().text_size(13.5).text_color(t.foreground).child(label))
-      .child(right);
-    const pick = (which) => (_e, cx) => { this.picking = this.picking === which ? null : which; cx.notify(); };
-    const option = (id, on, left, label, sub, action) => h_flex().id(id).items_center().gap(10).px(10).py(7).rounded(6).cursor_pointer()
-      .when(on, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
-      .on_click(action)
-      .child(left ?? div().size(22))
-      .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.foreground).child(label))
-      .when(Boolean(sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(sub)))
-      .when(on, (el) => el.child(svg("mods/crew-roster/icons/check.svg").size(13).text_color(t.accent)));
-    const inline = (state, w) => stop(div().w(w).h(30).px(10).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
-      .child(Input.new(state).w_full().text_size(13).text_color(t.foreground)));
-
+    const d = ds(t);
+    const close = () => closeOverlay(props().overlay);
+    const pick = (which) => () => { this.picking = this.picking === which ? null : which; };
     const name = this.name.value().trim();
     const h = this.harness;
-
-    // Header: the pal-to-be's face changes with the brain you pick.
-    const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
-      .child(image(mascot(h?.key, name ? "done" : "calm")).w(38).h(38).flex_none())
-      .child(v_flex().flex_1().min_w(0).gap(1)
-        .child(div().text_size(17).font_medium().text_color(t.foreground).child("Hire a pal"))
-        .child(div().text_size(12.5).text_color(t.dim).child("Any harness, any company, on any of your computers")))
-      .child(div().id("hire-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
-        .child(svg("mods/crew-roster/icons/x.svg").size(13).text_color(t.dim)));
-
-    // The one thing that matters: its name, and optionally its first job.
-    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
-      .child(stop(div().px(16).pt(14).pb(6).child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground))))
-      .child(stop(div().px(6).pb(6).child(Textarea.new(this.brief).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
-
-    // Settings, one line each; the lists open in place.
-    const roleRow = row("hire-role", "Role", h_flex().items_center().gap(8)
-      .child(div().text_size(13).text_color(t.muted).child(this.role)).child(chev(this.picking === "role")), pick("role"));
-    const roleList = v_flex().px(8).pb(8).children(ROLES.map((r, i) =>
-      option(`role-${i}`, this.role === r, null, r, null, (_e, cx) => { this.role = r; this.picking = null; cx.notify(); })));
-
-    const brainRow = row("hire-brain", "Brain", h_flex().items_center().gap(8)
-      .when(Boolean(h), (el) => el.child(image(mascot(h.key, "calm")).w(20).h(20)))
-      .child(div().text_size(13).text_color(t.muted).child(this.loading ? "Looking…" : h ? h.name : "None installed"))
-      .when(Boolean(h && COMPANY[h.key]), (el) => el.child(div().text_size(12).text_color(t.dim).child(COMPANY[h.key])))
-      .child(chev(this.picking === "brain")), pick("brain"));
     const installed = this.agents.filter((x) => x.installed);
-    // Claude Code can start on a chosen model (cheap helpers on Haiku, say). Only on its own command
-    // line: `/model` inside Claude Code would change your default for every session.
-    const modelRow = h?.key === "claude" ? row("hire-model", "Model", h_flex().items_center().gap(8)
-      .child(div().text_size(13).text_color(t.muted).child(MODELS.find((m) => m.key === this.model)?.name ?? "Your default"))
-      .child(chev(this.picking === "model")), pick("model")) : null;
-    const modelList = v_flex().px(8).pb(8).children(MODELS.map((m, i) =>
-      option(`model-${i}`, this.model === m.key, null, m.name, m.sub, (_e, cx) => { this.model = m.key; this.picking = null; cx.notify(); })));
     const missing = this.agents.filter((x) => !x.installed);
-    // A long list scrolls inside the dialog, so the Hire button never goes off the bottom.
-    const brainList = v_flex().id("hire-brains").max_h(150).overflow_y_scrollbar().px(8).pb(8)
-      .children(installed.map((ag, i) => option(`brain-${i}`, h?.key === ag.key, image(mascot(ag.key, "calm")).w(22).h(22),
-        ag.name, COMPANY[ag.key] ?? "", (_e, cx) => { this.harness = ag; this.picking = null; cx.notify(); })))
-      .when(missing.length > 0, (el) => el.child(div().px(10).pt(6).text_size(12).text_color(t.dim)
-        .child(`Not installed here: ${missing.map((x) => x.name).join(", ")}`)));
-
     const ms = [null, ...machines().map((m) => m.name).filter(Boolean)];
-    const machineRow = ms.length > 1 ? row("hire-machine", "Computer", h_flex().items_center().gap(8)
-      .child(div().text_size(13).text_color(t.muted).child(this.machine ?? "This computer")).child(chev(this.picking === "machine")), pick("machine")) : null;
-    const machineList = v_flex().px(8).pb(8).children(ms.map((m, i) =>
-      option(`m-${i}`, this.machine === m, null, m ?? "This computer", null, (_e, cx) => { this.machine = m; this.picking = null; this.load(cx); cx.notify(); })));
 
-    // Type a path, or pick one (the system's folder picker, on this computer only).
-    const folderRow = row("hire-folder", "Project folder", h_flex().items_center().gap(6)
-      .child(inline(this.folder, this.machine ? 230 : 160))
-      .when(!this.machine, (el) => el.child(stop(div().id("hire-browse").h(30).px(10).flex().items_center().rounded(8).cursor_pointer()
-        .bg(a(t.foreground, "0c")).hover((s) => s.bg(a(t.foreground, "16")))
-        .on_click((_e, cx) => cx.spawn(async (cx) => {
-          const picked = await pickFolder({ prompt: "Use this folder" }).catch(() => null);
-          if (picked) this.folder.set_value(picked);
-          cx.notify();
-        }))
-        .child(div().text_size(12.5).text_color(t.foreground).child("Browse…"))))));
-    const channelRow = row("hire-channel", "First channel", h_flex().items_center().gap(4)
-      .child(div().text_size(13).text_color(t.dim).child("#")).child(inline(this.channel, 150)));
+    const row = sheetRow()
+      .child(sheetSelect(d, "hire-brain", { label: "Brain", value: this.loading ? "Looking…" : h ? h.name : "None installed", open: this.picking === "brain", onClick: pick("brain"),
+        face: h ? brainLogo(h.key, 13, d, this.agents) : null }))
+      .when(h?.key === "claude", (el) => el.child(sheetSelect(d, "hire-model", { label: "Model", value: MODELS.find((m) => m.key === this.model)?.name ?? "Your default", open: this.picking === "model", onClick: pick("model") })))
+      .child(sheetSelect(d, "hire-role", { label: "Role", value: this.role, open: this.picking === "role", onClick: pick("role") }))
+      .when(ms.length > 1, (el) => el.child(sheetSelect(d, "hire-machine", { label: "Computer", value: this.machine ?? "This one", open: this.picking === "machine", onClick: pick("machine") })));
 
-    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
-      .child(roleRow).when(this.picking === "role", (el) => el.child(roleList))
-      .child(hair()).child(brainRow).when(this.picking === "brain", (el) => el.child(brainList))
-      .when(Boolean(modelRow), (el) => el.child(hair()).child(modelRow).when(this.picking === "model", (el) => el.child(modelList)))
-      .when(Boolean(machineRow), (el) => el.child(hair()).child(machineRow).when(this.picking === "machine", (el) => el.child(machineList)))
-      .child(hair()).child(folderRow)
-      .child(hair()).child(channelRow);
-    // Claude Code asks once whether to trust a folder it hasn't opened; say so up front.
-    const trustNote = h?.key === "claude" && this.folder.value().trim()
-      ? div().px(4).text_size(12).text_color(t.dim).child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its channel.")
-      : null;
+    let panel = null;
+    if (this.picking === "brain") {
+      panel = sheetPanel(d, "hire-brains")
+        .children(installed.map((ag, i) => sheetOption(d, `brain-${i}`, { on: h?.key === ag.key, left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, sub: COMPANY[ag.key] ?? "",
+          onClick: () => { this.harness = ag; this.picking = null; } })))
+        .when(missing.length > 0, (el) => el.child(div().px(8).py(4).text_size(11).line_height("14px").text_color(d.fg3).child(`Not installed here: ${missing.map((x) => x.name).join(", ")}`)));
+    } else if (this.picking === "model") {
+      panel = sheetPanel(d, "hire-models").children(MODELS.map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
+    } else if (this.picking === "role") {
+      panel = sheetPanel(d, "hire-roles").children(ROLES.map((r, i) => sheetOption(d, `role-${i}`, { on: this.role === r, label: r, onClick: () => { this.role = r; this.picking = null; } })));
+    } else if (this.picking === "machine") {
+      panel = sheetPanel(d, "hire-machines").children(ms.map((m, i) => sheetOption(d, `m-${i}`, { on: this.machine === m, label: m ?? "This computer",
+        onClick: (cx) => { this.machine = m; this.picking = null; this.load(cx); } })));
+    }
 
+    const browse = this.machine ? null : pebble(d, { id: "hire-browse", label: "Browse…", onClick: (cx) => cx.spawn(async (cx) => {
+      const picked = await pickFolder({ prompt: "Use this folder" }).catch(() => null);
+      if (picked) this.folder.set_value(picked);
+      cx.notify();
+    }) });
+    const trustNote = h?.key === "claude" && this.folder.value().trim();
     const ready = Boolean(name && h);
-    const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(div().min_w(0).truncate().text_size(12).text_color(t.dim)
-        .child(`${this.role} · ${h?.name ?? "no brain"}${h?.key === "claude" && this.model ? ` (${MODELS.find((m) => m.key === this.model).name})` : ""} · ${this.machine ?? "this computer"}`))
-      .child(h_flex().gap(14).items_center().flex_none()
-        .child(div().id("hire-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("hire-go").px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
-          .hover((s) => s.opacity(0.88)).on_click(() => this.hire())
-          .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child(name ? `Hire ${name}` : "Hire"))));
-
-    return v_flex().id("crew-hire").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .w_full().bg(t.popover).text_color(t.foreground)
-      .child(header)
-      .child(v_flex().gap(12).px(24).pt(12).child(named).child(settings).when(Boolean(trustNote), (el) => el.child(trustNote)))
-      .child(footer);
+    return sheet(d, "crew-hire", this.handle, (e, cx) => this.key(e, cx))
+      .child(sheetHeader(d, { id: "hire", face: div().size(40).flex_none().flex().items_center().justify_center().rounded(8).bg(d.raised).border_1().border_color(d.line).child(brainLogo(h?.key, 20, d, this.agents)), title: "Hire a pal", onClose: close,
+        sub: `Any harness, any company · ${this.machine ?? "this computer"}` }))
+      .child(sheetBody()
+        .child(sheetField(d, Input.new(this.name).w_full().text_size(13).text_color(d.fg1)))
+        .child(sheetArea(d, Textarea.new(this.brief).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
+        .child(row)
+        .when(Boolean(panel), (el) => el.child(panel))
+        .child(sheetField(d, Input.new(this.folder).w_full().text_size(13).text_color(d.fg1), { trailing: browse }))
+        .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
+        .when(Boolean(trustNote), (el) => el.child(div().text_size(11).line_height("15px").text_color(d.fg3)
+          .child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its channel."))))
+      .child(sheetFooter(d, { id: "hire", hint: "Enter hires · Esc cancels", onCancel: close, ready, primary: name ? `Hire ${name}` : "Hire", onPrimary: () => this.hire() }));
   }
 }

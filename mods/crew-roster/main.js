@@ -7,20 +7,20 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, VirtualListScrollHandle, v_virtual_list } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
-  crew, botOf, sleepers, mascotFor, mascotEl, mood, channelName, harnessName, ago, a,
+  crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal,
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, openProposalPanel } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
-// Focus pal rows: the pet 75 wide, bare (no box), in a 68 px row (DeNon 2026-11-08: twice the old
+// Focus pal rows: the pet 75 wide, bare (no box), in a 64 px row (two lines of text since 'status first') (DeNon 2026-11-08: twice the old
 // 46, then 15% back down).
-const ROW_PET = 75, ROW_H = 68;
+const ROW_PET = 75, ROW_H = 64;
 const RAIL = 64;
 
 function find(node, id) {
@@ -599,8 +599,8 @@ export default class CrewRoster extends View {
   // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
   // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it; no state word). Under the floor: the pal's channels, full width,
-  // up to six rows then scrolling, with a search in their header; then the quick actions:
-  // + Channel, Tell, Profile (the right-side panel), Tasks (an icon with its count), Sleep. The
+  // up to six rows then scrolling, with a search in their header; then the quick actions as
+  // pebbles: + Channel, Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
   // name opens the profile panel too. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
@@ -642,27 +642,22 @@ export default class CrewRoster extends View {
         .child(bot.name)))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
-    const btn = (id, icon, text, action, extra, on = false) => h_flex().id(id).h(28).flex_none().items_center().justify_center().gap(6)
-      .when(Boolean(text), (el) => el.px(9)).when(!text, (el) => el.w(extra != null ? 40 : 28))
-      .rounded(d.r.sm).bg(on ? d.sel : d.raised).border_1().border_color(on ? d.lineStrong : d.lineMid).cursor_pointer()
-      .hover((s) => s.bg(d.hover).border_color(d.lineStrong))
-      .on_click((_e, cx) => { action(cx); cx.notify(); })
-      .child(svg(`${ICON}/${icon}.svg`).size(12).flex_none().text_color(d.iconOn))
-      .when(Boolean(text), (el) => el.child(div().text_size(12).line_height("16px").font_weight(500).text_color(d.body).child(text)))
-      .when(extra != null, (el) => el.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(String(extra))));
-    const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)
-      && String(x.claimed_by || x.assignee || "").split("#")[0].split(" - ")[0] === bot.name).length;
+    // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
+    const btn = (id, icon, text, action, extra) => pebble(d, { id, icon, label: text, extra, onClick: action, grow: Boolean(text) });
+    const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)).flex_1())
-        .child(btn("hero-tell", "ds-tell", "Tell", () => openOverlay({ mod: "crew-tell", kind: "dialog", width: 460, props: { space: space.id, tab: (this.leadTab(space) ?? tab)?.id } })).flex_1())
-        // Profile: the right-side panel (pressed while it's open on Profile); Tasks keeps its count.
-        .child(btn("hero-profile", "ds-user", "Profile", () => togglePanel("profile"), null, panelOpen() && panelTab() === "profile").flex_1())
-        .child(btn("hero-tasks", "ds-tasks", null, () => setShared("crew.view", "tasks"), mine || null).tooltip("Tasks"))
-        .child(btn("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx)).tooltip("Put to sleep")));
+        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
+        // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
+        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
+        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine || null))
+        // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
+        // Channel and Tasks keep their full labels at 304 px; the name above opens it too.
+        .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
+        .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
@@ -851,13 +846,12 @@ export default class CrewRoster extends View {
     const st = space.status;
     const on = space.active;
     const awake = bot.awake || bot.starting;
-    const dot = awake ? this.liveDot(st, d) : null;
-    const news = awake && ["working", "blocked", "done"].includes(st);
-    const [tag, what] = this.doing(space, bot);
-    // Hierarchy: name #EDEDED, what it's on #C8C8C8, [channel] #808082 mono; a closed pal's text
-    // never drops below #808082 (its pet dims instead).
+    const [tag] = this.doing(space, bot);
+    // "Status first" (DeNon's pick from the pal-rows board, variant 3): the name (#EDEDED 600) and the
+    // time; then the state word in its colour and " · #channel" in 11 px mono #808082. A closed pal's
+    // text never drops below #808082 (its pet dims instead).
     const nameColor = awake ? d.fg1 : d.fg2;
-    const whatColor = awake ? d.body : d.fg2;
+    const [word, wordColor] = this.stateWord(space, bot, d);
     // Dragging (pals in the groups, not the head pal or hidden ones): press, move 5 px, and a 2 px
     // line shows where it will land (above or below the row under the pointer); release drops it.
     const draggable = gid !== undefined && !bot.god;
@@ -877,14 +871,27 @@ export default class CrewRoster extends View {
       .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(this.rowPet(bot, mood(st, awake), t)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().items_center().gap(6)
-          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
+          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").font_weight(600).text_color(nameColor).child(bot.name))
           .when(palPinned(bot), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
-          .child(div().flex_none().text_size(11).line_height("18px").text_color(d.fg3).child(stamp(this.lastChange(space))))
-          .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot))))
-        // [channel], then what it's on, each on its own full-width line (side by side, a long
-        // channel name squeezed the preview into a narrow column).
-        .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("15px").font_family(d.mono).text_color(d.fg2).child(`[${tag}]`)))
-        .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(whatColor).child(what)));
+          .child(div().flex_none().text_size(11).line_height("18px").text_color(d.fg3).child(stamp(this.lastChange(space)))))
+        .child(h_flex().min_w(0).items_center().overflow_hidden()
+          .child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(word))
+          .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("16px").font_family(d.mono).text_color(d.fg2).child(` · #${tag}`)))));
+  }
+
+  // A pal's state as a word in its colour (the pal rows' second line): its pet's state (petState, so
+  // PR, merged, closing and stuck show too), "Working · 4m" with how long its lead channel has.
+  stateWord(space, bot, d) {
+    if (bot.starting) return ["Starting", d.infoText];
+    if (!bot.awake) return ["Asleep", d.fg2];
+    const st = petState(bot, mood(space.status, true));
+    const lead = this.leadTab(space);
+    const since = lead?.changed_at ? ago(lead.changed_at) : "";
+    return ({
+      work: [since && since !== "now" ? `Working · ${since}` : "Working", d.info],
+      ask: ["Needs you", d.warn], done: ["Done", d.ok], stuck: ["Stuck", d.warn],
+      pr: ["PR open", "#3FBF78"], merged: ["Merged", "#9466F0"], closing: ["Closing", d.err],
+    })[st] ?? ["Resting", d.body];
   }
 
   sleeperRow(rec, t, d) {
@@ -895,8 +902,8 @@ export default class CrewRoster extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
       .child(div().flex_none().opacity(0.5).child(this.rowPet(bot, "asleep", t)))
       .child(v_flex().flex_1().min_w(0).gap(3)
-        .child(div().truncate().text_size(14).line_height("18px").text_color(d.fg2).child(rec.name))
-        .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg2).child("closed · click to wake")));
+        .child(div().truncate().text_size(14).line_height("18px").font_weight(600).text_color(d.fg2).child(rec.name))
+        .child(div().truncate().text_size(12).line_height("16px").font_weight(500).text_color(d.fg2).child("Asleep · click to wake")));
   }
 
   empty(t) {

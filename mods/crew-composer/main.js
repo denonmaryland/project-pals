@@ -148,7 +148,7 @@ export default class CrewComposer extends View {
     const d = ds(t);
     // A file picked in the attach popup.
     const pick = shared("crew.attach.add");
-    if (pick?.nonce && pick.nonce !== this.lastPick) { this.lastPick = pick.nonce; this.add(pick.paths ?? [], cx); }
+    if (pick?.nonce && pick.nonce !== this.lastPick) { this.lastPick = pick.nonce; if (!pick.for) this.add(pick.paths ?? [], cx); }
     const field = this.field();
     const ready = Boolean(field.value().trim() || this.files.length);
     const square = (id, icon, size, bg, color, action, tip) => div().id(id).size(28).flex_none().rounded(d.r.sm).flex().items_center().justify_center()

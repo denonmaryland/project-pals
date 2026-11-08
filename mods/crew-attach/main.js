@@ -29,7 +29,8 @@ export default class CrewAttach extends View {
   }
 
   pick(file) {
-    setShared("crew.attach.add", { paths: [file.path], nonce: `${Date.now()}-${Math.random()}` });
+    // `for`: who asked (props.for: "tasks"; none: the room composer), so only that one takes it.
+    setShared("crew.attach.add", { paths: [file.path], nonce: `${Date.now()}-${Math.random()}`, for: props()?.for ?? null });
     closeOverlay(props().overlay);
   }
 

@@ -6,7 +6,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, EditorState, Editor, TextView, InputState, Input } from "gpui-base";
 import { exec, appHome, writeTextFile, readTextFile, notify, shared, setShared } from "herdr";
-import { crewCli, openPanel, panelState, panelTab, setPanelSize, panelFull } from "./crew.js";
+import { crewCli, openPanel, panelState, panelTab, setPanelSize, panelFull, pebble } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const slugOf = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x";
@@ -195,13 +195,9 @@ function link(d, id, text, act) {
     .hover((s) => s.text_color(d.fg1)).on_click((_e, cx) => { act(cx); cx.notify(); }).child(text);
 }
 
+// The dialog kit's pebbles: Cancel / Decline plain, the action (Save, Write, Accept) primary.
 function button(d, id, text, act, { solid = false, disabled = false } = {}) {
-  return div().id(id).h(28).px(12).flex().flex_none().items_center().rounded(d.r.sm).border_1()
-    .border_color(solid ? d.fg1 : d.lineMid).bg(solid ? d.fg1 : d.raised)
-    .text_size(12).font_weight(solid ? 600 : 500).text_color(solid ? d.bg0 : d.body)
-    .when(!disabled, (el) => el.cursor_pointer().hover((s) => s.opacity(0.9)).on_click((_e, cx) => { act(cx); cx.notify(); }))
-    .when(disabled, (el) => el.opacity(0.5))
-    .child(text);
+  return pebble(d, { id, label: text, primary: solid, disabled, onClick: (cx) => act(cx) });
 }
 
 function tag(d, text, tone) {

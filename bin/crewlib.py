@@ -452,39 +452,63 @@ def remember(bot_name, fact, channel=None, user=False):
     return path
 
 
-def memory_parts(bot_name, pinned="", days=2):
-    """memory_text's pieces, in order, as (label, text): what the profile panel's Memory shows."""
-    parts = []
-    user = MEMORY / "USER.md"
-    if user.exists():
-        parts.append(("USER.md", user.read_text().strip()))
-    if (pinned or "").strip():
-        parts.append(("Pinned", f"## Pinned by {OWNER}\n{pinned.strip()}"))
-    d = memory_dir(bot_name)
-    if (d / "MEMORY.md").exists():
-        parts.append(("MEMORY.md", f"## {bot_name}'s memory\n" + (d / "MEMORY.md").read_text().strip()))
-    notes = sorted((d / "notes").glob("*.md"))[-days:] if (d / "notes").exists() else []
-    for n in notes:
-        parts.append((f"notes {n.stem}", n.read_text().strip()))
-    return parts
+MEMORY_CAP = 16000   # what a session starts with, in characters (about 4,000 tokens)
+NOTE_DAYS = 7        # how far back the newest notes can reach
 
 
-def memory_text(bot_name, pinned="", days=2, limit=6000):
-    """What a pal should start with: the owner's profile, its pinned and curated memory, recent notes."""
-    parts = []
-    user = MEMORY / "USER.md"
-    if user.exists():
-        parts.append(user.read_text().strip())
+def memory_text(bot_name, pinned="", days=NOTE_DAYS, limit=MEMORY_CAP):
+    """What a pal starts with, in this order (DeNon, 2026-11-08):
+    1. the note the owner pinned, 2. its own MEMORY.md, 3. USER.md (what every pal knows about the
+    owner), always whole, even past `limit`; then 4. its newest notes, newest first, whole lines only,
+    until `limit`. Notes that don't fit are left out, with one line saying how many and where to see
+    them. Nothing is cut mid-sentence. (It used to keep the LAST `limit` characters, which cut USER.md,
+    the pinned note and MEMORY.md first.)"""
+    head = []
     if (pinned or "").strip():
-        parts.append(f"## Pinned by {OWNER}\n{pinned.strip()}")
+        head.append(f"## Pinned by {OWNER}\n{pinned.strip()}")
     d = memory_dir(bot_name)
-    if (d / "MEMORY.md").exists():
-        parts.append(f"## {bot_name}'s memory\n" + (d / "MEMORY.md").read_text().strip())
-    notes = sorted((d / "notes").glob("*.md"))[-days:] if (d / "notes").exists() else []
-    for n in notes:
-        parts.append(n.read_text().strip())
-    text = "\n\n".join(parts)
-    return text[-limit:] if len(text) > limit else text
+    if (d / "MEMORY.md").exists() and (d / "MEMORY.md").read_text().strip():
+        head.append(f"## {bot_name}'s memory\n" + (d / "MEMORY.md").read_text().strip())
+    user = MEMORY / "USER.md"
+    if user.exists() and user.read_text().strip():
+        head.append(user.read_text().strip())
+    text = "\n\n".join(head)
+    # The notes, newest first: the newest day first, and within a day the latest line first.
+    files = sorted((d / "notes").glob("*.md"))[-days:] if (d / "notes").exists() else []
+    notes = [(f.stem, l) for f in reversed(files) for l in reversed([l for l in f.read_text().splitlines() if l.startswith("- ")])]
+    marker = lambda n: f"\n\n({n} older note{'s' if n != 1 else ''} not loaded; run pal memory to see them)"
+    title = "\n\n## Recent notes, newest first"
+    budget = limit - len(text) - len(title) - len(marker(len(notes)))
+    kept, last_day, body = 0, None, ""
+    for day, line in notes:
+        add = (f"\n### {day}" if day != last_day else "") + "\n" + line
+        if len(add) > budget:
+            break
+        body += add
+        budget -= len(add)
+        last_day = day
+        kept += 1
+    if body:
+        text += title + body
+    if kept < len(notes):
+        text += marker(len(notes) - kept)
+    return text.strip()
+
+
+def memory_report(bot_name, pinned=""):
+    """For the profile panel's Memory: what a session starts with (memory_text) and what's left out.
+    The pinned note, MEMORY.md and USER.md always go in whole; notes go in newest first until the cap."""
+    d = memory_dir(bot_name)
+    user = MEMORY / "USER.md"
+    parts = [("Pinned", (pinned or "").strip()), ("MEMORY.md", (d / "MEMORY.md").read_text().strip() if (d / "MEMORY.md").exists() else ""),
+             ("USER.md", user.read_text().strip() if user.exists() else "")]
+    files = sorted((d / "notes").glob("*.md"))[-NOTE_DAYS:] if (d / "notes").exists() else []
+    total_notes = sum(1 for f in files for l in f.read_text().splitlines() if l.startswith("- "))
+    primer = memory_text(bot_name, pinned)
+    m = re.search(r"\((\d+) older notes? not loaded", primer)
+    left_out = int(m.group(1)) if m else 0
+    return {"limit": MEMORY_CAP, "primer": len(primer), "parts": [{"label": k, "chars": len(v)} for k, v in parts if v],
+            "notes_total": total_notes, "notes_kept": total_notes - left_out, "notes_left_out": left_out}
 
 
 # ── what every pal should know ────────────────────────────────────────────────────────────────

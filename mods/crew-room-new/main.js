@@ -6,7 +6,8 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces, panes } from "herdr";
 import { enqueue, crew, botOf, rooms, roomSlug, newId, saveRoom, showRoom, roomMembers, writeRoomFile, briefing,
-  mascotEl, mood, channelName, leadPane, crewCli, a, tone } from "./crew.js";
+  mascotEl, mood, channelName, leadPane, crewCli, a, tone, ds,
+  sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -61,94 +62,58 @@ export default class CrewRoomNew extends View {
     if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
   }
 
+  // "A · Compact sheet": who's coming in the header, "# name" and the goal as fields, then the pals
+  // as a list (tick to add; a picked pal's channel opens under it), and the footer.
   render() {
     const t = tone(theme());
+    const d = ds(t);
     const c = crew(), ps = panes(), all = spaces();
-    const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
+    const close = () => closeOverlay(props().overlay);
     const picked = all.filter((s) => this.picked.has(s.id));
-
-    // Header: the faces of who's coming, overlapping, or a group icon until someone is.
     const faces = picked.length
-      ? h_flex().children(picked.slice(0, 4).map((s, i) => div().when(i > 0, (el) => el.ml(-12)).child(mascotEl(botOf(s, c, ps), "calm", 34, t))))
-      : div().size(34).rounded(4).bg(a(t.foreground, "0c")).flex().items_center().justify_center()
-          .child(svg(`${ICON}/users.svg`).size(17).text_color(t.dim));
-    const header = h_flex().items_center().gap(12).px(24).pt(22).pb(6)
-      .child(div().flex_none().child(faces))
-      .child(v_flex().flex_1().min_w(0).gap(1)
-        .child(div().text_size(17).font_medium().text_color(t.foreground).child("New room"))
-        .child(div().text_size(12.5).text_color(t.dim).child("A group chat where pals work together")))
-      .child(div().id("rn-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
-        .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim)));
+      ? h_flex().flex_none().children(picked.slice(0, 4).map((s, i) => div().when(i > 0, (el) => el.ml(-12)).child(mascotEl(botOf(s, c, ps), "calm", 34, t))))
+      : div().size(34).flex_none().rounded(d.r.sm).bg(d.raised).border_1().border_color(d.line).flex().items_center().justify_center()
+          .child(svg(`${ICON}/users.svg`).size(16).text_color(d.fg3));
 
-    // Its name and goal.
-    const named = v_flex().rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
-      .child(stop(h_flex().items_center().gap(6).px(16).pt(14).pb(6)
-        .child(div().text_size(20).text_color(t.dim).child("#"))
-        .child(div().flex_1().child(Input.new(this.name).w_full().text_size(20).text_color(t.foreground)))))
-      .child(stop(div().px(6).pb(6).child(Textarea.new(this.goal).w_full().px(10).py(6).text_size(13.5).text_color(t.foreground))));
-
-    // Who's in it: one row per pal; a picked pal shows which channel joins (click to change).
-    // Awake pals first (they can join now); asleep ones after. Room for eight before it scrolls.
+    // Awake pals first (they can join now); asleep ones after.
     const order = [...all].sort((x, y) => Number(botOf(y, c, ps).awake) - Number(botOf(x, c, ps).awake));
-    const list = v_flex().id("rn-bots").max_h(380).overflow_y_scrollbar().rounded(8).border_1().border_color(a(t.foreground, "10")).py(4);
-    order.forEach((space, i) => {
+    const list = sheetPanel(d, "rn-bots").max_h(300);
+    for (const space of order) {
       const bot = botOf(space, c, ps);
       const on = this.picked.has(space.id);
       const tab = on ? space.tabs.find((x) => x.id === this.picked.get(space.id)) : null;
       const awake = Boolean(tab && leadPane(tab.id, ps)?.program?.agent);
-      const check = div().size(20).flex_none().rounded(3).flex().items_center().justify_center()
-        .bg(on ? t.accent : a(t.foreground, "00")).border_1().border_color(on ? t.accent : a(t.foreground, "2a"))
-        .when(on, (el) => el.child(svg(`${ICON}/check.svg`).size(11).text_color(t.accent_foreground)));
-      if (i > 0) list.child(div().h(1).mx(16).bg(a(t.foreground, "0a")));
-      list.child(h_flex().id(`rn-bot-${space.id}`).items_center().gap(11).px(14).py(8).cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "05")))
+      list.child(h_flex().id(`rn-bot-${space.id}`).flex_none().min_h(40).items_center().gap(10).px(8).py(4).rounded(4).cursor_pointer()
+        .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => {
           if (on) { this.picked.delete(space.id); if (this.choosing === space.id) this.choosing = null; }
           else this.picked.set(space.id, this.defaultTab(space, ps).id);
           cx.notify();
         })
+        .child(div().size(14).flex_none().rounded(3).border_1().border_color(on ? d.info : d.lineStrong).bg(on ? d.info : d.inset).flex().items_center().justify_center()
+          .when(on, (el) => el.child(svg(`${ICON}/check.svg`).size(10).text_color(d.fg1))))
         .child(mascotEl(bot, mood(space.status, bot.awake), 30, t))
         .child(v_flex().flex_1().min_w(0).gap(1)
-          .child(div().truncate().text_size(13.5).text_color(bot.awake ? t.foreground : t.muted).child(bot.name))
+          .child(div().truncate().text_size(13).line_height("16px").text_color(bot.awake ? d.fg1 : d.fg2).child(bot.name))
           .when(on && Boolean(tab), (el) => el.child(h_flex().id(`rn-ch-${space.id}`).items_center().gap(4).cursor_pointer()
             .on_click((_e, cx) => { cx.stop_propagation(); this.choosing = this.choosing === space.id ? null : space.id; cx.notify(); })
-            .child(div().text_size(12).text_color(t.dim).child(`#${channelName(tab)}${awake ? "" : " · asleep, will wake"}`))
-            .when(space.tabs.length > 1, (el) => el.child(svg(`${ICON}/${this.choosing === space.id ? "chevron-down" : "chevron-right"}.svg`).size(10).text_color(t.dim))))))
-        .child(check));
-      // Which of its channels joins.
+            .child(div().text_size(11).line_height("14px").font_family(d.mono).text_color(d.fg2).child(`#${channelName(tab)}${awake ? "" : " · asleep, will wake"}`))
+            .when(space.tabs.length > 1, (el) => el.child(svg(`${ICON}/${this.choosing === space.id ? "chevron-down" : "chevron-right"}.svg`).size(10).text_color(d.fg3)))))));
       if (on && this.choosing === space.id) {
-        list.child(v_flex().pl(55).pr(12).pb(8).children(space.tabs.map((x) => {
-          const sel = x.id === tab?.id;
-          return h_flex().id(`rn-pick-${x.id}`).items_center().gap(8).px(10).py(5).rounded(8).cursor_pointer()
-            .when(sel, (el) => el.bg(a(t.foreground, "0c"))).hover((s) => s.bg(a(t.foreground, "08")))
-            .on_click((_e, cx) => { this.picked.set(space.id, x.id); this.choosing = null; cx.notify(); })
-            .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(sel ? t.foreground : t.muted).child(`#${channelName(x)}`))
-            .when(sel, (el) => el.child(svg(`${ICON}/check.svg`).size(12).text_color(t.accent)));
-        })));
+        list.children(space.tabs.map((x) => sheetOption(d, `rn-pick-${x.id}`, { on: x.id === tab?.id, label: `#${channelName(x)}`,
+          onClick: () => { this.picked.set(space.id, x.id); this.choosing = null; } }).ml(48)));
       }
-    });
+    }
 
-    const name = this.name.value().trim();
-    const ready = Boolean(name) && this.picked.size >= 2;
-    const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(div().text_size(12).text_color(t.dim)
-        .child(this.picked.size < 2 ? "Pick at least two pals" : `${this.picked.size} pals`))
-      .child(h_flex().gap(14).items_center().flex_none()
-        .child(div().id("rn-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("rn-go").px(18).py(9).rounded(4).cursor_pointer().bg(ready ? t.solid : a(t.foreground, "1a"))
-          .hover((s) => s.opacity(0.88)).on_click(() => this.create())
-          .child(div().text_size(13.5).font_medium().text_color(ready ? t.solid_foreground : t.dim).child("Open room"))));
-
-    return v_flex().id("crew-room-new").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .w_full().bg(t.popover).text_color(t.foreground)
-      .child(header)
-      .child(v_flex().gap(12).px(24).pt(12)
-        .child(named)
-        .child(div().pl(4).pt(2).text_size(12.5).text_color(t.dim).child("Who's in it"))
-        .child(list)
-        // About eight rows fit; say so when there are more, since the list scrolls without a bar.
-        .when(order.length > 8, (el) => el.child(div().pl(4).text_size(12).text_color(t.dim).child(`Scroll for ${order.length - 8} more pal${order.length - 8 === 1 ? "" : "s"}`))))
-      .child(footer);
+    const ready = Boolean(this.name.value().trim()) && this.picked.size >= 2;
+    return sheet(d, "crew-room-new", this.handle, (e, cx) => this.key(e, cx))
+      .child(sheetHeader(d, { id: "rn", face: faces, title: "New room", sub: "A group chat where pals work together", onClose: close }))
+      .child(sheetBody()
+        .child(sheetField(d, Input.new(this.name).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
+        .child(sheetArea(d, Textarea.new(this.goal).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
+        .child(div().pt(2).text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Who's in it"))
+        .child(list))
+      .child(sheetFooter(d, { id: "rn", hint: this.picked.size < 2 ? "Pick at least two pals" : `${this.picked.size} pals · Esc cancels`, onCancel: close, ready,
+        primary: "Open room", onPrimary: () => this.create() }));
   }
 }

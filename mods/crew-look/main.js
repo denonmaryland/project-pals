@@ -1,29 +1,41 @@
-// A pal's look: any color, a body shape and an accessory, with a live preview of every mood.
-// Saving stores it on the pal's record (`look`) and draws its mascots into data/crew-mascots.
+// A pal's look, as its pocket pet (DeNon, 2026-11-08: the folder mascots are retired). Everything
+// pets.js really supports: the species, its colour, what it wears (up to two) and its eyes, with a
+// live preview of the pet in each state (resting, working, asks you, done, PR open, stuck, asleep).
+// In the dialog kit's "A · Compact sheet" look. Saving stores `pet` ({species, acc, eyes}) and the
+// colour (`look.color`) on the pal's record; the roster draws its tiles. Reset goes back to the
+// pet its name and brain give it.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { botOf, updateBot, resolveLook, writeArt, colorOf, a, tone } from "./crew.js";
-import { SWATCHES, SHAPES, ACCESSORIES, MOODS, NAMED, lookFiles, lookPath, validHex, normHex } from "./mascot-art.js";
+import { botOf, updateBot, writeArt, petOf, ds, tone, sheet, sheetHeader, sheetBody, sheetField, sheetFooter, pebble, SWATCHES, validHex, normHex } from "./crew.js";
+import { petSpec, petFiles, petPath, PET_SPECIES, BARE_VIEW } from "./pets.js";
 
 const ICON = "mods/crew-roster/icons";
+const WEARS = [["phones", "Headphones"], ["glasses", "Glasses"], ["cap", "Cap"], ["beanie", "Beanie"], ["hood", "Hood"],
+  ["crown", "Crown"], ["bow", "Bow"], ["flower", "Flower"], ["scarf", "Scarf"], ["antenna", "Antenna"]];
+const EYES = [["dot", "Classic"], ["big", "Big"], ["dots", "Dots"], ["hollow", "Hollow"], ["sleepy", "Sleepy"],
+  ["wink", "Wink"], ["visor", "Visor"], ["cyclops", "Cyclops"], ["angry", "Fierce"]];
+const SHOW = [["rest", "Resting"], ["work", "Working"], ["ask", "Asks you"], ["done", "Done"], ["pr", "PR open"], ["stuck", "Stuck"], ["asleep", "Asleep"]];
+const cap1 = (s) => s.replace(/^./, (c) => c.toUpperCase());
 
 export default class CrewLook extends View {
   init(_props, cx) {
     const space = spaces().find((s) => s.id === props()?.space);
     this.bot = space ? botOf(space) : null;
-    const b = this.bot;
-    this.draft = { color: b?.look?.color ?? NAMED[b ? colorOf(b) : "slate"] ?? "#8f96b3", shape: b?.look?.shape ?? "folder", accessory: b?.look?.accessory ?? "auto" };
-    this.hex = InputState.new({ placeholder: "#a28cf0", value: this.draft.color });
+    const p = this.bot ? petOf(this.bot) : null;
+    this.draft = p ? { species: p.species, acc: [...p.acc], eyes: p.eyes, color: this.bot?.look?.color ?? p.color } : null;
+    this.hex = InputState.new({ placeholder: "#a28cf0", value: this.draft?.color ?? "" });
     this.hex.on("change", (_e, cx) => { const v = this.hex.value(); if (validHex(v)) this.set({ color: normHex(v) }, cx, false); });
     this.drawn = new Set();
     this.handle = cx.focus_handle();
-    this.draw(cx);
+    if (this.draft) this.draw(cx);
   }
 
-  // The look as it would be with `l` (accessory "auto" decided for this pal).
-  resolved(l = this.draft) { return resolveLook({ ...this.bot, look: l }); }
+  // The pet a draft makes (the same rules as the pal's own: its name, the head pal's crown).
+  spec(draft = this.draft) {
+    return petSpec({ name: this.bot.name, god: this.bot.god, color: draft.color, pet: { species: draft.species, acc: draft.acc, eyes: draft.eyes } });
+  }
 
   set(change, cx, syncHex = true) {
     this.draft = { ...this.draft, ...change };
@@ -32,11 +44,14 @@ export default class CrewLook extends View {
     cx.notify();
   }
 
-  // Draw what the dialog shows: the draft in every mood, and a calm preview of each shape and accessory in it.
+  // Draw what's shown: the draft's open tiles (every state, the paw frame), and a resting tile of each
+  // species, wear and eye option on the draft. Each file is drawn once per session.
   draw(cx) {
-    const want = [...lookFiles(this.resolved(), MOODS, false)];
-    for (const [shape] of SHAPES) want.push(...lookFiles(this.resolved({ ...this.draft, shape }), ["calm"], false));
-    for (const [accessory] of ACCESSORIES) want.push(...lookFiles(this.resolved({ ...this.draft, accessory }), ["calm"], false));
+    const open = (spec, all) => petFiles(spec).filter(([path]) => path.endsWith("-o.svg") && (all || path.endsWith("-rest-o.svg")));
+    const want = [...open(this.spec(), true)];
+    for (const species of PET_SPECIES) want.push(...open(this.spec({ ...this.draft, species }), false));
+    for (const [w] of WEARS) want.push(...open(this.spec({ ...this.draft, acc: [w] }), false));
+    for (const [eyes] of EYES) want.push(...open(this.spec({ ...this.draft, eyes }), false));
     const todo = want.filter(([path]) => !this.drawn.has(path));
     if (!todo.length) return;
     cx.spawn(async (cx) => {
@@ -45,98 +60,86 @@ export default class CrewLook extends View {
     });
   }
 
-  pic(look, mood, size) {
-    const path = lookPath(look, mood);
-    return this.drawn.has(path) ? image(path).w(size).h(size).flex_none() : div().size(size).flex_none();
+  // A bare pet over its aura, w wide (a placeholder until its tile is on disk).
+  pet(spec, state, w, { dim = false, frames = false } = {}) {
+    const [, , bw, bh] = BARE_VIEW;
+    const h = Math.round(w * bh / bw);
+    const path = petPath(spec, state, 0, true);
+    if (!this.drawn.has(path)) return div().w(w).h(h).flex_none();
+    const box = div().relative().w(w).h(h).flex_none().when(dim, (el) => el.opacity(0.45))
+      .child(div().absolute().left(-8).top(-6).w(w + 16).h(h + 12).child(image(`${ICON}/pet-aura-row.svg`).w(w + 16).h(h + 12)))
+      .child(div().absolute().left(0).top(0).child(image(path).w(w).h(h)));
+    const b = petPath(spec, state, 1, true);
+    if (frames && this.drawn.has(b)) box.child(div().absolute().left(0).top(0).loop("opacity", { from: 0, to: 1, period: 760 }).child(image(b).w(w).h(h)));
+    return box;
   }
 
   save() {
-    const look = this.draft;
-    // Store it first: closing the dialog ends this mod, and with it anything still waiting (the
-    // old order, draw then store, lost the look). Any art not drawn yet, the roster draws on its
-    // next pass (ensureLooks), and faces wait for it instead of showing a missing image.
-    updateBot(this.bot.record ?? this.bot, (b) => ({ ...b, look }));
-    writeArt(lookFiles(this.resolved(look))).catch(() => {});
+    const { species, acc, eyes, color } = this.draft;
+    updateBot(this.bot.record ?? this.bot, (b) => ({ ...b, pet: { species, acc, eyes }, look: { ...(b.look ?? {}), color } }));
     notify({ title: `${this.bot.name.split(" - ")[0]} has a new look`, level: "success", timeout: 2500 });
     closeOverlay(props().overlay);
   }
 
   reset() {
-    updateBot(this.bot.record ?? this.bot, (b) => { const { look, ...rest } = b; return rest; });
+    updateBot(this.bot.record ?? this.bot, (b) => { const { look, pet, ...rest } = b; return rest; });
     closeOverlay(props().overlay);
   }
 
-  key(e, cx) {
-    if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
-  }
-
   render() {
-    const t = tone(theme());
-    if (!this.bot) return div().p(24).bg(t.popover).text_color(t.dim).child("That pal is gone.");
-    const look = this.resolved();
-    const hair = () => div().h(1).mx(16).bg(a(t.foreground, "0c"));
-    const label = (s, right) => h_flex().items_center().justify_between().px(16).pt(12).pb(8)
-      .child(div().text_size(13.5).text_color(t.foreground).child(s)).when(Boolean(right), (el) => el.child(right));
-    const tile = (id, on, pic, name, action) => v_flex().id(id).w(62).items_center().gap(3).py(6).rounded(6).cursor_pointer()
-      .when(on, (el) => el.bg(a(t.foreground, "10"))).hover((s) => s.bg(a(t.foreground, "08")))
-      .on_click(action)
+    const d = ds(tone(theme()));
+    const close = () => closeOverlay(props()?.overlay);
+    if (!this.bot || !this.draft) return div().p(24).bg(d.bg1).text_color(d.fg2).child("That pal is gone.");
+    const spec = this.spec();
+    const section = (title, right = null) => h_flex().items_center().justify_between().pt(4)
+      .child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(title))
+      .when(Boolean(right), (el) => el.child(right));
+    const tile = (id, on, pic, name, action) => v_flex().id(id).w(64).flex_none().items_center().gap(4).pt(6).pb(4).rounded(6).cursor_pointer()
+      .when(on, (el) => el.bg(d.sel).border_1().border_color(d.lineStrong)).when(!on, (el) => el.border_1().border_color(d.bg1).hover((s) => s.bg(d.hover)))
+      .on_click((_e, cx) => action(cx))
       .child(pic)
-      .child(div().text_size(11).text_color(on ? t.foreground : t.dim).child(name));
+      .child(div().text_size(11).line_height("14px").text_color(on ? d.fg1 : d.fg2).child(name));
 
-    const header = h_flex().items_center().gap(14).px(24).pt(22).pb(6)
-      .child(this.pic(look, "done", 56))
-      .child(v_flex().flex_1().min_w(0).gap(1)
-        .child(div().text_size(17).font_medium().text_color(t.foreground).child("Look"))
-        .child(div().truncate().text_size(12.5).text_color(t.dim).child(this.bot.name)))
-      .child(div().id("look-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
-        .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim)));
+    // Every state, live.
+    const states = h_flex().gap(4).flex_wrap()
+      .children(SHOW.map(([st, label]) => v_flex().w(66).items_center().gap(4)
+        .child(this.pet(spec, st === "asleep" ? "rest" : st, 56, { dim: st === "asleep", frames: st === "work" }))
+        .child(div().text_size(11).line_height("14px").text_color(d.fg3).child(label))));
 
-    // Every mood, as it'll look.
-    const moods = h_flex().justify_around().px(12).py(12).rounded(8).bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
-      .children([["calm", "Idle"], ["working", "Working"], ["blocked", "Needs you"], ["done", "Done"], ["asleep", "Asleep"]].map(([m, name]) =>
-        v_flex().items_center().gap(4).child(this.pic(look, m, 40)).child(div().text_size(11).text_color(t.dim).child(name))));
+    const species = h_flex().gap(4).flex_wrap().children(PET_SPECIES.map((sp) =>
+      tile(`lk-sp-${sp}`, this.draft.species === sp, this.pet(this.spec({ ...this.draft, species: sp }), "rest", 44), cap1(sp), (cx) => this.set({ species: sp }, cx))));
 
-    const swatches = h_flex().flex_wrap().gap(8).px(16).pb(12).children(SWATCHES.map((c, i) => {
-      const on = this.draft.color.toLowerCase() === c;
-      return div().id(`sw-${i}`).size(26).rounded(4).flex().items_center().justify_center().cursor_pointer()
-        .border_2().border_color(on ? t.foreground : a(t.foreground, "00"))
-        .on_click((_e, cx) => this.set({ color: c }, cx))
-        .child(div().size(18).rounded(3).bg(c).border_1().border_color(a(t.foreground, "18")));
+    const swatches = h_flex().gap(6).flex_wrap().items_center().children(SWATCHES.map((c, i) => {
+      const on = c.toLowerCase() === String(this.draft.color).toLowerCase();
+      return div().id(`lk-c-${i}`).size(20).flex_none().rounded(4).bg(c).cursor_pointer()
+        .border_2().border_color(on ? d.fg1 : d.bg1).hover((s) => s.border_color(d.lineStrong))
+        .on_click((_e, cx) => this.set({ color: c }, cx));
     }));
-    const hexField = h_flex().items_center().gap(8)
-      .child(div().size(16).rounded(3).bg(this.draft.color).border_1().border_color(a(t.foreground, "22")))
-      .child(div().w(96).h(28).px(9).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(Input.new(this.hex).w_full().text_size(12.5).font_family("JetBrains Mono").text_color(t.foreground)));
 
-    const shapes = h_flex().flex_wrap().gap(2).px(10).pb(10).children(SHAPES.map(([key, name]) =>
-      tile(`sh-${key}`, this.draft.shape === key, this.pic(this.resolved({ ...this.draft, shape: key }), "calm", 38), name,
-        (_e, cx) => this.set({ shape: key }, cx))));
-    const accs = h_flex().flex_wrap().gap(2).px(10).pb(10).children(ACCESSORIES.map(([key, name]) =>
-      tile(`acc-${key}`, this.draft.accessory === key, this.pic(this.resolved({ ...this.draft, accessory: key }), "calm", 38), name,
-        (_e, cx) => this.set({ accessory: key }, cx))));
+    // Up to two things worn; a third replaces the older one.
+    const wear = (w) => {
+      const acc = this.draft.acc.includes(w) ? this.draft.acc.filter((x) => x !== w) : [...this.draft.acc, w].slice(-2);
+      return acc;
+    };
+    const wears = h_flex().gap(4).flex_wrap()
+      .child(tile("lk-w-none", !this.draft.acc.length, div().w(44).h(34).flex().items_center().justify_center().child(svg(`${ICON}/x.svg`).size(12).text_color(d.fg3)), "None",
+        (cx) => this.set({ acc: [] }, cx)))
+      .children(WEARS.map(([w, name]) => tile(`lk-w-${w}`, this.draft.acc.includes(w), this.pet(this.spec({ ...this.draft, acc: [w] }), "rest", 44), name,
+        (cx) => this.set({ acc: wear(w) }, cx))));
 
-    const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
-      .child(label("Color", hexField)).child(swatches)
-      .child(hair()).child(label("Shape")).child(shapes)
-      .child(hair()).child(label("Accessory")).child(accs);
+    const eyes = h_flex().gap(4).flex_wrap().children(EYES.map(([e, name]) =>
+      tile(`lk-e-${e}`, this.draft.eyes === e, this.pet(this.spec({ ...this.draft, eyes: e }), "rest", 44), name, (cx) => this.set({ eyes: e }, cx))));
 
-    const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(this.bot.look
-        ? div().id("look-reset").cursor_pointer().hover((s) => s.opacity(0.75)).on_click(() => this.reset())
-            .child(div().text_size(12.5).text_color(t.dim).child("Back to its default"))
-        : div())
-      .child(h_flex().gap(14).items_center().flex_none()
-        .child(div().id("look-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click(() => closeOverlay(props().overlay)).child("Cancel"))
-        .child(div().id("look-save").px(18).py(9).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
-          .on_click(() => this.save())
-          .child(div().text_size(13.5).font_medium().text_color(t.solid_foreground).child("Save"))));
-
-    return v_flex().id("crew-look").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .w_full().bg(t.popover).text_color(t.foreground)
-      .child(header)
-      .child(v_flex().gap(12).px(24).pt(12).child(moods).child(settings))
-      .child(footer);
+    return sheet(d, "crew-look", this.handle, (e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
+      .child(sheetHeader(d, { id: "lk", face: this.pet(spec, "work", 60, { frames: true }), title: `${this.bot.name}'s look`,
+        sub: `${cap1(spec.species)} · ${spec.acc.length ? spec.acc.join(" + ") : "nothing worn"} · ${EYES.find(([e]) => e === spec.eyes)?.[1] ?? "Classic"} eyes`, onClose: close }))
+      .child(sheetBody()
+        .child(states)
+        .child(section("Species")).child(species)
+        .child(section("Colour", div().w(120).child(sheetField(d, Input.new(this.hex).w_full().text_size(12).text_color(d.fg1))))).child(swatches)
+        .child(section("Wears (up to two)")).child(wears)
+        .child(section("Eyes")).child(eyes)
+        .child(h_flex().pt(2).child(pebble(d, { id: "lk-reset", label: "Reset to its default", onClick: () => this.reset() }))))
+      .child(sheetFooter(d, { id: "lk", hint: "Previews update as you pick · Esc cancels", onCancel: close, primary: "Save", onPrimary: () => this.save() }));
   }
 }

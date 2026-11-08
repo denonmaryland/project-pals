@@ -57,12 +57,13 @@ for dir in "$src"/mods/crew-*; do
   # Mirror the mod (keep the files Herdr writes itself: jsconfig.json, *.d.ts).
   rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' "$dir/" "$dest/"
   cp "$src/lib/crew.js" "$dest/crew.js"
-  cp "$src/lib/mascot-art.js" "$dest/mascot-art.js"
+  # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
+  rm -f "$dest/mascot-art.js"
   cp "$src/lib/pets.js" "$dest/pets.js"
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side; do
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
