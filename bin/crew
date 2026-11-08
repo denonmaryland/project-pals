@@ -1092,12 +1092,15 @@ def cmd_update(rest):
     if sub in ("apply", "rollback") and ME and is_bot_terminal(ME):
         update_log(f"{sub} refused: {ME} is a pal's terminal")
         die(f"updates are {OWNER}'s to install (About → Update), not a pal's")
+    if sub in ("apply", "rollback"):
+        crewupdate.run_state(fresh=True, action=sub, state="running", step="starting", started=time.time(), pid=os.getpid(),
+                             **{"from": crewupdate.installed().get("version")})
     try:
         if sub == "check":
             out = crewupdate.check()
         elif sub == "apply":
             say = (lambda *_: None) if as_json else print
-            out = crewupdate.apply(log=lambda m: (update_log(m), say(m)))
+            out = crewupdate.apply(log=lambda m: (update_log(m), say(m), crewupdate.run_state(state="running", step=m)))
         elif sub == "rollback":
             out = {"ok": True, "restored": str(crewupdate.rollback())}
         else:
@@ -1105,6 +1108,7 @@ def cmd_update(rest):
     except CrewError as e:
         if sub in ("apply", "rollback"):
             update_log(f"{sub} failed: {e}")
+            crewupdate.run_state(state="failed", error=str(e))
         if as_json:
             print(json.dumps({"ok": False, "error": str(e)}))
             sys.exit(1)
@@ -1112,9 +1116,12 @@ def cmd_update(rest):
     except Exception as e:
         if sub in ("apply", "rollback"):
             update_log(f"{sub} crashed: {type(e).__name__}: {e}")
+            crewupdate.run_state(state="failed", error=f"{type(e).__name__}: {e}")
         raise
     if sub in ("apply", "rollback"):
         update_log(f"{sub} done: {json.dumps(out)}")
+        crewupdate.run_state(state="done", step=None, version=out.get("version") or crewupdate.installed().get("version"),
+                             updated=out.get("updated", sub == "rollback"), backup=out.get("backup"))
     if as_json:
         print(json.dumps(out))
     elif sub == "check":

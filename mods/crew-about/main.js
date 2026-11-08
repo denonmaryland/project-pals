@@ -1,5 +1,5 @@
 // About Project Pals: the installed version, and updates from the project's GitHub releases.
-// Check for updates asks GitHub (crewd also checks once a day); Update downloads the release,
+// Check for updates asks GitHub (crewd and the status bar also check every 6 hours); Update downloads the release,
 // backs up the current files, installs it and checks every mod, putting the old version back if
 // anything fails. Roll back restores the last backup. Pals, rooms and memory are never touched.
 
@@ -45,7 +45,7 @@ export default class CrewAbout extends View {
       try { this.ins = JSON.parse((await readTextFile(`${d}/crew-install.json`)) ?? "{}"); } catch { this.ins = {}; }
       try { this.state = JSON.parse((await readTextFile(`${d}/crew-update.json`)) ?? "{}"); } catch { this.state = {}; }
       // Opening About asks GitHub again when the last check is over 10 minutes old (crewd checks only
-      // once a day), so a new release shows its Update button without a "Check for updates" click first.
+      // every 6 hours), so a new release shows its Update button without a "Check for updates" click first.
       if (!this.checkedOnOpen) {
         this.checkedOnOpen = true;
         if (!this.busy && Date.now() / 1000 - (this.state.checked ?? 0) > 10 * 60) this.run("check", ["update", "check"], cx);
@@ -138,7 +138,7 @@ export default class CrewAbout extends View {
     else if (available) { title = `${st.name || st.latest} is available`; sub = st.published ? `released ${String(st.published).slice(0, 10)}` : ""; }
     else if (st.checked && !st.latest) { title = "No releases yet"; sub = `checked ${ago(st.checked)}`; }
     else if (st.checked) { title = "You're up to date"; sub = `checked ${ago(st.checked)}`; }
-    else { title = "Not checked yet"; sub = "Project Pals checks once a day by itself"; }
+    else { title = "Not checked yet"; sub = "Project Pals checks every few hours by itself"; }
 
     const notes = available && st.notes ? v_flex().id("about-notes").max_h(220).overflow_y_scrollbar().gap(3).pt(4)
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>

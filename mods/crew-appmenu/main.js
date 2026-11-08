@@ -41,7 +41,8 @@ export default class CrewAppMenu extends View {
       { label: "Herdr settings", icon: "settings", key: shortcut("app.settings"), go: () => run("app.settings", {}) },
       { label: "Command palette", icon: "search", key: shortcut("app.palette"), go: () => run("app.palette", {}) },
       { sep: true },
-      { label: "Project Pals: settings and updates", icon: "info", go: dialog("crew-about", 480) },
+      { label: "Check for updates", icon: "arrow-down", go: dialog("crew-update", 480, { props: { check: true } }) },
+      { label: "Project Pals settings", icon: "info", go: dialog("crew-about", 480) },
     ];
   }
 

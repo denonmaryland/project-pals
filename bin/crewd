@@ -95,9 +95,10 @@ class Crewd:
             if time.strftime("%H:%M") == DISTILL_AT:
                 threading.Thread(target=self.nightly, daemon=True).start()
         crewroutines.watch(terms, log)
-        # Updates: look for a newer release once a day (the About dialog and a sidebar dot show it).
+        # Updates: look for a newer release every 6 hours at most (the status bar's "Update available"
+        # pill and the update dialog show it; crew-status checks too where crewd doesn't run).
         last = load_json(crewupdate.STATE, {}).get("checked", 0)
-        if time.time() - last > 24 * 3600 and time.time() - getattr(self, "last_update_try", 0) > 3600:
+        if time.time() - last > crewupdate.CHECK_EVERY and time.time() - getattr(self, "last_update_try", 0) > 3600:
             self.last_update_try = time.time()
             threading.Thread(target=self.check_updates, daemon=True).start()
 

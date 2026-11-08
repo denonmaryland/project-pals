@@ -1,16 +1,20 @@
 // Project Pals status bar: one 24 px hairline strip under the whole window. Left: the gear (the app
 // menu: hiring, rooms, routines, themes, layouts, Herdr's settings, the palette, updates), how many
-// channels are working, how many things need you (a click opens the Inbox) and the shown channel's usage. Right: the installed version.
+// channels are working, how many things need you (a click opens the Inbox) and the shown channel's usage. Right: a quiet
+// "Update available · X" pill when GitHub has a newer release (a click opens crew-update; checked every 6 h at most,
+// here too for installs without crewd), and the installed version.
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, agents, theme, appHome, readTextFile, openOverlay, shared, setShared } from "herdr";
-import { leadPane, ds, tone } from "./crew.js";
+import { leadPane, ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY } from "./crew.js";
 
 export default class CrewStatus extends View {
   init(_props, cx) {
     this.meta = null;
     this.version = null;
+    this.update = null;
+    this.lastCheck = 0;
     this.refresh(cx);
     cx.timer.every(5000, (cx) => this.refresh(cx));
   }
@@ -22,7 +26,13 @@ export default class CrewStatus extends View {
       const lead = tab ? leadPane(tab.id, panes()) : null;
       // The shown channel's Claude Code usage, saved by crew-statusline.
       try { this.meta = lead?.terminal ? JSON.parse((await readTextFile(`${appHome()}/data/crew-status/${lead.terminal}.json`)) ?? "null") : null; } catch { this.meta = null; }
-      try { this.version = JSON.parse((await readTextFile(`${appHome()}/data/crew-install.json`)) ?? "{}")?.version ?? null; } catch { this.version = null; }
+      this.update = await readUpdate().catch(() => null);
+      this.version = this.update?.current ?? null;
+      // Ask GitHub when the last check is over 6 h old (crewd does too; at most once an hour from here).
+      if (this.update?.current && Date.now() / 1000 - (this.update.checked ?? 0) > UPDATE_CHECK_EVERY && Date.now() - this.lastCheck > 3600 * 1000) {
+        this.lastCheck = Date.now();
+        crewCli(["update", "check", "--json"]).catch(() => {});
+      }
       cx.notify();
     });
   }
@@ -47,7 +57,7 @@ export default class CrewStatus extends View {
     items.push(div().id("crew-gear").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
       .tooltip("Menu: settings, themes, layouts, hire, routines")
       .hover((s) => s.bg(d.hover))
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 424 }); })
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-appmenu", kind: "popup", width: 252, height: 454 }); })
       .child(svg("mods/crew-roster/icons/settings.svg").size(12).text_color(d.fg2)), sep());
     items.push(h_flex().flex_none().items_center().gap(6).child(dot(working ? d.info : d.lineStrong)).child(text(`${working} working`)));
     // What needs DeNon (the roster's count: channels that ask, approvals waiting, stuck channels).
@@ -62,6 +72,17 @@ export default class CrewStatus extends View {
     }
     if (usage) items.push(sep(), text(usage, d.fg3));
     items.push(div().flex_1());
+    // The update pill: quiet (no colour but a small blue dot), gone for 3 days after "Later".
+    const u = this.update;
+    const running = u?.run?.state === "running";
+    if (running || (u?.available && !updateSnoozed(u.latest))) {
+      items.push(h_flex().id("crew-update").h(18).flex_none().items_center().gap(6).px(8).rounded(d.r.sm).cursor_pointer()
+        .bg(d.raised).border_1().border_color(d.line).hover((s) => s.border_color(d.lineMid).bg(d.hover))
+        .tooltip(running ? "Updating Project Pals" : `Project Pals ${u.latest} is out (you have ${u.current})`)
+        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-update", kind: "dialog", width: 480 }); })
+        .child(running ? svg("mods/crew-roster/icons/spinner.svg").size(10).text_color(d.info).spin(900) : dot(d.info))
+        .child(text(running ? `Updating to ${u.latest ?? "…"}` : `Update available · ${u.latest}`, d.fg2)), sep());
+    }
     if (this.version) items.push(text(`pal ${this.version}`));
     return h_flex().id("crew-status").size_full().items_center().pl(6).pr(12).gap(12).bg(d.bg1).border_t_1().border_color(d.lineSoft).children(items);
   }

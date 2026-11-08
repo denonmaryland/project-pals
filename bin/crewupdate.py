@@ -2,6 +2,8 @@
 
   data/crew-install.json   what's installed: version, repo, whether the helpers are, when
   data/crew-update.json    the last check: latest version, its notes, when it was checked
+  data/crew-update-run.json  the last install or roll back as it goes (running, done, failed), so
+                           the app can follow it while the update reloads its own mods
   .crew-backups/update-*   a snapshot of everything an update replaces, for rolling back
 
 An update only ever comes from the configured repo's releases. A release may carry its own
@@ -25,9 +27,16 @@ from crewlib import HOME, DATA, CrewError, load_json, save_json
 
 INSTALL = DATA / "crew-install.json"
 STATE = DATA / "crew-update.json"
+RUN = DATA / "crew-update-run.json"
+CHECK_EVERY = 6 * 3600   # seconds between automatic checks (crewd, the status bar)
 BACKUPS = HOME / ".crew-backups"
 CACHE = Path.home() / ".cache" / "project-pals"
 UA = {"User-Agent": "project-pals-updater", "Accept": "application/vnd.github+json"}
+
+
+def run_state(fresh=False, **kw):
+    """Record how an install or roll back is going (merged into the current run's record; fresh starts one)."""
+    save_json(RUN, {**({} if fresh else load_json(RUN, {})), **kw, "at": time.time()})
 
 
 def installed():
@@ -94,20 +103,28 @@ def _safe_extract(tar_path, dest):
             tar.extractall(dest)
 
 
+APP = "@app"   # snapshot names under Herdr's home start with this (it needn't be inside $HOME)
+
+
 def _snapshot(label):
-    """Everything an update replaces, in one tarball, so it can be put back."""
+    """Everything an update replaces, in one tarball, so it can be put back. Files in Herdr's home
+    are stored as @app/<path there>, the rest relative to $HOME."""
     BACKUPS.mkdir(parents=True, exist_ok=True)
     path = BACKUPS / f"update-{label}-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
     home = Path.home()
-    items = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
-    items += [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-statusline")]
-    items += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service", HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
+    app = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
+    app += [HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
+    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-statusline")]
+    user += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service"]
+    # Without the generated mascots (they're redrawn on install).
+    skip = lambda ti: None if "/mascots/" in ti.name and ti.name.endswith(".svg") else ti
     with tarfile.open(path, "w:gz") as tar:
-        for p in items:
+        for p in app:
             if p.exists() or p.is_symlink():
-                # Stored relative to $HOME, without the generated mascots (they're redrawn on install).
-                tar.add(p, arcname=str(p.relative_to(home)),
-                        filter=lambda ti: None if "/mascots/" in ti.name and ti.name.endswith(".svg") else ti)
+                tar.add(p, arcname=f"{APP}/{p.relative_to(HOME)}", filter=skip)
+        for p in user:
+            if p.exists() or p.is_symlink():
+                tar.add(p, arcname=str(p.relative_to(home)), filter=skip)
     return path
 
 
@@ -127,16 +144,31 @@ def rollback(path=None):
             if m.name.startswith("/") or ".." in Path(m.name).parts:
                 raise CrewError(f"odd path in backup: {m.name}")
         # Mods the newer version added (not in the snapshot) go, so nothing is left half old, half new.
-        mods_rel = str((HOME / "mods").relative_to(home))
-        kept = {Path(m.name).parts[len(Path(mods_rel).parts)] for m in members
-                if m.name.startswith(mods_rel + "/") and len(Path(m.name).parts) > len(Path(mods_rel).parts)}
+        # Older snapshots stored Herdr's home relative to $HOME (it was always inside it then).
+        mods_names = [f"{APP}/mods"]
+        try:
+            mods_names.append(str((HOME / "mods").relative_to(home)))
+        except ValueError:
+            pass
+        kept = set()
+        for m in members:
+            for base in mods_names:
+                if m.name.startswith(base + "/"):
+                    kept.add(Path(m.name).parts[len(Path(base).parts)])
         for d in (HOME / "mods").glob("crew-*"):
             if d.name not in kept:
                 shutil.rmtree(d, ignore_errors=True)
-        if hasattr(tarfile, "data_filter"):
-            tar.extractall(home, filter="data")
-        else:
-            tar.extractall(home)
+        ours = [m for m in members if m.name == APP or m.name.startswith(APP + "/")]
+        rest = [m for m in members if m not in ours]
+        for m in ours:
+            m.name = m.name[len(APP) + 1:] if m.name != APP else "."
+        for dest, group in ((HOME, ours), (home, rest)):
+            if not group:
+                continue
+            if hasattr(tarfile, "data_filter"):
+                tar.extractall(dest, members=group, filter="data")
+            else:
+                tar.extractall(dest, members=group)
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     return path
 
