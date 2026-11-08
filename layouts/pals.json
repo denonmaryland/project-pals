@@ -147,41 +147,32 @@
                     }
                   },
                   "size": {
-                    "px": 125
+                    "px": 52
                   }
                 },
                 {
                   "id": "dash-body",
                   "type": "row",
-                  "resizable": false,
                   "children": [
                     {
-                      "id": "dash-left",
+                      "id": "dash-stage",
                       "type": "block",
                       "content": {
                         "mod": "crew-profile",
                         "props": {
-                          "part": "left"
+                          "part": "stage"
                         }
-                      },
-                      "size": {
-                        "px": 340
                       }
                     },
                     {
                       "id": "dash-right",
                       "type": "column",
+                      "size": {
+                        "px": 460
+                      },
+                      "min": 320,
+                      "background": "#0B0B0C",
                       "children": [
-                        {
-                          "id": "dash-board",
-                          "type": "block",
-                          "content": {
-                            "mod": "crew-profile",
-                            "props": {
-                              "part": "board"
-                            }
-                          }
-                        },
                         {
                           "id": "dash-tbar",
                           "type": "block",
@@ -198,9 +189,6 @@
                         {
                           "id": "dash-term",
                           "type": "block",
-                          "size": {
-                            "px": 300
-                          },
                           "min": 140,
                           "padding": [
                             6,

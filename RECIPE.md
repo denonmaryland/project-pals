@@ -322,33 +322,52 @@ rectangular segments and tags.
     remembered as `focus.panelPx`), and **Full** (⤢ in its header: it hides the `work` column, so
     the panel fills everything right of the sidebar). Profile opens Full, the project tabs Side;
     each tab remembers its size. It starts hidden on every launch.
+  - **The profile page** (DeNon 2026-11-08: a mix of #1 Hero stage and #5 Mission control from
+    `data/crew-boards/profile-directions`; `stage.js`, numbers from `stagedata.js`). **The hero:**
+    the pal is the star: its pet on the soft aura, standing on a stage lit in its state's colour
+    (blue working, mint done or PR open, amber asks you (breathing), red stuck; no light at rest or
+    asleep: a hairline under the stage instead); a pool of the same colour under its feet; the
+    state line over it in mono ("Working · 12m in #profiles": the shown channel); the name big under
+    it (22/700; 17 in Side); the mission as one quiet line (else the role; a click opens Vault ›
+    Mission); then the **composer**, "Give <pal> a task…" (`compose.js`): it does what the Tasks
+    dialog does: Enter adds a real task for the pal (`pal task add --for`, told when its turn ends),
+    Shift+Enter is a new line, images by paste, drop on the hero or the paperclip (6 at most,
+    `crewattach.py`). Each pal has its own draft; Esc doesn't close the panel over a half-written
+    one. **The week cards** (four, r8, tinted fill and edge in their colour): **Shipped** (mint: the
+    pal's tasks done in 7 days; opens Vault › Home), **In motion** (blue: working channels plus
+    claimed tasks not on one; shows the working channel), **Needs you** (amber: asking channels,
+    commands held for approval, proposals, stuck channels; shows the asking channel, else the
+    Inbox), **Hiccups** (red: the notebook's hiccups in 7 days and the minutes they cost; opens
+    the Journal). Side: a compact hero (92 px pet) and the cards 2×2, then the sections below.
   - **Profile in Full is the dashboard** (`profile-dash`): the header with the tabs inline, ⤡ Side
-    and ×; a 72 px strip (pet, name, role, state │ brain, folder, hired, tasks done │ the mission
-    and its done-when count, a click opens Mission); then the pal's **channels** (340 px: live state
+    and ×; then a row: the **stage** (`dash-stage`, scrolling: the hero across its width, the four
+    cards in a row, then calm panels (#161617, r8, a 34 px mono header): **Channels** (live state
     dot, or hollow for no agent; `#name` and how long; what it's on; branch or `worktree · <branch>`
-    with Review) and compact **memory** (pinned, the latest notes, the primer's cut, "All ·
-    Remember…"); the **task board** ("toward: <focus>", Now · Next · Blocked · Done · 7 days: the
-    pal's tasks, plus an activity card for each working channel without a claimed task, its
-    asking and stuck channels in Blocked; 64 px r6 #161617 cards with a channel chip; a task
-    expands to Mark done / Reopen); and the **mini terminal**: a 33 px bar (`TERMINAL`, a `#channel ▾`
-    picker, live, program and state, Open channel ↗) over `dash-term`, an `{agent: "focused"}` block
-    showing the shown channel's agent: the real session, typed into directly. A channel row, a
-    chip or the picker points it at another channel (it shows that channel: `tab.select`, then
-    `agent.focus`). A channel with no agent hides the terminal and offers Wake.
+    with Review; a click points the terminal at it; + Channel), **Tasks** (Now · Blocked · Next ·
+    Done · 7 days: the pal's tasks, plus each working channel without a claimed task, asking and
+    stuck channels; a task opens to its body, result and Mark done / Reopen; All tasks opens the
+    dialog), **Vault** (Home, Mission with its done-when count, Journal with today's entries,
+    Brain with its decision and change counts; a click opens that note), **Memory** (as in Side,
+    with Remember… in place), **About** (role, facts, routines with Manage, the quick actions); in
+    1, 2 or 3 columns by width) | the **mini terminal** column (`dash-right`, 460 px, min 320,
+    resizable): a 33 px bar (`TERMINAL`, a `#channel ▾` picker, live, program and state, Open
+    channel ↗) over `dash-term`, an `{agent: "focused"}` block showing the shown channel's agent:
+    the real session, typed into directly. A channel row, a task's channel or the picker points
+    it at another channel (`tab.select`, then `agent.focus`). A channel with no agent hides the
+    terminal; the bar then fills the column and says so, with Wake for a sleeping pal.
   - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
     and ×. Tabs (36 px, r4, the shown one #232324): **Profile · Vault** ‖ **AGENTS.md** (a 1 px
     divider between the pal's tabs and its project's; AGENTS.md carries the lint's badge:
     red errors, amber warnings, a blue + when a fix is offered). Esc leaves an edit or a review
     first, then closes the panel.
-  - **Profile:** the pet (96 px on the soft aura), name, role (click to change: the record's
-    `role`) and state; Facts (brain and `--model`, folder, machine, branch, pet, hired by); four
-    stats (channels, tasks done, open tasks, last active: 2×2, or one row in Full); every channel
+  - **Profile** (Side): the compact hero and the 2×2 cards (above); Facts (role, click to change:
+    the record's `role`; brain and `--model`, folder, machine, branch, pet, hired by); every channel
     (its state dot, or a hollow one with no agent; what it's on, else its brief; `worktree ·
     <branch>` and Review on worktree channels; click shows it); **Memory** (the pinned note,
     editable and saved on blur; what a new session starts with and what the 6,000-character primer
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tasks (the
-    `crew-tasks` dialog), + Channel, Customize look, Put to sleep, as pebbles. In Full, two columns.
+    `crew-tasks` dialog), + Channel, Customize look, Put to sleep, as pebbles.
   - **Vault** (DeNon 2026-11-08: it replaced the Notebook, Mission and Brain tabs, which are now
     its notes; their old keys still open them, e.g. `openPanel("mission")`). Opens Full. Full: the
     file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count (the
@@ -495,8 +514,9 @@ rectangular segments and tags.
     and show or hide `crew-composer`.
   - The `profile` column (after `work` in `body`, hidden, `min` 360) holds `profile-main`
     (`crew-profile`, props `part: "main"`) and the hidden `profile-dash` column: `dash-head`
-    (125 px), then a row of `dash-left` (340 px) and a column of `dash-board`, `dash-tbar` (33 px)
-    and `dash-term` (300 px, `{agent: "focused"}`), each a `crew-profile` copy with its `part`.
+    (52 px), then a row of `dash-stage` and the `dash-right` column (460 px, min 320) of `dash-tbar`
+    (33 px; the whole column while no agent runs) and `dash-term` (`{agent: "focused"}`), each mod
+    block a `crew-profile` copy with its `part` (head, stage, tbar).
     `layPanel` shows `profile-dash` instead of `profile-main` only in Full on Profile. `openPanel` / `closePanel` / `togglePanel` / `setPanelSize` in `crew.js` use
     `layout.show` / `layout.hide` / `layout.resize` (`px` for Side, `weight: 1` with `work`
     hidden for Full); shared `crew.panel` holds `{tab, sizes, section, at}`.
