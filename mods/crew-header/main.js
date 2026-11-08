@@ -1,12 +1,13 @@
 // Project Pals header, drawn to the "MODE · Focus" board: the pal's chip centred (a click opens its
-// channels), its branch and the split buttons on the right. No channel picker on the left: DeNon
+// channels) and the split buttons on the right. The git branch isn't here: it's in the agent's own
+// status line (crew-statusline; DeNon, 2026-11-08). No channel picker on the left: DeNon
 // took it out on 2026-11-08 (channels switch from the hero's list; "no agent" shows there). In a
 // room: the room's members. Under it is the channel's terminal (terminal-first, DeNon 2026-11-08).
 
 import { View, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, theme, focused } from "herdr";
-import { shownRoom, roomMembers, botOf, mascotEl, mood, leadPane, tone, ds, palChip, splitButtons } from "./crew.js";
+import { spaces, theme, focused } from "herdr";
+import { shownRoom, roomMembers, botOf, mascotEl, mood, tone, ds, palChip, splitButtons } from "./crew.js";
 
 export default class CrewHeader extends View {
   render() {
@@ -31,14 +32,11 @@ export default class CrewHeader extends View {
     }
     if (!space || !tab) return root.child(div().text_size(13).text_color(d.fg3).child("No pal open. Hire one on the left."));
     const bot = botOf(space);
-    const lead = leadPane(tab.id, panes());
     return root
       // An empty left side as wide as the right one, so the chip stays centred.
       .child(h_flex().flex_1().flex_basis(0).min_w(0))
       .child(palChip(bot, tab, d))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
-        .when(Boolean(lead?.branch), (el) => el.child(div().min_w(0).h(22).px(6).flex().items_center().rounded(d.r.xs).bg(d.raised)
-          .child(div().truncate().text_size(11).font_family(d.mono).text_color(d.fg2).child(lead.branch))))
         .child(splitButtons(d)));
   }
 }

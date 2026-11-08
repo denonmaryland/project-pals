@@ -1,13 +1,32 @@
 #!/bin/sh
 # crew-statusline: Claude Code's status line, through Project Pals. Claude Code passes the status line
 # its session's facts (model, effort, context, usage, cost, session file) as JSON; inside a Herdr
-# channel this saves them for Project Pals's chat view, then runs your own status line command unchanged.
+# channel this saves them for Project Pals, then runs your own status line command unchanged.
+# The git branch lives here, not in Herdr's header (DeNon, 2026-11-08): when the session's folder is
+# a linked git worktree (a channel on its own branch), a dim "(worktree)" goes after your own line;
+# without a status line of your own, the line is just the branch (dim), plus that marker.
 input=$(cat)
 dir="${HERDR_APP_HOME:-$HOME/.config/herdr-app}/data"
 if [ -n "$HC_TERMINAL_ID" ]; then
   mkdir -p "$dir/crew-status" && printf '%s' "$input" > "$dir/crew-status/.$HC_TERMINAL_ID.tmp" \
     && mv "$dir/crew-status/.$HC_TERMINAL_ID.tmp" "$dir/crew-status/$HC_TERMINAL_ID.json"
 fi
+cwd=$(printf '%s' "$input" | sed -n 's/.*"current_dir" *: *"\([^"]*\)".*/\1/p' | head -n 1)
+[ -n "$cwd" ] || cwd=$(printf '%s' "$input" | sed -n 's/.*"cwd" *: *"\([^"]*\)".*/\1/p' | head -n 1)
+[ -n "$cwd" ] || cwd=$PWD
+dim=$(printf '\033[2m'); rst=$(printf '\033[0m')
+mark=""
+gitdir=$(git -C "$cwd" --no-optional-locks rev-parse --absolute-git-dir 2>/dev/null)
+if [ -n "$gitdir" ]; then
+  common=$(git -C "$cwd" --no-optional-locks rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+  [ -n "$common" ] && [ "$common" != "$gitdir" ] && mark="${dim}(worktree)${rst}"
+fi
 orig="$dir/crew-statusline-original"
-[ -s "$orig" ] && printf '%s' "$input" | sh -c "$(cat "$orig")"
+if [ -s "$orig" ]; then
+  out=$(printf '%s' "$input" | sh -c "$(cat "$orig")")
+  if [ -n "$mark" ]; then printf '%s %s\n' "$out" "$mark"; else printf '%s\n' "$out"; fi
+elif [ -n "$gitdir" ]; then
+  branch=$(git -C "$cwd" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null || git -C "$cwd" --no-optional-locks rev-parse --short HEAD 2>/dev/null)
+  printf '%s%s%s%s\n' "$dim" "$branch" "$rst" "${mark:+ $mark}"
+fi
 exit 0

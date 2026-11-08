@@ -231,7 +231,9 @@ rectangular segments and tags.
     dialog), Tell (a small dialog that sends `pal tell`, marked from the owner), Tasks with this
     pal's open count (switches the sidebar to Tasks), and an icon-only moon (put to sleep; Herdr
     asks first). No state pill, no species/brain line; the task text is in its pal row. The header has the pal's name chip centred (a click opens the channel
-  dropdown, crew-pick, with New channel), and its branch and the split buttons on the right; no
+  dropdown, crew-pick, with New channel) and the split buttons on the right; the git branch is in
+  the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
+  or prints the branch when you have no status line of your own); no
   channel picker on the left (DeNon took it out: channels switch from the hero's list, which shows
   "no agent"). Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot).
