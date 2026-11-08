@@ -714,8 +714,8 @@ def click_of():
 
 
 def require_owner(what):
-    """An owner decision: the app's one-time click token, or a person typing yes at a terminal outside
-    Herdr. A pal (or a missing / unknown terminal ID) is refused (review H1)."""
+    """An owner decision: only the app's one-time click token for exactly this command line. Anything
+    else (a pal, a missing or unknown terminal ID, a terminal typing "yes") is refused (review H1)."""
     return owner_gate(owner_args(), click_of(), what)
 
 
@@ -1039,9 +1039,9 @@ def cmd_skill(spaces, rest):
 
 def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
     if decide:
-        # Only the owner decides: the Inbox's click, or a person at a terminal outside Herdr (review H1).
-        how = require_owner(f"{decide.capitalize()} a held command")
-        via = "the Inbox" if how == "the app" else "a terminal outside Herdr"
+        # Only the owner decides, with the Inbox's click (review H1).
+        require_owner(f"{decide.capitalize()} a held command")
+        via = "the Inbox"
         r = crewguard.decide(rid, decide == "approve", note, via=via)
         print(f"{r['status']}: {r['bot']} #{r['channel']}: {r['command']}")
         return
