@@ -295,8 +295,8 @@ rectangular segments and tags.
     chip or the picker points it at another channel (it shows that channel: `tab.select`, then
     `agent.focus`). A channel with no agent hides the terminal and offers Wake.
   - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
-    and ×. Tabs (36 px, r4, the shown one #232324): **Profile · Notebook** ‖ **Mission · Brain ·
-    AGENTS.md** (a 1 px divider between the pal's tabs and its project's; AGENTS.md carries the lint's badge:
+    and ×. Tabs (36 px, r4, the shown one #232324): **Profile · Vault** ‖ **AGENTS.md** (a 1 px
+    divider between the pal's tabs and its project's; AGENTS.md carries the lint's badge:
     red errors, amber warnings, a blue + when a fix is offered). Esc leaves an edit or a review
     first, then closes the panel.
   - **Profile:** the pet (96 px on the soft aura), name, role (click to change: the record's
@@ -308,16 +308,32 @@ rectangular segments and tags.
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tasks (the
     `crew-tasks` dialog), + Channel, Customize look, Put to sleep, as pebbles. In Full, two columns.
-  - **Notebook:** the pal's journal, newest day first, today live ("live" in mint), All · Hiccups ·
+  - **Vault** (DeNon 2026-11-08: it replaced the Notebook, Mission and Brain tabs, which are now
+    its notes; their old keys still open them, e.g. `openPanel("mission")`). Opens Full. Full: the
+    file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count,
+    Brain › Decisions / Change log / Map / All brain files, Notes, then On disk with the folder and
+    Open folder) | the note (max 820 px) | on Home, a 260 px rail (This week 2×2, Latest decisions).
+    Side: a Home · Mission · Journal · Brain strip (34 px) over the note.
+  - **Vault › Home** (`vault.js`, numbers from `vaultdata.js`): "<Pal> / Home.md · ● live"; the
+    name (26/700, Full only) and mission statement (15 px); Brain / Project / Channels ("8 · 3
+    working" in blue) / Owner; the Focus now callout (blue tint: focus 15 px, Goals x of y, Done
+    when x of y, Mission →); Right now (channels working or needing the owner, needing first,
+    amber-tinted; each with its claimed task, else its agent's own title (never a shell's
+    user@host), else its brief; click shows it; three per row in Full); Tasks as NOW (claimed) /
+    NEXT (open) / BLOCKED / DONE TODAY, four columns in Full, rows in Side, Board → opens
+    `crew-tasks`; Today's journal (newest 3: time · channel · task · how long, did, the first
+    hiccup in amber, the first lesson in mint; Journal →); This week (entries and time logged,
+    hiccups and minutes lost, lessons, needs); Latest changes (3, newest first, with the channel).
+  - **Vault › Journal** (was the Notebook tab): the pal's journal, newest day first, today live ("live" in mint), All · Hiccups ·
     Lessons, and the week's count ("4 hiccups · ~50m lost"). Each entry: time · #channel · task ·
     how long; did; hiccups (an amber tag, with what they cost); needed (tool / skill / rule /
     context / access); lesson. × then "Click again to delete" removes an entry (the day is copied
     to `data/crew-backups/notebook/` first).
-  - **Mission:** the mission card (statement 16/500; Goals and Done when as checklists you can
+  - **Vault › Mission:** the mission card (statement 16/500; Goals and Done when as checklists you can
     tick; Focus), Edit (the code editor, saved with a hash check), the last 3 change-log lines and
     the last 2 decisions, "All in Brain →". No mission: "Write the mission" (a template). A pal's
     mission proposal shows here with Decline / View.
-  - **Brain:** the files (Decisions, Change log, Map, or "→ AGENTS.md" when AGENTS.md has a layout
+  - **Vault › Brain:** the files (Decisions, Change log, Map, or "→ AGENTS.md" when AGENTS.md has a layout
     section, notes, and an adopted `_Brain/PROJECT_BRAIN.md`), each opening in the panel with ← and
     Edit; "Brain lives in: Pal data | This project" (moves it, copying files, deleting nothing); who
     writes it.
@@ -367,8 +383,8 @@ rectangular segments and tags.
   on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
   written until the owner accepts (the mission) or writes it after the diff (agent files).
 - **The pal menu** (`crew-palmenu`, the header chip's 300 px popup, crew-pick's look): the pal's
-  name and "harness · folder", then The pal (Profile with its shortcut, Notebook, Memory, Tasks with
-  the open count: the `crew-tasks` dialog), The project (Mission, Brain, AGENTS.md, Review changes on
+  name and "harness · folder", then The pal (Profile with its shortcut, Vault, Memory, Tasks with
+  the open count: the `crew-tasks` dialog), The project (AGENTS.md, Review changes on
   a worktree channel, Open folder), then Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,

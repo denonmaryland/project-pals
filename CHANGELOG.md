@@ -19,6 +19,10 @@ A new look and a simpler shape. If you used the Pro view, Focus is now the only 
 - **Tasks.** One Tasks button per pal: write a task (with screenshots pasted, dropped or attached)
   and the pal picks it up when its current turn ends. It replaces Tell.
 - **Profiles.** A panel per pal with its mission, brain, memory, channels and tasks.
+- **The Vault.** Each pal's notes as a vault: a Home note that writes itself as work lands (its
+  mission and focus, the channels working now, its tasks, today's journal, the week's hiccups and
+  lessons, the latest decisions and changes), with Mission, Journal and Brain beside it. Plain
+  markdown on disk, so it opens in Obsidian too.
 - **Dialogs** share one calm look, with the pal's pet in the header.
 - **A settings gear** in the status bar: hire, rooms, routines, themes, layouts, Herdr settings and
   updates.

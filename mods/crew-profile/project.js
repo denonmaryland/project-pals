@@ -8,7 +8,7 @@ import { v_flex, h_flex, EditorState, Editor, TextView, InputState, Input } from
 import { exec, appHome, writeTextFile, readTextFile, notify, shared, setShared } from "herdr";
 import { targetOf, followShown, stillTarget } from "./bind.js";
 import { parseLogLine } from "./loglines.js";
-import { crewCli, ownerCli, openPanel, panelState, panelTab, setPanelSize, panelFull, pebble } from "./crew.js";
+import { crewCli, ownerCli, openPanel, panelState, panelTab, panelNote, setPanelSize, panelFull, pebble } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const slugOf = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x";
@@ -27,7 +27,7 @@ export function initProject(view, cx) {
   view.editor = EditorState.new({ language: "markdown", soft_wrap: true, font_family: "JetBrains Mono", font_size: 12, folding: false });
   view.viewer = EditorState.new({ language: "markdown", soft_wrap: true, font_family: "JetBrains Mono", font_size: 12, folding: false, readonly: true });
   view.note = InputState.new({ placeholder: "What this change is for (goes in the brain's change log)" });
-  cx.timer.every(8000, (cx) => { if (view.isOpen() && ["mission", "brain"].includes(panelTab())) loadBrain(view, cx, true); });
+  cx.timer.every(8000, (cx) => { if (view.isOpen() && ["home", "mission", "brain"].includes(panelNote())) loadBrain(view, cx, true); });
   cx.timer.every(15000, (cx) => { if (view.isOpen() && panelTab() === "agents" && !view.edit && !view.review) loadAgents(view, cx, true); });
   cx.timer.every(5000, (cx) => { if (view.isOpen()) loadProposals(view, cx); });
   // A proposal opened from the Inbox (shared crew.panel.proposal): straight to its review.
@@ -42,7 +42,7 @@ export function initProject(view, cx) {
 export function ensureProject(view, cx, bot) {
   followShown(view, view.shown());
   const tab = panelTab();
-  if (["mission", "brain"].includes(tab) && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
+  if (["home", "mission", "brain"].includes(panelNote()) && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
   if (tab === "agents" && view.agentsFor !== bot.name && !view.agentsLoading) loadAgents(view, cx);
 }
 
@@ -383,6 +383,24 @@ function acceptMission(view, cx, p) {
 
 // ─── Brain ───────────────────────────────────────────────────────────────────────────────────
 
+// Open one brain file in the Brain note (the Vault's tree links here too).
+export function openBrainFile(view, cx, bot, file, project = false) {
+  cx.spawn(async (cx) => {
+    try {
+      if (project) {
+        const text = await readTextFile(`${bot.folder}/${file}`);
+        const info = JSON.parse(await crewCli(["agents", "show", bot.name, "--json"]));
+        view.agentsInfo = info; view.agentsFor = bot.name;
+        view.brainFile = { file, text, sha: await shaOf(text), project: true };
+      } else {
+        const r = JSON.parse(await crewCli(["brain", "show", bot.name, file, "--json"]));
+        view.brainFile = { file, text: r.text, sha: r.sha };
+      }
+    } catch (e) { notify({ title: `Couldn't open ${file}`, body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+    cx.notify();
+  });
+}
+
 export function brainTab(view, space, bot, d, full) {
   view.full = full;
   const b = view.brain && view.brainFor === bot.name ? view.brain : null;
@@ -418,21 +436,7 @@ export function brainTab(view, space, bot, d, full) {
       .child(div().text_size(13).line_height("18px").font_weight(500).text_color(d.fg1).child(name))
       .child(div().truncate().text_size(11).line_height("14px").text_color(d.fg3).child(desc)))
     .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(count)));
-  const openFile = (file, project = false) => (cx) => cx.spawn(async (cx) => {
-    try {
-      if (project) {
-        const folder = bot.folder;
-        const text = await readTextFile(`${folder}/${file}`);
-        const info = JSON.parse(await crewCli(["agents", "show", bot.name, "--json"]));
-        view.agentsInfo = info; view.agentsFor = bot.name;
-        view.brainFile = { file, text, sha: await shaOf(text), project: true };
-      } else {
-        const r = JSON.parse(await crewCli(["brain", "show", bot.name, file, "--json"]));
-        view.brainFile = { file, text: r.text, sha: r.sha };
-      }
-    } catch (e) { notify({ title: `Couldn't open ${file}`, body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-    cx.notify();
-  });
+  const openFile = (file, project = false) => (cx) => openBrainFile(view, cx, bot, file, project);
   row("pp-b-dec", "Decisions", "what was decided, why, and who", String(b.decisions.length), openFile("decisions.md"));
   row("pp-b-log", "Change log", "one line per change, newest first", String(b.changelog.length), openFile("changelog.md"));
   if (b.agents_map) row("pp-b-map", "Map", "AGENTS.md has one: its layout section", "→ AGENTS.md", () => openPanel("agents"));

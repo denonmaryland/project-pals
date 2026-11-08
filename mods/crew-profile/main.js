@@ -4,7 +4,8 @@
 // width back. It always shows the shown pal. Two sizes: Side (beside the terminal, 420 px by
 // default, 360-640, remembered) and Full (the work area). See docs/profiles/proposal.md.
 //
-// Tabs, in two groups: the agent (Profile, Notebook) ‖ its project (Mission, Brain, AGENTS.md: project.js).
+// Tabs, in two groups: the agent (Profile, Vault) ‖ its project (AGENTS.md: project.js). The Vault (vault.js)
+// replaced Notebook, Mission and Brain (DeNon 2026-11-08); those are notes inside it now.
 // Profile: identity, facts, stats, channels (Review on worktree channels), memory, routines, actions.
 
 import { View, div, svg, image } from "gpui-kit";
@@ -15,13 +16,14 @@ import {
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
   tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS, shortDate, num,
 } from "./crew.js";
-import { initProject, ensureProject, loadAgents, loadBrain, missionTab, brainTab, agentsTab, agentsBadge, badgeTag } from "./project.js";
+import { initProject, ensureProject, loadAgents, loadBrain, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
-import { initNotebook, notebookTab } from "./notebook.js";
+import { initNotebook } from "./notebook.js";
+import { vaultView } from "./vault.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
-const TABS = [["profile", "Profile"], ["notebook", "Notebook"], ["|"], ["mission", "Mission"], ["brain", "Brain"], ["agents", "AGENTS.md"]];
+const TABS = [["profile", "Profile"], ["vault", "Vault"], ["|"], ["agents", "AGENTS.md"]];
 const STATE_DOT = (d) => ({ work: d.info, ask: d.warn, stuck: d.warn, done: d.ok, pr: d.ok, merged: "#A78BFA", closing: d.err });
 
 export default class CrewProfile extends View {
@@ -179,9 +181,7 @@ export default class CrewProfile extends View {
     return root
       .child(this.header(space, bot, d, full))
       .child(this.tabs(d, bot))
-      .child(tab === "notebook" ? scroll(notebookTab(this, space, bot, d, full))
-        : tab === "mission" ? scroll(missionTab(this, space, bot, d, full))
-        : tab === "brain" ? scroll(brainTab(this, space, bot, d, full))
+      .child(tab === "vault" ? vaultView(this, space, bot, t, d, full)
         : tab === "agents" ? scroll(agentsTab(this, space, bot, d, full))
         : this.profileTab(space, bot, t, d, full));
   }

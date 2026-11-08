@@ -51,13 +51,12 @@ export default class CrewPalMenu extends View {
     };
     const out = [
       ["The pal", "profile", "ds-user", "Profile", shortcut(), panel("profile")],
-      ["The pal", "notebook", "ds-notebook", "Notebook", null, panel("notebook")],
+      // The Vault replaced Notebook, Mission and Brain (DeNon 2026-11-08): one row, opening on Home.
+      ["The pal", "vault", "ds-notebook", "Vault", null, () => (panelOpen() && panelTab() === "vault" ? closePanel() : openPanel("vault", { note: "home" }))],
       ["The pal", "memory", "ds-memory", "Memory", null, panel("profile", "memory")],
       // Tasks: add one for this pal and see its open ones (the crew-tasks dialog; Tell merged into it).
       ["The pal", "tasks", "ds-tasks", "Tasks", this.open ? `${this.open} open` : null, () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })],
     ];
-    out.push(["The project", "mission", "ds-mission", "Mission", null, panel("mission")]);
-    out.push(["The project", "brain", "ds-brain", "Brain", null, panel("brain")]);
     out.push(["The project", "agents", "ds-agents", "AGENTS.md", null, panel("agents")]);
     if (wt) out.push(["The project", "review", "ds-review", "Review changes", wt.branch ?? `#${channelName(tab)}`, () => openReview(space, tab)]);
     if (bot.folder ?? space.folder) out.push(["The project", "folder", "ds-folder", "Open folder", null, () => exec("xdg-open", [bot.folder ?? space.folder]).catch(() => {})]);

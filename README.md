@@ -21,6 +21,8 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
   every pal with its state in colour. Group pals into folders ("Personal", "Business"), pin them,
   and drag them into any order. Pin and reorder channels too.
 - **Profiles:** a panel per pal with its mission, brain, memory, channels and tasks.
+- **The Vault:** each pal's notes, with a live Home note: mission, focus, what's running, tasks,
+  today's journal and the week, updating as work lands.
 - **Tasks:** give a pal a task (with screenshots attached); it picks it up when its current turn
   ends. Routines run on a schedule.
 - Hire pals and add channels on any harness, with a model per pal (cheap helpers on Haiku).
