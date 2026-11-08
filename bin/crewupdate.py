@@ -105,11 +105,13 @@ def _safe_extract(tar_path, dest):
 
 
 # ─── Project Pals' own settings in files the person also edits (Codex review M6) ─────────────────
-# An install adds or changes a few entries in keys.json (ctrl-shift-i, the old ctrl-shift-m) and in
+# An install adds or changes a few entries in keys.json (ctrl-shift-i, ctrl-shift-space, the old ctrl-shift-m) and in
 # ~/.claude/settings.json (Project Pals' hook entries and its status-line wrapper). A snapshot
 # records them as they were (absence included); Roll back puts back only those, and only where the
 # current value is still Project Pals' own, so the person's later edits stay.
-MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-m")
+MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-space", "ctrl-shift-m")
+# The actions those keys are bound to by Project Pals (anything else there is the person's own).
+OUR_ACTIONS = ("crew-roster.", "crew-header.")
 CONFIG_MEMBER = ".crew-config-snapshot.json"
 
 
@@ -139,12 +141,15 @@ def restore_config(snap, log=print):
     if isinstance(keys, dict) and snap.get("keys_file"):
         g = keys.setdefault("global", {})
         before = json.dumps(keys, sort_keys=True)
-        for k, was in (snap.get("keys") or {}).items():
+        # Every key Project Pals manages, not only the snapshot's: a snapshot taken by an older updater
+        # doesn't list a key added since (ctrl-shift-space), and absent there means it wasn't set.
+        for k in MANAGED_KEYS:
+            was = (snap.get("keys") or {}).get(k)
             now = g.get(k)
             if now == was:
                 continue
-            # Only an entry Project Pals set: a crew-roster action, or one it removed (absent now).
-            if now is None or str(now).startswith("crew-roster."):
+            # Only an entry Project Pals set: one of its actions, or one it removed (absent now).
+            if now is None or str(now).startswith(OUR_ACTIONS):
                 if was is None:
                     g.pop(k, None)
                 else:

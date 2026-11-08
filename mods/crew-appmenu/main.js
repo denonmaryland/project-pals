@@ -6,15 +6,10 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, setShared } from "herdr";
-import { ds, tone } from "./crew.js";
+import { props, closeOverlay, theme } from "herdr";
+import { ds, tone, appMenuItems } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
-
-function shortcut(action) {
-  const k = keys().find((x) => x.action === action);
-  return k ? k.keys.split("-").map((p) => p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1)).join("+") : "";
-}
 
 export default class CrewAppMenu extends View {
   init(_props, cx) {
@@ -23,28 +18,8 @@ export default class CrewAppMenu extends View {
     this.at = -1;
   }
 
-  items() {
-    const dialog = (mod, width, extra = {}) => () => openOverlay({ mod, kind: "dialog", width, ...extra });
-    const view = (v) => () => setShared("crew.view", v);
-    return [
-      { label: "Hire a pal…", icon: "plus", key: shortcut("crew-roster.hire"), go: dialog("crew-hire", 520, { modal: true }) },
-      { label: "New room…", icon: "users", go: dialog("crew-room-new", 520, { modal: true }) },
-      { label: "New group…", icon: "plus", go: dialog("crew-group", 400, { props: { mode: "new" } }) },
-      { sep: true },
-      { label: "Inbox", icon: "ds-check", go: view("you") },
-      { label: "Rooms", icon: "users", go: view("rooms") },
-      { label: "Routines", icon: "clock", key: shortcut("crew-roster.routines"), go: () => openOverlay({ mod: "crew-routines", kind: "dialog", width: 520 }) },
-      { sep: true },
-      { label: "Theme and look", icon: "ds-sun", go: () => run("app.settings", { section: "look" }) },
-      { label: "Switch Herdr layout", icon: "layout-focus", key: shortcut("layout.switch"), go: () => run("layout.switch", {}) },
-      { label: "Machines", icon: "server", go: () => run("app.settings", { section: "machines" }) },
-      { label: "Herdr settings", icon: "settings", key: shortcut("app.settings"), go: () => run("app.settings", {}) },
-      { label: "Command palette", icon: "search", key: shortcut("app.palette"), go: () => run("app.palette", {}) },
-      { sep: true },
-      { label: "Check for updates", icon: "arrow-down", go: dialog("crew-update", 480, { props: { check: true } }) },
-      { label: "Project Pals settings", icon: "info", go: dialog("crew-about", 480) },
-    ];
-  }
+  // The rows live in crew.js (appMenuItems) so the command bar lists and searches the same ones.
+  items() { return appMenuItems(); }
 
   go(item) {
     closeOverlay(props()?.overlay);

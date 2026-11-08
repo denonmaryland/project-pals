@@ -121,7 +121,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
   under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
   state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
-  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), the header's pal chip (30x24), rooms, dialogs.
+  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), the header's command field (25x20), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
@@ -264,9 +264,13 @@ rectangular segments and tags.
     ends and its "New task" message carries the body, paths included. Then that pal's open tasks
     (working first, then blocked, then open; a tick finishes one, a click on its title shows its
     details, notes and who asked), and "All tasks on the board →". Quick questions go in the
-    terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the pal's
-  name chip centred with a ▾ (a click opens the pal menu, `crew-palmenu`, below) and the split
-  buttons on the right; the git branch is in
+    terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the
+  command bar's field centred (T18; DeNon: "this pill is redundant maybe it should be a global
+  search / command type of thing, the things that are in the dropdown already there are perfect"):
+  a quiet pebble up to 520 px wide (h30, r7, the pebble face), the shown pal's 25x20 pet, a
+  magnifier, "Search pals, channels, tasks… or run a command" and its shortcut in a small mono key
+  cap; a click or **Ctrl+Shift+Space** (`crew-header.search`) opens the command bar over it (below).
+  The split buttons are on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
   or prints the branch when you have no status line of your own); no
   channel picker on the left (DeNon took it out: channels switch from the hero's list, which shows
@@ -395,7 +399,26 @@ rectangular segments and tags.
   `pal mission propose` or `pal agents propose <file>` becomes an Inbox card (View opens the panel
   on it; Decline tells the pal), counted in "N need you", expiring after 7 days. Nothing is
   written until the owner accepts (the mission) or writes it after the diff (agent files).
-- **The pal menu** (`crew-palmenu`, the header chip's 300 px popup, crew-pick's look): the pal's
+- **The command bar** (`crew-command`, T18): a 560x552 r4 #161617 popup with a hairline, laid with
+  its top on the header's field and centred on it: the field again, live (the pal's pet, the query,
+  "esc"), then the rows, then a foot ("↑↓ move · ↵ open · esc close"). An empty box lists the pal
+  menu's rows unchanged (`palMenuItems` in crew.js, shared with `crew-palmenu`) under "<Pal> · The
+  pal" and "<Pal> · The project", Put to sleep after a hairline, then "Project Pals": New channel
+  (for the shown pal), Hire a pal…, New group…, Check for updates, Project Pals settings (the gear's
+  `quick` rows, `appMenuItems`). Typing searches pals (asleep ones say "wake" and Enter wakes them),
+  channels (a state dot: blue working, amber needs you, green done; their task title is searchable),
+  open tasks (Enter opens `crew-tasks` for the pal working it), the Vault's notes (Home, Mission,
+  Journal, Brain; the shown pal's first, another pal's shows that pal) and every command (the pal
+  menu's, New channel, the whole gear menu). Matching (`mods/crew-command/search.js`, tested by
+  `tests/test_command.mjs`): every word must match; a label's start beats a word's start beats
+  anywhere beats its letters in order from a word start; sub lines and extra words count less and
+  aren't bolded; the matched letters are bold. Groups come best hit first (ties: Pals, Channels,
+  Tasks, Vault, Commands), capped (4, 4, 3, 3, 4) and trimmed so no more than 13 rows (headers
+  included) show, so it never scrolls. ↑/↓ move (wrapping), Enter opens or runs, Esc closes; the
+  pointer moves the mark too. Ctrl+K isn't used: in a terminal it's the shell's kill-line, and
+  Herdr's own picker is Ctrl+Shift+K.
+- **The pal menu** (`crew-palmenu`, 300 px, crew-pick's look; the header's chip opened it until the
+  command bar replaced the chip, whose empty list shows the same rows): the pal's
   name and "harness · folder", then The pal (Profile with its shortcut, Vault, Memory, Tasks with
   the open count: the `crew-tasks` dialog), The project (AGENTS.md, Review changes on
   a worktree channel, Open folder), then Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
@@ -443,7 +466,7 @@ rectangular segments and tags.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
     `crew-composer` (rooms), `crew-status`, `crew-profile` (the profile panel; `focusable`).
-    Popups: `crew-appmenu` (the gear), `crew-termmenu`, `crew-palmenu` (props `space`). Removed with Pro: `crew-palrail`, `crew-tabs`,
+    Popups: `crew-appmenu` (the gear), `crew-termmenu`, `crew-palmenu` (props `space`), `crew-command` (props `space`; `at` the header's field). Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`, `crew-update` (props `check`),
@@ -458,9 +481,10 @@ rectangular segments and tags.
   - Commands: `space.new`, `tab.new`, `tab.select`, `tab.rename`, `tab.close`, `space.select`,
     `layout.select`, `layout.toggle`, `layout.resize`, `pane.focus`, `app.settings`,
     `app.palette`, `mod.open`.
-  - Keyable commands: `crew-roster.hire|channel|routines|look|profile`. The installer binds
-    `ctrl-shift-i` to `crew-roster.profile` in keys.json's `global` map when no section uses that
-    key yet (keys.json backed up first; no keys.json, no change).
+  - Keyable commands: `crew-roster.hire|channel|routines|look|profile`, `crew-header.search`. The
+    installer binds `ctrl-shift-i` to `crew-roster.profile` and `ctrl-shift-space` to
+    `crew-header.search` in keys.json's `global` map, each when no section uses that key yet and
+    the action isn't bound (keys.json backed up first; no keys.json, no change).
 - **Programs:**
   - The commands `pal` and `pal-room` (Python 3; `crew` and `crew-room` are aliases), plus
     `crewd`, `crew-hook` and `crew-statusline`.
@@ -508,9 +532,10 @@ rectangular segments and tags.
 - **The dream's housekeeping runs every night** (M7): expired proposals reopen their patterns and
   quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
 - **Roll back restores Project Pals' config entries** (M6): each snapshot records `keys.json`'s
-  ctrl-shift-i / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
+  ctrl-shift-i / ctrl-shift-space / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
   `~/.claude/settings.json` (absence included); Roll back puts back only those still Project Pals'
-  own, after a backup, and leaves later edits.
+  own, after a backup, and leaves later edits. A key an older snapshot doesn't list counts as unset
+  there, so rolling back to 0.3.0 takes ctrl-shift-space out again while it's still ours.
 
 - **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
   pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and

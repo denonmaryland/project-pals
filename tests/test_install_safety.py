@@ -74,6 +74,7 @@ class RollbackConfig(unittest.TestCase):
             # What an install does: the profile key in, the old Pro key out, the matcher widened.
             k = json.loads((app / "keys.json").read_text())
             k["global"].pop("ctrl-shift-m"); k["global"]["ctrl-shift-i"] = "crew-roster.profile"
+            k["global"]["ctrl-shift-space"] = "crew-header.search"
             k["global"]["ctrl-shift-y"] = "the person's own, added later"
             (app / "keys.json").write_text(json.dumps(k))
             st = json.loads((home / ".claude" / "settings.json").read_text())
@@ -90,11 +91,36 @@ class RollbackConfig(unittest.TestCase):
         out = json.loads(r.stdout.strip().splitlines()[-1])
         g = out["keys"]["global"]
         self.assertNotIn("ctrl-shift-i", g)                       # the install's key: gone
+        self.assertNotIn("ctrl-shift-space", g)                   # the command bar's: gone too
         self.assertEqual(g["ctrl-shift-m"], "crew-roster.mode")   # the removed one: back
         self.assertEqual(g["ctrl-shift-y"], "the person's own, added later")   # later edits: kept
         pre = out["settings"]["hooks"]["PreToolUse"]
         self.assertEqual(pre[0]["matcher"], "Bash")
         self.assertEqual(pre[1]["matcher"], "Other")
+
+
+    def test_rollback_drops_a_key_an_older_snapshot_never_listed(self):
+        # 0.3.0's updater snapshotted only ctrl-shift-i and ctrl-shift-m; rolling 0.3.1 back to it
+        # takes out the command bar's key when it's still ours, and leaves a person's own binding.
+        for current, kept in (("crew-header.search", False), ("my.own.thing", True)):
+            home = Path(tempfile.mkdtemp(prefix="pals-home-"))
+            app = home / ".config" / "herdr-app"
+            (app / "data").mkdir(parents=True)
+            (app / "keys.json").write_text(json.dumps({"global": {"ctrl-shift-i": "crew-roster.profile", "ctrl-shift-space": current}}))
+            script = textwrap.dedent(f"""
+                import json, sys
+                sys.path.insert(0, {str(BIN)!r})
+                import crewupdate
+                snap = {{"keys_file": True, "keys": {{"ctrl-shift-i": "crew-roster.profile", "ctrl-shift-m": None}}, "hooks": {{}}}}
+                crewupdate.restore_config(snap, log=lambda *_: None)
+            """)
+            env = {**os.environ, "HOME": str(home), "HERDR_APP_HOME": str(app)}
+            env.pop("CREW_DATA", None)
+            r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            g = json.loads((app / "keys.json").read_text())["global"]
+            self.assertEqual(g.get("ctrl-shift-i"), "crew-roster.profile")
+            self.assertEqual("ctrl-shift-space" in g, kept, current)
 
 
 if __name__ == "__main__":
