@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   layoutMode, applyMode, setMode, toggleMode, rememberWidths, modePref, ds, leadPane,
-  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, petScreen, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag } from "./crew.js";
+  petOf, petReady, petEl, petState, petColor, PET_WORDS, palOrder, stamp, stateTag, modelOf, palPinned, taskTitle, tabHasAgent, noAgentTag } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const RAIL = 64;
@@ -566,7 +566,8 @@ export default class CrewRoster extends View {
     const p = petOf(bot);
     const state = petState(bot, m);
     const artW = Math.max(120, Math.round(w - 24 - 2));
-    const art = p && petReady(p) ? petEl(p, state, artW) : div().h(Math.round(artW * 135 / 172)).w(artW).flex().items_center().justify_center().child(mascotEl(bot, m, 72, t));
+    const art = p && petReady(p) ? petEl(p, state, artW, undefined, { back: d.bg1 })
+      : div().h(Math.round(artW * 135 / 172)).w(artW).flex().items_center().justify_center().rounded(d.r.md).border_1().border_color(d.lineMid).child(mascotEl(bot, m, 72, t));
     const ag0 = agents().filter((x) => x.space === space.id).sort((x, y) => y.seq - x.seq)[0];
     const what = bot.awake ? taskTitle(ag0?.title, bot.name, space.name, ag0 ? channelName({ name: ag0.tab_name }) : null) : null;
     const species = p ? p.species.replace(/^./, (c) => c.toUpperCase()) : null;
@@ -574,7 +575,7 @@ export default class CrewRoster extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       // The whole card opens the channel it stands for (as a pal row does); its look is in the
       // right-click menu.
-      .child(div().id("hero-art").flex().rounded(d.r.md).border_1().border_color(d.lineMid).overflow_hidden().cursor_pointer()
+      .child(div().id("hero-art").flex().cursor_pointer()
         .on_click((_e, cx) => { this.open(space); cx.notify(); }).child(art))
       .child(v_flex().id("hero-text").gap(6).px(2).cursor_pointer().on_click((_e, cx) => { this.open(space); cx.notify(); })
         .child(h_flex().items_center().gap(8)
@@ -584,7 +585,7 @@ export default class CrewRoster extends View {
           .child([species, bot.awake ? bot.harnessName : null, what].filter(Boolean).join(" · "))));
   }
 
-  // A Focus pal row: 52 px, r6, the pet at 41x32, name + time + dot, "[channel] what it's on".
+  // A Focus pal row: 52 px, r6, the pet at 46x36, name + time + dot, "[channel] what it's on".
   palRow({ space, bot }, t, d) {
     const st = space.status;
     const on = space.active;
@@ -599,7 +600,7 @@ export default class CrewRoster extends View {
       .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(mascotEl(bot, mood(st, awake), 41, t))
+      .child(mascotEl(bot, mood(st, awake), 46, t))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().items_center().gap(6)
           .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on || news, (el) => el.font_weight(500)).text_color(nameColor).child(bot.name))
@@ -617,7 +618,7 @@ export default class CrewRoster extends View {
       .hover((s) => s.bg(d.hover))
       .on_click(() => this.wake(rec))
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
-      .child(mascotEl(bot, "asleep", 41, t))
+      .child(mascotEl(bot, "asleep", 46, t))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().truncate().text_size(13).line_height("16px").text_color(d.fg2).child(rec.name))
         .child(div().truncate().text_size(12).line_height("16px").text_color(d.fg3).child("closed · click to wake")));
@@ -627,7 +628,8 @@ export default class CrewRoster extends View {
   proColumn(rows, waiting, t, extra = 0) {
     const d = ds(t);
     const shown = rows.find((r) => r.space.active) ?? rows[0];
-    const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line);
+    const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
+      .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.banner(shown, t, d));
     const list = v_flex().id("pro-list").flex_1().min_h(0).overflow_y_scrollbar().py(6).px(8).gap(1);
     if (this.view() !== "bots") root.child(this.otherView(list, rows, waiting, t, d));
@@ -640,8 +642,8 @@ export default class CrewRoster extends View {
     return root.child(this.acrossPals(rows, t, d));
   }
 
-  // The banner: the pet cropped to 150 px on its tile's own backdrop, name + state tag, brain ·
-  // model, and the branch.
+  // The banner: the pet in a wide faint box (the sidebar's width less 12 px each side, 130 tall),
+  // name + state tag, brain · model, and the branch.
   banner({ space, bot }, t, d) {
     const tab = space.tabs.find((x) => x.active);
     const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
@@ -651,10 +653,10 @@ export default class CrewRoster extends View {
     const model = bot.awake ? this.modelWord(tab) : null;
     return v_flex().id(`banner-${space.id}`).flex_none().border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(div().id("banner-art").h(150).flex_none().flex().justify_center().items_start().overflow_hidden().cursor_pointer()
-        .bg(p && petReady(p) ? petScreen(state) : d.inset).border_b_1().border_color(d.line)
+      .child(div().id("banner-art").flex_none().flex().justify_center().pt(12).px(12).cursor_pointer()
         .on_click(() => this.look(space))
-        .child(p && petReady(p) ? div().mt(-4).child(petEl(p, state, 240)) : div().mt(39).child(mascotEl(bot, m, 72, t))))
+        .child(p && petReady(p) ? petEl(p, state, Math.max(160, Math.round((this.width ?? 304) - 24 - 1)), 130, { back: d.bg1 })
+          : div().h(130).flex().items_center().child(mascotEl(bot, m, 72, t))))
       .child(v_flex().gap(6).pt(10).px(12).pb(12)
         .child(h_flex().items_center().gap(8)
           .child(div().flex_1().min_w(0).truncate().text_size(15).line_height("18px").font_weight(600).text_color(d.fg1).child(bot.name))

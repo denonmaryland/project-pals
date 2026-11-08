@@ -34,8 +34,9 @@ pal list carry it).
 
 - **Tokens:** the DS set in `analysis.md`: near-black surfaces, 1 px hairlines, radius 3/4/6/8, Inter + JetBrains Mono.
   FUSION A's navy tint is dropped; near-black stays until DeNon decides otherwise.
-- **Avatars:** pocket-pet tiles from `tiles.mjs` (r3 corners). Sizes: 36×28 in lists, 31×24 in chat (Pro) or
-  36×28 (Focus), 38×30 in the Pro rail, and 25×20 in the name chip.
+- **Avatars:** pocket pets, bare, on a faint container (`#131316`, 7% white hairline, radius w/35; DeNon's
+  pick "A · Faint + 1 · Lightsaber", 2026-11-08). Sizes: 46×36 in lists, 44×34 in the Pro rail, 30×24 / 25×20
+  in the name chip, full width on the hero card and banner.
 - **Composer:** one component, a r8 box with two rows: the prompt, then `+` · model dropdown · permission dropdown ·
   (spacer) · mic · voice · send. Only its width differs (720 in Focus, fluid in Pro).
 - **Messages:** grouped stacks of r4 rectangles, the avatar once per group, quiet centred timestamps between groups,

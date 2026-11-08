@@ -113,24 +113,28 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - A face shows only once the roster has drawn its art (shared `crew.art`): an image that fails
     to load once isn't retried.
 - **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
-  little critter in round LED dots inside a dark r3 status tile (172x135, scaled), glowing in the
-  pal's own colour (its look's colour, else its stock colour). It replaces the folder mascot
-  everywhere a pal's face shows: the Focus hero card (the head pal at full size, with a
-  rectangular state tag), the sidebar list (36x28), the Pro pal rail (38x30) and banner (150 wide),
-  chat avatars, the centred pal chip (25x20), rooms, dialogs.
+  little critter in round LED dots, glowing in the pal's own colour (its look's colour, else its
+  stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
+  **faint container**: `#131316` (one step up from the page), a 7% white hairline, radius
+  max(4, w/35), the pet centred 4% high and free to break the edge. It replaces the folder mascot
+  everywhere a pal's face shows: the Focus hero card (the sidebar's width less 26 px, with a
+  rectangular state tag), the sidebar list (46x36), the Pro pal rail (44x34) and banner (a wide
+  box, 130 tall), the pal chip (30x24 in Focus, 25x20 in Pro), rooms, dialogs.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
     beanie); the head pal is a kit with the crown. The laptop is the profile one.
-  - Eight states, each a pose plus the tile's frame: **rest** (asleep or idle; z's, eyes shut),
-    **working** (at the laptop, blue loader corner), **asks you** (Herdr's blocked; "?" and a mint
-    frame, the tile breathes), **done** (arms up, mint frame), **PR open** (holding a PR card, green
-    edge strips), **merged** (cheering, purple strip), **closing** (waving, red strips: the PR
-    closed unmerged in the last day), **stuck** (X eyes and sweat, amber strips: crewd says it's
-    been working 15+ minutes with an unchanged screen). PR states show only while the pal is idle;
-    merged and closing last a day.
-  - Working moves natively: the paw taps (two frames cross-fade), and from 44px wide bits drift up
-    off the screen and a blue sliver runs along the top edge.
+  - Eight states, each a pose plus the container's hairline at 40% of the state colour:
+    **rest** (asleep or idle; z's, eyes shut; plain hairline), **working** (at the laptop, the
+    lightsaber below), **asks you** (Herdr's blocked; "?", a mint edge that breathes), **done**
+    (arms up, mint), **PR open** (holding a PR card, green), **merged** (cheering, purple),
+    **closing** (waving, red: the PR closed unmerged in the last day), **stuck** (X eyes and sweat,
+    amber: crewd says it's been working 15+ minutes with an unchanged screen). PR states show only
+    while the pal is idle; merged and closing last a day.
+  - Working moves natively: the paw taps (two frames cross-fade), from 44px wide bits drift up off
+    the laptop, and a **lightsaber** laps the container's edge every 1.6 s: a white-blue core
+    (`#EAF2FF`, 1.5-2 px, 100° comet tail) inside blue glow rings (`#4C8DFF` inside, `#2A6AFE`
+    outside, 140° tail) that breathe (opacity 0.55-1 over 2.4 s).
   - Drawn on demand into `data/crew-pets/<hash>-<state>[-b].svg` (9 files a pet, about 12KB each)
     by the roster's art pass, which publishes shared `crew.pets`; the roster also publishes
     shared `crew.petstate` (stuck from `crew-health.json`, PR state from `gh pr list --head
@@ -240,6 +244,13 @@ rectangular segments and tags.
 
 ## Watch out
 
+- **The pets' lightsaber is faked:** Herdr can't blur, stroke a path, tint a shadow or clip to a
+  rounded shape. A comet-shaped sweep (`pet-saber.svg`, 40 slices) spins about the container's
+  centre and shows only through 1.5-10 px strips along its edges, one set of strips per glow
+  ring (3 rings under 120 px wide, 5 above). Herdr draws svgs over images, so the strips keep the
+  sweep off the pet. Rounded saber corners need the backdrop's colour (`petEl` `{back}`): covers in
+  that colour and the box's cut the corners to an arc. Rows change colour on hover, so they don't
+  pass one, and their 4 px corners stay square.
 - **It runs programs and reads outside its folder:** `hc send/read` into terminals, `git`,
   Claude Code session files (`~/.claude/projects/…/*.jsonl`), and `claude -p`, which sends
   channel screens to the API.
@@ -291,9 +302,9 @@ rectangular segments and tags.
   shows a typing bubble, then the message.
 - A Claude Code channel blocked on "Do you want to proceed?" shows the prompt card over its
   terminal; clicking "1 Yes" answers it, and `pal prompt <t>` prints `null` once it's gone.
-- Every pal's face is a pocket pet in its own colour: the working one has the blue loader corner
-  and a tapping paw, and `data/crew-demo.json` `{"states": {"<pal>": "merged"}}` turns that pal's
-  tile purple with the cheering pose. A record with `"pet": "none"` shows the folder mascot.
+- Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
+  lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
+  `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose. A record with `"pet": "none"` shows the folder mascot.
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
 - `pal update check` answers from the repo in `pal.json`, and `pal version` prints the
   installed version.
