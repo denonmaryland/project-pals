@@ -104,6 +104,7 @@ class InterpreterWrites(unittest.TestCase):
         "cat AGENTS.md | python3 -c 'import sys; print(len(sys.stdin.read()))'",
         "python3 - <<'EOF'\np='RECIPE.md'; s=open(p).read()\ns=s.replace('x', 'see AGENTS.md for the layout')\nopen(p,'w').write(s)\nEOF",  # prose
         "python3 -c \"print(open('AGENTS.md').read().replace('a', 'b'))\"",    # str.replace isn't a write
+        "python3 - <<'EOF'\np='RECIPE.md'; s=open(p).read()\ns+='- read `AGENTS.md` first'\nopen(p,'w').write(s)\nEOF",  # Markdown code quotes
         "python3 -m unittest discover -s tests",
         "node tests/test_needs.mjs",
         "echo 'AGENTS.md' > notes.txt",                                       # no interpreter (the shell rule's job)

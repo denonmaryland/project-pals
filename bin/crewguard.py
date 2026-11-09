@@ -175,7 +175,7 @@ INTERP = re.compile(r"^(?:\S*/)?(?:python[\d.]*|pypy[\d.]*|node(?:js)?|deno|bun|
 RUNNER = re.compile(r"^(?:(?:uv|poetry|pipenv|bundle)\s+(?:run|exec)|uvx|npx|bunx|pnpm\s+(?:exec|dlx))\s+")
 # A quoted path that ends in AGENTS.md / CLAUDE.md ("AGENTS.md", '/x/CLAUDE.md', f"{d}/AGENTS.md"):
 # a mention inside prose ("see AGENTS.md for…") isn't one.
-AGENT_PATH = re.compile(r"""['"`][^'"`\n]*\b(?:AGENTS|CLAUDE)\.md['"`]""")
+AGENT_PATH = re.compile(r"""['"][^'"`\n]*\b(?:AGENTS|CLAUDE)\.md['"]""")   # not `…`: Markdown's code quotes
 # Calls that write, move or copy a file, in the interpreters above.
 WRITE_CALL = re.compile(r"""\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.write_(?:text|bytes)\s*\(|\bshutil\.(?:copy\w*|move)\s*\(|\bos\.(?:rename|replace)\s*\("""
                         r"""|\.(?:rename|touch)\s*\(\s*(?:\w|['"])|\b(?:write|append)File(?:Sync)?\s*\(|\bcreateWriteStream\s*\(|\bcopyFile(?:Sync)?\s*\(|\brename(?:Sync)?\s*\("""
