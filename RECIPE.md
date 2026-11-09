@@ -294,7 +294,14 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   and the dialog read, because the update reinstalls the dialog itself; a run silent for 15
   minutes counts as failed. After it: "Updated to X" with Roll back. The status bar also asks
   GitHub when the last check is over 6 hours old (at most once an hour), for installs without
-  crewd. Snapshots store Herdr's home as `@app/…` (it needn't be inside `$HOME`); Roll back still
+  crewd. The gear's **Check for updates** and About's button always ask GitHub (`Cache-Control:
+  no-cache`, nothing cached of ours); an open About or `crew-update` asks again by itself once the
+  last answer is over 10 minutes old (`checkDue`, at most once per 10 minutes), not only when it
+  opens. Both say what GitHub's newest was and when they asked ("You have 0.4.0. GitHub's newest:
+  0.4.1 · checked 15:48", `checkLine`); a failed check keeps the last answer and records `tried` and
+  `error` in `crew-update.json`, shown as "Couldn't check for updates". Every `pal update check`
+  is a line in `data/crew-update.log` (T64: an About left open since the 0.4.0 update still said
+  up to date after 0.4.1 shipped). Snapshots store Herdr's home as `@app/…` (it needn't be inside `$HOME`); Roll back still
   reads older snapshots stored relative to `$HOME`.
   A local `./install.sh` over an existing install takes the same kind of snapshot first
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most

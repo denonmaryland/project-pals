@@ -2045,8 +2045,8 @@ def update_log(msg):
 def cmd_update(rest):
     sub = next((a for a in rest if not a.startswith("--")), "check")
     as_json = "--json" in rest
+    who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
     if sub in ("apply", "rollback"):
-        who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
         update_log(f"{sub} started by {who}, installed {crewupdate.installed().get('version', '?')}")
     # Installing or rolling back code is the owner's call: a click in Project Pals (About, Update now),
     # never a pal's, and not anyone hc doesn't call a pal (Grok review H1).
@@ -2060,6 +2060,7 @@ def cmd_update(rest):
     try:
         if sub == "check":
             out = crewupdate.check()
+            update_log(f"check by {who}: GitHub's newest is {out.get('latest') or 'none'} (installed {out.get('current')})")
         elif sub == "apply":
             say = (lambda *_: None) if as_json else print
             out = crewupdate.apply(log=lambda m: (update_log(m), say(m), crewupdate.run_state(state="running", step=m)))
@@ -2069,6 +2070,8 @@ def cmd_update(rest):
         else:
             die("pal update check | apply | rollback [--json]")
     except CrewError as e:
+        if sub == "check":
+            update_log(f"check by {who} failed: {e}")
         if sub in ("apply", "rollback"):
             update_log(f"{sub} failed: {e}")
             crewupdate.run_state(state="failed", error=str(e))

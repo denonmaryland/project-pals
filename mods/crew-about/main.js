@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, ownerCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
+import { crewCli, ownerCli, checkDue, checkLine, checkedAt, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const LLM_ORDER = ["auto", "claude", "agy"];
@@ -53,11 +53,12 @@ export default class CrewAbout extends View {
       const d = `${appHome()}/data`;
       try { this.ins = JSON.parse((await readTextFile(`${d}/crew-install.json`)) ?? "{}"); } catch { this.ins = {}; }
       try { this.state = JSON.parse((await readTextFile(`${d}/crew-update.json`)) ?? "{}"); } catch { this.state = {}; }
-      // Opening About asks GitHub again when the last check is over 10 minutes old (crewd checks only
-      // every 6 hours), so a new release shows its Update button without a "Check for updates" click first.
-      if (!this.checkedOnOpen) {
-        this.checkedOnOpen = true;
-        if (!this.busy && Date.now() / 1000 - (this.state.checked ?? 0) > 10 * 60) this.run("check", ["update", "check"], cx);
+      // About asks GitHub again whenever the last answer is over 10 minutes old, open or opening
+      // (crewd checks only every 6 hours), so a new release shows its Update button without a "Check
+      // for updates" click first, even in an About left open since the last update (T64).
+      if (!this.busy && checkDue(this.state.checked, Math.max(this.lastAuto ?? 0, this.state.tried ?? 0))) {
+        this.lastAuto = Date.now() / 1000;
+        this.run("check", ["update", "check"], cx);
       }
       const r = await exec("sh", ["-c", 'ls "$1"/update-*.tar.gz 2>/dev/null | wc -l', "sh", `${appHome()}/.crew-backups`]).catch(() => null);
       this.backups = Number((r?.stdout ?? "0").trim()) || 0;
@@ -172,10 +173,12 @@ export default class CrewAbout extends View {
     else if (this.busy === "uninstall") { title = "Uninstalling Project Pals…"; sub = "Herdr switches to its main layout when it's done"; }
     else if (this.confirmUninstall) { title = "Uninstall Project Pals?"; sub = "Takes out its layout, mods, commands, Claude Code and Antigravity hooks, shortcuts and crewd. Your own settings go back to how they were; your pals' data (pals, memory, the Desk, tasks) stays."; color = t.blocked; }
     else if (this.error) { title = "That didn't work"; sub = this.error; color = t.blocked; }
-    else if (available) { title = `${st.name || st.latest} is available`; sub = st.published ? `released ${String(st.published).slice(0, 10)}` : ""; }
-    else if (st.checked && !st.latest) { title = "No releases yet"; sub = `checked ${ago(st.checked)}`; }
-    else if (st.checked) { title = "You're up to date"; sub = `checked ${ago(st.checked)}`; }
-    else { title = "Not checked yet"; sub = "Project Pals checks every few hours by itself"; }
+    // Each says what GitHub's newest was and when it was asked (checkLine), and a failed check says so (T64).
+    else if (available) { title = `${st.name || st.latest} is available`; sub = `${st.published ? `released ${String(st.published).slice(0, 10)} · ` : ""}checked ${checkedAt(st.checked)}`; }
+    else if (st.error && (st.tried ?? 0) > (st.checked ?? 0)) { title = "Couldn't check for updates"; sub = checkLine(st); color = t.blocked; }
+    else if (st.checked && !st.latest) { title = "No releases yet"; sub = checkLine(st); }
+    else if (st.checked) { title = "You're up to date"; sub = `You have ${current}. ${checkLine(st)} (${ago(st.checked)})`; }
+    else { title = "Not checked yet"; sub = st.error ? checkLine(st) : "Project Pals checks every few hours by itself"; }
 
     const notes = available && st.notes ? scrollArea(ds(t), "about-notes", v_flex().gap(3).pt(4).pr(10)
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>

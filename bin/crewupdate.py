@@ -52,8 +52,8 @@ def vtuple(v):
 MAX_DOWNLOAD = 64 * 1024 * 1024
 
 
-def fetch(url, timeout=20):
-    req = urllib.request.Request(url, headers=UA)
+def fetch(url, timeout=20, fresh=False):
+    req = urllib.request.Request(url, headers={**UA, **({"Cache-Control": "no-cache"} if fresh else {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         body = r.read(MAX_DOWNLOAD + 1)
     if len(body) > MAX_DOWNLOAD:
@@ -62,21 +62,31 @@ def fetch(url, timeout=20):
 
 
 def check():
-    """Ask GitHub for the latest release; remember what it said."""
+    """Ask GitHub for the latest release, every time (no cache of ours, and asking GitHub's not to
+    serve a stale copy); remember what it said. A check that fails keeps the last good answer and
+    records when it tried and why it failed, so About can say so instead of showing an old
+    "up to date" as if it were new (T64: 0.4.1 shipped and nothing offered it)."""
     ins = installed()
     repo = ins.get("repo")
     if not repo:
         raise CrewError("no repo to check (data/crew-install.json has none); reinstall from the project folder")
+
+    def failed(why):
+        save_json(STATE, {**load_json(STATE, {}), "tried": time.time(), "error": why})
+        return CrewError(why)
+
     try:
-        rel = json.loads(fetch(f"https://api.github.com/repos/{repo}/releases/latest"))
+        rel = json.loads(fetch(f"https://api.github.com/repos/{repo}/releases/latest", fresh=True))
     except urllib.error.HTTPError as e:
         if e.code == 404:
             state = {"checked": time.time(), "repo": repo, "latest": None, "note": "no releases yet"}
             save_json(STATE, state)
             return {**state, "current": ins.get("version"), "available": False}
-        raise CrewError(f"GitHub said {e.code} for {repo}")
+        raise failed(f"GitHub said {e.code} for {repo}" + (" (too many checks this hour; try again later)" if e.code in (403, 429) else ""))
     except (urllib.error.URLError, OSError) as e:
-        raise CrewError(f"couldn't reach GitHub: {getattr(e, 'reason', e)}")
+        raise failed(f"couldn't reach GitHub: {getattr(e, 'reason', e)}")
+    except ValueError:
+        raise failed("GitHub's answer wasn't readable")
     latest = (rel.get("tag_name") or "").lstrip("v")
     state = {
         "checked": time.time(), "repo": repo, "latest": latest, "tag": rel.get("tag_name"),

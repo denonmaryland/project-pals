@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, exec, notify } from "herdr";
 import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetFace, headPet, pebble, crewCli,
-  readUpdate, updateLater, updateStart, noteHighlights, UPDATE_CHECK_EVERY, scrollArea } from "./crew.js";
+  readUpdate, updateLater, updateStart, noteHighlights, checkDue, checkLine, scrollArea } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ago = (s) => { const d = Date.now() / 1000 - s; return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`; };
@@ -26,6 +26,7 @@ export default class CrewUpdate extends View {
     this.handle = cx.focus_handle();
     this.load(cx, true);
     cx.timer.every(1000, (cx) => { if (this.busy()) this.load(cx); });
+    cx.timer.every(60000, (cx) => { if (!this.busy()) this.load(cx); });   // and asks GitHub again when due (T64)
   }
 
   busy() { return this.checking || this.started > 0 || this.u?.run?.state === "running"; }
@@ -36,7 +37,12 @@ export default class CrewUpdate extends View {
       // The run file caught up with the button: from here on it's the truth.
       if (this.started && this.u.run && (this.u.run.started ?? 0) * 1000 >= this.started - 2000) this.started = 0;
       if (this.started && Date.now() - this.started > 20000) { this.started = 0; this.error = "The update didn't start. Try again, or use About → Update."; }
-      if (first && (props()?.check || Date.now() / 1000 - this.u.checked > UPDATE_CHECK_EVERY)) this.check(cx);
+      // Gear → Check for updates always asks; otherwise ask when the last answer is over 10 minutes
+      // old, on opening or while open (T64: a 6-hour-old "up to date" hid 0.4.1).
+      if (!this.busy() && (first && props()?.check || checkDue(this.u.checked, Math.max(this.lastAuto ?? 0, this.u.tried)))) {
+        this.lastAuto = Date.now() / 1000;
+        this.check(cx);
+      }
       cx.notify();
     });
   }
@@ -93,8 +99,8 @@ export default class CrewUpdate extends View {
       rolled: [`Back on ${u.current ?? "the previous version"}`, "The previous version is installed again."],
       failed: ["The update didn't finish", "Nothing was lost: a failed install puts the previous version back by itself."],
       offer: [`Project Pals ${u.latest} is out`, `You have ${u.current}${u.published ? ` · released ${day(u.published)}` : ""}`],
-      current: [this.checking ? "Checking for updates…" : "Project Pals is up to date",
-        this.checking ? (u.repo ?? "GitHub") : `${u.current ?? "?"}${u.checked ? ` · checked ${ago(u.checked)}` : ""}`],
+      current: [this.checking ? "Checking for updates…" : u.error ? "Couldn't check for updates" : "Project Pals is up to date",
+        this.checking ? (u.repo ?? "GitHub") : `You have ${u.current ?? "?"}. ${checkLine(u)}${u.checked && !u.error ? ` (${ago(u.checked)})` : ""}`],
     };
     const [title, sub] = titles[mode];
 
