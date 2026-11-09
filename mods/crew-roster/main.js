@@ -891,7 +891,7 @@ export default class CrewRoster extends View {
   // element carries what the row does: a click opens its lead channel, right-click its menu, and
   // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
   // shows where it will land (above or below the row under the pointer); release drops it. The
-  // Tree look adds the pal's live channels under it, each opening its own channel.
+  // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
   palRow({ space, bot }, t, d, gid = undefined) {
     const look = palListStyle();
     const awake = bot.awake || bot.starting;
@@ -909,7 +909,9 @@ export default class CrewRoster extends View {
       .on_click((_e, cx) => { if (this.drag?.active) return; this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); });
     const row = palLookRow(d, look, f, palPet(bot, mood(space.status, awake), look.pet, t), el);
-    const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); });
+    // Trees (on unless turned off): its live topics under it; a click opens that topic, right-click its menu.
+    const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); },
+      (tab) => openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }));
     return tree ? v_flex().flex_none().child(row).child(tree) : row;
   }
 

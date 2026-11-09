@@ -104,6 +104,7 @@ try {
   const { fixtures } = await import(url("node_modules/herdr/index.js"));
   const { default: Roster } = await import(url("roster.js"));
   const { default: PalStyle } = await import(url("palstyle.js"));
+  const { textLeft } = await import(url("palstyles.js"));
 
   const text = (p) => { const n = p.node ?? p; return [...n.kids.map((k) => typeof k === "string" ? k : k?.node ? text(k) : "")].join(" "); };
   const ids = (p, out = []) => { const n = p.node; n.calls.includes("id") && out.push(n); n.kids.forEach((k) => k?.node && ids(k, out)); return out; };
@@ -115,8 +116,8 @@ try {
   roster.ops = { tasks, approvals: [], proposals: [], stalled: {} };
   const t = crew.tone({ background: "#0E0E0F", foreground: "#EDEDED" });
 
-  for (const st of crew.PAL_LIST_STYLES) {
-    fixtures.shared["crew.settings"] = { palList: st.id };
+  for (const [st, trees] of crew.PAL_LIST_STYLES.flatMap((x) => [[x, true], [x, false]])) {
+    fixtures.shared["crew.settings"] = trees ? { palList: st.id } : { palList: st.id, palTrees: false };
     assert.equal(crew.palListStyle().id, st.id);
     const [s1, s2, s3] = fixtures.spaces;
     const f1 = crew.palFacts(s1, crew.botOf(s1), d, tasks);
@@ -135,7 +136,7 @@ try {
     const words = text(rows[0]);
     const want = {
       large: ["Needs you", "#command-bar"], folder: ["~/Projects/project-pals", "#command-bar"], tight: ["~/Projects/project-pals · crew/command-bar"],
-      wrap: ["Needs you"], rich: [" · crew/command-bar", "1 blocked", "2 tasks"], table: ["4", "2"], tree: ["project-pals", "#command-bar", "#indicators", "#profiles"],
+      wrap: ["Needs you"], rich: [" · crew/command-bar", "1 blocked", "2 tasks"], table: ["4", "2"],
       progress: ["1/3 tasks"], project: ["project-pals", "crew/command-bar"], grouped: ["#command-bar"], card: ["~/Projects/project-pals", "Needs you"],
     }[st.id];
     for (const w of want) assert.ok(words.includes(w), `${st.id}: "${w}" in ${JSON.stringify(words)}`);
@@ -143,9 +144,19 @@ try {
     const top = rows[0].node.kids.length && rows[0].node.calls.includes("id") ? rows[0].node : rows[0].node.kids[0].node;
     for (const h of ["on_click", "on_mouse_move"]) assert.ok(top.calls.includes(h), `${st.id} row keeps ${h}`);
     assert.ok(top.calls.filter((c) => c === "on_mouse_down").length >= 2, `${st.id} row keeps press (drag) and right-click`);
-    // The Tree's channels open their own channel; other looks have none.
+    // Trees (any look): the working pal's live topics under it, asks you first, each opening its
+    // own topic (right-click: its menu), lined up with the look's text column; off: none.
     const sub = ids(rows[0]).filter((n) => n.calls.includes("on_click") && n !== top);
-    assert.equal(sub.length, st.id === "tree" ? 3 : 0, `${st.id} channel rows`);
+    assert.equal(sub.length, trees ? 3 : 0, `${st.id} trees ${trees}: topic rows`);
+    if (trees) {
+      assert.ok(sub.every((n) => n.calls.includes("on_mouse_down") && n.args.h?.[0] === 22), `${st.id}: 22 px topic rows with a right-click menu`);
+      for (const w of ["#command-bar", "#indicators", "#profiles"]) assert.ok(words.includes(w), `${st.id} trees: ${w}`);
+      assert.ok(words.indexOf("#command-bar") < words.indexOf("#indicators"), "asks you first, then working");
+      const box = rows[0].node.kids[1].node;
+      assert.equal(box.args.pl[0], textLeft(st) - 4, `${st.id}: topics start at the text column`);
+    }
+    // Resting and closed pals never unfold.
+    for (const r of rows.slice(1)) assert.equal(ids(r).filter((n) => n.args.id?.[0]?.includes("-tp-")).length, 0, `${st.id}: no trees for a resting pal`);
     // The style dialog draws with this look shown.
     const dlg = Object.create(PalStyle.prototype);
     Object.assign(dlg, { was: "large", hot: st.id, tasks, handle: {} });
@@ -202,7 +213,7 @@ try {
   assert.equal(crew.categoryName("Routines"), "Routines");
   assert.equal(crew.categoryOf({ categories: { t1: "Channels" } }, { id: "t1", name: "#a" }), "Topics");
   assert.equal(crew.categoryOf({ categories: {} }, { id: "t2", name: "#b" }), "Topics");
-  console.log("palrows: ok (11 looks drawn; the hero is a fixed size)");
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

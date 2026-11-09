@@ -38,10 +38,12 @@ Thanks to **goodboimax** for native Antigravity CLI support and the hook deliver
   working topic can be the classic dot or one of 30 small animations (pixel spinners, shaded
   spheres, ASCII globes), with live previews. A click applies it.
 - **Pick how your pals are listed.** Project Pals settings → Pal list style: keep the big pets, or
-  pick one of ten compact looks with smaller pets, so the full name, the project folder, the
+  pick one of nine compact looks with smaller pets, so the full name, the project folder, the
   branch, the brain and topic and task counts fit (Name + folder, Two tight lines, Name wraps,
-  Rich detail, Table, Tree with a working pal's live topics, Progress, Folder first, Grouped,
-  Mini card). The dialog previews each one with your own pals; a click applies it.
+  Rich detail, Table, Progress, Folder first, Grouped, Mini card). The dialog previews each one
+  with your own pals; a click applies it.
+- **Trees.** In any look, a pal that's working or needs you shows its live topics underneath
+  (at most four), each one a click away. On by default; switch it off in Pal list style.
 
 ## 0.3.0
 

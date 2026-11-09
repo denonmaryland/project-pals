@@ -124,29 +124,37 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #topic" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), rooms, dialogs.
   - **Pal list style** (Project Pals settings → Pal list style, `crew-palstyle`, saved as
     `palList` in crew-settings.json; DeNon 2026-11-08). The rows above are **Large pets**, the
-    default. Ten compact looks from DeNon's board (`crew-boards/compact-pals`) use 22-34px pets
+    default. Nine compact looks from DeNon's board (`crew-boards/compact-pals`) use 22-34px pets
     (bare, a scaled aura, no pool) so more fits: 1 Name + folder (32px: name · time, state ·
     #topic, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
     state is a dot on the pet), 3 Name wraps (30px: the name may take two lines), 4 Rich detail
-    (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N ch" or "N
-    blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks, time), 6
-    Tree (26px; a pal with a topic working or asking unfolds its live topics under it, asks
-    you first, then working, then done, at most four and "+N more"; each opens that topic, the
-    working one with the chosen working indicator), 7 Progress (28px: a 3px bar of the pal's
-    tasks, done today of done + open), 8 Folder first (30px: the folder relative to ~/Projects as
-    the mono headline, the name small above, state · branch), 9 Grouped (24px tight rows under
-    the group headers), 10 Mini card (34px: a bordered card, the name may wrap, the folder, a
-    state chip). All real data: the folder from the pal's record or space, the branch of the
-    row's lead topic's pane, topic counts from its tabs, task counts from the board (open,
-    claimed, blocked; done in the last day). Every look keeps the row's behaviour: a click opens
-    the lead topic, right-click its menu, pins (the pin mark), groups and folding, drag to
-    reorder, Hidden pals (a quieter 30px line in the compact looks) and the status-first colours.
+    (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N topics" or
+    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks, time),
+    6 Progress (28px: a 3px bar of the pal's tasks, done today of done + open), 7 Folder first
+    (30px: the folder relative to ~/Projects as the mono headline, the name small above, state ·
+    branch), 8 Grouped (24px tight rows under the group headers), 9 Mini card (34px: a bordered
+    card, the name may wrap, the folder, a state chip). All real data: the folder from the pal's
+    record or space, the branch of the row's lead topic's pane, topic counts from its tabs, task
+    counts from the board (open, claimed, blocked; done in the last day). Every look keeps the
+    row's behaviour: a click opens the lead topic, right-click its menu, pins (the pin mark),
+    groups and folding, drag to reorder, Hidden pals (a quieter 30px line in the compact looks)
+    and the status-first colours.
+    **Trees** (DeNon, 2026-11-08; `palTrees`, on unless false), an option for every look (it
+    replaced the board's Tree look; a saved `palList: "tree"` shows as Two tight lines): a pal
+    with a topic working or asking you unfolds its live topics under its row, asks you first,
+    then working, then done, latest first, at most four and an 18px "+N more". Each topic row is
+    22px, starting at the look's text column (`palstyles.js textLeft`): the mark (the chosen
+    working indicator, an amber dot when it asks you, a check when done) in a 16px slot, "#topic"
+    in 11.5px mono (#EDEDED for the shown one) and when it changed; a click opens that topic,
+    right-click is its menu. Only those rows are added: nothing else moves. Resting, asleep and
+    hidden pals never unfold.
     The sidebar and the dialog's preview draw rows with one renderer (`crew.js palLookRow` /
     `palLookTree`; the look list and its pure helpers in `lib/palstyles.js`, copied into every
-    mod). The dialog: the eleven looks on the left (number, name, pet size, a check on the chosen
-    one), a live preview of your own pals in the look under the pointer (else the chosen one) at
-    the sidebar's width on the right; a click applies at once, Done keeps it, Cancel or Esc puts
-    back the one you had. Unknown values fall back to Large pets.
+    mod). The dialog: the ten looks on the left (number, name, pet size, a check on the chosen
+    one), then the caption and the **Trees** switch ("Show working topics under each pal"); a
+    live preview of your own pals in the look under the pointer (else the chosen one), with or
+    without Trees, at the sidebar's width on the right; a click applies at once, Done keeps it,
+    Cancel or Esc puts back the look and Trees you had. Unknown values fall back to Large pets.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
