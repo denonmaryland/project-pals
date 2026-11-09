@@ -227,7 +227,10 @@ COPIERS = {"cp", "mv", "install", "ln", "rsync"}
 # own commands name (vim -c 'w AGENTS.md', +cmd, emacs --eval, ed's commands from a heredoc).
 EDITORS = {"ed", "red", "ex", "vi", "vim", "nvim", "sudoedit", "view", "rview", "rvim", "vimdiff", "nvi", "elvis", "gvim",
            "nano", "rnano", "pico", "micro", "emacs", "emacsclient", "mg", "jed", "joe", "jmacs", "jstar",
-           "kak", "hx", "helix", "mcedit", "ne", "zile", "amp"}
+           "kak", "hx", "helix", "mcedit", "ne", "zile", "amp",
+           # and the desktop ones a pal can start (Grok review H2: `code AGENTS.md`)
+           "code", "codium", "code-insiders", "cursor", "zed", "subl", "gedit", "gnome-text-editor", "kate",
+           "kwrite", "mousepad", "xed", "pluma", "leafpad", "geany"}
 # Editors that also take their commands from stdin (a heredoc, a here-string, printf … | ed).
 STDIN_EDITORS = {"ed", "red", "ex"}
 # vim options whose value is a script it runs (-S session, -u vimrc, -s scriptin outside Ex mode).
@@ -267,6 +270,23 @@ def _editor_heredocs(cmd):
             body = m.group(0)[len(m.group(1)) + len(m.group(3)):]
             out += _pieces(body)
     return out
+
+
+def _edited_files(name, args):
+    """The files sed -i / perl -i edit: not their script (sed's first word without -e / -f, or what
+    follows -e / -f), which only names what it replaces (a-15ccbe: `sed -i 's|/crew-clicks/|…|' x`)."""
+    out, takes, script_given, k = [], {"-e", "-E", "-f", "--expression", "--file"} if name == "sed" else {"-e", "-E"}, False, 0
+    while k < len(args):
+        a = args[k]
+        if a in takes or (name == "perl" and re.fullmatch(r"-\w*[eE]", a)):
+            script_given, k = True, k + 2
+            continue
+        if a.startswith(("--expression=", "--file=")):
+            script_given = True
+        elif not a.startswith("-"):
+            out.append(a)
+        k += 1
+    return out if script_given or not out else out[1:]
 
 
 def write_targets(cmd):
@@ -340,7 +360,7 @@ def write_targets(cmd):
             if name == "tee":
                 out += files
             elif name in ("sed", "perl") and any(a.startswith("-i") or a == "--in-place" or (name == "perl" and re.fullmatch(r"-\w*i\w*", a)) for a in args):
-                out += files
+                out += _edited_files(name, args)
             elif name in COPIERS and files:
                 out.append(files[-1])
             elif name == "dd":
@@ -360,7 +380,8 @@ RUNNER = re.compile(r"^(?:(?:uv|poetry|pipenv|bundle)\s+(?:run|exec)|uvx|npx|bun
 # a mention inside prose ("see AGENTS.md for…") isn't one.
 AGENT_PATH = re.compile(r"""['"][^'"`\n]*\b(?:AGENTS|CLAUDE)\.md['"]""")   # not `…`: Markdown's code quotes
 # Calls that write, move or copy a file, in the interpreters above.
-WRITE_CALL = re.compile(r"""\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.write_(?:text|bytes)\s*\(|\bshutil\.(?:copy\w*|move)\s*\(|\bos\.(?:rename|replace)\s*\("""
+WRITE_CALL = re.compile(r"""\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\bopen\s*\([^)]*\bmode\s*=\s*['"][^'"]*[wax+]"""   # mode="w" too (Grok review H2)
+                        r"""|\.open\s*\(\s*['"][^'"]*[wax+]|\.write_(?:text|bytes)\s*\(|\bshutil\.(?:copy\w*|move)\s*\(|\bos\.(?:rename|replace)\s*\("""
                         r"""|\.(?:rename|touch)\s*\(\s*(?:\w|['"])|\b(?:write|append)File(?:Sync)?\s*\(|\bcreateWriteStream\s*\(|\bcopyFile(?:Sync)?\s*\(|\brename(?:Sync)?\s*\("""
                         r"""|\bDeno\.write\w*\s*\(|\bBun\.write\s*\(|\bFile\.(?:write|open|rename)\b|\bIO\.write\b|\bFileUtils\.|\bopen\s*\(?\s*(?:my\s+)?\$?\w*\s*,\s*['"]?\+?>|\bfile_put_contents\s*\(|\bfopen\s*\([^)]*['"][wax]""")
 
@@ -461,14 +482,16 @@ def _active(stmt, start, end):
     return not (_INERT_BEFORE.search(before) or _INERT_AFTER.match(after))
 
 
-def code_writes_agent_file(code, quoted_text=False):
+def code_writes_agent_file(code, quoted_text=False, path_re=None):
     """Does this code write an AGENTS.md / CLAUDE.md? Only when a write call's target is one: the
     quoted path itself in that statement, or a name that holds it (assigned from it, or looping
     over it). A use the parse can't follow (handed to a function, say) still holds when the code
     writes anything at all, as the rule did before T25.
     quoted_text: this is the code itself (a script file, a heredoc fed to the interpreter), not a
     shell line around it, so what's quoted inside a string literal is text. Not when the code runs
-    commands: a string can be code there."""
+    commands: a string can be code there. path_re: what counts as the guarded path (AGENT_PATH; the
+    queue's, the clicks' and the desk's for their rules)."""
+    path_re = path_re or AGENT_PATH
     stmts = _statements(code)
     spans = {st: (_string_spans(st) if quoted_text else ()) for st in stmts}
     aware = quoted_text and not any(not _in_string(spans[st], m.start()) for st in stmts for m in RUNS_COMMANDS.finditer(st))
@@ -478,7 +501,7 @@ def code_writes_agent_file(code, quoted_text=False):
     for _ in range(3):   # names that carry the path, to a fixed point (a = "AGENTS.md"; b = a)
         grew = False
         for st in stmts:
-            hits = [m.span() for m in AGENT_PATH.finditer(st)]
+            hits = [m.span() for m in path_re.finditer(st)]
             hits += [m.span() for n in tainted for m in re.finditer(r"(?<![\w$@%])" + re.escape(n) + r"\b", st)]
             hits = [h for h in hits if not _in_string(spans[st], h[0])]
             # In `for f in FILES`, what follows `in` is what f takes, not a membership test.
@@ -504,9 +527,13 @@ def code_writes_agent_file(code, quoted_text=False):
 OWN_CLI = {"crew", "crew-room", "crewd", "crew-hook", "crew-statusline"}
 
 
-def writes_agent_file_via_interpreter(cmd):
-    """An interpreter in the line, and an AGENTS.md / CLAUDE.md path it writes (or a script handed one)."""
-    import shlex
+def writes_agent_file_via_interpreter(cmd, path_re=None, file_re=None):
+    """An interpreter in the line, and an AGENTS.md / CLAUDE.md path it writes (or a script handed one).
+    path_re / file_re: another guarded place (the queue, the clicks, the desk), as a quoted path in
+    code and as a script's argument."""
+    AGENT_PATH = path_re or globals()["AGENT_PATH"]
+    agent_arg = file_re or re.compile(r"(^|/)(?:AGENTS|CLAUDE)\.md$")
+    code_writes = lambda code, **kw: code_writes_agent_file(code, path_re=AGENT_PATH, **kw)
     segs = []
     for seg in commands(cmd):
         words = normal_words(RUNNER.sub("", seg))   # behind env, nice, uv run … too (T26)
@@ -526,17 +553,17 @@ def writes_agent_file_via_interpreter(cmd):
         return m.group(1) + m.group(3)
     rest = HEREDOC_BODY.sub(fed, cmd)
     for body in bodies:
-        if AGENT_PATH.search(body) and WRITE_CALL.search(body) and code_writes_agent_file(body, quoted_text=True):
+        if AGENT_PATH.search(body) and WRITE_CALL.search(body) and code_writes(body, quoted_text=True):
             return True
     # The rest of the line: -c / -e code, or a script written and run in one go (shell quoting around it).
-    if AGENT_PATH.search(rest) and WRITE_CALL.search(rest) and code_writes_agent_file(rest):
+    if AGENT_PATH.search(rest) and WRITE_CALL.search(rest) and code_writes(rest):
         return True
     for words in segs:
         args = words[1:]
         if any(a in ("-c", "-e", "-E", "-p", "-r", "--eval", "-") or a.startswith("<<") for a in args):
             continue   # inline code: judged above
-        if any(AGENT_FILE.search(os.path.normpath(a.strip("'\""))) or re.search(r"\b(?:AGENTS|CLAUDE)\.md$", a) for a in args):
-            return True   # a script handed an agent file
+        if any(agent_arg.search(os.path.normpath(a.strip("'\""))) for a in args):
+            return True   # a script handed a guarded path
         script = next((a for a in args if not a.startswith("-")), None)
         if not script:
             continue
@@ -548,27 +575,112 @@ def writes_agent_file_via_interpreter(cmd):
                 text = f.read(400000)
         except OSError:
             continue
-        if AGENT_PATH.search(text) and WRITE_CALL.search(text) and code_writes_agent_file(text, quoted_text=True):
+        if AGENT_PATH.search(text) and WRITE_CALL.search(text) and code_writes(text, quoted_text=True):
             return True   # the script itself writes one
     return False
 
 
+def _place(names):
+    """For one of Project Pals' own data folders: (a quoted path into it in code, a path argument into it)."""
+    alt = "|".join(re.escape(n) for n in names)
+    return (re.compile(r"""['"][^'"`\n]*\b(?:""" + alt + r""")(?![\w.-])[^'"`\n]*['"]"""),
+            re.compile(r"(?:^|/)(?:" + alt + r")(?:/|$)"))
+
+
+CLICK_PLACE, QUEUE_PLACE, DESK_PLACE = _place(["crew-clicks"]), _place(["crew-queue", "crew-queue-sent"]), _place(["crew-desk"])
+
+
 def writes_click(cmd):
-    """A write INTO data/crew-clicks (redirect, tee, cp/mv onto it, …); mentioning it isn't one."""
+    """A write INTO data/crew-clicks (redirect, tee, cp/mv onto it, …, or from a script: Grok review
+    H2); mentioning it isn't one."""
     return any("crew-clicks" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-clicks/", cmd))
+        or bool(re.match(r"^edit\s+.*/crew-clicks/", cmd)) or writes_agent_file_via_interpreter(cmd, *CLICK_PLACE)
 
 
 def writes_queue(cmd):
     """A write INTO data/crew-queue (as writes_click); `pal tell` writing its own file isn't a shell write."""
     return any({"crew-queue", "crew-queue-sent"} & set(os.path.normpath(t.strip("'\"")).split(os.sep)) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-queue(?:-sent)?/", cmd))
+        or bool(re.match(r"^edit\s+.*/crew-queue(?:-sent)?/", cmd)) or writes_agent_file_via_interpreter(cmd, *QUEUE_PLACE)
 
 
 def writes_desk(cmd):
     """A write INTO data/crew-desk (as writes_queue)."""
     return any("crew-desk" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-desk/", cmd))
+        or bool(re.match(r"^edit\s+.*/crew-desk/", cmd)) or writes_agent_file_via_interpreter(cmd, *DESK_PLACE)
+
+
+# ─── Commands run from inside other code (Grok review H2) ───────────────────────────────────────
+# A heredoc fed to bash is a script it runs, like sh -c '…'; a string handed to os.system /
+# subprocess / child_process / system / backticks is a command line. matches() judges those with the
+# same rules. Best effort: it catches a mistake (or one pal talking another into it), not a pal set on
+# getting around it (a command built from pieces, base64, a script file written first …).
+SHELL_RUNNERS = {"sh", "bash", "zsh", "dash", "ksh", "mksh", "yash"}
+INLINE_CODE = ("-c", "-e", "-E", "-r", "--eval", "-p", "--print")
+
+
+def _stdin_text(cmd):
+    """(words of a command, text fed to its stdin): heredoc bodies, here-strings, echo / printf | it."""
+    out = []
+    for m in HEREDOC_BODY.finditer(cmd):
+        line = commands(cmd[cmd.rfind("\n", 0, m.start()) + 1:m.start()])
+        out.append((normal_words(RUNNER.sub("", line[-1])) if line else [], m.group(4)))
+    for line in heredoc_free(cmd).splitlines():
+        masked, last, parts = mask_quotes(line), 0, []
+        for s in SEP.finditer(masked):
+            parts.append((line[last:s.start()], s.group(0)))
+            last = s.end()
+        parts.append((line[last:], None))
+        fed = None
+        for text, sep in parts:
+            words = normal_words(RUNNER.sub("", text.strip()))
+            if "<<<" in words[:-1]:
+                out.append((words, words[words.index("<<<") + 1]))
+            if fed is not None and words:
+                out.append((words, fed))
+            fed = None
+            if sep in ("|", "|&") and words and words[0] in ("echo", "printf"):
+                fed = " ".join(w for w in words[1:] if not re.fullmatch(r"-[neE]+", w)).replace("\\n", "\n")
+    return out
+
+
+def _literal(st, span):
+    """A string literal's text (quotes and simple escapes undone)."""
+    t = st[span[0]:span[1]]
+    q, body = t[0], t[1:]
+    body = body[:-3] if body.endswith(q * 3) else body[:-1] if body.endswith(q) else body
+    return re.sub(r"\\(.)", lambda m: "\n" if m.group(1) == "n" else m.group(1), body)
+
+
+def run_strings(cmd):
+    """Command lines inside the line: scripts fed to a shell, and strings interpreter code runs."""
+    out = [t for w, t in _stdin_text(cmd) if w and w[0] in SHELL_RUNNERS]
+    code = [(w[0], t) for w, t in _stdin_text(cmd) if w and INTERP.match(w[0])]
+    for seg in commands(cmd):
+        words = normal_words(RUNNER.sub("", seg))
+        if words and INTERP.match(words[0]):
+            code += [(words[0], words[k + 1]) for k in range(1, len(words) - 1) if words[k] in INLINE_CODE]
+    for name, text in code:
+        stmts = _statements(text)
+        spans = {st: _string_spans(st) for st in stmts}
+        runs = lambda st: any(not _in_string(spans[st], m.start()) for m in RUNS_COMMANDS.finditer(st))
+        held = {}   # names given a command in an earlier statement: cmd = ["git", "push"]
+        for st in stmts:
+            lits = [_literal(st, sp) for sp in spans[st]]
+            m = _ASSIGN.match(st)
+            if m and lits and not runs(st):
+                held[m.group(1)] = lits
+        backticks = re.match(r"(?:perl|ruby|php)", os.path.basename(name))
+        for st in stmts:
+            if backticks:   # `git push` runs it in Perl, Ruby and PHP
+                out += [_literal(st, sp) for sp in spans[st] if st[sp[0]] == "`"]
+            if not runs(st):
+                continue
+            lits = [_literal(st, sp) for sp in spans[st]]
+            for n, v in held.items():
+                if re.search(r"(?<![\w$@%])" + re.escape(n) + r"\b", st):
+                    lits += v
+            out += lits + [" ".join(lits)]
+    return [c for c in out if c and c.strip()]
 
 
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
@@ -576,8 +688,25 @@ CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writ
           "desk-writes": writes_desk}
 
 
-def matches(cmd):
-    segs = commands(cmd)
+def _help(seg):
+    """`pal land --help`, `git push --help`: asking how it works runs nothing."""
+    return "--help" in normal_words(seg)[1:]
+
+
+def matches(cmd, _depth=0):
+    rule = _matches(cmd)
+    if rule or _depth >= 3:
+        return rule
+    # Command lines inside it: a heredoc fed to bash, os.system("git push") … (Grok review H2)
+    for inner in run_strings(cmd)[:200]:
+        rule = matches(inner, _depth + 1)
+        if rule:
+            return rule
+    return None
+
+
+def _matches(cmd):
+    segs = [s for s in commands(cmd) if not _help(s)]
     flat = heredoc_free(cmd)
     for rule in policy().get("guarded", []):
         if rule.get("check"):
