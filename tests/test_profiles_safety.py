@@ -102,6 +102,15 @@ class Paths(unittest.TestCase):                # M1
         self.assertIn("RECIPE.md", nb.clean(f"edited {self.proj}/RECIPE.md", project=self.proj))
         self.assertIn("keys.json", nb.clean("~/.config/herdr-app/keys.json was missing", project=self.proj))
 
+    def test_home_variable_spellings(self):
+        # Grok review M2: $HOME/… and ${HOME}/… got past; they're home like ~/… is.
+        for text in ("see $HOME/Documents/taxes.pdf", "see ${HOME}/Documents/taxes.pdf", "cat $HOME/Projects/other-app/x"):
+            with self.subTest(text=text), self.assertRaises(CrewError):
+                nb.clean(text, project=self.proj)
+        self.assertIn("RECIPE.md", nb.clean("edited $HOME/Projects/demo/RECIPE.md", project=self.proj))
+        self.assertIn("keys.json", nb.clean("${HOME}/.config/herdr-app/keys.json was missing", project=self.proj))
+        self.assertTrue(nb.clean("$HOMEBREW_PREFIX is unset", project=self.proj))
+
 
 def _writer(n, barrier):
     barrier.wait()

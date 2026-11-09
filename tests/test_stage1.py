@@ -180,6 +180,39 @@ class OwnerCommandsNeedTheClick(unittest.TestCase):
         self.assertIn("bypass permissions for new pals: on", r.stdout)
 
 
+class GateFailsClosed(unittest.TestCase):
+    """Grok review M3: an exception in the gate used to mean empty stdout, which Claude and agy read
+    as "go ahead". In a Herdr terminal it's now a deny that says what failed; elsewhere it stays open."""
+
+    def setUp(self):
+        import shutil
+        self.root, self.env, self.data = sandbox()
+        self.bin = self.root / "bin"
+        shutil.copytree(BIN, self.bin, ignore=shutil.ignore_patterns("__pycache__"))
+        (self.bin / "crewguard.py").write_text("raise RuntimeError('gate parse blew up')\n")
+
+    def hook(self, what, event, term="tW"):
+        env = {**self.env, **({"HC_TERMINAL_ID": term} if term else {})}
+        return subprocess.run([sys.executable, str(self.bin / "crew-hook"), what], input=json.dumps(event),
+                              capture_output=True, text=True, env=env, timeout=60)
+
+    def test_claude(self):
+        r = self.hook("pre-tool-use", {"tool_name": "Bash", "tool_input": {"command": "git push"}})
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("gate parse blew up", out["permissionDecisionReason"])
+        self.assertIn("Nothing ran", out["permissionDecisionReason"])
+
+    def test_agy(self):
+        r = self.hook("agy-pre-tool-use", {"toolCall": {"name": "run_command", "args": {"CommandLine": "git push"}}})
+        self.assertEqual(json.loads(r.stdout)["decision"], "deny")
+
+    def test_open_outside_herdr_and_for_other_events(self):
+        r = self.hook("pre-tool-use", {"tool_name": "Bash", "tool_input": {"command": "git push"}}, term=None)
+        self.assertEqual(r.stdout, "")   # someone's own Claude Code session: never blocked by our bug
+        self.assertEqual(self.hook("session-start", {}).stdout.strip()[:1] in ("", "{"), True)
+
+
 class QueueWritesAreHeld(unittest.TestCase):
     def test_guard(self):
         root, env, data = sandbox()

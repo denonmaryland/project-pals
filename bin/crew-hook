@@ -390,8 +390,33 @@ def main():
     }
     try:
         handlers[what](event)
-    except Exception as e:  # fail open: empty stdout lets both Claude and agy proceed normally
+    except Exception as e:
         print(f"crew-hook: {e}", file=sys.stderr)
+        # The gate fails CLOSED in a Herdr terminal (Grok review M3): a parse bug mustn't let a guarded
+        # command through. Everything else, and Claude Code sessions outside Herdr (the hooks are
+        # installed for every session), fails open: empty stdout lets Claude and agy go on normally.
+        if what in GATES and os.environ.get("HC_TERMINAL_ID"):
+            print(json.dumps(gate_failed(what, e)))
+
+
+GATES = ("pre-tool-use", "agy-pre-tool-use")
+
+
+def gate_failed(what, e):
+    reason = (f"Project Pals' approval gate failed while checking this ({type(e).__name__}: {str(e)[:300]}), "
+              f"so it's stopped instead of let through. Nothing ran. Tell {owner_name()} what you were doing; "
+              f"if it keeps happening, the gate (crew-hook {what}) needs fixing.")
+    if what == "agy-pre-tool-use":
+        return {"decision": "deny", "reason": reason}
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
+
+
+def owner_name():
+    try:
+        from crewlib import OWNER
+        return OWNER
+    except Exception:
+        return "the owner"
 
 
 if __name__ == "__main__":

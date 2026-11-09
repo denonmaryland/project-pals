@@ -67,10 +67,14 @@ def inside(path, root):
         return False
 
 
+HOME_VAR = re.compile(r"^\$(?:HOME\b|\{HOME\})")
+
+
 def allowed_path(path, project=None):
     """Only the pal's own project, the SAFE_CONFIG trees, and home or a private root by itself. Not a
     sibling project: ~/Projects/demo-private while working on ~/Projects/demo is refused (review M1)."""
     home = str(Path.home())
+    path = HOME_VAR.sub(lambda _m: home, path, count=1)   # $HOME/… and ${HOME}/… are home (Grok review M2)
     if path.startswith("~") and not re.match(r"~(/|$)", path):
         return False                        # ~someone/…: another person's home
     if project and inside(path, project):
@@ -87,7 +91,7 @@ def private_paths(text):
     home = str(Path.home())
     roots = sorted({*PRIVATE_ROOTS, home.rstrip("/"), os.path.realpath(home).rstrip("/")} - {""}, key=len, reverse=True)
     # ~name/… is someone's home; a lone ~ is yours ("~25m" is a cost, not a path).
-    pat = (r"(?<![\w.~/-])(?:~[A-Za-z_][\w.-]*(?=/)|~|" + "|".join(re.escape(r) for r in roots) + r")"
+    pat = (r"(?<![\w.~/-])(?:\$HOME\b|\$\{HOME\}|~[A-Za-z_][\w.-]*(?=/)|~|" + "|".join(re.escape(r) for r in roots) + r")"
            r"(?=[/\s'\"`),:;]|$)(?:/[^\s'\"`),]*)?")
     return [m.group(0).rstrip(".:;") for m in re.finditer(pat, text)]
 
