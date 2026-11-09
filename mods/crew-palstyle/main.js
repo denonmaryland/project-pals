@@ -9,7 +9,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { theme, props, closeOverlay, spaces, panes } from "herdr";
-import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetToggle, saveUiSettings, loadOps, crew, botOf, mood, sleepers,
+import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetToggle, saveUiSettings, loadOps, crew, botOf, mood, palStatus, sleepers,
   palOrder, palSections, palGroups, marks, palStylePreviewW, PAL_LIST_STYLES, palListStyle, palListStyleOf, palFacts, sleeperFacts,
   palPet, palLookRow, palLookTree, palTreesOn, machineTagOn } from "./crew.js";
 import { shared } from "herdr";
@@ -70,7 +70,7 @@ export default class CrewPalStyle extends View {
       .child(svg(`${ICON}/ds-search.svg`).size(13).text_color(d.iconDim)));
     const row = (r) => {
       const f = palFacts(r.space, r.bot, d, this.tasks, ps);
-      const el = palLookRow(d, st, f, palPet(r.bot, mood(r.space.status, r.bot.awake || r.bot.starting), st.pet, t), div().id(`pv-${r.space.id}`));
+      const el = palLookRow(d, st, f, palPet(r.bot, mood(palStatus(r.space), r.bot.awake || r.bot.starting), st.pet, t), div().id(`pv-${r.space.id}`));
       const tree = palLookTree(d, st, f, `pv-${r.space.id}`);
       return tree ? div().flex().flex_col().flex_none().child(el).child(tree) : el;
     };

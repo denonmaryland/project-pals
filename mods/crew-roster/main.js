@@ -14,7 +14,7 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -285,7 +285,7 @@ export default class CrewRoster extends View {
           .when(space.active, (el) => el.bg(a(t.accent, "26")))
           .when(!space.active, (el) => el.hover((s) => s.bg(a(t.foreground, "0c"))))
           .on_click(() => this.open(space))
-          .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
+          .child(mascotEl(bot, mood(palStatus(space), bot.awake), 32, t))
           .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked)))))).flex_1().min_h(0).w_full())
       .child(icon("rail-hire", "plus", () => this.hire()))
       .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU })));
@@ -855,6 +855,7 @@ export default class CrewRoster extends View {
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
+        .child(topicMark(tab))
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
@@ -995,7 +996,7 @@ export default class CrewRoster extends View {
       .when(Boolean(over), (x) => x.child(div().absolute().left(6).right(6).h(2).rounded(1).bg(d.info).when(over.after, (y) => y.bottom(0)).when(!over.after, (y) => y.top(0))))
       .on_click((_e, cx) => { if (this.drag?.active) return; this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); });
-    const row = palLookRow(d, look, f, palPet(bot, mood(space.status, awake), look.pet, t), el);
+    const row = palLookRow(d, look, f, palPet(bot, mood(palStatus(space), awake), look.pet, t), el);
     // Trees (on unless turned off): its live topics under it; a click opens that topic, right-click its menu.
     const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); },
       (tab) => openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }));

@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, agents, theme, props, closeOverlay, openOverlay, run } from "herdr";
-import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag, channelOrder, workingMark } from "./crew.js";
+import { channelName, statusWord, stamp, ds, tone, showTabs, taskTitle, botOf, tabHasAgent, noAgentTag, channelOrder, workingMark, topicMark } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 32;
@@ -77,6 +77,7 @@ export default class CrewPick extends View {
         : null;
       root.child(row(`pick-${tab.id}`, i)
         .on_click(() => this.open(tab))
+        .child(topicMark(tab))
         .child(div().w(10).flex_none().text_size(12).font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_none().max_w(130).truncate().text_size(13).when(on, (el) => el.font_weight(500)).text_color(on ? d.fg1 : d.body).child(channelName(tab)))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(shell ? d.fg4 : on ? d.fg2 : d.fg3).child(shell ? "a plain shell" : this.what(tab)))

@@ -87,7 +87,7 @@ try {
     };
     export const spaces = () => fixtures.spaces, panes = () => fixtures.panes, agents = () => fixtures.agents;
     export const shared = (k) => fixtures.shared[k], setShared = (k, v) => { fixtures.shared[k] = v; };
-    export const theme = () => ({ background: "#0E0E0F", foreground: "#EDEDED" });
+    export const theme = () => ({ background: "#0E0E0F", foreground: "#EDEDED", ansi4: "#4C8DFF" });
     export const home = () => "/home/denon", appHome = () => "/home/denon/.config/herdr-app";
     export const settings = () => ({ zoom: 1 }), layout = () => fixtures.layout ?? null, props = () => ({}), keys = () => ({});
     export const machines = () => [], terminals = () => [];
@@ -242,6 +242,53 @@ try {
   pebbleOf(heroOf(one, false), "hero-inbox").args.on_click[0](null, cx);
   assert.equal(fixtures.shared["crew.view"], "bots", "a second click goes back to the pals");
   delete fixtures.shared["crew.needs"]; delete fixtures.shared["crew.view"];
+  // Working wins (DeNon, 2026-11-08): a pal with a topic working says Working (blue) even when
+  // Herdr's own status for it is done; asks-you still beats both; Done only when nothing runs.
+  {
+    const now = Date.now();
+    const sp = (status, tabs) => ({ id: "s6", name: "Mixed", index: 5, status, folder: "/x",
+      tabs: tabs.map(([id, st, at]) => ({ id, name: id, status: st, changed_at: now - at })) });
+    const saved = fixtures.agents;
+    const mixed = sp("done", [["w1", "working", 300000], ["d1", "done", 1000]]);
+    fixtures.agents = [{ space: "s6", tab: "w1", status: "working", seq: 1 }, { space: "s6", tab: "d1", status: "done", seq: 2 }];
+    const bot = { ...crew.botOf(fixtures.spaces[0]), awake: true, space: "s6", name: "Mixed" };
+    assert.equal(crew.palStatus(mixed), "working");
+    assert.equal(crew.palLeadTab(mixed).id, "w1", "the lead topic is the working one");
+    const [w, c] = crew.palStateWord(mixed, bot, d);
+    assert.ok(w.startsWith("Working") && c === d.info, `working wins over done: ${w}`);
+    assert.equal(crew.palStatus(sp("working", [["b1", "blocked", 1], ["w1", "working", 1]])), "blocked", "asks you beats working");
+    assert.equal(crew.palStatus(sp("done", [["d1", "done", 1], ["i1", "idle", 1]])), "done", "done when nothing runs");
+    assert.equal(crew.palStatus(sp("idle", [])), "idle");
+    fixtures.agents = saved;
+  }
+  // Topic colours (DeNon, 2026-11-08): a 3 x 12 mark before each "#topic", in the topic's saved
+  // colour, its slot there either way so nothing moves.
+  {
+    const tabA = { id: "ca" }, tabB = { id: "cb" };
+    fixtures.shared["crew.marks"] = { ...fixtures.shared["crew.marks"], tabs: { ca: { color: "ansi4" }, cb: { color: "none" } } };
+    const ma = crew.topicMark(tabA).node, mb = crew.topicMark(tabB).node;
+    assert.equal(ma.args.bg?.[0], "#4C8DFF", "the saved colour");
+    assert.equal(mb.args.bg, undefined, "no colour, no fill");
+    for (const m of [ma, mb]) assert.ok(m.args.w[0] === 3 && m.args.h[0] === 12 && m.calls.includes("flex_none"), "a fixed 3 x 12 slot");
+    // In the hero's list and the Trees rows, right before the "#".
+    const s1 = fixtures.spaces[0];
+    fixtures.shared["crew.marks"].tabs = { t1: { color: "ansi4" } };
+    fixtures.shared["crew.settings"] = { palList: "large" };
+    const hero = heroOf(s1, false);
+    const heroRow = ids(hero).find((n) => n.args.id?.[0] === "hero-ch-t1");
+    const k = heroRow.kids.map((x) => x.node);
+    const hash = k.findIndex((x) => x.kids.includes("#"));
+    assert.ok(hash > 0 && k[hash - 1].args.w?.[0] === 3 && k[hash - 1].args.bg?.[0] === "#4C8DFF", "the hero row: the mark, then #");
+    const other = ids(hero).find((n) => n.args.id?.[0] === "hero-ch-t2").kids.map((x) => x.node);
+    assert.ok(other[other.findIndex((x) => x.kids.includes("#")) - 1].args.w?.[0] === 3, "an uncoloured topic keeps the slot");
+    const tree = ids(roster.palRow({ space: s1, bot: crew.botOf(s1) }, t, d, null)).find((n) => n.args.id?.[0]?.endsWith("-tp-t1"));
+    const tk = tree.kids.map((x) => x.node);
+    const ti = tk.findIndex((x) => typeof x.kids[0] === "string" && x.kids[0].startsWith("#"));
+    assert.ok(ti > 0 && tk[ti - 1].args.w?.[0] === 3 && tk[ti - 1].args.bg?.[0] === "#4C8DFF", "the Trees row: the mark, then #topic");
+    assert.match(readFileSync(join(root, "mods/crew-pick/main.js"), "utf8"), /\.child\(topicMark\(tab\)\)\s*\.child\(div\(\)\.w\(10\)[^\n]*child\("#"\)\)/, "the topic picker: the mark, then #");
+    fixtures.shared["crew.marks"].tabs = {};
+    fixtures.shared["crew.settings"] = {};
+  }
   // The Topics fold (DeNon, 2026-11-08): the chevron folds the hero's list to its header, for every
   // pal at once (remembered in crew-settings), so the hero is still one height whoever is shown.
   {
