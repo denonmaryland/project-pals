@@ -168,6 +168,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
     (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
+    **Times** on pal rows (every look) and Trees rows are small and quiet (DeNon, 2026-11-08):
+    10.5px #6A6A6C in mono (even-width figures; Herdr has no tabular-figures switch),
+    right-aligned in a fixed 38px slot so names never shift, on the name's line at its line height
+    (`crew.js rowTime`).
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list

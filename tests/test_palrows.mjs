@@ -165,6 +165,19 @@ try {
       else if (names) assert.ok(rowText.includes("· #command-bar"), `${st.id} trees off: the row names its topic (${rowText})`);
       if (names) assert.ok(text(rows[1]).includes("· #general"), `${st.id}: a resting pal keeps its #topic`);
     }
+    // Times (DeNon, 2026-11-08): 10.5 px, #6A6A6C, even-width mono, right-aligned in a fixed 38 px
+    // slot, on the pal row (every look with a time) and on each Trees row.
+    {
+      const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
+      const stamps = all(rows[0]).filter((n) => n.args.text_right && n.args.w?.[0] === 38);
+      const want = (st.id === "card" ? 0 : 1) + (trees ? 3 : 0);
+      assert.equal(stamps.length, want, `${st.id} trees ${trees}: ${want} fixed time slots`);
+      for (const n of stamps) {
+        assert.ok(n.args.text_size[0] === 10.5 && n.args.text_color[0] === "#6A6A6C" && n.args.font_family[0] === d.mono && n.calls.includes("flex_none"), `${st.id}: a quiet time`);
+        assert.ok(typeof n.kids[0] === "string" && n.kids[0].length > 0, `${st.id}: the time shows`);
+      }
+      assert.ok(!all(rows[0]).some((n) => n.args.text_size?.[0] === 11 && n.kids.includes(f1.time)), `${st.id}: no 11 px time left`);
+    }
     // Resting and closed pals never unfold.
     for (const r of rows.slice(1)) assert.equal(ids(r).filter((n) => n.args.id?.[0]?.includes("-tp-")).length, 0, `${st.id}: no trees for a resting pal`);
     // The style dialog draws with this look shown.
