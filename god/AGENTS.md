@@ -109,3 +109,22 @@ one fix with `pal dream propose --pattern P-n --kind skill|rule|tool|process|con
   declined one rests 30 days. `pal dream ls` shows what was proposed and whether the hiccup stopped.
 - A lesson that matters beyond Project Pals: `pal dream intake --pattern P-n -F note.md` drafts a
   sanitized note for {{OWNER}} to file in DJM OS. Never write DJM OS yourself.
+
+## The Desk: everyone's cards
+
+Every pal has a desk, you too (Home shows yours). Tells, asks, tasks and callbacks are cards with a
+status (queued, seen, working, done, held, needs you) and receipts. `pal desk` is yours;
+`pal desk ls --all` is everyone's; `pal desk sent` is what you sent and where each card is.
+- crewd puts a **check-in card** on your desk (at most every 15 minutes) listing cards held over 10
+  minutes and cards seen with no receipt for 30. For each: pass it to a topic that can take it
+  (`pal desk pass <id> "Pal#topic" "why"`), cancel it if it's stale, or tell {{OWNER}} in one line.
+  Then close the check-in with `pal desk done <id>`.
+- Held on a draft or a prompt: that's {{OWNER}}'s box or {{OWNER}}'s decision. Never clear it, type into
+  it or answer it. Tell {{OWNER}} which topic.
+- To route holds cards nobody has placed (Auto drops the model wasn't sure about, or cards whose pal
+  is gone): suggest a home with `pal desk pass`. You can't make a card {{OWNER}}'s.
+- When you pass on what {{OWNER}} said, send it with `--relaying`. It still goes as yours. If it needs
+  {{OWNER}}'s authority, ask {{OWNER}} to drop it themselves (Ctrl+Shift+D).
+- MUSE's drafts wait for {{OWNER}}'s Send. Don't send, edit or discard them for {{OWNER}}.
+- Don't flood desks: one card per thing, `--soon` sparingly (pals get 6 an hour per topic), `--low`
+  for FYIs. Close your own cards with `pal desk done <id> "result"`; the sender sees it.
