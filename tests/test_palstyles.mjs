@@ -80,6 +80,18 @@ assert.equal(chipWord("Done"), "Done");
 // sidebar draws every pal row through the shared renderer, the setting is "palList", and Project
 // Pals settings opens the dialog.
 assert.match(read("install.sh"), /cp "\$src\/lib\/palstyles\.js" "\$dest\/palstyles\.js"/);
+// main.js goes into each mod last, after the shared JS: a hot reload between the two kept the old
+// crew.js live (2026-11-08, Trees didn't show). The mirror leaves main.js and the shared JS alone.
+{
+  const ins = read("install.sh");
+  const loop = ins.slice(ins.indexOf('for dir in "$src"/mods/crew-*; do'), ins.indexOf("done", ins.indexOf('for dir in "$src"/mods/crew-*; do')));
+  const at = (x) => { const i = loop.indexOf(x); assert.ok(i >= 0, `install loop has ${x}`); return i; };
+  const main = at('cp "$dir/main.js"');
+  for (const lib of ["crew.js", "pets.js", "palstyles.js"]) assert.ok(at(`cp "$src/lib/${lib}"`) < main, `${lib} is copied before main.js`);
+  assert.ok(at("rsync -a --delete") < main, "the mod's other files before main.js");
+  assert.match(loop, /--exclude '\/main\.js'/);
+  assert.match(loop, /--exclude '\/crew\.js'/);
+}
 const crew = read("lib/crew.js");
 assert.match(crew, /from "\.\/palstyles\.js"/);
 assert.match(crew, /palListStyleOf\(shared\("crew\.settings"\)\?\.palList\)/);

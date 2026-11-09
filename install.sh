@@ -61,14 +61,19 @@ for dir in "$src"/mods/crew-*; do
   dest="$home/mods/$name"
   if [[ -d "$dest" ]]; then mkdir -p "$backup/mods/$name"; rsync -a --exclude mascots "$dest/" "$backup/mods/$name/"; fi
   mkdir -p "$dest"
-  # Mirror the mod (keep the files Herdr writes itself: jsconfig.json, *.d.ts).
-  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' "$dir/" "$dest/"
+  # main.js goes in LAST, after the shared JS and the mod's other files: Herdr reloads a mod when
+  # its files change, and a reload that ran between main.js and crew.js kept the old crew.js (seen
+  # live 2026-11-08: Trees didn't show; nothing errored, as the old crew.js had every name). So:
+  # the shared JS (crew.js, pets.js, palstyles.js: the pal list's looks), then the mirror (keeping
+  # the files Herdr writes itself: jsconfig.json, *.d.ts; the shared JS and main.js are excluded,
+  # which also keeps --delete off them), then main.js, copied fresh so the last change is its own.
   cp "$src/lib/crew.js" "$dest/crew.js"
+  cp "$src/lib/pets.js" "$dest/pets.js"
+  cp "$src/lib/palstyles.js" "$dest/palstyles.js"
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
-  cp "$src/lib/pets.js" "$dest/pets.js"
-  # The pal list's looks (Project Pals settings → Pal list style), imported by crew.js.
-  cp "$src/lib/palstyles.js" "$dest/palstyles.js"
+  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/main.js' "$dir/" "$dest/"
+  cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
