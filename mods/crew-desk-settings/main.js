@@ -52,10 +52,10 @@ export default class CrewDeskSettings extends View {
 
   // A setting row: its label and what it does on the left, the control on the right (fixed height).
   row(d, id, label, sub, control) {
-    return div().id(id).flex().h(48).flex_none().items_center().justify_between().gap(12)
-      .child(div().flex().flex_col().min_w(0).gap(1)
+    return div().id(id).flex().min_h(48).py(6).flex_none().items_center().justify_between().gap(12)
+      .child(div().flex().flex_col().flex_1().min_w(0).gap(1)
         .child(div().truncate().text_size(13).line_height("16px").text_color(d.fg1).child(label))
-        .child(div().truncate().text_size(11).line_height("14px").text_color(d.fg3).child(sub)))
+        .child(div().text_size(11).line_height("14px").text_color(d.fg3).child(sub)))
       .child(control);
   }
 

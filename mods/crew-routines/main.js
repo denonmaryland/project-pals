@@ -124,7 +124,7 @@ export default class CrewRoutines extends View {
         .child(lead)
         .child(v_flex().flex_1().min_w(0).gap(1)
           .child(div().text_size(17).font_medium().text_color(t.foreground).child(title))
-          .child(div().truncate().text_size(12.5).text_color(t.dim).child(sub)))
+          .child(div().text_size(12.5).text_color(t.dim).child(sub)))
         .child(div().id("rt-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
           .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
           .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim))),
@@ -182,7 +182,7 @@ export default class CrewRoutines extends View {
 
     const ready = Boolean(this.bot && this.when.value().trim() && this.prompt.value().trim());
     const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child("Skipped while the pal is busy · quiet when there's nothing new"))
+      .child(div().flex_1().min_w(0).text_size(12).text_color(t.dim).child("Skipped while the pal is busy · quiet when there's nothing new"))
       .child(h_flex().gap(14).items_center().flex_none()
         .child(div().id("rf-cancel").cursor_pointer().text_size(13.5).text_color(t.muted).on_click((_e, cx) => { this.editing = null; this.pickBot = false; cx.notify(); }).child("Cancel"))
         .child(k.button("rf-save", isNew ? "Add routine" : "Save", ready, (_e, cx) => this.save(cx))));

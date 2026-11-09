@@ -301,13 +301,13 @@ export default class CrewHome extends View {
       sub = `working, its screen unchanged since ${homeAge(st.since)} ago`;
       acts = [B("go", `Open #${clip(st.channel, 18)}`, () => this.openTopic(`${st.bot}#${st.channel}`), { primary: true })];
     }
-    const line = sub == null ? div() : div().min_w(0).truncate().text_size(mono ? 11 : 12).line_height("16px").when(mono, (el) => el.font_family(d.mono)).text_color(mono ? d.fg4 : d.fg2).child(sub);
+    const line = sub == null ? div() : div().min_w(0).when(mono, (el) => el.truncate()).text_size(mono ? 11 : 12).line_height("16px").when(mono, (el) => el.font_family(d.mono)).text_color(mono ? d.fg4 : d.fg2).child(sub);
     return this.cardFrame(d, t, n, first, tag, title, line, acts);
   }
 
   cardFrame(d, t, n, first, tag, title, line, acts) {
     const status = n.kind === "approval" || n.kind === "question" || n.kind === "stuck" ? "blocked" : "idle";
-    return h_flex().id(`need-${n.key}`).h(CARD).flex_none().items_center().gap(12).pl(10).pr(12)
+    return h_flex().id(`need-${n.key}`).min_h(CARD).py(8).flex_none().items_center().gap(12).pl(10).pr(12)
       .when(!first, (el) => el.border_t_1().border_color(d.line))
       .child(this.face(n.pal, status, 44, t))
       .child(v_flex().flex_1().min_w(0).gap(3)
@@ -700,7 +700,7 @@ export default class CrewHome extends View {
       .child(navBtn("rv-term", "T", "Terminal", () => openTerminal()));
     const whoName = sp.who ? short(sp.who.split("#")[0]) : ownerName();
     const whoTopic = sp.topic && sp.topic.includes("#") ? `#${sp.topic.split("#")[1]}` : "";
-    const who = h_flex().h(56).mt(18).flex_none().items_center().gap(12)
+    const who = h_flex().min_h(56).mt(18).flex_none().items_center().gap(12)
       .child(this.face(sp.who ? sp.who.split("#")[0] : headName(), n.kind === "approval" || n.kind === "question" || n.kind === "stuck" ? "blocked" : "idle", 56, t))
       .child(v_flex().min_w(0).gap(2)
         .child(h_flex().gap(6).items_center().min_w(0)
@@ -708,7 +708,7 @@ export default class CrewHome extends View {
           .child(div().min_w(0).truncate().text_size(13).text_color(d.fg2).child(whoTopic))
           .child(div().w(4).flex_none())
           .child(this.tag(d, sp.tag[0], sp.tag[1])))
-        .child(div().truncate().text_size(12).text_color(d.fg2).child(sp.sub ?? "")));
+        .child(div().text_size(12).text_color(d.fg2).child(sp.sub ?? "")));
     const title = div().id("rv-title").h(64).mt(10).flex_none().max_w(880).overflow_hidden()
       .text_size(24).line_height("32px").font_weight(600).text_color(d.fg1).child(sp.title ?? "");
     // The context: the body, the command and its diff, links, images. It scrolls inside its space.
@@ -727,39 +727,39 @@ export default class CrewHome extends View {
       .on_click(() => exec("xdg-open", [`${appHome()}/data/${a.replace(/^data\//, "")}`]).catch(() => {}))
       .child(image(`data/${a.replace(/^data\//, "")}`).w(150).h(94)))));
     const rec = sp.rec;
-    const recBar = h_flex().id("rv-rec").h(52).mt(14).flex_none().max_w(900).items_center().gap(10).px(14).rounded(6).border_1()
+    const recBar = h_flex().id("rv-rec").min_h(52).py(8).mt(14).flex_none().max_w(900).items_center().gap(10).px(14).rounded(6).border_1()
       .border_color(rec ? "#4CA1F255" : d.line).bg(rec ? "#4CA1F20D" : "#00000000")
       .child(div().flex_none().text_size(11.5).font_weight(600).text_color(rec ? d.infoText : d.fg4).child(rec ? "RECOMMENDED" : "NO RECOMMENDATION"))
-      .child(rec ? h_flex().min_w(0).gap(6).items_center()
+      .child(rec ? h_flex().flex_1().min_w(0).gap(6).items_center()
           .child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg1).child(rec.option))
-          .when(Boolean(rec.why), (el) => el.child(div().min_w(0).truncate().text_size(13).text_color(d.body).child(`· ${short((rec.by ?? "").split("#")[0]) || "The asker"}: ${rec.why}`)))
-        : div().min_w(0).truncate().text_size(12.5).text_color(d.fg4).child("The asker didn't pick one. Chat about it if you're unsure."));
+          .when(Boolean(rec.why), (el) => el.child(div().flex_1().min_w(0).text_size(13).text_color(d.body).child(`· ${short((rec.by ?? "").split("#")[0]) || "The asker"}: ${rec.why}`)))
+        : div().flex_1().min_w(0).text_size(12.5).text_color(d.fg4).child("The asker didn't pick one. Chat about it if you're unsure."));
     // The options: large cards, numbered; the recommended one lit. Approve sits apart from Decline.
     const busy = Boolean(this.busy[n.key]);
     // Narrow with more than three options: full-width 40 px rows instead of cards side by side, so
     // no label is cut to "I…" (live test, a 400 px review area with five options).
     const asRows = compact && sp.options.length > 3;
     const optRow = asRows ? v_flex().id("rv-opts").mt(14).flex_none().max_w(900).gap(4)
-      : h_flex().id("rv-opts").h(72).mt(14).flex_none().max_w(900).gap(10);
+      : h_flex().id("rv-opts").min_h(72).mt(14).flex_none().max_w(900).gap(10).items_stretch();
     let num = 0;
     sp.options.forEach((op, j) => {
       const on = rec && op.label.toLowerCase() === rec.option.toLowerCase();
       const cap = op.cap ?? (++num <= 9 ? String(num) : null);
       if (asRows) {
-        optRow.child(h_flex().id(`rv-o-${j}`).h(40).flex_none().px(10).gap(8).items_center().rounded(6)
+        optRow.child(h_flex().id(`rv-o-${j}`).min_h(40).py(6).flex_none().px(10).gap(8).items_center().rounded(6)
           .bg(on ? "#26364A" : "#1C1C1E").border_1().border_color(on ? "#4CA1F288" : "#00000080")
           .when(!busy, (el) => el.cursor_pointer().hover((s) => s.border_color(on ? "#4CA1F2" : d.lineStrong)).on_click((_e, cx) => { op.run(cx); cx.notify(); }))
           .when(busy, (el) => el.opacity(0.5))
           .child(cap ? keyCap(cap) : div().w(16))
           .child(div().flex_none().max_w(160).truncate().text_size(13.5).font_weight(600).text_color(d.fg1).child(op.label))
           .when(Boolean(on), (el) => el.child(this.tag(d, "Recommended", d.infoText)))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(on ? "#C9DCEF" : d.fg2).child(op.does || "")));
+          .child(div().flex_1().min_w(0).text_size(12).text_color(on ? "#C9DCEF" : d.fg2).child(op.does || "")));
         return;
       }
       // Narrow: the key goes before the label ("1 Ink") instead of a cap at the right, so short
       // labels aren't cut to "I…" when four cards share a half-width window (live test).
       if (op.gapBefore) optRow.child(div().w(30).flex_none());
-      optRow.child(v_flex().id(`rv-o-${j}`).flex_1().min_w(0).h(72).px(compact ? 10 : 14).py(10).gap(3).rounded(7)
+      optRow.child(v_flex().id(`rv-o-${j}`).flex_1().min_w(0).min_h(72).px(compact ? 10 : 14).py(10).gap(3).rounded(7)
         .bg(on ? "#26364A" : "#1C1C1E").border_1().border_color(on ? "#4CA1F288" : "#00000080").shadow_xs()
         .when(!busy, (el) => el.cursor_pointer().hover((s) => s.border_color(on ? "#4CA1F2" : d.lineStrong)).on_click((_e, cx) => { op.run(cx); cx.notify(); }))
         .when(busy, (el) => el.opacity(0.5))
@@ -771,7 +771,7 @@ export default class CrewHome extends View {
           .when(!compact && Boolean(cap), (el) => el.child(keyCap(cap))))
         .child(h_flex().gap(6).items_center().min_w(0)
           .when(Boolean(on), (el) => el.child(this.tag(d, "Recommended", d.infoText)))
-          .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(on ? "#C9DCEF" : d.fg2).child(op.does || " "))));
+          .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(on ? "#C9DCEF" : d.fg2).child(op.does || " "))));
     });
     const chatWho = sp.topic ? `${short(sp.topic.split("#")[0])}${sp.topic.includes("#") ? ` #${sp.topic.split("#")[1]}` : ""}` : "the idea partner";
     const foot = h_flex().h(52).mt(10).flex_none().items_center().gap(8).border_t_1().border_color(d.lineSoft)
