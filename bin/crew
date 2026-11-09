@@ -2094,18 +2094,22 @@ def cmd_update(rest):
 
 def cmd_uninstall(rest):
     """Take Project Pals out (bin/crewuninstall.py). Like installing an update, it's the owner's: a
-    click in About (Uninstall). --dry-run only lists what would go, so anyone may run it."""
+    click in About (Uninstall), or the owner typing "uninstall" at their own terminal. The module
+    checks that itself (Grok T56 H1), so every way in is held the same. --dry-run only lists."""
     import crewuninstall
     bad = [a for a in rest if a not in ("--purge", "--dry-run", "--json")]
     if bad:
         die("pal uninstall [--purge] [--dry-run] [--json]")
     dry, as_json = "--dry-run" in rest, "--json" in rest
     if not dry:
-        update_log(f"uninstall{' --purge' if '--purge' in rest else ''} asked by {f'terminal {ME}' if ME else 'the app or a shell'}")
-        if not click_of():
-            update_log("uninstall refused: no click from Project Pals")
-        require_owner(f"uninstalling Project Pals is {OWNER}'s to do (About → Uninstall, or ./install.sh --uninstall in a terminal)")
-    out = crewuninstall.uninstall(purge="--purge" in rest, dry=dry, log=(lambda *_: None) if as_json else print)
+        update_log(f"uninstall{' --purge' if '--purge' in rest else ''} asked by {f'terminal {ME}' if ME else 'the app or a shell'}"
+                   f"{'' if click_of() else ', no click'}")
+    try:
+        out = crewuninstall.uninstall(purge="--purge" in rest, dry=dry, log=(lambda *_: None) if as_json else print,
+                                      click=click_of(), args=owner_args())
+    except crewuninstall.NotAllowed as e:
+        update_log(f"uninstall refused: {e}")
+        die(str(e))
     if not dry and "--purge" not in rest:   # (a purge took the log with it: don't make it again)
         update_log(f"uninstall done: removed {len(out['removed'])}, restored {len(out['restored'])}")
     if as_json:

@@ -306,10 +306,32 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   `below` prints one `note:` line. `crew-install.json` records `herdr: {app, core, supported, warn,
   range}`; About shows the first warning in red under the status when `supported` is false; `pal
   version` checks the Herdr on PATH against the recorded range.
-- **Uninstall** (T48): About's footer has Uninstall beside Roll back. It asks in place ("Uninstall
+- **Uninstall** (T48, T57): About's footer has Uninstall beside Roll back. It asks in place ("Uninstall
   Project Pals?" in the blocked color, Keep it / Uninstall), then runs `pal uninstall --json` with
   the owner's click token. `./install.sh --uninstall [--purge] [--dry-run]` runs the same code
-  (`bin/crewuninstall.py`) from a checkout; `pal uninstall --dry-run` needs no click. Order: stop
+  (`bin/crewuninstall.py`) from a checkout. `crewuninstall.uninstall()` itself checks the owner on
+  every non-dry run, whoever calls it: a one-time click token for exactly its arguments
+  (`["uninstall", …flags]`; pal passes its own `owner_args()`), or, with no click, "uninstall" typed
+  on `/dev/tty` (opened with `os.open`: a text `"r+"` open fails on a tty) when nothing above it is
+  an agent (`agent_above`, T58): not `HC_TERMINAL_ID`'s terminal, and, walking `/proc` parents, no
+  ancestor whose `comm` is an agent program (`AGENT_COMMS`) or whose own environment's
+  `HC_TERMINAL_ID` has an agent status (`hc get --json` `.status`; unknown counts as an agent). That
+  refuses a pal's `expect` / `script` / pty even after `env -u HC_TERMINAL_ID`. A pal's shell has no
+  controlling terminal. `--purge` prints `purge_list()` (the `data/crew-*` names, backups, cache)
+  before asking. Refused: exit 3, nothing changed. `--dry-run` needs neither. The gate's
+  `uninstall-indirect` check (`crewguard.runs_uninstall`) holds a pty wrapper (`expect`, `script`,
+  `unbuffer`, …) on a line naming `install.sh … --uninstall` or `crewuninstall`, and interpreter code
+  importing `crewuninstall`, naming `CLICKS` / `click_ok`, or running the uninstall under a pty.
+  Herdr's home itself, and every folder between `$HOME` and it, must not be a link
+  (`app_home_unsafe`).
+  Every delete and write goes through `unsafe()`: each folder between Herdr's home or `$HOME` and
+  the path must be a real folder resolving where its path says; a last-part link is unlinked; a
+  config file that's a link is never written (temp file `O_EXCL | O_NOFOLLOW`, then rename). What's
+  refused is reported in `notes`. `install.sh` ends with `crewuninstall.py record-installed SRC`
+  (the manifest, `crew-footprint.json` `installed`); uninstall removes only listed paths, and for an
+  install without one, only paths whose content is Project Pals' (`crew.js` starting `// Project
+  Pals`, a bin with a marker, …). Hook entries are ours only when the command is exactly
+  `~/.local/bin/crew-hook[-fast] <event>` (install-hooks.py, Roll back and uninstall alike). Order: stop
   and disable crewd and remove its unit; take Project Pals' entries out of `~/.claude/settings.json`
   (crew-hook entries, the crew-statusline wrapper back to its original command or gone),
   `~/.gemini/config/hooks.json` (`project-pals`) and `keys.json` (only install's exact key → action
@@ -986,6 +1008,16 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   without an id is named "HH:MM #topic" and must match only one.
 - **The dream's housekeeping runs every night** (M7): expired proposals reopen their patterns and
   quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
+- **Tests must never wait on the uninstall prompt**: run uninstall subprocesses with
+  `start_new_session=True` (no controlling terminal), as `tests/test_uninstall.py` does; the release
+  preflight runs in a terminal. The typed path is tested in a `pty.fork()` inside a driver started
+  with `setsid -f`, so its parent is the user's service manager: run under a pal, the pal would
+  otherwise be above it and the owner's path would be refused.
+- **The uninstall checks stop mistakes, not a determined pal** (T58, Orca's bar). Pals run as you:
+  `setsid -f` around an `expect` (the same trick the test uses), a script file written first, or
+  deleting the files by hand all get past them. README says so.
+- **Roll back still writes `keys.json` and `~/.claude/settings.json` with a rename**, which would
+  replace a symlinked one with a plain file; install and uninstall skip linked files (T57).
 - **Uninstall can only be exact from the first install that ran `record`** (T48). An install from
   before it has no `crew-originals`: Project Pals' entries still come out, but a file it created
   (an otherwise empty `~/.claude/settings.json`) stays, and the files keep install's JSON
@@ -1231,7 +1263,11 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   (own hooks and status line) and `~/.gemini/config/hooks.json`, after one or two installs, the
   same; without `--purge` only `data/` and `.crew-backups` differ (`tests/test_uninstall.py`).
   `pal uninstall` without a click is refused and changes nothing; with a token for
-  `uninstall --json` it runs. In a sandbox Herdr on the pals layout with About open, it ends on
+  `uninstall --json` it runs. `./install.sh --uninstall`, `… # --dry-run`, `python3 -c 'import
+  crewuninstall; crewuninstall.uninstall(purge=True)'` and a token for other arguments are refused;
+  "uninstall" typed in a pty works, and not when `hc` reports an agent there. With `~/.local/lib`,
+  `mods`, `~/.claude` or `data` a link, and with `settings.json` a link, nothing past the link
+  changes (`OnlyTheOwner`, `NoLinksFollowed`, `Lows`). In a sandbox Herdr on the pals layout with About open, it ends on
   `main` with no overlays and no errors in `herdr-app status`.
 - `install.sh` with a fake `herdr-app --version` of 0.2.1 and `hc --version` of 0.1.9 prints the
   WARNING and installs; with 0.1.14 / 0.1.19 it's quiet (`tests/test_compat.py`).

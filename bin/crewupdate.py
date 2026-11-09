@@ -129,19 +129,29 @@ def _claude_settings():
     return Path.home() / ".claude" / "settings.json"
 
 
+def _our_hook(h):
+    """Exactly a hook command install-hooks.py writes (not any command mentioning crew-hook: Grok T56)."""
+    bindir = re.escape(str(Path.home() / ".local" / "bin"))
+    return isinstance(h, dict) and bool(re.match(r"^%s/crew-hook(-fast)? [a-z][a-z-]*$" % bindir, str(h.get("command", "")).strip()))
+
+
+def _our_statusline(sl):
+    return isinstance(sl, dict) and str(sl.get("command", "")).strip() == str(Path.home() / ".local" / "bin" / "crew-statusline")
+
+
 def config_state():
     keys = load_json(HOME / "keys.json", None)
     g = keys.get("global", {}) if isinstance(keys, dict) else {}
     st = load_json(_claude_settings(), None)
     hooks = (st or {}).get("hooks", {}) if isinstance(st, dict) else {}
-    ours = {ev: [e.get("matcher") for e in hooks.get(ev, []) if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
+    ours = {ev: [e.get("matcher") for e in hooks.get(ev, []) if any(_our_hook(h) for h in e.get("hooks", []))]
             for ev in MANAGED_EVENTS}
     sl = (st or {}).get("statusLine") if isinstance(st, dict) else None
     agy = load_json(_agy_hooks(), None)
     return {"keys_file": keys is not None, "keys": {k: g.get(k) for k in MANAGED_KEYS},
             "settings_file": st is not None, "hooks": ours,
             "agy_hooks": isinstance(agy, dict) and AGY_HOOKS_KEY in agy,
-            "statusline_wrapped": bool(sl and "crew-statusline" in str(sl.get("command", "")))}
+            "statusline_wrapped": _our_statusline(sl)}
 
 
 def restore_config(snap, log=print):
@@ -185,7 +195,7 @@ def restore_config(snap, log=print):
         for ev in MANAGED_EVENTS:
             was = snap_hooks.get(ev) or []
             entries = hooks.get(ev, [])
-            ours = [e for e in entries if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
+            ours = [e for e in entries if any(_our_hook(h) for h in e.get("hooks", []))]
             if not was:
                 # Not there before this install: take Project Pals' entries out again.
                 if ours:
@@ -201,7 +211,7 @@ def restore_config(snap, log=print):
         if not hooks and (not had_hooks or json.dumps(st, sort_keys=True) != before):
             st.pop("hooks")   # nor an empty "hooks": {} that Roll back itself emptied or made
         sl = st.get("statusLine")
-        if not snap.get("statusline_wrapped") and sl and "crew-statusline" in str(sl.get("command", "")):
+        if not snap.get("statusline_wrapped") and _our_statusline(sl):
             orig = (DATA / "crew-statusline-original")
             if orig.exists():
                 st["statusLine"] = {**sl, "command": orig.read_text().strip()}

@@ -431,7 +431,9 @@ class UninstallRule(unittest.TestCase):
     HELD = ["./install.sh --uninstall", "bash install.sh --uninstall --purge",
             "cd ~/Projects/project-pals && ./install.sh --uninstall",
             "sh /home/x/project-pals/install.sh --purge --uninstall",
-            "env HOME=/tmp/x ./install.sh --uninstall"]
+            "env HOME=/tmp/x ./install.sh --uninstall",
+            # Grok T56: --dry-run in a comment isn't an argument; the shell runs the uninstall.
+            "./install.sh --uninstall # --dry-run", "./install.sh --uninstall --purge #--dry-run"]
     ALLOWED = ["./install.sh", "./install.sh --no-helpers", "./install.sh --uninstall --dry-run",
                "./install.sh --dry-run --uninstall", "grep -n uninstall install.sh", "./install.sh --uninstall --help"]
 
@@ -442,3 +444,46 @@ class UninstallRule(unittest.TestCase):
     def test_allowed(self):
         for cmd in self.ALLOWED:
             self.assertIsNone(rule(cmd), cmd)
+
+    # Grok's T56 re-check, as run: a pty program around it, and code that loads the uninstaller or
+    # mints a click through it.
+    INDIRECT = [
+        "expect -c 'spawn ./install.sh --uninstall; expect \"Type uninstall\"; send \"uninstall\\r\"; expect eof'",
+        "script -qc './install.sh --uninstall' /dev/null <<< uninstall",
+        "script -qc 'python3 -c \"import crewuninstall as u; u.uninstall()\"' /dev/null",
+        "unbuffer ./install.sh --uninstall --purge",
+        "python3 -c 'import crewuninstall; crewuninstall.uninstall()'",
+        "env -u HC_TERMINAL_ID python3 -c 'import crewuninstall as u; u.uninstall()'",
+        "cd bin && python3 -c 'import sys; sys.path.insert(0, \".\"); from crewuninstall import uninstall; uninstall(purge=True)'",
+        "python3 -c \"import json,time,crewuninstall as u; (u.CLICKS / ('ab'*16 + '.json')).write_text(json.dumps({'args': ['uninstall'], 'at': time.time()*1000})); u.uninstall(click='ab'*16)\"",
+        "python3 - <<'PY'\nimport sys\nsys.path.insert(0, 'bin')\nimport crewuninstall\ncrewuninstall.main(['uninstall'])\nPY",
+        "python3 -c 'import pty; pty.spawn([\"./install.sh\", \"--uninstall\"])'",
+        "python3 bin/crewuninstall.py uninstall --purge",
+        "node -e 'require(\"node-pty\").spawn(\"./install.sh\", [\"--uninstall\"])'",
+    ]
+    INDIRECT_ALLOWED = [
+        "python3 bin/crewuninstall.py uninstall --dry-run", "python3 -m py_compile bin/crewuninstall.py",
+        "python3 -m unittest tests.test_uninstall", "grep -n crewuninstall bin/crew", "git add bin/crewuninstall.py",
+        "script -qc 'ls -la' /dev/null", "python3 -c 'import pty; print(pty.STDIN_FILENO)'",
+    ]
+
+    def test_indirect_held(self):
+        for cmd in self.INDIRECT:
+            self.assertIn(rule(cmd), ("uninstall", "uninstall-indirect", "owner-click"), cmd)
+            self.assertTrue(crewguard.runs_uninstall(cmd) or rule(cmd) == "uninstall", cmd)
+
+    def test_indirect_allowed(self):
+        for cmd in self.INDIRECT_ALLOWED:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_an_older_policy_gets_the_new_rules(self):
+        """Grok T56: a policy saved at the version that shipped the old pattern is upgraded."""
+        old = {**crewguard.DEFAULT, "defaults_version": 12,
+               "guarded": [dict(r, pattern=r"(?!.*--dry-run)(?:(?:ba)?sh\s+)?(?:\S*/)?install\.sh\b.*\s--uninstall\b")
+                           if r["name"] == "uninstall" else r for r in crewguard.DEFAULT["guarded"] if r["name"] != "uninstall-indirect"]}
+        crewguard.save_json(crewguard.POLICY, old)
+        try:
+            self.assertEqual(rule("./install.sh --uninstall # --dry-run"), "uninstall")
+            self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)

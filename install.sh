@@ -54,7 +54,10 @@ fi
 for need in rsync python3; do command -v "$need" >/dev/null || { echo "Project Pals needs $need; install it and run this again" >&2; exit 1; }; done
 
 # Which Herdr this release works with (pals.json "herdr"): outside that range, say so loudly, then go on.
-python3 "$src/bin/crewcompat.py" "$src/pals.json" || true
+# If the check itself breaks, say that loudly too (Grok T56): the install goes on, unchecked.
+if ! python3 "$src/bin/crewcompat.py" "$src/pals.json"; then
+  echo "WARNING: couldn't check which Herdr this is (the check failed, above). Installing anyway; Project Pals needs Herdr 0.1.8+ and herdr-core 0.1.11+, below 0.2." >&2
+fi
 
 # What exists before this install touches anything (and the person's config files as they are now,
 # the first time), so an uninstall can take out exactly what Project Pals added (bin/crewuninstall.py).
@@ -118,7 +121,9 @@ fi
 # ctrl-shift-m to crew-roster.mode in keys.json's global map: take that one binding out, and only
 # when it's exactly ours (that key, that action, in "global"). keys.json is backed up first; any
 # other binding, or the same action on another key, is left alone.
-if [[ -f "$home/keys.json" ]] && grep -q '"crew-roster.mode"' "$home/keys.json"; then
+# A keys.json that is a link (a dotfiles manager's) is never written: a rename would replace the link.
+[[ -L "$home/keys.json" ]] && echo "skipped keys.json's shortcuts: it's a link; bind them yourself (README: What it changes)"
+if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && grep -q '"crew-roster.mode"' "$home/keys.json"; then
   mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
   python3 - "$home/keys.json" <<'PY' || echo "left keys.json as it was (couldn't read it)"
 import json, os, sys
@@ -144,7 +149,7 @@ fi
 # the panel and the command bar still open from the header, the hero and the menus.
 for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home"; do
   read -r key action what <<<"$pair"
-  if [[ -f "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
+  if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
     python3 - "$home/keys.json" "$key" "$action" "$what" <<'PY2' || echo "left keys.json as it was (couldn't read it)"
 import json, os, sys
@@ -389,6 +394,9 @@ tmp = log + ".tmp"
 open(tmp, "w").write("\n".join(lines) + "\n")
 os.replace(tmp, log)
 PY
+
+# The manifest: what this install placed, so an uninstall removes only that (bin/crewuninstall.py).
+HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record-installed "$src" || echo "couldn't record what was installed; an uninstall will check each file's content instead" >&2
 
 echo "installed Project Pals $version into $home"
 [[ -d "$backup" ]] && echo "previous copies: $backup"

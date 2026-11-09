@@ -11,6 +11,16 @@
   `keys.json`, `~/.claude/settings.json` and `~/.gemini/config/hooks.json` go back to how they
   were. `pal uninstall` needs your click; the approval gate holds a pal's
   `./install.sh --uninstall`.
+- **Uninstall is only yours, and never follows a link** (Grok's review). Every way in needs your
+  click or you typing `uninstall` at your own terminal (not one with an agent in it or above it),
+  checked inside the uninstaller itself; the approval gate also holds the obvious wrappers
+  (`expect`, `script`, code importing the uninstaller). A symlinked Herdr home, folder or config
+  file is left alone and reported, and only what the install recorded placing is removed. These
+  stop mistakes, not a pal determined to get around them: pals run as you.
+- **Your own hooks stay yours.** Install, Roll back and uninstall touch only hook entries that are
+  exactly Project Pals' commands; a hook of yours that mentions `crew-hook` was rewritten before.
+  A config file that is a symlink (a dotfiles manager's) is no longer replaced with a plain file.
+- A crash in the Herdr version check is shown as a warning instead of passing silently.
 
 ## 0.4.0: the Desk
 
