@@ -619,13 +619,18 @@ def cmd_diff(spaces, spec, mode):
 
 def cmd_land(spaces, spec, check=None):
     space, tab = find(spec, spaces)
-    wt = worktree_of(space, tab)
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
-    if ME and is_bot_terminal(ME) and not crewguard.recently_used(ME, "land"):
-        s, t = where_of(ME, spaces)
-        held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
-        if held:
-            die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+    # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
+    # terminal ID isn't the owner (Grok review H1).
+    if ME and is_bot_terminal(ME):
+        if not crewguard.recently_used(ME, "land"):
+            s, t = where_of(ME, spaces)
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
+            if held:
+                die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+    else:
+        require_owner("landing a branch")
+    wt = worktree_of(space, tab)
     if git(wt["path"], "status", "--porcelain"):
         die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
     repo = wt["repo"]
@@ -1004,8 +1009,7 @@ def cmd_desk(spaces, rest):
         crewdesk.tidy()
         print("\n".join(f"{k}: {v}" for k, v in out.items()) or "every card is as Project Pals wrote it")
     elif sub == "prune":
-        if ME and is_bot_terminal(ME):
-            die(f"pruning the archive is {OWNER}'s to do, not a pal's")
+        require_owner("pruning the Desk's archive")   # a click, not "hc didn't say pal" (Grok review H1)
         pos, o = opts(args, ("older",))
         m = re.fullmatch(r"(\d+)d", o.get("older") or "")
         if not m:
@@ -1747,8 +1751,9 @@ def cmd_settings(rest):
         st = settings()
         print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
         return
-    if ME and is_bot_terminal(ME):
-        die("settings are the owner's to change, not a pal's")
+    # Changing one is the owner's: a click in Project Pals (About, Settings → Desk). A missing or
+    # unknown terminal ID isn't the owner (Grok review H1).
+    require_owner("changing settings")
     key, val = rest[0], " ".join(rest[1:]).strip()
     if key.startswith("desk."):
         # The Desk's settings apply at once (crewd reads them each time), so no restart.
@@ -1803,10 +1808,12 @@ def cmd_update(rest):
     if sub in ("apply", "rollback"):
         who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
         update_log(f"{sub} started by {who}, installed {crewupdate.installed().get('version', '?')}")
-    # Installing or rolling back code is the owner's call, never a pal's.
-    if sub in ("apply", "rollback") and ME and is_bot_terminal(ME):
-        update_log(f"{sub} refused: {ME} is a pal's terminal")
-        die(f"updates are {OWNER}'s to install (About → Update), not a pal's")
+    # Installing or rolling back code is the owner's call: a click in Project Pals (About, Update now),
+    # never a pal's, and not anyone hc doesn't call a pal (Grok review H1).
+    if sub in ("apply", "rollback"):
+        if not click_of():
+            update_log(f"{sub} refused: no click from Project Pals")
+        require_owner(f"updates are {OWNER}'s to install (About → Update)")
     if sub in ("apply", "rollback"):
         crewupdate.run_state(fresh=True, action=sub, state="running", step="starting", started=time.time(), pid=os.getpid(),
                              **{"from": crewupdate.installed().get("version")})
@@ -2038,9 +2045,8 @@ def main(argv):
         return cmd_settings(rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
-        # routines aimed at it follow. Not from a pal's terminal: that's the owner's to do.
-        if ME and is_bot_terminal(ME):
-            die("renaming pals is the owner's to do, not a pal's")
+        # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).
+        require_owner("renaming pals")
         if len(rest) != 2 or not rest[1].strip():
             die('pal renamed "Old name" "New name"')
         renamed(rest[0], rest[1].strip())

@@ -6,7 +6,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { theme, props, closeOverlay, notify } from "herdr";
-import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetToggle, pebble, crewCli } from "./crew.js";
+import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetToggle, pebble, crewCli, ownerCli } from "./crew.js";
 
 // key → [label, what it does, step, min, max]
 const NUMBERS = [
@@ -42,7 +42,7 @@ export default class CrewDeskSettings extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       const v = typeof value === "boolean" ? (value ? "on" : "off") : String(value);
-      try { await crewCli(["settings", `desk.${key}`, v]); }
+      try { await ownerCli(["settings", `desk.${key}`, v]); }   // the owner's click (Grok review H1)
       catch (e) { notify({ title: "Couldn't change it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.load(cx);
     });

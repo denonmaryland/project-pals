@@ -142,6 +142,44 @@ class OwnerOnlyByClick(unittest.TestCase):
         self.assertEqual(out.stdout.strip(), "Night shift", "any other name is still allowed")
 
 
+class OwnerCommandsNeedTheClick(unittest.TestCase):
+    """Grok review H1: settings, update apply / rollback, desk prune, renamed and land were refused only
+    when hc called the terminal a pal, so no terminal ID, an unknown one, or hc failing let them run."""
+    REFUSED = [("settings", "bypass", "on"), ("settings", "desk.partner_sends_as_itself", "on"),
+               ("settings", "owner", "Mallory"), ("update", "apply", "--json"), ("update", "rollback"),
+               ("desk", "prune", "--older", "1d"), ("renamed", "Worker", "Thief"), ("land", "Worker#general")]
+
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+        self.settings = (self.data / "crew-settings.json").read_text()
+
+    def refused(self, env):
+        for args in self.REFUSED:
+            r = pal(env, *args)
+            self.assertNotEqual(r.returncode, 0, args)
+            self.assertIn("click in Project Pals", r.stderr, args)
+        self.assertEqual((self.data / "crew-settings.json").read_text(), self.settings)
+        self.assertFalse((self.data / "crew-desk-settings.json").exists() and "partner_sends_as_itself\": true" in (self.data / "crew-desk-settings.json").read_text())
+
+    def test_no_terminal_id(self):
+        self.refused(self.env)
+
+    def test_an_id_hc_doesnt_know(self):
+        (self.root / "shims" / "hc").write_text("#!/bin/sh\nexit 1\n")   # hc failing: not "not a pal"
+        self.refused({**self.env, "HC_TERMINAL_ID": "t-pal-real"})
+
+    def test_the_click_still_works(self):
+        args = ["settings", "bypass", "on"]
+        r = pal(self.env, *args, "--click", click(self.data, args))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(json.loads((self.data / "crew-settings.json").read_text())["bypass"])
+        args = ["settings", "desk.triage", "off"]
+        self.assertEqual(pal(self.env, *args, "--click", click(self.data, args)).returncode, 0)
+        r = pal(self.env, "settings")   # reading them needs nothing
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("bypass permissions for new pals: on", r.stdout)
+
+
 class QueueWritesAreHeld(unittest.TestCase):
     def test_guard(self):
         root, env, data = sandbox()

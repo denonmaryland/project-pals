@@ -218,8 +218,8 @@ export default class CrewRoster extends View {
     cx.spawn(async (cx) => {
       try {
         // The head pal's name is a setting; that path also renames its record.
-        if (rec?.god) await crewCli(["settings", "head", name]);
-        else { await crewCli(["renamed", old, name]); if (rec) updateBot(rec, (b) => ({ ...b, name })); }
+        if (rec?.god) await ownerCli(["settings", "head", name]);   // the owner renamed it in Herdr: the app's token (Grok review H1)
+        else { await ownerCli(["renamed", old, name]); if (rec) updateBot(rec, (b) => ({ ...b, name })); }
         this.seen[moved.id] = name;
         save();
         notify({ title: `${old.split(" - ")[0]} is now ${name.split(" - ")[0]}`, body: "Its memory and routines moved with it.", level: "success", timeout: 3000 });

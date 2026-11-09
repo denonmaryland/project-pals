@@ -70,7 +70,7 @@ def save_json(path, data):
 
 # ── settings ─────────────────────────────────────────────────────────────────────────────────
 # data/crew-settings.json: {"owner": the person the pals work for, "bypass": start new pals with
-# permissions bypassed}. Set them in About → Settings, or: pal settings owner "Sam" | bypass on|off.
+# permissions bypassed}. Set them in About → Settings (pal settings needs the owner's click from the app).
 SETTINGS = DATA / "crew-settings.json"
 
 

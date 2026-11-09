@@ -35,7 +35,7 @@ export default class CrewUpdate extends View {
       this.u = await readUpdate();
       // The run file caught up with the button: from here on it's the truth.
       if (this.started && this.u.run && (this.u.run.started ?? 0) * 1000 >= this.started - 2000) this.started = 0;
-      if (this.started && Date.now() - this.started > 20000) { this.started = 0; this.error = "The update didn't start. Try again, or run pal update apply in a terminal."; }
+      if (this.started && Date.now() - this.started > 20000) { this.started = 0; this.error = "The update didn't start. Try again, or use About → Update."; }
       if (first && (props()?.check || Date.now() / 1000 - this.u.checked > UPDATE_CHECK_EVERY)) this.check(cx);
       cx.notify();
     });

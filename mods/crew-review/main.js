@@ -103,7 +103,7 @@ export default class CrewReview extends View {
     if (!tg) return;
     cx.spawn(async (cx) => {
       try {
-        const out = await crewCli(["land", tg.spec]);
+        const out = await ownerCli(["land", tg.spec]);   // the Land click (Grok review H1)
         notify({ title: `Landed ${this.data.branch}`, body: out.trim().slice(0, 160), level: "success", timeout: 4000 });
         closeOverlay(props().overlay);
       } catch (e) { notify({ title: "Not landed", body: String(e.message ?? e).slice(0, 300), level: "warning", timeout: 8000 }); }

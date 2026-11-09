@@ -221,7 +221,7 @@ elif [[ "$(crewd_code)" != "$crewd_before" ]] && command -v systemctl >/dev/null
 fi
 
 # Settings: who the pals work for (your git name, else your username) and bypass (off). Set once;
-# change them in About → Settings or with: pal settings owner "Name" | bypass on|off.
+# change them in About → Settings (pal settings changes them only with the owner's click from the app).
 mkdir -p "$home/data"
 if [[ ! -f "$home/data/crew-settings.json" ]]; then
   python3 -c 'import sys, json; sys.path.insert(0, sys.argv[1]); import crewlib; json.dump({"owner": crewlib._default_owner(), "bypass": False}, open(sys.argv[2], "w"), indent=2)' \

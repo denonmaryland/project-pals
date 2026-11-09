@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
+import { crewCli, ownerCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -62,7 +62,8 @@ export default class CrewAbout extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const out = JSON.parse(await crewCli([...args, "--json"]));
+        // Installing and rolling back are the owner's: with the click's token (Grok review H1).
+        const out = JSON.parse(await (kind === "check" ? crewCli : ownerCli)([...args, "--json"]));
         if (kind === "update") notify({ title: out.updated ? `Updated to ${out.version}` : "Already up to date", level: "success", timeout: 4000 });
         if (kind === "rollback") notify({ title: "Put the previous version back", level: "success", timeout: 4000 });
       } catch (e) {
@@ -81,7 +82,7 @@ export default class CrewAbout extends View {
     if (!name || this.savingOwner || name === (shared("crew.settings")?.owner ?? "") || name === this.savedOwner) return;
     this.savingOwner = true;
     cx.spawn(async () => {
-      try { await crewCli(["settings", "owner", name]); this.savedOwner = name; notify({ title: `Pals now work for ${name}`, level: "success", timeout: 2500 }); }
+      try { await ownerCli(["settings", "owner", name]); this.savedOwner = name; notify({ title: `Pals now work for ${name}`, level: "success", timeout: 2500 }); }
       catch (e) { notify({ title: "Couldn't save your name", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.savingOwner = false;
     });
@@ -92,7 +93,7 @@ export default class CrewAbout extends View {
     if (!name || this.savingHead || name === (shared("crew.settings")?.head ?? "") || name === this.savedHead) return;
     this.savingHead = true;
     cx.spawn(async () => {
-      try { await crewCli(["settings", "head", name]); this.savedHead = name; notify({ title: `Your head pal is now ${name}`, body: "It picks up the new name in its next session.", level: "success", timeout: 3500 }); }
+      try { await ownerCli(["settings", "head", name]); this.savedHead = name; notify({ title: `Your head pal is now ${name}`, body: "It picks up the new name in its next session.", level: "success", timeout: 3500 }); }
       catch (e) { notify({ title: "Couldn't rename the head pal", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.savingHead = false;
     });
@@ -100,7 +101,7 @@ export default class CrewAbout extends View {
 
   setBypass(on, cx) {
     cx.spawn(async () => {
-      try { await crewCli(["settings", "bypass", on ? "on" : "off"]); }
+      try { await ownerCli(["settings", "bypass", on ? "on" : "off"]); }
       catch (e) { notify({ title: "Couldn't change it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
     });
   }
