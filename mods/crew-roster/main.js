@@ -4,17 +4,18 @@
 // blocked). Inbox tab: every channel that needs you, across all pals and machines.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, Scrollbar, VirtualListScrollHandle, v_virtual_list } from "gpui-base";
+import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
   crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
-  migrateChannelKeys, linkRecords, updateBot,
+  migrateChannelKeys, linkRecords, updateBot, refreshMachines,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab } from "./crew.js";
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab,
+  scrollArea, scrollState, scrollTo, scrollIntoView } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -48,6 +49,9 @@ export default class CrewRoster extends View {
     // Channel data follows tab ids, so renames keep categories and briefs.
     migrateChannelKeys();
     cx.timer.every(5000, () => { migrateChannelKeys(); linkRecords(); });
+    // The machines (hc machine ls) and this computer, for every mod: shared "crew.machines".
+    cx.spawn(async () => { await refreshMachines(); });
+    cx.timer.every(20000, (cx) => cx.spawn(async () => { await refreshMachines(); }));
     // New channels get a color from the theme's palette right away.
     autoColor();
     // A pal renamed (from its menu or in Herdr): its memory and routines follow the new name.
@@ -106,10 +110,9 @@ export default class CrewRoster extends View {
     this.taskInput = InputState.new({ placeholder: "Add a task, @Pal to assign it" });
     this.taskInput.on("submit", (_e, cx) => this.addTask(cx));
     // The hero's channel search (its header's magnifier): filters as you type, Esc clears.
-    this.chSearch = InputState.new({ placeholder: "Search channels" });
+    this.chSearch = InputState.new({ placeholder: "Search topics" });
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
-    this.chScroll = VirtualListScrollHandle.new();
     this.chShownKey = null;
     // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals,
     // crew-roster.profile (the profile panel; Ctrl+Shift+I).
@@ -119,7 +122,7 @@ export default class CrewRoster extends View {
         if (c === "hire") this.hire();
         else if (c === "routines") this.routines();
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
-        else if (c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
+        else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
         else if (c === "profile") togglePanel(panelTab());
@@ -240,14 +243,14 @@ export default class CrewRoster extends View {
         .child(div().size(36).flex().items_center().justify_center().rounded(6).hover((s) => s.bg(a(t.foreground, "10")))
           .child(div().text_size(15).font_weight(300).text_color(urgent ? t.blocked : t.done).child(String(total))))))
       .child(div().w(28).h(1).bg(a(t.foreground, "14")))
-      .child(v_flex().id("rail-list").flex_1().min_h(0).overflow_y_scrollbar().items_center().gap(6)
+      .child(scrollArea(ds(t), "rail-list", v_flex().items_center().gap(6)
         // Faces only here, so each one names its pal on hover.
         .children(rows.map(({ space, bot }) => div().id(`rail-${space.id}`).tooltip(bot.name).relative().size(44).flex().items_center().justify_center().rounded(6).cursor_pointer()
           .when(space.active, (el) => el.bg(a(t.accent, "26")))
           .when(!space.active, (el) => el.hover((s) => s.bg(a(t.foreground, "0c"))))
           .on_click(() => this.open(space))
           .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
-          .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked))))))
+          .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked)))))).flex_1().min_h(0).w_full())
       .child(icon("rail-hire", "plus", () => this.hire()))
       .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU })));
   }
@@ -281,7 +284,7 @@ export default class CrewRoster extends View {
     return div().flex_none().px(7).py(2).rounded(4).text_size(11.5)
       .bg(blocked ? a(t.blocked, "22") : a(t.foreground, "0c"))
       .text_color(blocked ? t.blocked : t.dim)
-      .child(blocked ? `${blocked} blocked` : `${n} ch`);
+      .child(blocked ? `${blocked} blocked` : `${n} topic${n === 1 ? "" : "s"}`);
   }
 
   segments(t, bots, waiting, extra = 0, first = "Pals") {
@@ -328,10 +331,10 @@ export default class CrewRoster extends View {
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
         // An AGENTS.md / CLAUDE.md edit: the exact change it would make, in full (review H2). Approving
         // lets exactly this edit, to this version of the file, through once.
-        .when(Boolean(ap.diff), (el) => el.child(v_flex().id(`ap-diff-${ap.id}`).max_h(280).overflow_y_scrollbar().px(10).py(6).rounded(6).bg(a(t.canvas, "aa"))
+        .when(Boolean(ap.diff), (el) => el.child(scrollArea(ds(t), `ap-diff-${ap.id}`, v_flex().px(10).py(6)
           .children(ap.diff.split("\n").map((line, i) => div().id(`ap-dl-${ap.id}-${i}`).text_size(11.5).font_family("JetBrains Mono")
             .text_color(line.startsWith("+") && !line.startsWith("+++") ? t.working ?? t.ansi2 : line.startsWith("-") && !line.startsWith("---") ? t.blocked : t.muted)
-            .child(line || " ")))))
+            .child(line || " ")))).max_h(280).rounded(6).bg(a(t.canvas, "aa"))))
         // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
         .child(h_flex().gap(8).justify_between()
           .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
@@ -414,8 +417,9 @@ export default class CrewRoster extends View {
       .child(div().text_size(12).text_color(t.muted).child(`${m.summary} · ${m.count}x, ${m.pals?.length ?? 0} pal(s), ~${m.minutes}m lost`))
       .children((m.quotes ?? []).map((q, i) => div().id(`dr-q-${pr.id}-${i}`).pl(8).border_l_2().border_color(a(t.foreground, "22")).text_size(12).text_color(t.dim).child(`“${q}”`)))
       .child(shown
-        ? v_flex().id(`dr-text-${pr.id}`).max_h(320).overflow_y_scrollbar().px(10).py(7).rounded(6).bg(a(t.canvas, "aa"))
-          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " ")))
+        ? scrollArea(ds(t), `dr-text-${pr.id}`, v_flex().px(10).py(7)
+          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " "))))
+          .max_h(320).rounded(6).bg(a(t.canvas, "aa"))
         : div().id(`dr-show-${pr.id}`).px(10).py(7).rounded(6).border_1().border_color(a(t.foreground, "22")).cursor_pointer().hover((s) => s.bg(a(t.foreground, "08")))
           .on_click((_e, cx) => cx.spawn(async (cx) => {
             try { const p = JSON.parse(await crewCli(["proposal", "show", pr.id])); this.shownProposals[pr.id] = { text: p.text ?? "", sha: p.text_sha }; }
@@ -478,7 +482,7 @@ export default class CrewRoster extends View {
         .when(Boolean(task.result), (el) => el.child(div().text_size(12).text_color(t.muted).child(`Result: ${task.result}`)))
         .when(Boolean(last) && !task.result, (el) => el.child(div().text_size(12).text_color(t.dim).child(`${last.by}: ${last.text}`)))
         .child(h_flex().gap(14)
-          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open channel", () => this.go(f.space, f.tab))))
+          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open topic", () => this.go(f.space, f.tab))))
           .when(task.status !== "done", (el) => el.child(link(`tk-done-${task.id}`, "Mark done", act(["task", "done", task.id], `${task.id} done`), t.muted)))
           .when(task.status === "done" || task.status === "cancelled", (el) => el.child(link(`tk-re-${task.id}`, "Reopen", act(["task", "reopen", task.id]), t.muted)))
           .when(task.status !== "done" && task.status !== "cancelled", (el) => el.child(link(`tk-x-${task.id}`, "Cancel", act(["task", "cancel", task.id]), t.dim)))) : null;
@@ -526,10 +530,10 @@ export default class CrewRoster extends View {
           .when(busy, (el) => el.child(svg(WAVE).w(26).h(8).text_color(t.working))))
         .child(h_flex().items_center().gap(8)
           .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 18, t))))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} channels`)))
+          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} topic${members.length === 1 ? "" : "s"}`)))
         .when(Boolean(room.goal), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(room.goal))));
     }
-    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put channels from different pals together, so they can hand each other work."));
+    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put topics from different pals together, so they can hand each other work."));
     list.child(h_flex().id("room-new").items_center().gap(8).px(12).py(10).cursor_pointer().hover((s) => s.opacity(0.8))
       .on_click(() => openOverlay({ mod: "crew-room-new", kind: "dialog", width: 520, modal: true }))
       .child(svg(`${ICON}/plus.svg`).size(12).text_color(t.accent))
@@ -560,11 +564,13 @@ export default class CrewRoster extends View {
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.heroCard(shown, t, d, w));
-    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().px(8).pt(8).pb(24).gap(2)
+    // The list scrolls in our own area (scrollArea: the pill thumb sits in its 8 px right padding).
+    const list = v_flex().px(8).pt(8).pb(24).gap(2)
       // A pal drag ends on release anywhere in the list, and is dropped if the pointer leaves it.
       .on_mouse_up("left", (_e, cx) => this.drop(cx))
       .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
-    if (this.view() !== "bots") return root.child(this.otherView(list, rows, waiting, t, d));
+    const scroller = (inner) => scrollArea(d, "crew-list", inner).flex_1().min_h(0);
+    if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
       .child(div().id("pals-search").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("Search")
@@ -596,7 +602,7 @@ export default class CrewRoster extends View {
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
     }
     this.extras(list, waiting, extra, d);
-    return root.child(list);
+    return root.child(scroller(list));
   }
 
   // Not on the boards, and only there while they have something: the Inbox (approvals wait for
@@ -640,13 +646,13 @@ export default class CrewRoster extends View {
 
   // The Focus hero (hero v2, DeNon 2026-11-08: "2 · Floor", then the name up top and the channels
   // full width). No box: the shown pal's pet and its laptop at the sidebar's full width, standing
-  // on a floor (a hairline with a pool of the state's colour under the pet: working blue, done
+  // on a floor (a pool of the state's colour under the pet, no line: working blue, done
   // mint, asks you amber and breathing, PR green, merged purple, closing red, stuck amber; none at
   // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
-  // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
+  // 36 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it; no state word). Under the floor: the pal's channels, full width,
   // up to six rows then scrolling, with a search in their header; then the quick actions as
-  // pebbles: + Channel, Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
+  // pebbles: Inbox (the needs-you count), Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
   // name opens the profile panel too. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
@@ -689,21 +695,26 @@ export default class CrewRoster extends View {
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
     // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    // Channel and Tasks share the row evenly and Tasks keeps a fixed slot for its count, so a count
+    // Inbox and Tasks share the row evenly and each keeps a fixed slot for its count, so a count
     // appearing or a pal switch never changes their widths (DeNon: nothing in the hero may move).
-    const btn = (id, icon, text, action, extra, slot = 0) => pebble(d, { id, icon, label: text, extra, slot, onClick: action, even: true });
+    const btn = (id, icon, text, action, extra, slot = 0, more = {}) => pebble(d, { id, icon, label: text, extra, slot, onClick: action, even: true, ...more });
+    // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
+    // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
+    // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
+    const needs = shared("crew.needs")?.count ?? 0;
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
+        .child(btn("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"),
+          needs ? (needs > 99 ? "99+" : needs) : null, 18, { extraColor: needs ? d.warnText : null, tooltip: needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "Nothing needs you" }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
         .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine ? (mine > 99 ? "99+" : mine) : null, 18))
         // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
-        // Channel and Tasks keep their full labels at 304 px; the name above opens it too.
+        // Inbox and Tasks keep their full labels at 304 px; the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
         .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
@@ -711,7 +722,7 @@ export default class CrewRoster extends View {
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
   // search: it filters as you type, Esc or × clears and closes it), then one 28 px row per channel
   // (pinned first, then your order or the smart one): "#", the name, a pin mark, and a blue/amber dot while it works or needs you, a green
-  // check when it finished, else when it last changed. The shown one is highlighted. Up to six rows
+  // check when it finished, else when it last changed. The shown one is highlighted. Up to four rows
   // show; more scroll. Click switches, right-click is the channel menu.
   heroChannels(space, bot, d) {
     // Pinned first, then your arrangement or the smart order (channelOrder).
@@ -720,15 +731,12 @@ export default class CrewRoster extends View {
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
-    // Past four rows, how many are below the box (DeNon: say the list scrolls). The list's renderer
-    // records the last row it drew (this.chEnd, keyed by what's listed); a scroll re-renders shortly
-    // after, so the count follows it, and it's gone at the end.
-    const ROWS = 4, ROW = 30;
-    const listKey = `${space.id}|${q}|${list.length}`;
-    // The renderer's range runs a row past what's on screen, so count from its first row: four full
-    // rows are seen (five once the end is in view, where the peek row is the last one).
-    const [start, end] = this.chEndKey === listKey ? this.chRange : [0, ROWS + 2];
-    const below = list.length > ROWS ? Math.max(0, list.length - (start + (end >= list.length ? ROWS + 1 : ROWS))) : 0;
+    // Past four rows, how many are below the box (DeNon: say the list scrolls): rows whose top is
+    // under the box's bottom edge, from our own scroll offset (scrollArea), so it's gone at the end.
+    const ROWS = 4, ROW = 30, SID = "hero-ch-list";
+    const BOX = ROWS * ROW + 12;
+    const sc = scrollState(SID);
+    const below = list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -738,34 +746,30 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
-      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Channels"))
+      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
         .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
         .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
-          .on_click((_e, cx) => { this.chScroll.scroll_to_item(list.length - 1); cx.timer.after(80, (cx) => cx.notify()); })
+          .on_click((_e, cx) => { scrollTo(SID, Infinity); cx.notify(); })
           .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
-          .hover((s) => s.bg(d.hover)).tooltip("Search channels")
+          .hover((s) => s.bg(d.hover)).tooltip("Search topics")
           .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
           .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
     }
-    // Up to four rows show (DeNon: "at most 4"); more scroll. A virtual list with a scroll handle, so
-    // the shown channel is scrolled into view when it changes (not on every render, so a scroll you
-    // made stays put). The box is always four rows + the peek (see BOX below). Its rows can't carry handlers (Herdr
-    // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
-    // on_item_secondary_click, by the channel's tab id.
-    // ROW: a 28 px row and its 2 px gap.
-    // The scroll area runs to the sidebar's edge and Herdr draws its thumb about 8-16 px in from that
-    // edge whatever box the Scrollbar is given (seen on DeNon's screen), so the rows end 11 px in (a
-    // short list: the same right edge as everything else) or 18 px in while the list overflows (a
-    // gutter: the thumb never covers a time, pin or dot).
-    const over = list.length > ROWS;
+    // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
+    // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
+    // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
+    // made stays put). The box is always four rows + the peek (BOX). Plain rows, so each takes its
+    // own click (open) and right-click (the topic menu).
     const row = (tab) => {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      return div().h(ROW).pb(2).pr(over ? 18 : 11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      return div().h(ROW).flex_none().pb(2).pr(11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
@@ -780,35 +784,27 @@ export default class CrewRoster extends View {
     // moves the quick actions or the Pals list under it (DeNon, 2026-11-08). Fewer rows leave the
     // rest blank, with a faint "+ New channel" row after the last when there's room (not while
     // searching).
-    const BOX = ROWS * ROW + 12;
     const box = v_flex().h(BOX).flex_none().overflow_hidden();
     const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
       .child(svg(`${ICON}/ds-plus.svg`).size(11).flex_none().text_color(d.fg4))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New channel")));
+      .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New topic")));
     if (!list.length) {
-      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No topic matches "${this.chSearch.value().trim()}"`));
       else box.child(newRow());
       return v_flex().pt(4).child(head).child(box);
     }
+    const n = list.length, h = n > ROWS ? BOX : n * ROW;
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
-    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
+    // A new pal or search starts at the top; then the shown topic is brought into view.
+    const listKey = `${space.id}|${q}`;
+    if (this.chListKey !== listKey) { this.chListKey = listKey; scrollTo(SID, 0); }
+    sc.view = h;
+    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act * ROW, ROW); }
     // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
-    // there's more. The scrollbar stays drawn while the list overflows, in the rows' gutter.
-    const n = list.length, h = n > ROWS ? BOX : n * ROW;
-    box.child(div().relative().h(h).flex_none().w_full()
-      .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
-      .child(div().pl(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
-        this.chRange = [range.start, range.end]; this.chEndKey = listKey;
-        const out = [];
-        for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
-        return out;
-      }).track_scroll(this.chScroll)
-        .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
-        .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
-        .h(h).w_full()))
-      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(0).w(16).h(h))));
+    // there's more, and the pill thumb shows where you are.
+    box.child(scrollArea(d, SID, v_flex().pl(8).children(list.map(row))).h(h).flex_none().w_full());
     if (n < ROWS && !q) box.child(newRow());
     return v_flex().pt(4).child(head).child(box);
   }
@@ -886,7 +882,7 @@ export default class CrewRoster extends View {
   // element carries what the row does: a click opens its lead channel, right-click its menu, and
   // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
   // shows where it will land (above or below the row under the pointer); release drops it. The
-  // Tree look adds the pal's live channels under it, each opening its own channel.
+  // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
   palRow({ space, bot }, t, d, gid = undefined) {
     const look = palListStyle();
     const awake = bot.awake || bot.starting;
@@ -904,7 +900,9 @@ export default class CrewRoster extends View {
       .on_click((_e, cx) => { if (this.drag?.active) return; this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); });
     const row = palLookRow(d, look, f, palPet(bot, mood(space.status, awake), look.pet, t), el);
-    const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); });
+    // Trees (on unless turned off): its live topics under it; a click opens that topic, right-click its menu.
+    const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); },
+      (tab) => openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }));
     return tree ? v_flex().flex_none().child(row).child(tree) : row;
   }
 

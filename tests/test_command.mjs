@@ -6,9 +6,9 @@ import { search, scoreItem, pieces, mergeRanges, MAX_ROWS } from "../mods/crew-c
 const items = [
   { group: "Pals", label: "Theme Plugin - Omarchy", sub: "asleep" },
   { group: "Pals", label: "Orca", sub: "idle · #general" },
-  { group: "Channels", label: "#theme-tokens", sub: "Theme Plugin - Omarchy" },
-  { group: "Channels", label: "#review-the-diff", sub: "Project Pals" },
-  { group: "Channels", label: "#general", sub: "Orca", words: ["Ship the release notes"] },
+  { group: "Topics", label: "#theme-tokens", sub: "Theme Plugin - Omarchy" },
+  { group: "Topics", label: "#review-the-diff", sub: "Project Pals" },
+  { group: "Topics", label: "#general", sub: "Orca", words: ["Ship the release notes"] },
   { group: "Tasks", label: "T14 Rotate the logos on lock", sub: "Hello Lock" },
   { group: "Vault", label: "Mission", sub: "Vault", words: ["vault", "Orca"] },
   { group: "Commands", label: "Theme and look" },
@@ -49,7 +49,7 @@ assert.equal(scoreItem("hm", { label: "Theme" }), null, "fuzzy needs a word star
 // Sub lines and extra words count, more weakly, and aren't bolded in the label.
 const pref = scoreItem("preferences", items[10]);
 assert.ok(pref && pref.ranges.length === 0);
-assert.ok(labels(search("release notes", items)).includes("Channels:#general"), "a channel's task title is searchable");
+assert.ok(labels(search("release notes", items)).includes("Topics:#general"), "a channel's task title is searchable");
 assert.ok(scoreItem("lock", items[5]).score > scoreItem("hello", items[5]).score, "label beats sub");
 
 // Ranges and pieces for bold.
@@ -60,7 +60,7 @@ const two = scoreItem("look the", { label: "Theme and look" });
 assert.deepEqual(two.ranges, [[0, 3], [10, 14]]);
 
 // Caps: never more rows (group headers included) than fit the popup.
-const many = Array.from({ length: 40 }, (_, i) => ({ group: ["Pals", "Channels", "Tasks", "Vault", "Commands"][i % 5], label: `item ${i}` }));
+const many = Array.from({ length: 40 }, (_, i) => ({ group: ["Pals", "Topics", "Tasks", "Vault", "Commands"][i % 5], label: `item ${i}` }));
 const res = search("item", many);
 const rows = res.reduce((n, g) => n + 1 + g.items.length, 0);
 assert.ok(rows <= MAX_ROWS, `${rows} rows fit in ${MAX_ROWS}`);

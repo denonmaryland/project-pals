@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, a, tone, ds, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
+import { crewCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -140,9 +140,9 @@ export default class CrewAbout extends View {
     else if (st.checked) { title = "You're up to date"; sub = `checked ${ago(st.checked)}`; }
     else { title = "Not checked yet"; sub = "Project Pals checks every few hours by itself"; }
 
-    const notes = available && st.notes ? v_flex().id("about-notes").max_h(220).overflow_y_scrollbar().gap(3).pt(4)
+    const notes = available && st.notes ? scrollArea(ds(t), "about-notes", v_flex().gap(3).pt(4).pr(10)
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>
-        div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1")))) : null;
+        div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1"))))).max_h(220) : null;
 
     const status = v_flex().gap(4).px(16).py(14).rounded(8).bg(a(t.foreground, available ? "0c" : "07"))
       .child(div().text_size(14.5).font_medium().text_color(color).child(title))
@@ -180,13 +180,13 @@ export default class CrewAbout extends View {
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.head).w_full().text_size(13).text_color(t.foreground))))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
-      .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new channels skip their harness's permission prompts",
+      .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new topics skip their harness's permission prompts",
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
           .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
         (_e, cx) => this.setBypass(!bypass, cx)))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // The mark beside a working channel: its own dialog, a grid of live previews (crew-indicator).
-      .child(row("set-indicator", "Working indicator", "Beside a channel while its agent works",
+      .child(row("set-indicator", "Working indicator", "Beside a topic while its agent works",
         h_flex().items_center().gap(8)
           .child(div().size(18).flex().items_center().justify_center().child(workingMark(ds(t))))
           .child(div().text_size(12.5).text_color(t.muted).child(workingStyle().name))

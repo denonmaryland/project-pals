@@ -6,7 +6,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, machines, notify, pickFolder } from "herdr";
 import { crew, saveCrew, newId, brainLogo, ROLES, companyOf, a, withBypass, modelsFor, withModel, launchSpec, primerHint, isClaude, tone, ds, pebble,
-  sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
+  sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetPanel, sheetPanelBox, sheetOption, sheetFooter } from "./crew.js";
 import { spaces } from "herdr";
 
 export default class CrewHire extends View {
@@ -133,11 +133,11 @@ export default class CrewHire extends View {
         .child(sheetField(d, Input.new(this.name).w_full().text_size(13).text_color(d.fg1)))
         .child(sheetArea(d, Textarea.new(this.brief).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
         .child(row)
-        .when(Boolean(panel), (el) => el.child(panel))
+        .when(Boolean(panel), (el) => el.child(sheetPanelBox(d, `hire-panel-${this.picking}`, panel)))
         .child(sheetField(d, Input.new(this.folder).w_full().text_size(13).text_color(d.fg1), { trailing: browse }))
         .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
         .when(Boolean(trustNote), (el) => el.child(div().text_size(11).line_height("15px").text_color(d.fg3)
-          .child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its channel."))))
+          .child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its topic."))))
       .child(sheetFooter(d, { id: "hire", hint: "Enter hires · Esc cancels", onCancel: close, ready, primary: name ? `Hire ${name}` : "Hire", onPrimary: () => this.hire() }));
   }
 }

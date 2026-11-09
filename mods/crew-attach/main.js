@@ -4,7 +4,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, exec, home, setShared } from "herdr";
-import { a, ago, tone } from "./crew.js";
+import { a, ago, tone, ds, scrollArea } from "./crew.js";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
@@ -43,7 +43,7 @@ export default class CrewAttach extends View {
     const h = home();
     const where = (p) => p.replace(`${h}/.cache/snip/drag/`, "Snip · ").replace(/\/[^/]*$/, "").replace(/^Snip · [^/]+$/, "Snip").replace(h, "~");
     const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-    const body = v_flex().id("attach-list").flex_1().min_h(0).overflow_y_scrollbar().gap(2).px(6).pb(8);
+    const body = v_flex().gap(2).px(6).pb(8);
     if (this.files === null) body.child(div().p(12).text_size(13).text_color(t.dim).child("Finding recent files…"));
     else if (!this.files.length) body.child(div().p(12).text_size(13).text_color(t.dim).child("No recent files. Drag one onto the message box instead."));
     else for (const [i, f] of this.files.entries()) {
@@ -62,6 +62,6 @@ export default class CrewAttach extends View {
       .child(h_flex().items_baseline().justify_between().px(14).pt(14).pb(10)
         .child(div().text_size(15).font_weight(300).child("Attach a recent file"))
         .child(div().text_size(11.5).text_color(t.dim).child("or drop / paste")))
-      .child(body);
+      .child(scrollArea(ds(t), "attach-list", body).flex_1().min_h(0));
   }
 }

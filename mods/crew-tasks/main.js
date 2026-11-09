@@ -15,7 +15,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, setShared, exec, appHome, home } from "herdr";
-import { botOf, crewCli, ownerCli, loadOps, taskFor, ago, ds, tone, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
+import { botOf, crewCli, ownerCli, loadOps, taskFor, ago, ds, tone, scrollArea, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
@@ -202,10 +202,10 @@ export default class CrewTasks extends View {
               .child(svg(`${ICON}/paperclip.svg`).size(13).text_color(d.fg2)))
             .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4)
               .child(this.files.length ? `${this.files.length} image${this.files.length > 1 ? "s" : ""} · ${MAX_FILES} at most` : "Paste or drop an image, or use the paperclip"))))
-        .child(v_flex().id("tk-list").gap(2).max_h(320).overflow_y_scrollbar()
+        .child(scrollArea(d, "tk-list", v_flex().gap(2).pr(10)
           .children(mine.map(row))
           .when(!mine.length, (el) => el.child(div().py(8).px(8).text_size(12).line_height("16px").text_color(d.fg3)
-            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`))))
+            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`)))).max_h(320))
         .child(div().id("tk-board").cursor_pointer().hover((s) => s.opacity(0.75)).on_click(() => { setShared("crew.view", "tasks"); close(); })
           .child(div().text_size(12).line_height("16px").text_color(d.fg2).child("All tasks on the board →"))))
       .child(sheetFooter(d, { id: "tk", hint: "Enter adds · Shift+Enter new line · Esc closes", onCancel: close, cancelLabel: "Close", ready: (!empty || this.files.length > 0) && !this.busy,

@@ -2,7 +2,7 @@
 
 Project Pals is a [Herdr](https://herdr.dev) layout plus a set of mods and command-line helpers.
 Each Herdr space is a pal (a project with a brain: Claude Code, Codex, …). Each of its tabs is a
-channel. A head pal oversees the rest. `README.md` is the user-facing pitch. `RECIPE.md` is the
+topic. A head pal oversees the rest. `README.md` is the user-facing pitch. `RECIPE.md` is the
 full spec (what you see, how it behaves, watch-outs, done-when): read it before changing behavior.
 
 ## Layout
@@ -10,7 +10,7 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 | Path | What it is |
 |---|---|
 | `mods/crew-*/` | Herdr mods (`mod.json` + `main.js`, plus icons). One per sidebar, header, menu, dialog, etc. |
-| `lib/` | Shared JS (`crew.js`, `pets.js`, `palstyles.js`). **Not imported from a shared place:** `install.sh` copies them into every mod folder. Edit them here, never the copies in an installed mod. |
+| `lib/` | Shared JS (`crew.js`, `pets.js`, `palstyles.js`, `machines.js`). **Not imported from a shared place:** `install.sh` copies them into every mod folder. Edit them here, never the copies in an installed mod. |
 | `bin/` | The commands. `crew` installs as `pal`, `crew-room` as `pal-room`. `crewd` is the background helper (systemd user service). `crew-hook` is the Claude Code and Antigravity CLI hooks (`crew-hook-fast` the shell fast path in front of the per-step ones), `crew-statusline` the Claude status-line wrapper. `crew*.py` are the shared Python modules, installed to `~/.local/lib/herdr-crew/`. |
 | `god/AGENTS.md` | The head pal's standing brief, a template (`{{HEAD}}`, `{{OWNER}}`) rendered into `~/.config/herdr-app/data/crew-god/`. |
 | `layouts/pals.json`, `pals.svg` | The `pals` Herdr layout and its icon. |
@@ -22,7 +22,9 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 
 Internal names still say `crew` (mods, Python modules, `crewd`, `herdr-crew.service`, data files
 like `crew-settings.json`). That's deliberate: renaming them breaks existing installs and the
-updater. User-facing text says "pal".
+updater. User-facing text says "pal". Tabs were "channels" until 0.3.1 and are "topics" now: code and data
+keep `channel` (JSON fields, function names, `crew-roster.channel`), and `pal channel` / `--channel`
+stay as aliases of `pal topic` / `--topic`. User-facing text says "topic".
 
 ### The `buddy` / `botz` / `crew` aliases are on purpose
 

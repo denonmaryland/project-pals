@@ -48,7 +48,7 @@ export function weekCards({ pal, channels = [], tasks = [], approvals = [], prop
   return [
     { key: "shipped", label: "Shipped", tone: "done", value: shipped, sub: "tasks done · 7 days" },
     { key: "motion", label: "In motion", tone: "work", value: working.length + claimed,
-      sub: parts([[working.length, "channel"], [claimed, "task"]]) || "nothing running" },
+      sub: parts([[working.length, "topic"], [claimed, "task"]]) || "nothing running" },
     { key: "needs", label: "Needs you", tone: "ask", value: asks + held + props + stuck,
       sub: parts([[asks, "ask"], [held, "approval"], [props, "proposal"], [stuck, "stuck"]]) || "all clear" },
     { key: "hiccups", label: "Hiccups", tone: "stuck", value: wk ? wk.hiccups : null,

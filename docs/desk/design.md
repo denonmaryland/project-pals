@@ -33,8 +33,8 @@ turn ends. That path fails in five ways, all silently:
 | The pal is asleep or its terminal is gone | waits, or is dropped when the terminal finishes | |
 | Claude Code shows a grey **prompt suggestion** in the empty box | `hc read` returns plain text, so crewd takes the ghost text for a draft and holds | about an hour on 2026-11-08 (Orca's finding; Orca also twice read a suggestion as DeNon's typing) |
 
-When this was written (23:15 UTC, 2026-11-08) the live queue held **23 messages across 7 channels**.
-**5 channels were held by a draft**, and the oldest message in an active channel was **56 minutes**
+When this was written (23:15 UTC, 2026-11-08) the live queue held **23 messages across 7 topics**.
+**5 topics were held by a draft**, and the oldest message in an active topic was **56 minutes**
 old. Nobody can see this from the UI, apart from the status bar's "held" note. The sender never gets a
 receipt, so DeNon ends up walking over to Orca mid-work to hand things over in person.
 
@@ -84,7 +84,7 @@ click, so owner authority still comes only from a click.
 
 - **Card**: one thing for one pal (§4).
 - **Desk**: a pal's cards. Every pal has one, Orca included, with nothing special about it. A desk
-  has one **lane per channel** plus a **pal tray** for cards addressed to the pal but to no channel.
+  has one **lane per topic** plus a **pal tray** for cards addressed to the pal but to no topic.
 - **Receipt**: one line in a card's trail: when, the new status, by whom, and how (`via`).
 - **Nudge**: the one line a hook puts into a busy pal's context: "📥 new card …".
 - **Held**: a card that should have been delivered but couldn't be, with the reason.
@@ -122,7 +122,7 @@ DeNon wants every pal to have a desk: tells, tasks and ideas as cards with a sta
 
 ## Receipts
 - 2026-11-08T23:02:11Z queued · Orca#general · pal desk send
-- 2026-11-08T23:02:11Z routed #desk · rules · channel named in the title
+- 2026-11-08T23:02:11Z routed #desk · rules · topic named in the title
 - 2026-11-08T23:04:40Z seen · t4w · hook:post-tool-use
 ```
 
@@ -137,7 +137,7 @@ one parser and one set of test fixtures, so no YAML library is needed.
 | `kind` | tell, ask, task, idea, callback, routine, system | |
 | `status` | §5 | written by the CLI, crewd and hooks only |
 | `from`, `from_kind`, `proof`, `relaying` | §10 | stamped by the writer, never taken from arguments |
-| `to` | `Pal#channel`, `Pal` (pal tray), or the owner's name | the card's folder must match it |
+| `to` | `Pal#topic`, `Pal` (pal tray), or the owner's name | the card's folder must match it |
 | `urgency`, `size` | §7 | |
 | `held` | `draft`, `prompt`, `asleep`, `no-hooks`, `gone`, `suggestion?` + `held_since` | only while held |
 | `task`, `ask_timeout`, `reply_to`, `thread`, `depth`, `route`, `expires`, `deliver_after` | | optional |
@@ -207,7 +207,7 @@ that.
 ### 5.1 The `pal desk` command
 
 ```
-pal desk                          my open cards (this channel's lane + the pal tray); one line when empty
+pal desk                          my open cards (this topic's lane + the pal tray); one line when empty
 pal desk open c-7f3a              the whole card, attachments as paths; marks it seen · opened
 pal desk take c-7f3a [--sub]      working (by me, or a sub-agent for me)
 pal desk later c-7f3a             a receipt: "after the current step"; stays seen
@@ -251,7 +251,7 @@ missing.
 | Pal is | Card urgency | Path |
 |---|---|---|
 | working | `now`, `soon` | **PostToolUse** `additionalContext` at the next tool boundary: the full card (§6.6) |
-| working | `normal` | PostToolUse with **one nudge line** (no body), at most one every 2 min per channel. The full card comes at Stop |
+| working | `normal` | PostToolUse with **one nudge line** (no body), at most one every 2 min per topic. The full card comes at Stop |
 | working | `low` | nothing mid-turn. It comes at Stop, only if no other card is waiting |
 | ending a turn | any due | **Stop** `decision: "block"` with the cards, so the turn carries on and the pal never goes idle with mail waiting. Not if `stop_hook_active`, and at most 3 continuations in a row (§7.4) |
 | idle | any | typed by crewd (no hook fires on an idle pal), with the draft guard. On a draft: `held · draft` |
@@ -289,7 +289,7 @@ The mod polls `.pending/<terminal>` every 2 s (`$.clock.every`) and writes its h
 Codex (and Gemini CLI, opencode, Cursor agent, …) gets typing only, done honestly:
 
 - idle: typed, with the draft guard. On a draft or prompt: `held` with the reason, shown on the card and
-  the channel row. No silent waits.
+  the topic row. No silent waits.
 - working: waits for the turn to end, then types. The Desk never types into a busy pal. An owner `now` card adds an **Interrupt** button on the card. It sends
   Esc and then the card, only on DeNon's click.
 - **Pull, for every harness:** the primer tells pals to run `pal desk` at natural breaks on long work.
@@ -339,7 +339,7 @@ backup. For every user, the Desk handles it in three layers:
    already idle.
 2. **Pals start with suggestions off, and nothing global changes.** The Project Pals launcher adds
    `--settings '{"promptSuggestionEnabled":false}'` to a Claude Code pal's argv **when it launches**.
-   That one place covers hire, new channel, wake and duplicate. Stored pal records aren't rewritten, and
+   That one place covers hire, new topic, wake and duplicate. Stored pal records aren't rewritten, and
    `~/.claude/settings.json` isn't touched, so the person's other Claude Code sessions keep
    suggestions. If the argv already has `--settings`, it's left alone. The setting
    `desk.pal_prompt_suggestions` (`off` by default, or `keep`) turns this off. **To check:** that a
@@ -348,7 +348,7 @@ backup. For every user, the Desk handles it in three layers:
 3. **The typing fallback stays careful.** Where ghost text could still be there (an older pal launched
    before the flag, or `keep`), the draft guard treats text that appeared exactly as the turn ended,
    and hasn't changed since, as a *possible suggestion*. The receipt then says `held · suggestion?`
-   rather than `held · draft`. The card row says "might be a prompt suggestion; open the channel and
+   rather than `held · draft`. The card row says "might be a prompt suggestion; open the topic and
    press Esc, or send it". crewd **still never types over it**: a wrong guess would send the person's
    real words. The real fix is styled output from `hc read` (a faint flag per cell), and stage 2
    files it as a request to Herdr.
@@ -379,14 +379,14 @@ The primer line in §6.6 states the rule. In detail:
 
 - Triage can set `soon` at most. It can never set `now` (`now` needs a click).
 - A pal can raise its **own** cards to `soon`. DeNon can raise any card in the Desk view.
-- Per channel, pals together get **6 `soon` cards an hour**. Past that, new ones arrive `normal`
+- Per topic, pals together get **6 `soon` cards an hour**. Past that, new ones arrive `normal`
   with a receipt saying so. This stops one chatty pal from thrashing another.
 
 ### 7.4 Loop and storm guards
 
 - `depth`: a card made in answer to another card inherits `depth + 1`. At depth 6 it's `needs you`
   (routing): two pals bouncing work between themselves stop and surface it.
-- Stop continuations: at most 3 in a row per channel, then the pal's turn ends and the rest wait
+- Stop continuations: at most 3 in a row per topic, then the pal's turn ends and the rest wait
   for the next turn. A pal can't be kept running forever by incoming mail.
 - One mid-turn injection per tool step, whatever the count ("3 cards": one line).
 - Callbacks are batched: one per sender per turn (PR #2 already does this for delegations).
@@ -395,13 +395,13 @@ The primer line in §6.6 states the rule. In detail:
 
 Two kinds, chosen by the pal, with a default per harness:
 
-| | **A. In-harness sub-agent** (default) | **B. A channel of its own** |
+| | **A. In-harness sub-agent** (default) | **B. A topic of its own** |
 |---|---|---|
-| What | Claude Code's Agent/Task tool, agy's sub-agent | a new Herdr tab (`pal channel … --worktree`) or a `hc run` sub-agent terminal under the pal |
+| What | Claude Code's Agent/Task tool, agy's sub-agent | a new Herdr tab (`pal topic … --worktree`) or a `hc run` sub-agent terminal under the pal |
 | Good for | research, review, a mockup, a doc: bounded, mostly read-only, or files the main step isn't touching | work that should outlive the turn, needs its own branch, or DeNon should be able to watch |
 | Cost | the sub-agent's tokens; same session | a full session |
-| Limit | 1 at a time per channel (default) | needs DeNon's OK the first time per pal; at most 2 extra channels per pal |
-| Receipts | `working · sub-agent (in #desk)`, then the pal closes the card with the result | `working · in #desk-2 (t5k)`. The card moves to that channel's lane. `done` comes from there |
+| Limit | 1 at a time per topic (default) | needs DeNon's OK the first time per pal; at most 2 extra topics per pal |
+| Receipts | `working · sub-agent (in #desk)`, then the pal closes the card with the result | `working · in #desk-2 (t5k)`. The card moves to that topic's lane. `done` comes from there |
 
 Rules:
 
@@ -430,13 +430,13 @@ The Herdr mods use `watchFolder(data/crew-desk)` for an instant UI, with a 10 s 
 
 ### 9.2 Routing order (cheapest first)
 
-1. **The sender named it**: `Pal#channel` → that lane. `Pal` → the pal tray.
-2. **Rules, no model**: a pal-tray card goes to the channel whose name appears in the title (`#desk`),
-   else the channel that's on the card's task, else the pal's lead channel when it has only one.
+1. **The sender named it**: `Pal#topic` → that lane. `Pal` → the pal tray.
+2. **Rules, no model**: a pal-tray card goes to the topic whose name appears in the title (`#desk`),
+   else the topic that's on the card's task, else the pal's lead topic when it has only one.
 3. **Triage**, only for cards sent to "Auto" (the quick-drop's default) or left in a pal tray with
-   several live channels. One `claude -p --model haiku` call (PR #2's `run_headless`, so agy works as
+   several live topics. One `claude -p --model haiku` call (PR #2's `run_headless`, so agy works as
    the fallback). The input is ≤ 2 KB: the card's title, the first 600 chars of the body, and a roster
-   of one line per pal and channel (name, mission line, open task titles, state). The output is
+   of one line per pal and topic (name, mission line, open task titles, state). The output is
    strict JSON:
    `{"pal","channel","urgency":"low|normal|soon","size":"tiny|step|big","why","confidence"}`.
    Names must match the roster exactly, or the answer is thrown away.
@@ -488,7 +488,7 @@ in amber. (Whether `hc` exposes a terminal's pty or pid is **to check**. If it d
 
 ### 10.3 Only the pal edits its own cards
 
-- Only the target pal (any of its channels), DeNon (click) and crewd can move a card's status. The
+- Only the target pal (any of its topics), DeNon (click) and crewd can move a card's status. The
   sender can cancel its own `queued` or `held` card, and that's all.
 - New approval-gate rule `desk-writes`: writes into `data/crew-desk/` from a pal terminal are held,
   the same way `click-writes` holds writes into `crew-clicks/`. This covers both shell writes
@@ -529,7 +529,7 @@ status colours from the pets' schemes. The mockup shows each of these.
    gets "Drop a card…" too.
 2. **Quick-drop composer** (`crew-desk-drop`, a 560 px dialog). It reuses the Tasks composer: the
    auto-growing textarea, pasted and dropped images, crew-attach. On top of that it has:
-   - **To**: Auto (triage) / Pal / Pal#channel, with typeahead.
+   - **To**: Auto (triage) / Pal / Pal#topic, with typeahead.
    - **Urgency**: Low · Normal · Soon · Now, Now only here.
    - **Track on the board**: on by default for multi-line cards. It makes `T-n`, as "a Tell is a
      task" already does.
@@ -538,17 +538,17 @@ status colours from the pets' schemes. The mockup shows each of these.
 3. **The Desk view** (`crew-desk`, a third child of the `center` stack beside `tab-view` and
    `room-view`). It has three columns:
    - Left, the desks: **Needs you**, **To route**, **Held**, **All**, then each pal with counts and
-     its channel lanes.
+     its topic lanes.
    - Middle, the cards, grouped by status, each row showing its urgency mark, title, from → to, age,
      and the last receipt.
-   - Right, the open card: its body, attachments, and the receipt timeline. Actions: Open channel,
+   - Right, the open card: its body, attachments, and the receipt timeline. Actions: Open topic,
      Move, Raise/Lower, Cancel, Interrupt (owner `now` on a typing harness), Send (drafts).
 4. **Sidebar.** In the pal hero's quick actions, `Desk N` (open cards on this pal's desk, amber when
-   any are held). In the channel list, each row gets an `N waiting` marker on the right, or
+   any are held). In the topic list, each row gets an `N waiting` marker on the right, or
    `held 12m` in amber.
 5. **Status bar.** `N held` joins `N need you`, and a click opens the Desk view on Held.
 6. **Orca's check-in.** crewd sends the head pal one `low` card per 15 min at most, listing cards held
-   over **10 min** (reason, channel, age) and cards `seen` with no receipt for 30 min. Orca nudges
+   over **10 min** (reason, topic, age) and cards `seen` with no receipt for 30 min. Orca nudges
    or tells DeNon. Orca can't clear drafts, and nobody does that automatically.
 
 ## 12. What ships: the Desk for every user
@@ -574,7 +574,7 @@ with no pals yet. Shipped text never names DeNon or Orca: it uses `{{OWNER}}` an
   _drafts/open/                     the idea partner's drafts, waiting for the owner's Send
   events.jsonl                      every receipt, append-only (rotated monthly to events-YYYY-MM.jsonl)
   routes.jsonl                      triage calls: input hash, answer, time (no card text)
-  budget.json                       today's counters: triage calls, nudges, soon per channel, interrupts
+  budget.json                       today's counters: triage calls, nudges, soon per topic, interrupts
   .owner-ledger.jsonl               click-verified owner cards (§10.1)
   .pending/<terminal>               "this terminal has cards to deliver": the hooks' fast path (§6.1)
   .linked/<terminal>                the session file is linked (PR #2's link, done once per session)
@@ -583,7 +583,7 @@ with no pals yet. Shipped text never names DeNon or Orca: it uses `{{OWNER}}` an
 - File names are `YYYYMMDD-HHMM-<id>.md` (UTC), so an `ls` lists cards oldest first. The name never
   changes, even when the title is edited. A card is found by `*-<id>.md`.
 - The `_` folders can't collide with a pal: `slug()` never starts with `_`.
-- **Channel lanes are a field (`to: Pal#channel`), not folders**: channels come and go, and the pal's
+- **Topic lanes are a field (`to: Pal#topic`), not folders**: topics come and go, and the pal's
   folder stays.
 - Attachments stay in the existing `data/crew-attachments/` store.
 - Card files are `0600`, and the folders `0700`.
@@ -646,7 +646,7 @@ version: 0.4.0
 # Working your desk
 
 Everything sent to you is a card on your desk: tells, asks, tasks, ideas, callbacks. `pal desk` lists
-yours (this channel plus your pal tray).
+yours (this topic plus your pal tray).
 
 ## When a card arrives
 Busy, you'll see a 📥 line between steps. Idle, it arrives as your next message. Decide:
@@ -663,7 +663,7 @@ A `normal` line mid-turn is only a heads-up. The full card comes when your turn 
 The sender sees your receipts. Don't send a separate "done" message.
 
 ## Sending
-`pal desk send "Pal#channel" "text"` (or `pal tell`). Use `--soon` only when it can't wait for the
+`pal desk send "Pal#topic" "text"` (or `pal tell`). Use `--soon` only when it can't wait for the
 end of their step. `--ask` waits for an answer. `--task` tracks it on the board. One card per thing.
 
 ## Rules
@@ -696,14 +696,14 @@ does too.
 Every pal has a desk, you too. Tells, asks, tasks and ideas are cards with a status (queued, seen,
 working, done, held, needs you) and receipts. `pal desk` is yours; `pal desk ls --all` is everyone's.
 - crewd sends you a check-in card (at most every 15 min) listing cards held over 10 minutes and cards
-  seen with no receipt for 30. For each: pass it to a channel that can take it
+  seen with no receipt for 30. For each: pass it to a topic that can take it
   (`pal desk pass <id> "Pal#ch" "why"`), cancel it if it's stale, or tell {{OWNER}}.
 - Held on a draft or a prompt: that's {{OWNER}}'s box or {{OWNER}}'s decision. Never clear it, type into
-  it or answer it. Tell {{OWNER}} which channel, in one line.
+  it or answer it. Tell {{OWNER}} which topic, in one line.
 - The To route tray: suggest a route with `pal desk pass`. You can't make a card {{OWNER}}'s.
 - When you pass on what {{OWNER}} said, send it with `--relaying`. It goes as yours. If it needs
   {{OWNER}}'s authority, ask {{OWNER}} to drop it themselves (Ctrl+Shift+D).
-- Don't flood desks: one card per thing, `--soon` sparingly (pals get 6 an hour per channel), and
+- Don't flood desks: one card per thing, `--soon` sparingly (pals get 6 an hour per topic), and
   `--low` for FYIs. `pal desk stats` shows today's triage calls and nudges against their caps.
 ```
 
@@ -804,7 +804,7 @@ of these, plus today's counts. `pal settings desk.<key> <value>` sets them from 
 An optional pal with the **Idea partner** role, named **MUSE** (DeNon, §17).
 It's a Herdr space with a Claude Code brain, whose standing brief ships as `partner/AGENTS.md`. That
 brief is rendered with `{{OWNER}}` into `data/crew-partner/AGENTS.md` at hire time, as
-`god/AGENTS.md` is for the head pal (§12.10). DeNon riffs with it in its own channel for as long
+`god/AGENTS.md` is for the head pal (§12.10). DeNon riffs with it in its own topic for as long
 as they like. It keeps notes, asks sharp questions, and looks at pasted screenshots. Dropping files on
 a Herdr terminal pastes their paths; it copies them in with `pal desk attach`.
 
@@ -816,7 +816,7 @@ pal desk draft --to "Project Pals - Herdr Mod#desk" --urgency soon --task \
 ```
 
 `draft.md` is: **What** (one line, the title), **Why**, **Done when**, **Notes / screenshots**, and
-the **suggested pal and channel, with the reason**. The draft shows:
+the **suggested pal and topic, with the reason**. The draft shows:
 
 - in the idea partner's own terminal, as its reply, so DeNon reads exactly what will go;
 - as a toast and in the Desk view's Drafts: **"Send to Herdr Mod #desk?" [Send] [Edit] [Discard]**.
@@ -863,9 +863,9 @@ never overwritten by an update.
 | Tokens in the pal's context | the pal's own | a nudge is about 40 tokens; full cards only for `soon`/`now`/Stop, inline bodies capped at 4 KB |
 | Triage | Haiku, only for Auto / ambiguous cards | ≤ 2 KB in, ≤ 200 tokens out per call. **Daily cap: 100 calls** (setting), 1 per card, cached by text hash. The count shows in Settings → Desk |
 | Idea partner | its own session | what DeNon chats; Sonnet by default |
-| Sub-agents | the pal's harness | 1 in-harness at a time per channel; extra channels need DeNon's first OK |
+| Sub-agents | the pal's harness | 1 in-harness at a time per topic; extra topics need DeNon's first OK |
 
-`data/crew-desk/budget.json` keeps per-day counters: triage calls, nudges, `soon` per channel and
+`data/crew-desk/budget.json` keeps per-day counters: triage calls, nudges, `soon` per topic and
 interrupts. Settings → Desk shows them, with the caps.
 
 ## 16. Build plan (staged; each stage ships and rolls back on its own)
@@ -969,7 +969,7 @@ not started. The list is kept as it was asked:
 4. **Normal cards mid-turn:** a nudge line every 2 min at most (recommended), or nothing mid-turn
    for `normal`.
 5. **Triage daily cap:** 100 by default.
-6. **Sub-agent channels (hand-off B):** ask DeNon the first time for each pal (recommended), or never
+6. **Sub-agent topics (hand-off B):** ask DeNon the first time for each pal (recommended), or never
    without asking.
 7. **Rebasing goodboimax's PRs:** onto `crew/next` with his authorship kept (recommended), or ask him to
    rebase them himself.

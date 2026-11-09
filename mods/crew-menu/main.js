@@ -80,7 +80,7 @@ export default class CrewMenu extends View {
 
     if (p.what === "tab") {
       const tab = space.tabs.find((x) => x.id === p.tab);
-      if (!tab) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That channel is gone."));
+      if (!tab) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That topic is gone."));
       const pinned = tabPinned(tab);
       const current = tabColorKey(tab);
       // A row of the theme's colors; the first clears it. The one in use has a ring.
@@ -96,7 +96,7 @@ export default class CrewMenu extends View {
       };
       return root
         .child(title(`#${channelName(tab)}`))
-        .child(item("m-pin", "pin", pinned ? "Unpin channel" : "Pin channel", () => pinTab(space, tab, !pinned)))
+        .child(item("m-pin", "pin", pinned ? "Unpin topic" : "Pin topic", () => pinTab(space, tab, !pinned)))
         // A worktree channel's branch: its diff against where it came from, with comments and Land.
         .when(Boolean(worktreeOf(botOf(space), tab)), (el) => el.child(item("m-review", "ds-review", "Review changes", () => openReview(space, tab))))
         .child(moves("m-move", (dir) => canMoveChannel(space, tab, dir), (dir) => moveChannel(space, tab, dir)))
@@ -104,7 +104,7 @@ export default class CrewMenu extends View {
         .child(h_flex().px(8).pb(6).gap(4).flex_wrap().child(swatch(null)).children(TAB_COLORS.map((k) => swatch(k))))
         .child(line())
         .child(item("m-rename", null, "Rename", () => renameChannel(tab)))
-        .child(item("m-close", "x", "Close channel", () => run("tab.close", { id: tab.id }), t.blocked));
+        .child(item("m-close", "x", "Close topic", () => run("tab.close", { id: tab.id }), t.blocked));
     }
 
     // A group's header: rename it, move it, delete it (its pals go back to Unassigned), or make another.
@@ -136,7 +136,7 @@ export default class CrewMenu extends View {
       // Herdr asks for the name; the roster then moves its memory and routines to the new name.
       .child(item("m-rename", null, "Rename", () => run("space.rename", { id: space.id })))
       .child(item("m-look", null, "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
-      .child(item("m-add", "plus", "New channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })))
+      .child(item("m-add", "plus", "New topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })))
       // Its group: one row per group (the current one checked), Unassigned, and a new one.
       .when(!bot.god, (el) => {
         const cur = groupOf(bot);

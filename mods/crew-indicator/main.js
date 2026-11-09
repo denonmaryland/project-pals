@@ -74,7 +74,7 @@ export default class CrewIndicator extends View {
     return sheet(d, "crew-indicator", this.handle, (e, cx) => { if (e.key === "escape") { this.close(false); cx.stop_propagation(); } })
       .child(sheetHeader(d, { id: "wi", face: div().size(40).flex_none().flex().items_center().justify_center().rounded(8).bg(d.bg0).border_1().border_color(d.line)
         .child(workingMark(d, chosen.id, PREVIEW)),
-        title: "Working indicator", sub: "Beside a channel while its agent works", onClose: () => this.close(true) }))
+        title: "Working indicator", sub: "Beside a topic while its agent works", onClose: () => this.close(true) }))
       .child(body)
       .child(sheetFooter(d, { id: "wi", hint: "Applies as you click · Esc puts back the old one", onCancel: () => this.close(false),
         primary: "Done", onPrimary: () => this.close(true) }));

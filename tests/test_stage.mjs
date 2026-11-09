@@ -61,7 +61,7 @@ const by = Object.fromEntries(cards.map((c) => [c.key, c]));
 assert.deepEqual(cards.map((c) => [c.label, c.tone]), [["Shipped", "done"], ["In motion", "work"], ["Needs you", "ask"], ["Hiccups", "stuck"]]);
 assert.equal(by.shipped.value, 1, "done in the last 7 days, this pal's only");
 assert.equal(by.motion.value, 2, "one working channel plus one claimed task not on it");
-assert.equal(by.motion.sub, "1 channel · 1 task");
+assert.equal(by.motion.sub, "1 topic · 1 task");
 assert.equal(by.needs.value, 4, "an ask, an approval, a proposal, a stuck channel");
 assert.equal(by.needs.sub, "1 ask · 1 approval · 1 proposal · 1 stuck");
 assert.equal(by.hiccups.value, 3, "the notebook's hiccups in 7 days");
@@ -142,7 +142,7 @@ try {
     export const run = nop, notify = nop, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   for (const f of readdirSync(join(root, "mods/crew-profile")).filter((f) => f.endsWith(".js"))) copyFileSync(join(root, "mods/crew-profile", f), join(dir, f));
   const url = (f) => pathToFileURL(join(dir, f)).href;
   const crew = await import(url("crew.js"));
@@ -188,7 +188,7 @@ try {
     const out = stagePart(view, space, bot, t, d);
     const words = text(out);
     for (const w of ["Working · 12m in #profiles", PAL, "Get Project Pals ready to announce", "Shipped", "In motion", "Needs you", "Hiccups",
-      "CHANNELS", "#profiles", "#review", "Review", "TASKS", "Next thing", "VAULT", "Mission", "Journal", "Brain", "MEMORY", "ABOUT", "Keeps the mod sleek"])
+      "TOPICS", "#profiles", "#review", "Review", "TASKS", "Next thing", "VAULT", "Mission", "Journal", "Brain", "MEMORY", "ABOUT", "Keeps the mod sleek"])
       assert.ok(words.includes(w), `${W}px: "${w}" in the stage`);
     assert.equal(find(out, "profile-stage-card-").length, 4, "four cards");
     assert.ok(find(out, "profile-stage-compose").length >= 1, "the composer is in the hero");
@@ -198,7 +198,7 @@ try {
   }
   // In motion 1 working channel; Needs you: the ask and the approval.
   const cardsOut = text(stagePart(view, space, bot, t, d));
-  assert.ok(cardsOut.includes("1 channel") && cardsOut.includes("1 ask · 1 approval"), "the cards' real numbers");
+  assert.ok(cardsOut.includes("1 topic") && cardsOut.includes("1 ask · 1 approval"), "the cards' real numbers");
   // At rest: no light.
   space.tabs[0].status = "idle"; space.status = "idle";
   const rest = stagePart(view, space, bot, t, d);
@@ -210,7 +210,7 @@ try {
   view.part = "main"; view.draft = new TaskDraft("profile-main"); view.sideW = 420;
   const side = view.profileTab(space, bot, t, d, false);
   const sw = text(side);
-  for (const w of ["Working · 12m in #profiles", "Shipped", "Hiccups", "FACTS", "role", "CHANNELS", "MEMORY", "ROUTINES"]) assert.ok(sw.includes(w), `Side: "${w}"`);
+  for (const w of ["Working · 12m in #profiles", "Shipped", "Hiccups", "FACTS", "role", "TOPICS", "MEMORY", "ROUTINES"]) assert.ok(sw.includes(w), `Side: "${w}"`);
   const cardW = find(side, "profile-main-card-").map((n) => n.args.w[0][0]);
   assert.equal(cardW.length, 4);
   assert.ok(cardW.every((w) => w * 2 + 10 <= 420 - 32), "two cards to a row");

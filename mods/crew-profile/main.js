@@ -17,17 +17,32 @@ import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay,
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
-  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, shortDate, num, VAULT_NOTES, dashShown,
+  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, shortDate, num, VAULT_NOTES, dashShown, scrollArea,
+  palSpaces, machineTag, openMachinePicker,
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
 import { initNotebook } from "./notebook.js";
 import { vaultView } from "./vault.js";
-import { initStage, heroStage, statCards, stagePart } from "./stage.js";
+import { initStage, heroStage, statCards, stagePart, machineCard } from "./stage.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
 const TABS = [["profile", "Profile"], ["vault", "Vault"], ["|"], ["agents", "AGENTS.md"]];
+
+// pane.go sends "focus" when it moves onto the panel. crew-profile.<tab or note> (keys.json,
+// herdr-app do) shows that tab or Vault note: profile, vault, agents, home, mission, notebook, brain.
+// The panel's state is shared (openPanel), so whichever copy gets the command, the panel follows.
+function listen(view, cx) {
+  cx.spawn(async (cx) => {
+    for (;;) {
+      const c = await nextCommand();
+      if (c === "focus") view.h.focus();
+      else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { view.edit = null; view.review = null; if (c === "brain") view.brainFile = null; view.brainSeq = (view.brainSeq ?? 0) + 1; openPanel(c); }
+      cx.notify();
+    }
+  });
+}
 
 export default class CrewProfile extends View {
   init(_props, cx) {
@@ -55,13 +70,14 @@ export default class CrewProfile extends View {
       return;
     }
     if (this.part !== "main") {
+      listen(this, cx);   // a command can reach any shown copy, so the dashboard's parts take them too
       initDash(this, cx, this.part);
       if (this.part === "head") {
         cx.timer.every(250, () => { const st = panelState(); if (st.at && st.at !== this.seenAt && this.isOpen()) { this.seenAt = st.at; this.h.focus(); } });
       }
       return;
     }
-    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); } catch {} cx.notify(); });
+    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); this.opsLoaded = true; } catch {} cx.notify(); });
     ops(cx);
     cx.timer.every(5000, (cx) => { if (this.isOpen()) ops(cx); });
     cx.timer.every(8000, (cx) => { if (this.isOpen()) this.loadMemory(cx, true); });
@@ -85,16 +101,7 @@ export default class CrewProfile extends View {
       ensureProject(this, cx, s.bot);
       if (this.agentsFor !== s.bot.name && !this.agentsLoading) loadAgents(this, cx, true);
     });
-    // pane.go sends "focus" when it moves onto the panel. crew-profile.<tab or note> (keys.json,
-    // herdr-app do) shows that tab or Vault note: profile, vault, agents, home, mission, notebook, brain.
-    cx.spawn(async (cx) => {
-      for (;;) {
-        const c = await nextCommand();
-        if (c === "focus") this.h.focus();
-        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; openPanel(c); }
-        cx.notify();
-      }
-    });
+    listen(this, cx);
   }
 
   isOpen() { return panelOpen(); }
@@ -202,7 +209,7 @@ export default class CrewProfile extends View {
     const { space, bot } = s;
     const full = panelFull();
     const tab = panelTab();
-    const scroll = (el) => div().id(`pf-scroll-${tab}`).flex_1().min_h(0).overflow_y_scrollbar().child(full ? div().max_w(980).child(el) : el);
+    const scroll = (el) => scrollArea(d, `pf-scroll-${tab}`, full ? div().max_w(980).child(el) : el).flex_1().min_h(0);
     return root
       .child(this.header(space, bot, d, full))
       .child(this.tabs(d, bot))
@@ -252,7 +259,9 @@ export default class CrewProfile extends View {
     const cards = div().px(16).pt(4).pb(14).child(statCards(this, space, bot, d, { cols: 2, w: W - 32 }));
     const facts = sec("facts", "Facts", v_flex().gap(6).child(this.roleRow(bot, d)).child(this.facts(space, bot, d)),
       this.link("pf-look", "Customize look", d, () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })));
-    const channels = sec("channels", "Channels", this.channels(space, bot, d));
+    const channels = sec("channels", "Topics", this.channels(space, bot, d));
+    // Which computer it works on, and Change machine… (DeNon 2026-11-08).
+    const machine = sec("machine", "Machine", machineCard(this, space, bot, d), this.link("pf-machine", "Change…", d, () => openMachinePicker(space.id)));
     const memory = sec("memory", "Memory", this.memory(bot, d), h_flex().gap(10)
       .child(this.link("pf-remember", "Remember…", d, () => { this.showRemember = !this.showRemember; if (this.showRemember) this.remember.focus(); }))
       .when(Boolean(this.mem?.folder), (el) => el.child(this.link("pf-memfolder", "Open folder", d, () => exec("xdg-open", [this.mem.folder]).catch(() => {})))));
@@ -263,10 +272,10 @@ export default class CrewProfile extends View {
     // (Full on Profile is the dashboard, so this is Side; without the dashboard layout, Full gets it too.)
     const body = v_flex().px(16).pb(24);
     if (memFirst) body.child(memory);
-    body.child(facts).child(channels);
+    body.child(machine).child(facts).child(channels);
     if (!memFirst) body.child(memory);
     body.child(routines).child(actions);
-    return div().id("pf-body").flex_1().min_h(0).overflow_y_scrollbar().child(v_flex().child(hero).child(cards).child(body));
+    return scrollArea(d, "pf-body", v_flex().child(hero).child(cards).child(body)).flex_1().min_h(0);
   }
 
   link(id, text, d, act) {
@@ -297,7 +306,6 @@ export default class CrewProfile extends View {
     const rows = [
       ["brain", (bot.harnessName ?? (bot.harness ? bot.harness : "no agent running")) + (model ? ` · ${model}` : ""), false],
       ["folder", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~"), true],
-      ["machine", bot.machine ?? "this computer", false],
       ["branch", lead?.branch ?? null, true],
       ["pet", p ? `${p.species} · ${p.acc.join(" + ") || "nothing"}` : "folder mascot", false],
       ["hired", hired ? `${hired}${bot.hiredBy ? ` · by ${bot.hiredBy}` : ""}` : null, false],
@@ -316,7 +324,10 @@ export default class CrewProfile extends View {
     const all = agents();
     const ps = panes();
     const list = v_flex().rounded(d.r.md).border_1().border_color(d.line);
-    channelOrder(space, bot).forEach((tab, i) => {
+    // A pal open on two machines (it moved; old topics still run): both, each tagged with its machine.
+    const spaces2 = [space, ...palSpaces(bot).filter((x) => x.id !== space.id)];
+    const spans = spaces2.length > 1;
+    spaces2.flatMap((sp) => channelOrder(sp, botOf(sp)).map((tab) => [sp, tab])).forEach(([sp, tab], i) => {
       const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
       const awake = tabHasAgent(tab, ps);
       const status = awake ? tab.status : null;
@@ -327,12 +338,13 @@ export default class CrewProfile extends View {
       const wt = worktreeOf(bot, tab);
       list.child(v_flex().id(`pf-ch-${tab.id}`).px(10).py(7).gap(3).cursor_pointer()
         .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
-        .when(tab.active, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
-        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
+        .when(tab.active && sp.id === space.id, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
+        .on_click((_e, cx) => { this.go(sp, tab); cx.notify(); })
         .child(h_flex().items_center().gap(8)
           .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : awake ? div().size(7).flex_none().rounded(4).bg(d.fg4)
             : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).font_weight(500).text_color(d.fg1).child(`#${channelName(tab)}`))
+          .when(spans, (el) => el.child(machineTag(d, sp.machine, { dim: true })))
           .child(div().flex_none().text_size(11).text_color(status === "blocked" ? d.warnText : d.fg3).child(since && since !== "now" ? `${word} ${since}` : word)))
         .when(Boolean(on), (el) => el.child(div().pl(15).truncate().text_size(12).line_height("16px").text_color(d.body).child(on)))
         .when(Boolean(wt), (el) => el.child(h_flex().pl(15).items_center().gap(6)
@@ -341,14 +353,15 @@ export default class CrewProfile extends View {
           .child(div().flex_1())
           .child(div().id(`pf-review-${tab.id}`).h(20).px(7).flex().items_center().rounded(d.r.xs).border_1().border_color(d.lineMid)
             .cursor_pointer().hover((s) => s.border_color(d.lineStrong).bg(d.hover))
-            .on_click((_e, cx) => { cx.stop_propagation(); openReview(space, tab); })
+            .on_click((_e, cx) => { cx.stop_propagation(); openReview(sp, tab); })
             .text_size(11).font_weight(500).text_color(d.body).child("Review")))));
     });
     return list;
   }
 
   // The pinned note, what it remembers (MEMORY.md, then the last notes), and how much of it a new
-  // session actually starts with (the primer keeps the last 6,000 characters).
+  // session actually starts with (the pinned note, MEMORY.md and USER.md whole, then the newest
+  // notes, up to 16,000 characters: MEMORY_CAP).
   memory(bot, d) {
     const m = this.mem?.bot === bot.name ? this.mem : null;
     const col = v_flex().gap(10);
@@ -399,7 +412,7 @@ export default class CrewProfile extends View {
     return v_flex().gap(6)
       .child(h_flex().gap(6)
         .child(btn("pf-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })))
-        .child(btn("pf-channel", "ds-plus", "Channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
+        .child(btn("pf-channel", "ds-plus", "Topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
       .child(h_flex().gap(6)
         .child(btn("pf-look", "ds-user", "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
         .when(!bot.god, (el) => el.child(btn("pf-sleep", "ds-moon", "Put to sleep", (cx) => this.sleep(space, bot)(cx)))));

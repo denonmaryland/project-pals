@@ -5,8 +5,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
-  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
+import { botOf, updateBot, openTopic, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
+  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetPanelBox, sheetOption, sheetFooter, categoryName } from "./crew.js";
 
 export default class CrewDuplicate extends View {
   init(_props, cx) {
@@ -33,14 +33,14 @@ export default class CrewDuplicate extends View {
     this.handle = cx.focus_handle();
     this.channel.focus();
     cx.spawn(async (cx) => {
-      try { this.agents = (await knownAgents({ on: this.bot?.machine ?? null })).filter((x) => x.installed); } catch { this.agents = []; }
+      try { this.agents = (await knownAgents({ on: this.bot?.target ?? this.bot?.machine ?? null })).filter((x) => x.installed); } catch { this.agents = []; }
       this.same = this.agents.find((x) => x.key === this.bot?.harness) ?? null;
       cx.notify();
     });
   }
 
   categories() {
-    return [...new Set(Object.values(this.bot?.categories ?? {}).concat("General"))];
+    return [...new Set(Object.values(this.bot?.categories ?? {}).map(categoryName).concat("General"))];
   }
 
   go(cx) {
@@ -48,7 +48,7 @@ export default class CrewDuplicate extends View {
     const space = bot && spaces().find((x) => x.id === bot.space);
     if (!space) return notify({ title: "That pal is gone", level: "warning" });
     const name = "#" + (this.channel.value().trim().replace(/^#/, "").replace(/\s+/g, "-"));
-    if (name === "#") return notify({ title: "Name the channel", level: "warning", timeout: 2500 });
+    if (name === "#") return notify({ title: "Name the topic", level: "warning", timeout: 2500 });
     if (space.tabs.some((x) => x.name === name || x.name === name.slice(1))) return notify({ title: `${bot.name} already has ${name}`, level: "warning", timeout: 2500 });
     const category = this.category === "+new" ? (this.newCategory.value().trim() || "General") : this.category;
     const brief = this.brief.value().trim();
@@ -84,7 +84,8 @@ export default class CrewDuplicate extends View {
     const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, primerHint(argv, brainKey), memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
     const spec = launchSpec(brainKey, argv, argv ? task : "");
     closeOverlay(props().overlay);
-    run("tab.new", { space: space.id, name, argv: spec.argv, folder: bot.folder || undefined, task: spec.task });
+    // On the machine the pal works on (Change machine…): its space there, else a new one there.
+    openTopic(bot, { name, argv: spec.argv, task: spec.task });
   }
 
   key(e, cx) {
@@ -141,14 +142,14 @@ export default class CrewDuplicate extends View {
 
     const ready = Boolean(this.channel.value().trim()) && !this.busy;
     return sheet(d, "crew-duplicate", this.handle, (e, cx) => this.key(e, cx))
-      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New channel", onClose: close,
+      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New topic", onClose: close,
         sub: `in ${bot.name} · ${bot.machine ?? "this computer"} · ${bot.memory?.trim() ? "starts with its memory" : "shares its project"}` }))
       .child(sheetBody()
         .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
         .child(sheetArea(d, Textarea.new(this.brief).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
         .child(row)
-        .when(Boolean(panel), (el) => el.child(panel)))
+        .when(Boolean(panel), (el) => el.child(sheetPanelBox(d, `dup-panel-${this.picking}`, panel))))
       .child(sheetFooter(d, { id: "dup", hint: "Enter adds · Esc cancels", onCancel: close, ready,
-        primary: this.busy ? "Making its branch…" : "Add channel", onPrimary: (cx) => this.go(cx) }));
+        primary: this.busy ? "Making its branch…" : "Add topic", onPrimary: (cx) => this.go(cx) }));
   }
 }

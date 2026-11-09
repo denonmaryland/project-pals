@@ -213,7 +213,7 @@ def start(r, terms, log, forced=False):
             rid = f"{int(time.time())}-{new_id()}"
             (REQS / f"{rid}.req.json").write_text(json.dumps({
                 "op": "channel", "bot": space["name"], "name": r["channel"], "category": "Routines", "byName": "Routines",
-                "brief": f"This channel runs {space['name']}'s scheduled routines. Each arrives as [routine: name]."}))
+                "brief": f"This topic runs {space['name']}'s scheduled routines. Each arrives as [routine: name]."}))
             log(f"routine {r['name']}: opening #{r['channel']} in {space['name']}")
         r["pending"] = True
         return
@@ -275,7 +275,7 @@ def watch(terms, log):
                 continue
             t = terms.get(run["terminal"])
             if not t:
-                _log(r, "failed", reason="its channel closed")
+                _log(r, "failed", reason="its topic closed")
                 r["run"] = None
                 changed = True
                 continue

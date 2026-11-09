@@ -49,7 +49,9 @@ export function taskColumns(tasks, now = Date.now()) {
 
 // The last 7 days of the notebook, counted.
 export function weekStats(nb, now = Date.now()) {
-  const from = ymd(startOfDay(now) - 6 * 86400000);
+  // By the calendar, not 6×24h: across a clock change that lands on the wrong day.
+  const first = new Date(now); first.setDate(first.getDate() - 6);
+  const from = ymd(first);
   const out = { days: 0, entries: 0, minutes: 0, hiccups: 0, hiccupMinutes: 0, lessons: 0, needed: 0 };
   for (const day of nb?.days ?? []) {
     if (day.day < from) continue;

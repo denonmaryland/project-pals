@@ -5,7 +5,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces, panes, appHome, readTextFile } from "herdr";
-import { crewCli, crew, botOf, mascotEl, mood, ago, a, tone } from "./crew.js";
+import { crewCli, crew, botOf, mascotEl, mood, ago, a, tone, ds, scrollArea } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const EXAMPLES = ["weekdays 09:00", "every 2h 10:00-20:00", "daily 18:00", "mon,fri 4pm"];
@@ -172,7 +172,7 @@ export default class CrewRoutines extends View {
         .hover((s) => s.bg(a(t.foreground, "10")))
         .on_click((_e, cx) => { this.when.set_value(x); cx.notify(); })
         .child(div().text_size(11.5).font_family("JetBrains Mono").text_color(t.dim).child(x))));
-    const channelRow = k.row("rf-ch", "Channel", h_flex().items_center().gap(4)
+    const channelRow = k.row("rf-ch", "Topic", h_flex().items_center().gap(4)
       .child(div().text_size(13).text_color(t.dim).child("#")).child(k.inline(this.channel, 150)));
 
     const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
@@ -252,7 +252,7 @@ export default class CrewRoutines extends View {
     for (const r of this.routines) { if (!byBot.has(r.bot)) byBot.set(r.bot, []); byBot.get(r.bot).push(r); }
 
     // One bordered list per pal, its face and name above.
-    const body = v_flex().id("rt-list").max_h(520).overflow_y_scrollbar().gap(14).px(24).pt(12);
+    const body = v_flex().gap(14).px(24).pt(12);
     for (const [name, rs] of byBot) {
       const space = all.find((s) => s.name === name);
       const bot = space ? botOf(space, c, ps) : { name, harness: null };
@@ -277,7 +277,7 @@ export default class CrewRoutines extends View {
 
     return root
       .child(k.header(this.clockFace(t), "Routines", "Scheduled work across your crew"))
-      .child(body)
+      .child(scrollArea(ds(t), "rt-list", body).max_h(520))
       .child(footer);
   }
 }

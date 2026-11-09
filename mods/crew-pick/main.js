@@ -67,7 +67,7 @@ export default class CrewPick extends View {
 
     root.child(h_flex().h(26).flex_none().items_center().px(8)
       .child(div().flex_1().min_w(0).truncate().text_size(12).font_weight(500).text_color(d.fg3).child(space.name))
-      .child(div().flex_none().text_size(11).text_color(d.fg4).child(`${space.tabs.length} channel${space.tabs.length === 1 ? "" : "s"}`)));
+      .child(div().flex_none().text_size(11).text_color(d.fg4).child(`${space.tabs.length} topic${space.tabs.length === 1 ? "" : "s"}`)));
     tabs.forEach((tab, i) => {
       const on = tab.active;
       const shell = !tabHasAgent(tab);
@@ -91,7 +91,7 @@ export default class CrewPick extends View {
     root.child(row("pick-new", tabs.length)
       .on_click(() => this.newChannel(space))
       .child(div().w(10).flex_none().flex().justify_center().child(svg(`${ICON}/ds-plus.svg`).size(12).text_color(d.fg2)))
-      .child(div().text_size(13).text_color(d.body).child("New channel")));
+      .child(div().text_size(13).text_color(d.body).child("New topic")));
     return root;
   }
 }

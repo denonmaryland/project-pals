@@ -2,7 +2,7 @@
 
 The brain is a few small markdown files: mission.md (statement, goals, focus, done-when),
 decisions.md, changelog.md (newest first), map.md (only when AGENTS.md has no file map) and
-notes/<topic>.md. It lives in pal data, data/crew-memory/<pal>/brain/, unless the pal's record says
+notes/<subject>.md. It lives in pal data, data/crew-memory/<pal>/brain/, unless the pal's record says
 "brainIn": "project", which puts it in <project>/.pals/. It holds no rules (those belong in the
 project's AGENTS.md) and doesn't copy the task board (Next actions are tasks).
 

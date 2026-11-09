@@ -86,7 +86,7 @@ function tbar(view, { space, bot }, d) {
   const bar = h_flex().h(33).flex_none().w_full().items_center().gap(10).px(16).border_b_1().border_color(d.line)
     .child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.fg3).child("TERMINAL"))
     .child(h_flex().id("dt-pick").h(22).px(8).gap(6).items_center().rounded(d.r.xs).border_1().border_color(d.lineMid).cursor_pointer()
-      .hover((s) => s.border_color(d.lineStrong)).tooltip("Another channel")
+      .hover((s) => s.border_color(d.lineStrong)).tooltip("Another topic")
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openChannels(space.id); })
       .child(div().text_size(11).font_family(d.mono).font_weight(500).text_color(d.fg1).child(tab ? `#${channelName(tab)}` : "—"))
       .child(svg(`${ICON}/ds-chevron-down.svg`).size(10).text_color(d.fg3)));
@@ -96,9 +96,9 @@ function tbar(view, { space, bot }, d) {
     .when(!bot.awake && Boolean(bot.record), (el) => el.child(act(d, "dt-wake", "Wake", () => wakePal(bot.record))));
   bar.child(div().flex_1());
   bar.child(h_flex().id("dt-open").h(22).px(8).gap(6).items_center().rounded(d.r.xs).border_1().border_color(d.lineMid).cursor_pointer()
-    .hover((s) => s.border_color(d.lineStrong)).tooltip("Close the dashboard and show this channel")
+    .hover((s) => s.border_color(d.lineStrong)).tooltip("Close the dashboard and show this topic")
     .on_click((_e, cx) => { closePanel(); cx.notify(); })
-    .child(div().text_size(11).font_weight(500).text_color(d.body).child("Open channel ↗")));
+    .child(div().text_size(11).font_weight(500).text_color(d.body).child("Open topic ↗")));
   const col = v_flex().size_full().child(bar);
   // No agent: dash-term is hidden and this part fills the column (initDash), so say so here.
   if (!has) col.child(v_flex().flex_1().items_center().justify_center().gap(8).px(24)

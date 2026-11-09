@@ -48,7 +48,7 @@ def startup_context(bot, ch):
     from crewlib import PRIMER, memory_text, records
     import crewtasks
     pinned = (records().get("name:" + bot) or {}).get("memory", "")
-    parts = [PRIMER, f"You are {bot}, in channel #{ch}."]
+    parts = [PRIMER, f"You are {bot}, in topic #{ch}."]
     # The mission (at most 1,200 characters; the rest of the brain is read on demand).
     try:
         import crewbrain

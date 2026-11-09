@@ -9,7 +9,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, panes, exec, openOverlay, shared } from "herdr";
-import { openPanel, panelNote, channelName, channelOrder, ago, taskFor, taskTitle, tabHasAgent, modelOf, briefOf } from "./crew.js";
+import { openPanel, panelNote, channelName, channelOrder, ago, taskFor, taskTitle, tabHasAgent, modelOf, briefOf, scrollArea } from "./crew.js";
 import { homeData, fmtMinutes, NOTES } from "./vaultdata.js";
 import { missionTab, brainTab, openBrainFile } from "./project.js";
 import { notebookTab } from "./notebook.js";
@@ -20,6 +20,7 @@ const home = (p) => String(p ?? "").replace(/^\/home\/[^/]+/, "~");
 function show(view, key) {
   view.edit = null; view.review = null;
   if (key === "brain") view.brainFile = null;
+  view.brainSeq = (view.brainSeq ?? 0) + 1;   // a file still on its way is no longer wanted
   openPanel(key);
 }
 
@@ -29,7 +30,7 @@ export function vaultView(view, space, bot, t, d, full) {
     : note === "notebook" ? notebookTab(view, space, bot, d, full)
     : note === "brain" ? brainTab(view, space, bot, d, full)
     : homeNote(view, space, bot, d, full);
-  const scroll = (el) => div().id(`vault-scroll-${note}`).flex_1().min_w(0).min_h(0).overflow_y_scrollbar().child(el);
+  const scroll = (el) => scrollArea(d, `vault-scroll-${note}`, el).flex_1().min_w(0).min_h(0);
   if (!full) return v_flex().flex_1().min_h(0).child(noteStrip(view, d, note)).child(scroll(body));
   return h_flex().flex_1().min_h(0).items_start()
     .child(tree(view, space, bot, d, note))
@@ -57,8 +58,9 @@ function tree(view, space, bot, d, cur) {
   col.child(div().px(8).pb(8).text_size(10).font_family(d.mono).text_color(d.fg3).truncate().child(`${bot.name.toUpperCase()} · VAULT`));
   const item = (id, label, { on = false, indent = 0, count = null, dot = null, act }) => col.child(
     h_flex().id(id).h(28).pl(8 + indent).pr(8).gap(8).items_center().rounded(d.r.sm)
-      .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { act(cx); cx.notify(); })
+      .when(on, (el) => el.bg(d.sel))
+      // The open note keeps no click: clicking it again would drop an unsaved edit (show()).
+      .when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => { act(cx); cx.notify(); }))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(on ? d.fg1 : indent ? d.body : d.fg1).child(label))
       .when(count != null, (el) => el.child(div().text_size(10).font_family(d.mono).text_color(d.fg3).child(String(count))))
       .when(Boolean(dot), (el) => el.child(div().size(6).rounded(3).bg(dot))));
@@ -104,7 +106,7 @@ function data(view, space, bot) {
   const brain = view.brain && view.brainFor === bot.name ? view.brain : null;
   const nb = view.nb && view.nbFor === bot.name ? view.nb : null;
   const tasks = (view.ops?.tasks ?? []).filter((x) => taskFor(x, space.name));
-  return { ...homeData({ brain, nb, tasks }), loaded: Boolean(brain), nbLoaded: Boolean(nb) };
+  return { ...homeData({ brain, nb, tasks }), loaded: Boolean(brain), nbLoaded: Boolean(nb), tasksLoaded: Boolean(view.opsLoaded) };
 }
 
 function label(d, text) {
@@ -154,7 +156,7 @@ function facts(space, bot, d, full) {
   const cells = [
     ["Brain", (bot.harnessName ?? bot.harness ?? "no agent") + (model ? ` · ${model}` : ""), false],
     ["Project", home(bot.folder ?? space.folder) || "—", true],
-    ["Channels", `${space.tabs.length}${working ? ` · ${working} working` : ""}`, false],
+    ["Topics", `${space.tabs.length}${working ? ` · ${working} working` : ""}`, false],
     ["Owner", owner, false],
   ];
   const cols = full ? 4 : 2;
@@ -164,7 +166,7 @@ function facts(space, bot, d, full) {
     cells.slice(r * cols, r * cols + cols).forEach(([k, v, mono], i) => row.child(v_flex().flex_1().min_w(0).px(12).py(9).gap(3)
       .when(i > 0, (el) => el.border_l_1().border_color(d.line))
       .child(div().text_size(11).text_color(d.fg3).child(k))
-      .child(div().truncate().text_size(mono ? 12 : 13).when(mono, (el) => el.font_family(d.mono)).text_color(k === "Channels" && working ? d.infoText : d.fg1).child(v))));
+      .child(div().truncate().text_size(mono ? 12 : 13).when(mono, (el) => el.font_family(d.mono)).text_color(k === "Topics" && working ? d.infoText : d.fg1).child(v))));
     grid.child(row);
   }
   return grid;
@@ -173,6 +175,7 @@ function facts(space, bot, d, full) {
 function focus(view, d, h) {
   const box = v_flex().px(14).py(12).gap(6).rounded(d.r.lg).border_1().border_color(d.info + "40").bg(d.info + "10");
   box.child(div().text_size(10).font_family(d.mono).font_weight(500).text_color(d.infoText).child("FOCUS NOW"));
+  if (!h.loaded) return box.child(div().text_size(13).text_color(d.fg3).child("Reading the vault…"));
   if (!h.focus) {
     return box.child(div().text_size(13).line_height("19px").text_color(d.fg2)
       .child(h.hasMission ? "No focus set: the pal keeps it current with pal mission focus." : "No mission yet: the pal proposes one with pal mission propose, and you approve it in the Inbox."))
@@ -192,7 +195,7 @@ function rightNow(view, space, bot, d, full) {
   const live = channelOrder(space, bot).filter((tab) => tabHasAgent(tab, ps) && (tab.status === "working" || tab.status === "blocked"))
     .sort((a, b) => (a.status === "blocked" ? 0 : 1) - (b.status === "blocked" ? 0 : 1));
   const sec = v_flex().gap(8).child(heading(d, "vh-now", "Right now"));
-  if (!live.length) return sec.child(div().text_size(12).text_color(d.fg3).child("No channel is working."));
+  if (!live.length) return sec.child(div().text_size(12).text_color(d.fg3).child("No topic is working."));
   const card = (tab) => {
     const ask = tab.status === "blocked";
     const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
@@ -237,6 +240,7 @@ function taskBoard(space, d, h, full) {
     .child(div().flex_1().min_w(0).text_size(13).line_height("18px").text_color(dim ? d.fg2 : d.body).child(x.title));
   if (!full) {
     const any = cols.some(([, xs]) => xs.length);
+    if (!any && !h.tasksLoaded) return sec.child(div().text_size(12).text_color(d.fg3).child("Reading the board…"));
     if (!any) return sec.child(div().text_size(12).text_color(d.fg3).child("No tasks for this pal."));
     return sec.child(v_flex().gap(6).children(cols.filter(([, xs]) => xs.length).map(([name, xs, col]) => h_flex().items_start().gap(10)
       .child(div().w(76).flex_none().text_size(10).line_height("18px").font_family(d.mono).text_color(col).child(`${name} ${xs.length}`))
