@@ -87,7 +87,7 @@ export default class CrewHeader extends View {
       .bg(on ? d.sel : "#00000000").border_1().border_color(on ? d.lineMid : "#00000000").hover((s) => s.bg(d.hover))
       .tooltip(`The Desk: every pal's cards${held ? ` · ${held} held` : ""}${hint ? ` · ${hint} drops a card` : ""}`)
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.toggleDesk(); cx.notify(); })
-      .child(svg("mods/crew-roster/icons/ds-inbox.svg").size(13).text_color(held ? d.warnText : on ? d.fg1 : d.fg2))
+      .child(svg("mods/crew-roster/icons/ds-tell.svg").size(13).text_color(held ? d.warnText : on ? d.fg1 : d.fg2))
       .child(div().text_size(12).font_weight(500).text_color(on ? d.fg1 : d.fg2).child("Desk"))
       .when(open > 0, (el) => el.child(div().px(5).h(16).flex().items_center().rounded(3)
         .bg(held ? "#E8AA0A29" : d.raised).border_1().border_color(held ? "#E8AA0A47" : d.line)
