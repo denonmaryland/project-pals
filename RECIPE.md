@@ -163,6 +163,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     in 11.5px mono (#EDEDED for the shown one) and when it changed; a click opens that topic,
     right-click is its menu. Only those rows are added: nothing else moves. Resting, asleep and
     hidden pals never unfold.
+    **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
+    the search button, flips the same `palTrees` (so it's remembered and the Settings switch
+    always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list
+    ("Unfold all topics"). Same size either way, so the header never shifts. No per-pal folding.
     The sidebar and the dialog's preview draw rows with one renderer (`crew.js palLookRow` /
     `palLookTree`; the look list and its pure helpers in `lib/palstyles.js`, copied into every
     mod). The dialog: the ten looks on the left (number, name, pet size, a check on the chosen
@@ -301,7 +305,11 @@ rectangular segments and tags.
     rows end 11px in and the pill sits in that gap, never over a time, pin or dot) and "+N more"
     (#808082, rows below the
     box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
-    shown topic is scrolled into view when it changes. Order: pinned topics first (in pin order,
+    shown topic is scrolled into view when it changes. The header's last button, a 22px chevron
+    after the magnifier, folds the list to the header alone ("Topics 18 · 3 working · 1 needs
+    you"; no "+N more"), and unfolds it. It's ONE remembered state for every pal
+    (`heroTopicsFolded` in crew-settings.json; DeNon, 2026-11-08), so folded or not the hero is
+    the same height whoever you switch to. Opening the search unfolds it. Order: pinned topics first (in pin order,
     with a small pin mark), then, once you've arranged that pal's topics, Herdr's tab order, else
     the smart order (needs you, finished, working, idle agents, plain shells). Right-click a topic:
     Pin / Unpin, Review changes (a worktree topic only: `crew-review`), and Move up / Move down

@@ -4,7 +4,7 @@
 // that throws fails here; `herdr-app check` only builds the empty roster, never these rows.
 // Run: node tests/test_palrows.mjs
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -191,7 +191,18 @@ try {
   fixtures.shared["crew.needs"] = { count: 0 };
   const calm = heroOf(one, false);
   assert.ok(pebbleOf(calm, "hero-inbox") && !pebbleOf(calm, "hero-channel"), "the hero's first pebble is Inbox");
-  assert.ok(text(pebbleOf(calm, "hero-inbox")).includes("Inbox") && !/\b(Channel|Topic)\b/.test(text(pebbleOf(calm, "hero-inbox"))), "it says Inbox");
+  assert.ok(pebbleOf(calm, "hero-inbox").args.tooltip[0].startsWith("Inbox") && !/\b(Channel|Topic)\b/.test(text(pebbleOf(calm, "hero-inbox"))), "its tooltip says Inbox");
+  // At the 304 px sidebar (DeNon via Orca, 2026-11-08): Inbox, Tasks and Desk are icon + count pebbles
+  // of one fixed width, names only in tooltips, so nothing truncates to "In…"; with room, the names show.
+  for (const id of ["hero-inbox", "hero-tasks", "hero-desk"]) {
+    const narrow = pebbleOf(roster.heroCard({ space: one, bot: crew.botOf(one) }, t, d, 304), id);
+    assert.equal(narrow.args.w?.[0], 54, `${id} is 54 px at 304`);
+    assert.equal(text(narrow).trim(), "", `${id} shows no label at 304`);
+    assert.ok(narrow.args.tooltip?.[0], `${id} has a tooltip`);
+    const wide = pebbleOf(roster.heroCard({ space: one, bot: crew.botOf(one) }, t, d, 420), id);
+    assert.equal(wide.args.w?.[0], 96, `${id} is 96 px with room`);
+    assert.ok(/Inbox|Tasks|Desk/.test(text(wide)), `${id} shows its name with room`);
+  }
   assert.ok(text(calm).includes("New topic"), "New topic is still the list's last row");
   fixtures.shared["crew.needs"] = { count: 3 };
   const busy = heroOf(one, false);
@@ -208,6 +219,42 @@ try {
   pebbleOf(heroOf(one, false), "hero-inbox").args.on_click[0](null, cx);
   assert.equal(fixtures.shared["crew.view"], "bots", "a second click goes back to the pals");
   delete fixtures.shared["crew.needs"]; delete fixtures.shared["crew.view"];
+  // The Topics fold (DeNon, 2026-11-08): the chevron folds the hero's list to its header, for every
+  // pal at once (remembered in crew-settings), so the hero is still one height whoever is shown.
+  {
+    const fold = (h) => pebbleOf(h, "hero-ch-fold");
+    const open1 = heroOf(many, true);
+    assert.ok(fold(open1) && fold(open1).args.size[0] === 22 && fold(open1).calls.includes("flex_none"), "a fixed 22 px chevron");
+    assert.equal(fold(open1).args.tooltip[0], "Fold topics");
+    fold(open1).args.on_click[0](null, cx);
+    assert.equal(fixtures.shared["crew.settings"].heroTopicsFolded, true, "folding is remembered");
+    const busyPal = { ...fixtures.spaces[0], id: "s7", tabs: [...fixtures.spaces[0].tabs, ...many.tabs] };
+    const heros = [heroOf(one, false), heroOf(many, true), heroOf(none, false), heroOf(busyPal, true)];
+    for (const h of heros) {
+      assert.equal(box(h), null, "folded: no topic box");
+      assert.ok(!ids(h).some((n) => /^hero-ch-(m|t)\d|^hero-ch-(new|more)$/.test(n.args.id?.[0] ?? "")), "folded: no rows, New topic or +N more");
+      assert.equal(fold(h).args.tooltip[0], "Show topics");
+    }
+    // (The pet stage differs for the head pal, as it always has; the Topics part and the quick
+    // actions, what sits between the stage and the Pals list, must be identical.)
+    const section = (p) => { const n = p.node; if (n.kids.some((k) => k?.node?.args.id?.[0] === "hero-ch-head")) return n; for (const k of n.kids) { const f = k?.node && section(k); if (f) return f; } return null; };
+    const topicsShape = (h) => { const n = section(h); return shape({ node: n }) + "#" + outline(h).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(); };
+    assert.equal(new Set(heros.map(topicsShape)).size, 1, "folded, every pal's Topics part and quick actions are the same shape");
+    assert.equal(section(heros[0]).kids.length, 1, "folded: the Topics part is just its header");
+    const head = (h) => text(pebbleOf(h, "hero-ch-head"));
+    assert.ok(head(heros[3]).includes("19 · 1 working · 1 needs you"), `the folded header says what's live: ${head(heros[3])}`);
+    assert.ok(/Topics\s+1\b/.test(head(heros[0])) && !head(heros[0]).includes("working"), "a quiet pal: just the count");
+    // Searching unfolds (a search needs the list); the chevron unfolds too.
+    roster.chSearch = { value: () => "", focus() {} };
+    pebbleOf(heros[1], "hero-ch-search").args.on_click[0](null, cx);
+    assert.equal(fixtures.shared["crew.settings"].heroTopicsFolded, false, "search unfolds");
+    roster.chSearchOpen = false;
+    fixtures.shared["crew.settings"].heroTopicsFolded = true;
+    fold(heroOf(one, false)).args.on_click[0](null, cx);
+    assert.equal(fixtures.shared["crew.settings"].heroTopicsFolded, false, "the chevron unfolds");
+    assert.ok(box(heroOf(one, false)), "unfolded: the 132 px box is back");
+    fixtures.shared["crew.settings"] = {};
+  }
   // A "Channels" category saved before 0.3.1 shows as Topics; new ones are Topics.
   assert.equal(crew.categoryName("Channels"), "Topics");
   assert.equal(crew.categoryName("Routines"), "Routines");
@@ -279,6 +326,33 @@ try {
       const src = readFileSync(f, "utf8").replace(/\/\/.*$/gm, "");
       assert.ok(!/\.overflow_(?:y_|x_)?scrollbar\(|Scrollbar\.(?:vertical|horizontal|new)\(/.test(src), `${f} uses Herdr's scrollbar`);
     }
+  }
+  // The Pals header's fold-all toggle: the same palTrees as the Settings switch (so it's
+  // remembered), flips it both ways, fixed 20 px whatever it shows, and the rows follow.
+  {
+    fixtures.shared["crew.settings"] = { palList: "table" };
+    const mkcx = () => ({ notify() {}, stop_propagation() {} });
+    const tg = () => roster.treesToggle(d).node;
+    assert.equal(tg().args.id[0], "pals-trees");
+    assert.equal(tg().args.size[0], 20);
+    assert.ok(tg().calls.includes("flex_none"), "the toggle never shrinks");
+    assert.equal(tg().args.tooltip[0], "Fold all topics");
+    assert.match(tg().kids[0].node.arg, /ds-tree\.svg$/);
+    const topics = () => ids(roster.palRow({ space: fixtures.spaces[0], bot: crew.botOf(fixtures.spaces[0]) }, t, d, null)).filter((n) => n.args.id?.[0]?.includes("-tp-")).length;
+    assert.equal(topics(), 3);
+    tg().args.on_click[0]({}, mkcx());
+    assert.equal(fixtures.shared["crew.settings"].palTrees, false, "fold all saves palTrees off");
+    assert.equal(fixtures.shared["crew.settings"].palList, "table", "and keeps the look");
+    assert.equal(topics(), 0, "folded: no topic rows");
+    assert.equal(tg().args.tooltip[0], "Unfold all topics");
+    assert.match(tg().kids[0].node.arg, /ds-tree-folded\.svg$/);
+    assert.equal(tg().args.size[0], 20, "same size folded");
+    tg().args.on_click[0]({}, mkcx());
+    assert.equal(fixtures.shared["crew.settings"].palTrees, true, "unfold all turns it back on");
+    assert.equal(topics(), 3);
+    const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
+    assert.ok(/this\.treesToggle\(d\)\)\s*\.child\(div\(\)\.id\("pals-search"\)/.test(src), "the toggle sits just before the search button");
+    for (const f of ["ds-tree.svg", "ds-tree-folded.svg"]) assert.ok(existsSync(join(root, "mods/crew-roster/icons", f)), f);
   }
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {

@@ -14,10 +14,14 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+// The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
+// with their names (about 32 px more each) from this sidebar width up: 16 of padding, three labeled
+// pebbles, four 6 px gaps and the two 28 px icon pebbles need 384.
+const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
 // Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
@@ -573,6 +577,10 @@ export default class CrewRoster extends View {
     if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      // Trees: fold or unfold every pal's topics at once (DeNon, 2026-11-08). It's the same "palTrees"
+      // as the switch in Pal list style, so it's remembered and both always agree. Fixed 20 px, like
+      // the search button beside it, so nothing moves when it flips.
+      .child(this.treesToggle(d))
       .child(div().id("pals-search").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("Search")
         .hover((s) => s.bg(d.hover)).on_click(() => run("app.palette"))
         .child(svg(`${ICON}/ds-search.svg`).size(13).text_color(d.iconDim))));
@@ -695,9 +703,15 @@ export default class CrewRoster extends View {
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
     // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    // Inbox and Tasks share the row evenly and each keeps a fixed slot for its count, so a count
-    // appearing or a pal switch never changes their widths (DeNon: nothing in the hero may move).
-    const btn = (id, icon, text, action, extra, slot = 0, more = {}) => pebble(d, { id, icon, label: text, extra, slot, onClick: action, even: true, ...more });
+    // Inbox, Tasks and Desk are icon + count pebbles of one fixed width (DeNon via Orca, 2026-11-08:
+    // five pebbles at the 304 px sidebar truncated the labels to "In…" / "Ta…"); their names are in
+    // the tooltips, and show on the pebbles only once the sidebar is wide enough for all three
+    // (HERO_LABELS_AT). Each keeps a fixed count slot, a spacer takes what's left, and profile and the
+    // moon stay icon-only on the right: a count appearing or a pal switch never moves anything.
+    const labels = (w ?? 0) >= HERO_LABELS_AT;
+    const quick = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, slot: 18,
+      w: labels ? HERO_PEBBLE_LABELED : HERO_PEBBLE, extra: count ? (count > 99 ? "99+" : count) : null, onClick: action,
+      tooltip: tip, ...more });
     // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
     // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
     // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
@@ -709,18 +723,19 @@ export default class CrewRoster extends View {
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        .child(btn("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"),
-          needs ? (needs > 99 ? "99+" : needs) : null, 18, { extraColor: needs ? d.warnText : null, tooltip: needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "Nothing needs you" }))
+        .child(quick("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
+          needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine ? (mine > 99 ? "99+" : mine) : null, 18))
+        .child(quick("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
+          mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
         // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
-        // the Desk view on this pal. Icon and a fixed count slot, so its width never changes.
-        .child(pebble(d, { id: "hero-desk", icon: "ds-tell", extra: desk?.open ? (desk.open > 99 ? "99+" : desk.open) : null, slot: 18,
-          extraColor: desk?.held ? d.warnText : null, onClick: () => showDesk(`pal:${deskSlug(space.name)}`),
-          tooltip: desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting" }))
-        // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
-        // Inbox and Tasks keep their full labels at 304 px; the name above opens it too.
+        // the Desk view on this pal.
+        .child(quick("hero-desk", "ds-tell", "Desk", () => showDesk(`pal:${deskSlug(space.name)}`), desk?.open ?? 0,
+          desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting",
+          { extraColor: desk?.held ? d.warnText : null }))
+        .child(div().flex_1().min_w(0))
+        // Profile: the right-side profile panel (again: closes it); the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
         .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
@@ -742,7 +757,12 @@ export default class CrewRoster extends View {
     const ROWS = 4, ROW = 30, SID = "hero-ch-list";
     const BOX = ROWS * ROW + 12;
     const sc = scrollState(SID);
-    const below = list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
+    // Folded (the chevron, DeNon 2026-11-08): just this header, with what's working or asks you in
+    // words. One remembered state for every pal ("heroTopicsFolded" in crew-settings.json), so the
+    // hero is still the same height whichever pal you switch to. Searching unfolds it.
+    const folded = topicsFolded() && !this.chSearchOpen;
+    const setFolded = (f, cx) => { saveUiSettings({ heroTopicsFolded: f }); cx.notify(); };
+    const below = !folded && list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -752,17 +772,26 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
+      const live = bot.awake ? ordered.filter((x) => tabHasAgent(x)) : [];
+      const working = live.filter((x) => x.status === "working").length, asks = live.filter((x) => x.status === "blocked").length;
+      const summary = [String(ordered.length), working && `${working} working`, asks && `${asks} need${asks === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
       head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
-        .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
+        .child(div().flex_1().min_w(0).truncate().text_size(11).line_height("14px").text_color(d.fg4).child(folded ? summary : String(ordered.length)))
         .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
           .on_click((_e, cx) => { scrollTo(SID, Infinity); cx.notify(); })
           .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Search topics")
-          .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
-          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
+          .on_click((_e, cx) => { if (topicsFolded()) saveUiSettings({ heroTopicsFolded: false }); this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
+          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)))
+        // Fixed 22 px, like the magnifier, so nothing moves when it flips.
+        .child(div().id("hero-ch-fold").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+          .hover((s) => s.bg(d.hover)).tooltip(folded ? "Show topics" : "Fold topics")
+          .on_click((_e, cx) => setFolded(!folded, cx))
+          .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
     }
+    if (folded) return v_flex().pt(4).child(head);
     // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
     // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
     // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
@@ -892,6 +921,15 @@ export default class CrewRoster extends View {
   // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
   // shows where it will land (above or below the row under the pointer); release drops it. The
   // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
+  // The Pals header's fold-all / unfold-all button: unfolded shows the tree, folded a plain list.
+  treesToggle(d) {
+    const on = palTreesOn();
+    return div().id("pals-trees").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+      .tooltip(on ? "Fold all topics" : "Unfold all topics")
+      .hover((s) => s.bg(d.hover))
+      .on_click((_e, cx) => { saveUiSettings({ palTrees: !on }); cx.notify(); })
+      .child(svg(`${ICON}/${on ? "ds-tree" : "ds-tree-folded"}.svg`).size(13).text_color(d.iconDim));
+  }
   palRow({ space, bot }, t, d, gid = undefined) {
     const look = palListStyle();
     const awake = bot.awake || bot.starting;
