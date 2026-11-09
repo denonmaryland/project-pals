@@ -348,7 +348,8 @@ def write_targets(cmd):
                 piped = [p for a in args for p in _pieces(a.replace("\\n", " ").replace("\\t", " "))]
             if name in EDITORS:
                 # Every file it opens, and every word of its own commands (-c 'w X', +cmd, --eval …).
-                out += [p for a in args if not re.fullmatch(r"--?[\w-]+", a) for p in _pieces(a)]
+                # (code -g AGENTS.md:12: a line and column after the file name)
+                out += [re.sub(r"(?::\d+)+$", "", p) for a in args if not re.fullmatch(r"--?[\w-]+", a) for p in _pieces(a)]
                 if _ex_mode(name, args):    # commands from stdin: a here-string, printf … |
                     out += feeding + [p for how, s in stdin if how == "<<<" for p in _pieces(s)]
                     out += [p for how, s in stdin if how != "<<<" for p in _script_words(s)]
@@ -380,7 +381,8 @@ RUNNER = re.compile(r"^(?:(?:uv|poetry|pipenv|bundle)\s+(?:run|exec)|uvx|npx|bun
 # a mention inside prose ("see AGENTS.md for…") isn't one.
 AGENT_PATH = re.compile(r"""['"][^'"`\n]*\b(?:AGENTS|CLAUDE)\.md['"]""")   # not `…`: Markdown's code quotes
 # Calls that write, move or copy a file, in the interpreters above.
-WRITE_CALL = re.compile(r"""\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\bopen\s*\([^)]*\bmode\s*=\s*['"][^'"]*[wax+]"""   # mode="w" too (Grok review H2)
+WRITE_CALL = re.compile(r"""\bopen\s*\((?:[^()]|\([^()]*\))*?,\s*['"][^'"]*[wax+]"""   # open(os.path.join(…), "w") too
+                        r"""|\bopen\s*\((?:[^()]|\([^()]*\))*?\bmode\s*=\s*['"][^'"]*[wax+]"""   # mode="w" too (Grok review H2)
                         r"""|\.open\s*\(\s*['"][^'"]*[wax+]|\.write_(?:text|bytes)\s*\(|\bshutil\.(?:copy\w*|move)\s*\(|\bos\.(?:rename|replace)\s*\("""
                         r"""|\.(?:rename|touch)\s*\(\s*(?:\w|['"])|\b(?:write|append)File(?:Sync)?\s*\(|\bcreateWriteStream\s*\(|\bcopyFile(?:Sync)?\s*\(|\brename(?:Sync)?\s*\("""
                         r"""|\bDeno\.write\w*\s*\(|\bBun\.write\s*\(|\bFile\.(?:write|open|rename)\b|\bIO\.write\b|\bFileUtils\.|\bopen\s*\(?\s*(?:my\s+)?\$?\w*\s*,\s*['"]?\+?>|\bfile_put_contents\s*\(|\bfopen\s*\([^)]*['"][wax]""")
@@ -623,7 +625,11 @@ def _stdin_text(cmd):
     out = []
     for m in HEREDOC_BODY.finditer(cmd):
         line = commands(cmd[cmd.rfind("\n", 0, m.start()) + 1:m.start()])
-        out.append((normal_words(RUNNER.sub("", line[-1])) if line else [], m.group(4)))
+        words = normal_words(RUNNER.sub("", line[-1])) if line else []
+        piped = re.match(r"\s*\|&?\s*(.+)", mask_quotes(m.group(3)))
+        if piped and (not words or words[0] == "cat"):   # cat <<'EOF' | bash: the body goes to bash
+            words = normal_words(RUNNER.sub("", m.group(3)[piped.start(1):]))
+        out.append((words, m.group(4)))
     for line in heredoc_free(cmd).splitlines():
         masked, last, parts = mask_quotes(line), 0, []
         for s in SEP.finditer(masked):
@@ -679,7 +685,10 @@ def run_strings(cmd):
             for n, v in held.items():
                 if re.search(r"(?<![\w$@%])" + re.escape(n) + r"\b", st):
                     lits += v
-            out += lits + [" ".join(lits)]
+            # Each literal, and each run of them to the end: spawn("git", ["push"]) after
+            # require("child_process") in one statement is "git push" only from its 2nd literal on.
+            lits = lits[:40]
+            out += lits + [" ".join(lits[k:]) for k in range(len(lits))]
     return [c for c in out if c and c.strip()]
 
 

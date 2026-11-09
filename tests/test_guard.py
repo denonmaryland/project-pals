@@ -379,6 +379,17 @@ class CommandsInsideCode(unittest.TestCase):
         ("python3 -c \"open('AGENTS.md', mode='w').write('x')\"", "agents-file-interpreter"),
         ("python3 -c \"from pathlib import Path; Path('CLAUDE.md').open('w').write('x')\"", "agents-file-interpreter"),
         ("code AGENTS.md", "agents-file-shell"),
+        # Grok's re-review of 38f5b22: an argv array after require("child_process") in one statement…
+        ("node -e 'require(\"child_process\").spawn(\"git\",[\"push\",\"origin\",\"main\"])'", "push"),
+        ("node -e 'require(\"child_process\").spawn(\"flyctl\", [\"deploy\"])'", "deploy"),
+        ("node -e 'require(\"child_process\").spawn(\"./release\", [\"0.4.0\"])'", "release-script"),
+        ("node -e 'require(\"child_process\").execFileSync(\"bash\", [\"./release\", \"0.4.0\"])'", "release-script"),
+        # …cat's heredoc piped to a shell, an editor's file:line, open(os.path.join(…), "w")
+        ("cat <<'EOF' | bash\ngit push origin main\nEOF", "push"),
+        ("cat <<'EOF' | sh\n./release 0.4.0\nEOF", "release-script"),
+        ("code -g AGENTS.md:12", "agents-file-shell"),
+        ("cursor --goto CLAUDE.md:1:4", "agents-file-shell"),
+        ("python3 -c \"import os; open(os.path.join('.', 'AGENTS.md'), 'w').write('x')\"", "agents-file-interpreter"),
     ]
     ALLOWED = [
         "pal land --help", "git push --help", "pal land Worker#general --help", "./release --help",
@@ -393,6 +404,9 @@ class CommandsInsideCode(unittest.TestCase):
         "python3 -m unittest discover -s tests",
         "grep -rn crew-desk-settings mods/",
         "code .",
+        "cat <<'EOF' | grep push\ngit push origin main\nEOF",                  # piped to grep, not a shell
+        "node -e 'require(\"child_process\").spawn(\"git\", [\"status\"])'",
+        "python3 -c \"import os; print(open(os.path.join('.', 'AGENTS.md')).read())\"",
     ]
 
     def test_held(self):

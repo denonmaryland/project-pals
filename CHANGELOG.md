@@ -84,8 +84,8 @@ held (topics, the new profile page, machines, the command bar, pal list looks) s
   --prod, netlify --prod, wrangler, kubectl apply/delete), mail and chat webhooks, `pal land`, a
   repo's release script, edits of a project's AGENTS.md or CLAUDE.md, and writes into Project Pals'
   message queue, your click tokens and the Desk's cards. It matches the command as it runs, not as
-  it's spelled: behind `npx`, a full path, `env` or `git -C`; inside `sh -c`, a heredoc or
-  here-string fed to a shell, or a string Python, Node, Perl, Ruby or PHP runs (`os.system`,
+  it's spelled: behind `npx`, a full path, `env` or `git -C`; inside `sh -c`, a heredoc,
+  here-string or `echo` piped to a shell, or a string Python, Node, Perl, Ruby or PHP runs (`os.system`,
   `subprocess`, `child_process`, `system`, backticks); and file writes from those languages
   (`open(…, "w")`, `mode="w"`, `write_text`, `writeFileSync` …) or an editor (`ed`, `vim -es`,
   `code` …). Text that only mentions a command (a grep pattern, a quoted string, `--help`) isn't

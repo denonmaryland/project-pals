@@ -873,13 +873,17 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   `sed -i` / `perl -i`'s script argument isn't a target (`_edited_files`; a-15ccbe). Desktop editors
   count too (`code`, `cursor`, `zed`, `subl`, `gedit` …).
 - **Commands inside code are judged with every rule** (Grok review H2, `run_strings` in crewguard.py):
-  a heredoc, here-string or `echo|printf …|` fed to sh / bash / zsh / dash / ksh is a script it runs;
+  a heredoc (`bash <<EOF`, `cat <<EOF | bash`), here-string or `echo|printf …|` fed to sh / bash / zsh /
+  dash / ksh is a script it runs;
   strings that interpreter code runs (`os.system`, `subprocess`, `child_process`, `system`, backticks
   in Perl / Ruby / PHP), from `-c` / `-e` or code fed on stdin, are command lines (each string, and
-  each statement's strings joined, plus a name assigned a command earlier). `matches()` recurses into
+  every run of a statement's strings to its end, so `spawn("git", ["push"])` after
+  `require("child_process")` is `git push`; plus a name assigned a command earlier). A string a
+  command-running call only passes along (`subprocess.run(["echo", "git push"])`) is held too: safe side. `matches()` recurses into
   those three levels deep. Python / Node / … writes into `crew-queue`, `crew-queue-sent`,
   `crew-clicks` and `crew-desk` are found like agent-file writes. `open(p, mode="w")` and
-  `Path.open("w")` are writes. A command with `--help` runs nothing and isn't held. A heredoc fed to
+  `Path.open("w")` are writes, and so is `open(os.path.join(…), "w")` (one level of nested call);
+  an editor's `AGENTS.md:12` (`code -g`) is the file. A command with `--help` runs nothing and isn't held. A heredoc fed to
   an interpreter is judged as code (T38): text quoted inside its strings is neither a path nor a call,
   unless the code runs commands. Best effort: a command built from pieces, base64, or a script written
   and run later isn't seen.
