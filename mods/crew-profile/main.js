@@ -415,6 +415,6 @@ export default class CrewProfile extends View {
         .child(btn("pf-channel", "ds-plus", "Topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
       .child(h_flex().gap(6)
         .child(btn("pf-look", "ds-user", "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
-        .when(!bot.god, (el) => el.child(btn("pf-sleep", "ds-moon", "Put to sleep", (cx) => this.sleep(space, bot)(cx)))));
+        .when(!bot.god, (el) => el.child(btn("pf-sleep", "ds-moon", "Close pal", (cx) => this.sleep(space, bot)(cx)))));
   }
 }

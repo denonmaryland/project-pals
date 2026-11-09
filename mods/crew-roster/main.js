@@ -15,7 +15,7 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
@@ -779,14 +779,14 @@ export default class CrewRoster extends View {
         .child(div().flex_1().min_w(0))
         // Profile: the right-side profile panel (again: closes it); the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
-        // The last pebble: Put to sleep, except on the head pal, which never sleeps (its menu has no
+        // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head pal, which never sleeps (its menu has no
         // Sleep either). There it's Home (a terminal icon, primary, while Home shows: back to the
         // topic), in the same slot, so the row is the same width for every pal and fits a narrow
         // sidebar (a sixth pebble pushed the moon off at 281 px). Ctrl+Shift+H does the same.
         .child(bot.god && hasHome()
           ? pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(), onClick: () => toggleHome(),
             tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })
-          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
+          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: CLOSE_LABEL })));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a

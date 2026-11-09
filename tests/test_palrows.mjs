@@ -504,6 +504,46 @@ try {
     assert.ok(none.notes.some((n) => /without a brain/.test(n.title) && n.level === "warning"), "no brain to be had: it says so");
     fixtures.known = undefined; fixtures.notes = [];
   }
+  // T41: waking a topic in place (pal wake asks wake-brain): T27's order, per topic.
+  {
+    const CLAUDE = { key: "claude", name: "Claude Code", run: ["claude"], installed: true };
+    const AGY = { key: "antigravity", name: "Antigravity CLI", run: ["agy"], installed: true };
+    const CODEX = { key: "codex", name: "Codex", run: ["codex"], installed: false };
+    fixtures.known = [CLAUDE, AGY, CODEX];
+    const kept = await crew.wakeBrain({ id: "k", harness: "claude", argv: ["claude", "--model", "opus"] });
+    assert.deepEqual(kept.argv.slice(0, 3), ["claude", "--model", "opus"], "the pal's command on record");
+    assert.equal(kept.why, "its command on record");
+    const topic = await crew.wakeBrain({ id: "k", harness: "claude", argv: ["claude"] }, "antigravity");
+    assert.equal(topic.argv[0], "agy", "a topic with its own brain on record starts that one");
+    assert.equal(topic.why, "this topic's brain on record");
+    const same = await crew.wakeBrain({ id: "k", harness: "claude", argv: ["claude", "--model", "opus"] }, "claude");
+    assert.deepEqual(same.argv.slice(0, 3), ["claude", "--model", "opus"], "the topic's brain is the pal's own: its saved command");
+    const fresh = await crew.wakeBrain({ id: "k", harness: "antigravity" });
+    assert.equal(fresh.argv[0], "agy"); assert.match(fresh.why, /no saved command/);
+    const fallback = await crew.wakeBrain({ id: "k", harness: "codex" });
+    assert.equal(fallback.argv[0], "claude", "a brain that isn't installed falls through to Claude Code, never a bare shell");
+    const none = await crew.wakeBrain(null);
+    assert.equal(none.argv[0], "claude"); assert.match(none.why, /Claude Code/);
+    fixtures.known = [];
+    await assert.rejects(crew.wakeBrain({ id: "k", harness: "codex" }), /no brain to start/);
+    // The request: a topic's brain is found by its tab id, else its name.
+    fixtures.known = [CLAUDE, AGY];
+    const s1 = fixtures.spaces.find((s) => crew.botOf(s).record);
+    const rec = crew.botOf(s1).record;
+    assert.ok(rec, "a pal with a record");
+    const tab = s1.tabs[0];
+    const before = fixtures.shared.crew;
+    fixtures.shared.crew = { ...before, bots: before.bots.map((b) => (b.id === rec?.id ? { ...b, brains: { [tab.id]: "antigravity" } } : b)) };
+    const r = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id });
+    assert.equal(r.ok, true); assert.equal(r.argv[0], "agy", "its topic's brain, found by tab id");
+    await assert.rejects(crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: "nope" }), /isn't open/);
+    // The outcome toast: fixed titles, a refusal is a warning.
+    fixtures.notes = [];
+    await crew.requestHandlers["power-report"]({ op: "power-report", mode: "sleep", lines: ["not putting X to sleep: it's mid-turn (working)"], refused: true });
+    assert.equal(fixtures.notes[0].title, "Sleep (keep topics, free RAM)"); assert.equal(fixtures.notes[0].level, "warning");
+    assert.match(fixtures.notes[0].body, /mid-turn/);
+    fixtures.shared.crew = before; fixtures.known = undefined; fixtures.notes = [];
+  }
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
