@@ -155,6 +155,16 @@ try {
       const box = rows[0].node.kids[1].node;
       assert.equal(box.args.pl[0], textLeft(st) - 4, `${st.id}: topics start at the text column`);
     }
+    // " · #topic" on the row only when no tree shows under it (DeNon, 2026-11-08): with Trees on
+    // the working pal's row says just its state; off, the looks that name the topic do; a resting
+    // pal (no tree) keeps it either way.
+    {
+      const rowText = text(top);
+      const names = ["large", "folder", "wrap", "grouped"].includes(st.id);
+      if (trees) assert.ok(!rowText.includes("· #"), `${st.id} trees: the row drops its #topic (${rowText})`);
+      else if (names) assert.ok(rowText.includes("· #command-bar"), `${st.id} trees off: the row names its topic (${rowText})`);
+      if (names) assert.ok(text(rows[1]).includes("· #general"), `${st.id}: a resting pal keeps its #topic`);
+    }
     // Resting and closed pals never unfold.
     for (const r of rows.slice(1)) assert.equal(ids(r).filter((n) => n.args.id?.[0]?.includes("-tp-")).length, 0, `${st.id}: no trees for a resting pal`);
     // The style dialog draws with this look shown.

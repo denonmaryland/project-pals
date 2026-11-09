@@ -163,6 +163,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     in 11.5px mono (#EDEDED for the shown one) and when it changed; a click opens that topic,
     right-click is its menu. Only those rows are added: nothing else moves. Resting, asleep and
     hidden pals never unfold.
+    While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
+    ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
+    (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list
