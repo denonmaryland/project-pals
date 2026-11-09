@@ -136,7 +136,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
   under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
   state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
-  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #topic" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), rooms, dialogs.
+  Merged purple, Closing red, Stuck amber, Asleep #808082; **working wins**: Working while any
+  topic works, even when Herdr calls the pal done; Needs you beats both, and Done shows only when
+  nothing runs: `crew.js palStatus`, for the word and the pet; DeNon 2026-11-08) and " · #topic" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), rooms, dialogs.
   - **Pal list style** (Project Pals settings → Pal list style, `crew-palstyle`, saved as
     `palList` in crew-settings.json; DeNon 2026-11-08). The rows above are **Large pets**, the
     default. Nine compact looks from DeNon's board (`crew-boards/compact-pals`) use 22-34px pets
@@ -166,6 +168,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
     (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
+    **Times** on pal rows (every look) and Trees rows are small and quiet (DeNon, 2026-11-08):
+    10.5px #6A6A6C in mono (even-width figures; Herdr has no tabular-figures switch),
+    right-aligned in a fixed 38px slot so names never shift, on the name's line at its line height
+    (`crew.js rowTime`).
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list
@@ -305,12 +311,15 @@ rectangular segments and tags.
     leave the rest blank, with a faint "+ New topic" row (#56565A, opens the New topic dialog) after the last
     when not searching; past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, scrolling in our own area with the pill thumb (see Scrolling below; the
-    rows end 11px in and the pill sits in that gap, never over a time, pin or dot) and "+N more"
-    (#808082, rows below the
-    box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
-    shown topic is scrolled into view when it changes. The header's last button, a 22px chevron
+    rows end 11px in and the pill sits in that gap, never over a time, pin or dot). No "+N more"
+    in the header (DeNon, 2026-11-08): "Topics 18" says it, and the cut row, the pill and the
+    fixed box show there's more. The
+    shown topic is scrolled into view when it changes. **Topic colours:** a 3x12px bar with
+    round ends just before each "#" (here, in the Trees rows and in the topic picker), in the
+    topic's saved colour (right-click → colour); no colour leaves the slot empty, so names never
+    move (`crew.js topicMark`; DeNon 2026-11-08). The header's last button, a 22px chevron
     after the magnifier, folds the list to the header alone ("Topics 18 · 3 working · 1 needs
-    you"; no "+N more"), and unfolds it. It's ONE remembered state for every pal
+    you"), and unfolds it. It's ONE remembered state for every pal
     (`heroTopicsFolded` in crew-settings.json; DeNon, 2026-11-08), so folded or not the hero is
     the same height whoever you switch to. Opening the search unfolds it. Order: pinned topics first (in pin order,
     with a small pin mark), then, once you've arranged that pal's topics, Herdr's tab order, else

@@ -85,6 +85,10 @@ Thanks to **goodboimax** for native Antigravity CLI support and the hook deliver
 - **Trees.** In any look, a pal that's working or needs you shows its live topics underneath
   (at most four), each one a click away, and the row itself then shows just the state. On by
   default; fold or unfold them all from the tree button in the Pals header, or in Pal list style.
+- **Working wins.** A pal shows Working while any of its topics works; Done only when nothing
+  runs (Needs you still comes first).
+- **Topic colours show.** A small bar in the topic's colour sits before each #topic in the
+  hero's list, the Trees rows and the topic picker.
 - **Fold the hero's topics.** A chevron on the hero's Topics header folds the list to one line
   ("Topics 18 · 3 working"). It's one setting for every pal, so switching pals never jumps.
 
