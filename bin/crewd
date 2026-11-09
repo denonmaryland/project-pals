@@ -34,6 +34,7 @@ import crewupdate
 import crewguard
 import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
 import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
+import crewsleep  # pals put to sleep in place (their markers)
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
@@ -155,6 +156,7 @@ class Crewd:
             self.last_stall_check = time.time()
             self.stalls(terms)
             tidy_queue(set(terms))
+            crewsleep.tidy(set(terms))
             self.desk_upkeep()
             try:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
@@ -359,7 +361,11 @@ class Crewd:
                         f.unlink(missing_ok=True)
                 continue
             if not is_agent(t):
-                continue   # asleep (bare shell): hold messages until its agent wakes up
+                # Asleep (a bare shell: put to sleep in place, or its agent exited). Nothing is ever
+                # typed into a shell. Cards go back to the Desk, held: asleep, and its redelivery queues
+                # them again once an agent runs there; messages without a card wait here.
+                self.hand_back_asleep(addr, items)
+                continue
             due = [(f, m) for f, m in items if m.get("not_before", 0) <= now_ms()]
             if not due:
                 continue
@@ -399,6 +405,17 @@ class Crewd:
                 self.save_health()
             self.last_sent[addr] = time.time()
             finish_claimed(claimed, via="typed")
+
+    def hand_back_asleep(self, addr, items):
+        cards = [f for f, m in items if m.get("card")]
+        if not cards:
+            return
+        claimed = claim_queue(addr, only=cards)   # claimed first, so a hook can't deliver one meanwhile
+        for taken, m in claimed:
+            taken.unlink(missing_ok=True)
+            crewdesk.hold(m["card"], "asleep")
+        if claimed:
+            log(f"{addr} is asleep: {len(claimed)} card(s) back on the Desk, held until it wakes")
 
     # ── stuck channels ──
     def stalls(self, terms):
