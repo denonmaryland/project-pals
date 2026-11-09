@@ -526,8 +526,9 @@ rectangular segments and tags.
   (only after real work) and carries the last 7 days' lessons (at most 400 characters). `pal task
   done` / `block` print a reminder, and crewd queues one line when a topic that was stuck 15+
   minutes moves again (once an hour per topic). Guards: key- and token-shaped text is masked
-  (‹masked›); more than 3 lines, or log-looking lines, are refused; paths into someone's home
-  other than config (~/.x), ~/Projects and the pal's project are refused. Days older than 90 roll
+  (‹masked›); more than 3 lines, or log-looking lines, are refused; paths into personal places
+  (home folders, /root, /mnt, /media, /srv …) other than a few config trees and the pal's own
+  project are refused, another project of yours included. Days older than 90 roll
   into `YYYY-MM.md` (lessons only).
 - **The Dream loop** (`bin/crewdream.py`; proposals only): nightly at 03:30 (crewd, after the memory
   distill, one model run at a time) and on demand (`pal dream`, or Dream now in the head pal's
@@ -861,7 +862,11 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
 - **Shell writes to AGENTS.md / CLAUDE.md are found by a parse** (H3, `write_targets` in
   crewguard.py): redirects in both heredoc orders and to quoted paths with spaces, `tee`, `sed`/`perl
   -i`, `cp`/`mv`/`install`/`ln`/`rsync` destinations, `dd of=`, inside `sh -c` too. Policy defaults
-  version 7. Anything cleverer (a script, python) isn't caught: the gate isn't a boundary.
+  version 7. Terminal editors too (`EDITORS`: ed, ex, vi/vim/nvim, nano, emacs, …): every file they
+  open, and every file their own commands name (`vim -c 'w AGENTS.md'`, `+cmd`, `--eval`, sed's `w`),
+  including ed / ex / `vim -es` commands from a heredoc, a here-string, `printf … |` or a `-S`/`<`
+  script. Matched on the command as run, so a grep for "vim -c wq AGENTS.md" isn't held. Interpreters
+  have their own rule; anything cleverer isn't caught: the gate isn't a boundary.
 - **The profile panel binds every edit and review to its pal** (H4, `bind.js`): space, name,
   folder and a generation that bumps when the shown pal changes. A late diff for another pal is
   dropped, Write and Save refuse a changed target, and `pal agents apply --folder --staged-sha`
@@ -876,8 +881,11 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
 - **Private keys never enter a notebook** (H6): a PEM / OpenSSH / PGP private-key block, whole or
   flattened, is refused by `pal notebook` and by `pal dream intake`.
 - **Notebook paths are checked resolved** (M1): `~`, `..` and symlinks resolved, then containment
-  by whole path components: the pal's project, ~/Projects, and a short list of config trees
-  (`SAFE_CONFIG`). Everything else in a home folder is refused.
+  by whole path components: the pal's own project and a short list of config trees
+  (`SAFE_CONFIG`). Not the rest of ~/Projects: `~/Projects/demo-private` while working on
+  `~/Projects/demo` is refused. Checked wherever personal files live (`PRIVATE_ROOTS`: home
+  folders, `$HOME` wherever it is, `/root`, `/mnt`, `/media`, `/run/media`, `/srv` …); system paths
+  (`/usr`, `/etc`, `/tmp`) and a bare root ("under /mnt") aren't.
 - **Notebook writes hold a per-pal lock and their own temp file** (M2), and every entry has an id
   (`· e1a2b3` at the end of its heading); deleting removes exactly that entry (M3). An older entry
   without an id is named "HH:MM #topic" and must match only one.

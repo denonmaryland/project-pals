@@ -9,12 +9,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# The fake home sits under the real one (~/.cache/pals-tests), whatever TMPDIR is: the notebook's path
-# guard only looks at home-like paths (/home/…, /Users/…, ~), so a home under /tmp would let the
-# Paths tests' private paths through unnoticed.
-_BASE = os.path.join(os.path.expanduser("~"), ".cache", "pals-tests")
-os.makedirs(_BASE, exist_ok=True)
-TMP = tempfile.mkdtemp(prefix="pals-prof-", dir=_BASE)
+# The fake home is a plain temp folder, wherever TMPDIR is: the notebook's path guard checks $HOME
+# itself, not only paths that look like a home (/home/…, /Users/…), so these tests don't depend on
+# where the real home is (readiness B1, M1).
+TMP = tempfile.mkdtemp(prefix="pals-prof-")
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ["HOME"] = TMP
@@ -57,9 +55,37 @@ class Paths(unittest.TestCase):                # M1
         self.proj.mkdir(parents=True, exist_ok=True)
         (self.home / "Documents").mkdir(exist_ok=True)
 
+    def test_sibling_project_refused(self):
+        # The review's own example: working on ~/Projects/demo, a note names ~/Projects/demo-private.
+        (self.home / "Projects" / "demo-private").mkdir(exist_ok=True)
+        for text in (f"read {self.home}/Projects/demo-private/customer.txt",
+                     "read ~/Projects/demo-private/customer.txt",
+                     f"read {self.home}/Projects/other-app/notes.md"):
+            with self.subTest(text=text), self.assertRaises(CrewError):
+                nb.clean(text, project=self.proj)
+
     def test_prefix_sibling_refused(self):
         with self.assertRaises(CrewError):
             nb.clean(f"read {self.home}/Elsewhere/demo-private/customer.txt", project=self.proj)
+
+    def test_non_home_private_roots_refused(self):
+        for text in ("copied /mnt/backup/taxes.pdf", "opened /media/usb/photos/a.jpg", "served /srv/www/site/index.html",
+                     "looked at /root/.ssh/config", "/run/media/me/disk/a.txt", "/home/someone/notes.md",
+                     "/Users/someone/Desktop/a.txt", "~someone/secret.txt"):
+            with self.subTest(text=text), self.assertRaises(CrewError):
+                nb.clean(text, project=self.proj)
+
+    def test_harmless_mentions_allowed(self):
+        for text in ("took a while (cost: ~25m)", "mounted the disk under /mnt", "ran /usr/bin/python3 > /tmp/out.txt",
+                     "/rootfs/x and /srvx/y", "src/home/x", "home is ~", "/etc/hosts"):
+            with self.subTest(text=text):
+                self.assertTrue(nb.clean(text, project=self.proj))
+
+    def test_project_outside_home(self):
+        proj = "/mnt/work/demo"     # a project on another disk: its own files are fine, its neighbours aren't
+        self.assertIn("RECIPE.md", nb.clean(f"edited {proj}/RECIPE.md", project=proj))
+        with self.assertRaises(CrewError):
+            nb.clean("read /mnt/work/demo-private/a.txt", project=proj)
 
     def test_traversal_refused(self):
         with self.assertRaises(CrewError):
