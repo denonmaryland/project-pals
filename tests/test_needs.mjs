@@ -126,6 +126,21 @@ try {
   reports = await crew.blockedReports(reports);
   assert.equal(crew.needsOf(fixtures.spaces, {}, reports).asks, 3);
   assert.equal(crew.needsTooltip({ count: 0, items: [] }), "");
+  // Desk cards waiting on the owner count too, with why (the same filter as Home's): needs you, or
+  // sent to the owner; drafts and other open cards don't.
+  const cards = [
+    { id: "c-111111", status: "needs you", tray: "helper", title: "Pick a palette", from: "Helper#build", last: { note: "which one?" } },
+    { id: "c-222222", status: "queued", tray: "_owner", title: "Can I push?", from: "Worker#general" },
+    { id: "c-333333", status: "draft", tray: "_drafts", title: "An idea", from: "MUSE#ideas" },
+    { id: "c-444444", status: "seen", tray: "helper", title: "Do a thing", from: "Worker#general" },
+  ];
+  const waiting = crew.needsYouCards(cards);
+  assert.deepEqual(waiting.map((c) => c.id), ["c-111111", "c-222222"]);
+  assert.equal(waiting[0].note, "which one?");
+  const withCards = crew.needsOf(fixtures.spaces, {}, reports, waiting);
+  assert.equal(withCards.cards, 2);
+  assert.equal(withCards.count, crew.needsOf(fixtures.spaces, {}, reports).count + 2);
+  assert.match(crew.needsTooltip(withCards), /Card: Pick a palette · Helper/);
   console.log("needs: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

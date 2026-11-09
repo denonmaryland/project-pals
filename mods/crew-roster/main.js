@@ -97,7 +97,7 @@ export default class CrewRoster extends View {
       try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
       // What needs DeNon, for the status bar's "N need you", with why each counts (published only
       // when it changes, reasons included).
-      const n = needsOf(spaces(), this.ops, this.reports ?? {}), was = shared("crew.needs");
+      const n = needsOf(spaces(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
       if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
       cx.notify();
     });
@@ -157,6 +157,35 @@ export default class CrewRoster extends View {
         await ownerCli([approve ? "approve" : "deny", a.id, "--inbox"]);
         notify({ title: approve ? `Approved for ${a.bot}` : `Declined for ${a.bot}`, body: a.command.slice(0, 120), level: approve ? "success" : "info", timeout: 3000 });
       } catch (e) { notify({ title: "Couldn't decide", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+      this.refreshOps(cx);
+    });
+  }
+
+  // One Desk card waiting on the owner, in the Inbox.
+  cardWaiting(c, t) {
+    const from = (c.from || "?").split("#")[0];
+    const f = c.from_kind === "pal" ? this.locate(from) : null;
+    const bot = f ? botOf(f.space) : { name: from, harness: null };
+    const why = c.tray === "_owner" ? `${from} sent you this` : `waits on you${c.note ? `: ${c.note}` : ""}`;
+    return v_flex().id(`dc-${c.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.blocked, "10")).border_1().border_color(a(t.blocked, "28"))
+      .child(h_flex().items_center().gap(11)
+        .child(mascotEl(bot, "blocked", 32, t))
+        .child(v_flex().flex_1().min_w(0).gap(2)
+          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(c.title || "(no title)"))
+          .child(div().truncate().text_size(12).text_color(t.dim).child(`${why} · ${c.id}`))))
+      .child(h_flex().gap(8).justify_between()
+        .child(div().id(`dc-open-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
+          .on_click((_e, cx) => { showDesk("needs"); cx.notify(); }).child(div().text_size(12.5).text_color(t.foreground).child("Open in Desk")))
+        .child(div().id(`dc-done-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
+          .on_click((_e, cx) => this.cardDone(c, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Done"))));
+  }
+
+  cardDone(c, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        await ownerCli(["desk", "done", c.id, "done from the Inbox"]);
+        notify({ title: "Card done", body: c.title.slice(0, 120), level: "success", timeout: 2500 });
+      } catch (e) { notify({ title: "Couldn't close the card", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.refreshOps(cx);
     });
   }
@@ -227,7 +256,8 @@ export default class CrewRoster extends View {
     // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
-    const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0);
+    const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0)
+      + (shared("crew.desk")?.needs?.length ?? 0);
     if (narrow()) return this.rail(rows, waiting, t, extra);
     return this.focusColumn(rows, asleep, waiting, t, extra);
   }
@@ -315,7 +345,8 @@ export default class CrewRoster extends View {
     const list = v_flex().gap(4);
     const { approvals, stalled } = this.ops;
     const proposals = this.ops.proposals ?? [];
-    const total = waiting.length + approvals.length + Object.keys(stalled).length + proposals.length;
+    const cardsWaiting = shared("crew.desk")?.needs ?? [];
+    const total = waiting.length + approvals.length + Object.keys(stalled).length + proposals.length + cardsWaiting.length;
     list.child(h_flex().items_baseline().gap(8).px(8).pb(10)
       .child(div().text_size(44).font_weight(200).text_color(t.foreground).child(String(total)))
       .child(div().text_size(14).text_color(t.muted).child("ready for you")));
@@ -348,6 +379,9 @@ export default class CrewRoster extends View {
           .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
             .on_click((_e, cx) => this.decide(ap, true, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve")))));
     }
+    // Desk cards waiting on you (needs you, or sent to you): the same ones Home and the status bar count.
+    // Open in Desk shows them there; Done closes the card (a click), and its sender sees the receipt.
+    for (const c of cardsWaiting) list.child(this.cardWaiting(c, t));
     // Proposals: a change a pal wants made to its mission or its project's AGENTS.md / CLAUDE.md.
     // View opens the profile panel on it (the diff, then Write / Accept); Decline tells the pal.
     for (const pr of proposals) {

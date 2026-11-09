@@ -20,7 +20,7 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, theme, focused, layout, nextCommand, shared, setShared, watchFolder, appHome, notify } from "herdr";
 import { shownRoom, roomMembers, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX,
-  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR, newDrafts, draftToast, homeMode } from "./crew.js";
+  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR, newDrafts, draftToast, homeMode, needsYouCards } from "./crew.js";
 
 const SIDE = 160;        // the Desk button and the split buttons, kept clear on both sides so the field stays centred
 const FIELD_Y = 11;      // (52 - 30) / 2
@@ -77,8 +77,9 @@ export default class CrewHeader extends View {
         // Published only when something changed: the counts, any pal's or topic's (the sidebar's
         // Desk button and topic markers), or whether triage is on (the quick-drop's Auto).
         const was = shared("crew.desk");
-        const now = { counts, pals, triage };
-        if (JSON.stringify({ counts: was?.counts, pals: was?.pals, triage: was?.triage }) !== JSON.stringify(now)) setShared("crew.desk", { ...now, at: this.lastDesk });
+        // needs: the cards waiting on the owner, for the Inbox and the status bar's count.
+        const now = { counts, pals, triage, needs: needsYouCards(cards) };
+        if (JSON.stringify({ counts: was?.counts, pals: was?.pals, triage: was?.triage, needs: was?.needs }) !== JSON.stringify(now)) setShared("crew.desk", { ...now, at: this.lastDesk });
       } catch { /* no pal desk yet (an older install): no count */ }
       this.deskBusy = false;
       if (this.deskAgain) { this.deskAgain = false; this.refreshDesk(cx); }

@@ -629,6 +629,10 @@ still travels through crewd's queue, carrying the card's id.
   the card becomes the owner's own, from the owner, `drafted_by` MUSE, in the ledger), Edit (the
   quick-drop prefilled; dropping sends it with `--from-draft`, and the draft closes "edited and sent
   as c-…") and Discard. `desk.partner_sends_as_itself` sends its cards at once as a pal's instead.
+- **Cards waiting on the owner are in the Inbox too** (needs you, or sent to the owner; not drafts),
+  each with Open in Desk and Done (a click), and they count in the status bar's "N need you" as
+  "Card: <title> · <sender>". The header publishes them (`shared("crew.desk").needs`, via
+  `needsYouCards`); Home uses the same filter, so the three agree.
 - **The head pal's check-in:** at most every 15 minutes, when something's stuck, crewd puts one low
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
