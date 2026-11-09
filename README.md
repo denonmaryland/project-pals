@@ -25,18 +25,51 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
 - **Profiles:** a panel per pal with its mission, brain, memory, topics and tasks.
 - **The Vault:** each pal's notes, with a live Home note: mission, focus, what's running, tasks,
   today's journal and the week, updating as work lands.
-- **Tasks:** give a pal a task (with screenshots attached); it picks it up when its current turn
-  ends. Routines run on a schedule.
+- **Tasks:** give a pal a task (with screenshots attached); it lands on its desk as a card.
+  Routines run on a schedule.
 - Hire pals and add topics on any harness, with a model per pal (cheap helpers on Haiku).
 - Memory and shared skills, branch-per-topic review, and an approval gate.
+
+## The Desk
+
+Everything sent to a pal (a message, a question, a task, the answer to something it asked) is a
+card with a status: queued, seen, working, done, held or needs you. You see when a pal actually
+got it and what it did with it, instead of guessing from its screen.
+
+- The header's **Desk** button shows every desk at once: what waits on you, what has no pal yet,
+  what's held and why, then each pal and its topics. Move, raise, lower, close or cancel a card.
+- **Ctrl+Shift+D** drops a card from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
+  model (Claude Haiku) picks one for you, and a card it isn't sure about waits for you to place it.
+- Claude Code pals get cards mid-step or when idle without anything typed into their box, so a
+  half-written prompt stays put. Antigravity CLI pals get them between steps through hooks; Codex
+  pals check with a `desk_check` tool; other brains get them typed in when idle.
+- Pals work their desk with `pal desk` (`take`, `done "result"`, `reply`, `block`, `pass`).
+  Cards are plain files in `~/.config/herdr-app/data/crew-desk`.
+
+## Home
+
+Click your head pal (or press **Ctrl+Shift+H**) for one page to come back to: everything that
+needs you, oldest first, under one line saying who's working and what shipped today, or "All
+caught up". While something needs you, Home shows one decision at a time: who's asking, the
+context, what each option does and the asker's recommendation. Pick with a click or 1-9 (Enter
+takes the recommendation). **T** opens your head pal's terminal, and "What happened today" opens
+a drawer with what finished, got installed or was linked.
+
+## MUSE, the idea partner
+
+An optional pal to think out loud with. Hire it from the hire dialog (Idea partner) or with
+`pal hire --partner`, then riff in its #ideas topic: half-formed ideas, screenshots. It asks sharp
+questions and turns what you settle on into card drafts with the right pal suggested. Nothing goes
+out until you click **Send** in the Desk's Drafts; then it's your own card. MUSE runs on Claude
+Code (Sonnet).
 
 ## Harnesses
 
 | Harness | Status |
 |---|---|
-| Claude Code | Tested daily: hiring, topics, model picker, hooks (messages handed over between steps), the approval gate and status line |
+| Claude Code | Tested daily: hiring, topics, model picker, hooks and the Desk's pals mod (cards handed over mid-step or when idle), the approval gate and status line |
 | Antigravity CLI (`agy`) | Native (goodboimax's PR #1): hiring, topics, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate, shared skills |
-| Codex | Tested as a pal. Shared skills work; the approval gate and hooks are Claude Code and Antigravity CLI only, so messages are typed in when it's idle |
+| Codex | Tested as a pal. Shared skills work, and a `desk_check` / `desk_done` tool lets it check its desk; the approval gate and hooks are Claude Code and Antigravity CLI only, so cards are typed in when it's idle |
 | Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code as terminal pals. Hooks and the approval gate are Claude Code and Antigravity CLI only |
 
 Reports from other harnesses are welcome.
@@ -70,11 +103,19 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
 
 - **Layout, mods and commands:** `~/.config/herdr-app/layouts/pals.json`, `mods/crew-*`, and
   `~/.local/bin/pal` and friends (`crew` is an alias).
+- **Shortcuts:** Ctrl+Shift+I (profile), Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
+  card) and Ctrl+Shift+H (Home) go into Herdr's `keys.json`, backed up first, and only where the
+  key and the action are free.
 - **Helpers (skip all with `--no-helpers`, or skip one harness's hooks with `--no-claude-hooks` / `--no-agy-hooks`):**
   - `herdr-crew.service`, the background helper.
   - Claude Code hooks and a status-line wrapper in `~/.claude/settings.json`, backed up first.
+  - The Desk's Claude Code mod in `~/.claude/project-pals/pals`, loaded only by pals (with
+    `--plugin-dir`), never by your other Claude Code sessions.
   - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
 - **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; configurable with `pal settings llm auto|claude|agy`).
+- **The Desk's Auto routing:** a card you drop with Auto is sent to Claude Haiku (else Antigravity
+  CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk or
+  with `pal settings desk.triage off`.
 
 ## Hiring a pal into a new folder
 

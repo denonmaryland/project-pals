@@ -4,10 +4,11 @@ Your coding agents as a crew of pals. Any harness works: Claude Code, Antigravit
 Codex, Grok CLI, Gemini CLI, opencode, Hermes, Copilot, Cursor, pi.
 
 Every Herdr space is a pal (a project with a brain), and each of its tabs is a topic, a clone
-working on one thing. Pals are pocket pets whose pose shows what they're doing. You can watch
-a topic as a chat instead of a terminal, put pals together in group-chat rooms, and give them
-tasks and scheduled routines. A head pal (named Orchestrator by default; About → Settings or `pal settings head "Name"`
-renames it) oversees everyone.
+working on one thing. Pals are pocket pets whose pose shows what they're doing. A topic is its
+agent's own terminal. You can put pals together in group-chat rooms and give them tasks and
+scheduled routines. Everything sent to a pal is a card on its desk (the Desk), and Home is the
+one page that shows what needs you. A head pal (named Orchestrator by default; About → Settings or
+`pal settings head "Name"` renames it) oversees everyone.
 
 The layout updates itself from its GitHub releases.
 
