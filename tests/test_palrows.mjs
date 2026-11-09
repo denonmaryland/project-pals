@@ -213,6 +213,73 @@ try {
   assert.equal(crew.categoryName("Routines"), "Routines");
   assert.equal(crew.categoryOf({ categories: { t1: "Channels" } }, { id: "t1", name: "#a" }), "Topics");
   assert.equal(crew.categoryOf({ categories: {} }, { id: "t2", name: "#b" }), "Topics");
+  // Scrolling with a pill thumb (DeNon, 2026-11-08): our own areas, since Herdr's bar can't be rounded.
+  {
+    const { thumbGeom, scrollArea, scrollState, scrollIntoView, THUMB } = crew;
+    const { div } = await import(url("node_modules/gpui-kit/index.js"));
+    assert.equal(thumbGeom(100, 100, 0), null, "no thumb when it fits");
+    assert.equal(thumbGeom(0, 500, 0), null, "no thumb before it's measured");
+    const g0 = thumbGeom(200, 800, 0), gEnd = thumbGeom(200, 800, 600), gMid = thumbGeom(200, 800, 300);
+    assert.equal(g0.top, THUMB.pad);
+    assert.equal(gEnd.top + gEnd.h, 200 - THUMB.pad, "at the end the pill reaches the bottom");
+    assert.ok(gMid.top > g0.top && gMid.top < gEnd.top);
+    assert.equal(g0.h, Math.round((200 - 2 * THUMB.pad) * 200 / 800));
+    assert.equal(thumbGeom(200, 100000, 0).h, THUMB.min, "never thinner than the minimum");
+    assert.equal(THUMB.r, THUMB.w / 2, "fully round ends: radius = half the width");
+    assert.ok(THUMB.w >= 4 && THUMB.w <= 6, "4-6 px wide");
+    const mkcx = () => ({ n: 0, stopped: false, notify() { this.n++; }, stop_propagation() { this.stopped = true; } });
+    const draw = () => scrollArea(d, "t-area", div().child("rows"));
+    let el = draw().node;
+    const inner = () => el.kids[0].node;
+    // Measure: a 200 px view over 800 px of content.
+    el.args.on_size_change[0]({ width: 280, height: 200 }, mkcx());
+    inner().args.on_size_change[0]({ width: 280, height: 800 }, mkcx());
+    el = draw().node;
+    const pillOf = (n) => n.kids.map((k) => k.node).find((k) => String(k.args.id?.[0]).endsWith("-thumb"));
+    let thumb = pillOf(el);
+    assert.ok(thumb, "a thumb once it overflows");
+    const pillEl = thumb.kids[0].node;
+    assert.equal(pillEl.args.w[0], THUMB.w);
+    assert.equal(pillEl.args.rounded[0], THUMB.w / 2, "the pill is round at both ends");
+    assert.equal(pillEl.args.bg[0], d.thumb, "quiet grey at rest");
+    assert.ok(el.calls.includes("overflow_hidden") && !el.calls.includes("overflow_y_scrollbar"), "clips; no Herdr bar");
+    // The wheel: down 120 px (GPUI's delta is negative going down), clamped at the ends; at an end
+    // it lets the wheel through to an outer area.
+    let c = mkcx(); el.args.on_scroll_wheel[0]({ delta: { x: 0, y: -120 } }, c);
+    assert.equal(scrollState("t-area").y, 120); assert.ok(c.stopped && c.n === 1);
+    c = mkcx(); el.args.on_scroll_wheel[0]({ delta: { x: 0, y: -5000 } }, c);
+    assert.equal(scrollState("t-area").y, 600, "clamped at the end");
+    c = mkcx(); el.args.on_scroll_wheel[0]({ delta: { x: 0, y: -50 } }, c);
+    assert.ok(!c.stopped, "at the end the wheel goes on to an outer area");
+    el = draw().node;
+    assert.equal(inner().args.top[0], -600, "the content moves up by the offset");
+    // Hover brightens it; dragging the pill to the top scrolls back to the start.
+    thumb = pillOf(el);
+    c = mkcx(); thumb.args.on_hover[0](true, c);
+    assert.equal(pillOf(draw().node).kids[0].node.args.bg[0], d.thumbHot, "brighter on hover");
+    el = draw().node; thumb = pillOf(el);
+    c = mkcx(); thumb.args.on_mouse_down[1]({ position: { x: 270, y: 500 } }, c);
+    el = draw().node;
+    c = mkcx(); el.args.on_mouse_move[0]({ position: { x: 270, y: 0 } }, c);
+    assert.equal(scrollState("t-area").y, 0, "dragged to the top");
+    c = mkcx(); el.args.on_mouse_up[1]({}, c);
+    assert.equal(scrollState("t-area").drag, null);
+    // Bringing a row into view.
+    scrollIntoView("t-area", 700, 30);
+    assert.equal(scrollState("t-area").y, 530);
+    // The content shrinking pulls the offset back.
+    inner().args.on_size_change[0]({ width: 280, height: 300 }, mkcx());
+    assert.equal(scrollState("t-area").y, 100);
+  }
+  // Nothing of ours asks Herdr for its rectangular bar any more.
+  {
+    const { readdirSync } = await import("node:fs");
+    const files = readdirSync(join(root, "mods")).flatMap((m) => readdirSync(join(root, "mods", m)).filter((f) => f.endsWith(".js")).map((f) => join(root, "mods", m, f)));
+    for (const f of [...files, join(root, "lib/crew.js")]) {
+      const src = readFileSync(f, "utf8").replace(/\/\/.*$/gm, "");
+      assert.ok(!/\.overflow_(?:y_|x_)?scrollbar\(|Scrollbar\.(?:vertical|horizontal|new)\(/.test(src), `${f} uses Herdr's scrollbar`);
+    }
+  }
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });

@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, a, tone, ds, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
+import { crewCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
@@ -140,9 +140,9 @@ export default class CrewAbout extends View {
     else if (st.checked) { title = "You're up to date"; sub = `checked ${ago(st.checked)}`; }
     else { title = "Not checked yet"; sub = "Project Pals checks every few hours by itself"; }
 
-    const notes = available && st.notes ? v_flex().id("about-notes").max_h(220).overflow_y_scrollbar().gap(3).pt(4)
+    const notes = available && st.notes ? scrollArea(ds(t), "about-notes", v_flex().gap(3).pt(4).pr(10)
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>
-        div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1")))) : null;
+        div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1"))))).max_h(220) : null;
 
     const status = v_flex().gap(4).px(16).py(14).rounded(8).bg(a(t.foreground, available ? "0c" : "07"))
       .child(div().text_size(14.5).font_medium().text_color(color).child(title))

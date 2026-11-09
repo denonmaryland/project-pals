@@ -19,7 +19,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { panes, agents, run, notify, openOverlay, setShared, settings } from "herdr";
 import {
   mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor,
-  openPanel, worktreeOf, openReview, briefOf, taskTitle, tabHasAgent, leadPane, channelOrder, showTabs, TAG_WORDS,
+  openPanel, worktreeOf, openReview, briefOf, taskTitle, tabHasAgent, leadPane, channelOrder, showTabs, TAG_WORDS, scrollArea,
 } from "./crew.js";
 import { stageTone, stateLine, weekCards, boardOf } from "./stagedata.js";
 import { homeData } from "./vaultdata.js";
@@ -172,9 +172,10 @@ export function stagePart(view, space, bot, t, d) {
   const pw = Math.floor((inner - gap * (n - 1)) / n);
   col.child(h_flex().w(inner).pt(14).gap(gap).items_start()
     .children(order.map((ix, i) => v_flex().id(`ps-col-${i}`).w(pw).flex_none().gap(gap).children(ix.map((k) => panels[k][1]())))));
-  return div().id("ps-scroll").size_full().overflow_y_scrollbar()
+  // It scrolls in our own area (scrollArea: the pill thumb); this box only measures the width.
+  return div().size_full().flex().flex_col()
     .on_size_change((size, cx) => { const w = size.width / zoom; if (Math.abs((view.stageW ?? 0) - w) > 1) { view.stageW = w; cx.notify(); } })
-    .child(col);
+    .child(scrollArea(d, "ps-scroll", col).flex_1().min_h(0));
 }
 
 function panel(d, id, label, count, action, body) {

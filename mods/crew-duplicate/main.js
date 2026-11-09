@@ -6,7 +6,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
 import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
-  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter, categoryName } from "./crew.js";
+  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetPanelBox, sheetOption, sheetFooter, categoryName } from "./crew.js";
 
 export default class CrewDuplicate extends View {
   init(_props, cx) {
@@ -147,7 +147,7 @@ export default class CrewDuplicate extends View {
         .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
         .child(sheetArea(d, Textarea.new(this.brief).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
         .child(row)
-        .when(Boolean(panel), (el) => el.child(panel)))
+        .when(Boolean(panel), (el) => el.child(sheetPanelBox(d, `dup-panel-${this.picking}`, panel))))
       .child(sheetFooter(d, { id: "dup", hint: "Enter adds · Esc cancels", onCancel: close, ready,
         primary: this.busy ? "Making its branch…" : "Add topic", onPrimary: (cx) => this.go(cx) }));
   }

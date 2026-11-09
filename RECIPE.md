@@ -111,6 +111,21 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   replaces the older one) and its eyes (9), each choice shown as a resting thumbnail of the pet with
   it; Reset to its default, Cancel, Save (stores `pet` {species, acc, eyes} and `look.color`). No
   laptop choice: every state uses the profile laptop. (The folder mascots' `mascot-art.js` is gone.)
+- **Scrolling** (DeNon, 2026-11-08: round scrollbars, not Herdr's hard-cut rectangle). A mod can't
+  shape Herdr's scrollbar (no radius or width; its colours come from the theme) or read where a
+  scroll area is, so every area our mods scroll is our own (`crew.js scrollArea`): it clips its
+  content and moves it by an offset it keeps (wheel and trackpad in pixels, clamped to the measured
+  view and content; at an end the wheel goes on to an outer area), and draws a 5px pill thumb,
+  radius 2.5 (half its width), 3px in from the right edge in the padding every list keeps, at least
+  24px tall, quiet (#FFFFFF26 dark, #0000002E light), brighter on hover and while dragged
+  (#FFFFFF4D / #00000059), and draggable. The hero's topics, the pal list (and the folded rail),
+  the Inbox's diff and proposal text, the profile panels (Overview, the tabs, the stage, the
+  Vault), dialogs (task list, routines, update and About notes, attach, the review's file list,
+  the selects' lists via `sheetPanelBox`) all use it. The two long virtual lists (the review's diff,
+  a room's chat) keep their virtualisation: Herdr's bar is gone and the same pill is placed from
+  the rows the list drew (`thumbFor`; dragging it scrolls to the row under it). No mod uses
+  `overflow_*_scrollbar` or `Scrollbar` (a test checks). The command bar's results never scroll
+  (they're capped to fit).
 - **Pocket pets** (`lib/pets.js`, the engine from the pocket-pets study): every pal shows as a
   little critter in round LED dots, glowing in the pal's own colour (its look's colour, else its
   stock colour), drawn bare (no screen box, cropped to 138x108 of the 172x135 tile) at 96% of a
@@ -276,10 +291,9 @@ rectangular segments and tags.
     so switching pals never moves the quick actions or the Pals list (DeNon, 2026-11-08): fewer rows
     leave the rest blank, with a faint "+ New topic" row (#56565A, opens the New topic dialog) after the last
     when not searching; past four the box is four rows plus the top 12px of the
-    fifth, cut at its edge, with an always-drawn scrollbar in a gutter: while the list overflows the
-    rows end 18px in (11px otherwise) and Herdr's thumb sits in the gap, never over a time, pin or
-    dot (Herdr draws the thumb 8-16px in from the scroll area's edge whatever box it's given, and
-    picks its colours from the theme) and "+N more" (#808082, rows below the
+    fifth, cut at its edge, scrolling in our own area with the pill thumb (see Scrolling below; the
+    rows end 11px in and the pill sits in that gap, never over a time, pin or dot) and "+N more"
+    (#808082, rows below the
     box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
     shown topic is scrolled into view when it changes. Order: pinned topics first (in pin order,
     with a small pin mark), then, once you've arranged that pal's topics, Herdr's tab order, else
@@ -296,8 +310,8 @@ rectangular segments and tags.
     one. The dialog: fake topic rows on top showing the style under the pointer (else the chosen
     one), then a grid of 44px tiles with live 24px previews per group; a click applies at once,
     Done keeps it, Cancel or Esc puts back the one you had.
-    No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (Inbox and
+    No dragging: Herdr's lists have no row drag, so there is no hover pin either; each row takes its
+    own click and right-click. Then four quick actions as subtle "pebbles" (Inbox and
     Tasks share the row evenly, flex-basis 0, and each keeps an 18px slot for its count even at zero,
     so no count or pal switch changes their widths; Profile and Sleep are 28px squares) (one flat #1B1B1E face, a 6% white
     hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest

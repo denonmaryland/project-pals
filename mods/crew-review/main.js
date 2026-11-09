@@ -3,9 +3,9 @@
 // when its turn ends), and "Land" merges the branch into the project (pal land).
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, v_virtual_list, Scrollbar, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { crewCli, ownerCli, channelName, botOf, mascotEl, a, tone } from "./crew.js";
+import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, InputState, Input } from "gpui-base";
+import { theme, props, closeOverlay, notify, spaces, settings } from "herdr";
+import { crewCli, ownerCli, channelName, botOf, mascotEl, a, tone, ds, scrollArea, thumbFor } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 20;
@@ -40,6 +40,8 @@ function parse(patch) {
 
 export default class CrewReview extends View {
   init(_props, cx) {
+    // The diff is a virtual list; our pill thumb follows the rows it draws, and drags with this.
+    this.rvScroll = VirtualListScrollHandle.new();
     this.data = null;
     this.error = null;
     this.rows = [];
@@ -160,7 +162,7 @@ export default class CrewReview extends View {
         .child(svg(`${ICON}/x.svg`).size(14).text_color(t.muted)));
 
     // Files on the left; click one to show only it.
-    const files = v_flex().id("rv-files").w(250).flex_none().overflow_y_scrollbar().py(10).px(8).gap(1).border_r_1().border_color(a(t.foreground, "0f"))
+    const files = v_flex().py(10).px(8).gap(1)
       .child(h_flex().id("rv-all").px(10).py(6).rounded(8).cursor_pointer().when(!this.file, (el) => el.bg(a(t.foreground, "10")))
         .on_click((_e, cx) => { this.file = null; cx.notify(); })
         .child(div().text_size(12.5).text_color(t.foreground).child(`All files${d ? ` (${d.files.length})` : ""}`)))
@@ -173,13 +175,17 @@ export default class CrewReview extends View {
         .child(div().text_size(11).text_color(t.blocked).child(`−${f.removed}`))))
       .when(Boolean(d?.untracked?.length), (el) => el.child(div().px(10).pt(10).text_size(11.5).text_color(t.dim)
         .child(`${d.untracked.length} new file${d.untracked.length === 1 ? "" : "s"} not added yet: ${d.untracked.slice(0, 4).join(", ")}`)));
+    const tk = ds(t);
 
     const rows = this.file ? this.rows.filter((r) => r.file === this.file) : this.rows;
     const diff = rows.length
       ? div().relative().flex_1().min_w(0).min_h(0)
+          .on_size_change((size, cx) => { const h = size.height / (Number(settings()?.zoom) || 1); if (Math.abs((this.rvView ?? 0) - h) > 1) { this.rvView = h; cx.notify(); } })
+          .on_scroll_wheel((_e, cx) => cx.timer.after(60, (cx) => cx.notify()))
           .child(v_virtual_list("rv-diff", rows.length, ROW, (i) => `${rows[i].file}-${rows[i].kind}-${i}`,
-            (range) => rows.slice(range.start, range.end).map((r, k) => this.row(r, range.start + k, t))).size_full())
-          .child(Scrollbar.vertical("rv-diff").absolute().inset_0())
+            (range) => { this.rvRange = [range.start, range.end]; return rows.slice(range.start, range.end).map((r, k) => this.row(r, range.start + k, t)); })
+            .track_scroll(this.rvScroll).size_full())
+          .map((el) => { const th = thumbFor(tk, "rv-diff", { range: this.rvRange, count: rows.length, heights: ROW, view: this.rvView ?? 0, handle: this.rvScroll }); return th ? el.child(th) : el; })
       : v_flex().flex_1().items_center().justify_center().child(div().text_size(13).text_color(t.dim).child(d ? "No changes on this branch yet." : ""));
 
     // Notes so far, and the box to add one.
@@ -206,7 +212,9 @@ export default class CrewReview extends View {
           .child(div().text_size(13).font_medium().text_color(t.solid_foreground).child(`Land on ${d?.base ?? "base"}`))));
 
     return root.child(header)
-      .child(h_flex().flex_1().min_h(0).child(files).child(diff))
+      .child(h_flex().flex_1().min_h(0)
+        .child(scrollArea(tk, "rv-files", files).w(250).flex_none().h_full().border_r_1().border_color(a(t.foreground, "0f")))
+        .child(diff))
       .child(notes);
   }
 }

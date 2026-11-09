@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, exec, notify } from "herdr";
 import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetFace, headPet, pebble, crewCli,
-  readUpdate, updateLater, updateStart, noteHighlights, UPDATE_CHECK_EVERY } from "./crew.js";
+  readUpdate, updateLater, updateStart, noteHighlights, UPDATE_CHECK_EVERY, scrollArea } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ago = (s) => { const d = Date.now() / 1000 - s; return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`; };
@@ -101,12 +101,12 @@ export default class CrewUpdate extends View {
     const body = sheetBody();
     if (mode === "offer" || mode === "running" && run?.action !== "rollback") {
       const hl = noteHighlights(u.notes, 6);
-      if (hl.length) body.child(v_flex().gap(8).max_h(260).overflow_y_scrollbar().pr(6)
+      if (hl.length) body.child(scrollArea(d, "up-notes", v_flex().gap(8).pr(12)
         .children(hl.map((h, i) => h_flex().id(`up-hl-${i}`).items_start().gap(8)
           .child(div().mt(6).size(4).flex_none().rounded(2).bg(d.fg3))
           .child(div().flex_1().min_w(0).text_size(12).line_height("18px").text_color(d.fg2)
             .child(div().text_color(d.fg1).font_weight(500).child(h.head))
-            .when(Boolean(h.detail), (el) => el.child(div().truncate().child(h.detail)))))));
+            .when(Boolean(h.detail), (el) => el.child(div().truncate().child(h.detail))))))).max_h(260));
       else body.child(text("This release has no notes."));
       if (u.url) body.child(div().id("up-notes").cursor_pointer().hover((s) => s.opacity(0.75)).text_size(12).text_color(d.infoText)
         .on_click(() => exec("xdg-open", [u.url]).catch(() => {})).child("Full release notes →"));

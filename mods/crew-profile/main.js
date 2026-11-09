@@ -17,7 +17,7 @@ import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay,
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
-  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, shortDate, num, VAULT_NOTES, dashShown,
+  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, shortDate, num, VAULT_NOTES, dashShown, scrollArea,
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
@@ -208,7 +208,7 @@ export default class CrewProfile extends View {
     const { space, bot } = s;
     const full = panelFull();
     const tab = panelTab();
-    const scroll = (el) => div().id(`pf-scroll-${tab}`).flex_1().min_h(0).overflow_y_scrollbar().child(full ? div().max_w(980).child(el) : el);
+    const scroll = (el) => scrollArea(d, `pf-scroll-${tab}`, full ? div().max_w(980).child(el) : el).flex_1().min_h(0);
     return root
       .child(this.header(space, bot, d, full))
       .child(this.tabs(d, bot))
@@ -272,7 +272,7 @@ export default class CrewProfile extends View {
     body.child(facts).child(channels);
     if (!memFirst) body.child(memory);
     body.child(routines).child(actions);
-    return div().id("pf-body").flex_1().min_h(0).overflow_y_scrollbar().child(v_flex().child(hero).child(cards).child(body));
+    return scrollArea(d, "pf-body", v_flex().child(hero).child(cards).child(body)).flex_1().min_h(0);
   }
 
   link(id, text, d, act) {

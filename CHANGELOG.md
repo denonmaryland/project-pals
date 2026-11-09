@@ -42,6 +42,8 @@ Thanks to **goodboimax** for native Antigravity CLI support and the hook deliver
   branch, the brain and topic and task counts fit (Name + folder, Two tight lines, Name wraps,
   Rich detail, Table, Progress, Folder first, Grouped, Mini card). The dialog previews each one
   with your own pals; a click applies it.
+- **Round scrollbars.** Everything Project Pals scrolls (the sidebar, the topics, profiles,
+  dialogs) has a slim pill-shaped thumb with round ends, quiet until you hover or drag it.
 - **Trees.** In any look, a pal that's working or needs you shows its live topics underneath
   (at most four), each one a click away. On by default; switch it off in Pal list style.
 

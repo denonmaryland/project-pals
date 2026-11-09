@@ -4,7 +4,7 @@
 // blocked). Inbox tab: every channel that needs you, across all pals and machines.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, Scrollbar, VirtualListScrollHandle, v_virtual_list } from "gpui-base";
+import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
   crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
@@ -14,7 +14,8 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab } from "./crew.js";
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab,
+  scrollArea, scrollState, scrollTo, scrollIntoView } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -109,7 +110,6 @@ export default class CrewRoster extends View {
     this.chSearch = InputState.new({ placeholder: "Search topics" });
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
-    this.chScroll = VirtualListScrollHandle.new();
     this.chShownKey = null;
     // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals,
     // crew-roster.profile (the profile panel; Ctrl+Shift+I).
@@ -240,14 +240,14 @@ export default class CrewRoster extends View {
         .child(div().size(36).flex().items_center().justify_center().rounded(6).hover((s) => s.bg(a(t.foreground, "10")))
           .child(div().text_size(15).font_weight(300).text_color(urgent ? t.blocked : t.done).child(String(total))))))
       .child(div().w(28).h(1).bg(a(t.foreground, "14")))
-      .child(v_flex().id("rail-list").flex_1().min_h(0).overflow_y_scrollbar().items_center().gap(6)
+      .child(scrollArea(ds(t), "rail-list", v_flex().items_center().gap(6)
         // Faces only here, so each one names its pal on hover.
         .children(rows.map(({ space, bot }) => div().id(`rail-${space.id}`).tooltip(bot.name).relative().size(44).flex().items_center().justify_center().rounded(6).cursor_pointer()
           .when(space.active, (el) => el.bg(a(t.accent, "26")))
           .when(!space.active, (el) => el.hover((s) => s.bg(a(t.foreground, "0c"))))
           .on_click(() => this.open(space))
           .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
-          .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked))))))
+          .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked)))))).flex_1().min_h(0).w_full())
       .child(icon("rail-hire", "plus", () => this.hire()))
       .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU })));
   }
@@ -328,10 +328,10 @@ export default class CrewRoster extends View {
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
         // An AGENTS.md / CLAUDE.md edit: the exact change it would make, in full (review H2). Approving
         // lets exactly this edit, to this version of the file, through once.
-        .when(Boolean(ap.diff), (el) => el.child(v_flex().id(`ap-diff-${ap.id}`).max_h(280).overflow_y_scrollbar().px(10).py(6).rounded(6).bg(a(t.canvas, "aa"))
+        .when(Boolean(ap.diff), (el) => el.child(scrollArea(ds(t), `ap-diff-${ap.id}`, v_flex().px(10).py(6)
           .children(ap.diff.split("\n").map((line, i) => div().id(`ap-dl-${ap.id}-${i}`).text_size(11.5).font_family("JetBrains Mono")
             .text_color(line.startsWith("+") && !line.startsWith("+++") ? t.working ?? t.ansi2 : line.startsWith("-") && !line.startsWith("---") ? t.blocked : t.muted)
-            .child(line || " ")))))
+            .child(line || " ")))).max_h(280).rounded(6).bg(a(t.canvas, "aa"))))
         // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
         .child(h_flex().gap(8).justify_between()
           .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
@@ -414,8 +414,9 @@ export default class CrewRoster extends View {
       .child(div().text_size(12).text_color(t.muted).child(`${m.summary} · ${m.count}x, ${m.pals?.length ?? 0} pal(s), ~${m.minutes}m lost`))
       .children((m.quotes ?? []).map((q, i) => div().id(`dr-q-${pr.id}-${i}`).pl(8).border_l_2().border_color(a(t.foreground, "22")).text_size(12).text_color(t.dim).child(`“${q}”`)))
       .child(shown
-        ? v_flex().id(`dr-text-${pr.id}`).max_h(320).overflow_y_scrollbar().px(10).py(7).rounded(6).bg(a(t.canvas, "aa"))
-          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " ")))
+        ? scrollArea(ds(t), `dr-text-${pr.id}`, v_flex().px(10).py(7)
+          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " "))))
+          .max_h(320).rounded(6).bg(a(t.canvas, "aa"))
         : div().id(`dr-show-${pr.id}`).px(10).py(7).rounded(6).border_1().border_color(a(t.foreground, "22")).cursor_pointer().hover((s) => s.bg(a(t.foreground, "08")))
           .on_click((_e, cx) => cx.spawn(async (cx) => {
             try { const p = JSON.parse(await crewCli(["proposal", "show", pr.id])); this.shownProposals[pr.id] = { text: p.text ?? "", sha: p.text_sha }; }
@@ -560,11 +561,13 @@ export default class CrewRoster extends View {
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.heroCard(shown, t, d, w));
-    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().px(8).pt(8).pb(24).gap(2)
+    // The list scrolls in our own area (scrollArea: the pill thumb sits in its 8 px right padding).
+    const list = v_flex().px(8).pt(8).pb(24).gap(2)
       // A pal drag ends on release anywhere in the list, and is dropped if the pointer leaves it.
       .on_mouse_up("left", (_e, cx) => this.drop(cx))
       .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
-    if (this.view() !== "bots") return root.child(this.otherView(list, rows, waiting, t, d));
+    const scroller = (inner) => scrollArea(d, "crew-list", inner).flex_1().min_h(0);
+    if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
       .child(div().id("pals-search").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("Search")
@@ -596,7 +599,7 @@ export default class CrewRoster extends View {
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
     }
     this.extras(list, waiting, extra, d);
-    return root.child(list);
+    return root.child(scroller(list));
   }
 
   // Not on the boards, and only there while they have something: the Inbox (approvals wait for
@@ -725,15 +728,12 @@ export default class CrewRoster extends View {
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
-    // Past four rows, how many are below the box (DeNon: say the list scrolls). The list's renderer
-    // records the last row it drew (this.chEnd, keyed by what's listed); a scroll re-renders shortly
-    // after, so the count follows it, and it's gone at the end.
-    const ROWS = 4, ROW = 30;
-    const listKey = `${space.id}|${q}|${list.length}`;
-    // The renderer's range runs a row past what's on screen, so count from its first row: four full
-    // rows are seen (five once the end is in view, where the peek row is the last one).
-    const [start, end] = this.chEndKey === listKey ? this.chRange : [0, ROWS + 2];
-    const below = list.length > ROWS ? Math.max(0, list.length - (start + (end >= list.length ? ROWS + 1 : ROWS))) : 0;
+    // Past four rows, how many are below the box (DeNon: say the list scrolls): rows whose top is
+    // under the box's bottom edge, from our own scroll offset (scrollArea), so it's gone at the end.
+    const ROWS = 4, ROW = 30, SID = "hero-ch-list";
+    const BOX = ROWS * ROW + 12;
+    const sc = scrollState(SID);
+    const below = list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -747,30 +747,26 @@ export default class CrewRoster extends View {
         .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
         .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
-          .on_click((_e, cx) => { this.chScroll.scroll_to_item(list.length - 1); cx.timer.after(80, (cx) => cx.notify()); })
+          .on_click((_e, cx) => { scrollTo(SID, Infinity); cx.notify(); })
           .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Search topics")
           .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
           .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
     }
-    // Up to four rows show (DeNon: "at most 4"); more scroll. A virtual list with a scroll handle, so
-    // the shown channel is scrolled into view when it changes (not on every render, so a scroll you
-    // made stays put). The box is always four rows + the peek (see BOX below). Its rows can't carry handlers (Herdr
-    // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
-    // on_item_secondary_click, by the channel's tab id.
-    // ROW: a 28 px row and its 2 px gap.
-    // The scroll area runs to the sidebar's edge and Herdr draws its thumb about 8-16 px in from that
-    // edge whatever box the Scrollbar is given (seen on DeNon's screen), so the rows end 11 px in (a
-    // short list: the same right edge as everything else) or 18 px in while the list overflows (a
-    // gutter: the thumb never covers a time, pin or dot).
-    const over = list.length > ROWS;
+    // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
+    // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
+    // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
+    // made stays put). The box is always four rows + the peek (BOX). Plain rows, so each takes its
+    // own click (open) and right-click (the topic menu).
     const row = (tab) => {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      return div().h(ROW).pb(2).pr(over ? 18 : 11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      return div().h(ROW).flex_none().pb(2).pr(11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
@@ -785,7 +781,6 @@ export default class CrewRoster extends View {
     // moves the quick actions or the Pals list under it (DeNon, 2026-11-08). Fewer rows leave the
     // rest blank, with a faint "+ New channel" row after the last when there's room (not while
     // searching).
-    const BOX = ROWS * ROW + 12;
     const box = v_flex().h(BOX).flex_none().overflow_hidden();
     const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
@@ -796,24 +791,17 @@ export default class CrewRoster extends View {
       else box.child(newRow());
       return v_flex().pt(4).child(head).child(box);
     }
+    const n = list.length, h = n > ROWS ? BOX : n * ROW;
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
-    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
+    // A new pal or search starts at the top; then the shown topic is brought into view.
+    const listKey = `${space.id}|${q}`;
+    if (this.chListKey !== listKey) { this.chListKey = listKey; scrollTo(SID, 0); }
+    sc.view = h;
+    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act * ROW, ROW); }
     // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
-    // there's more. The scrollbar stays drawn while the list overflows, in the rows' gutter.
-    const n = list.length, h = n > ROWS ? BOX : n * ROW;
-    box.child(div().relative().h(h).flex_none().w_full()
-      .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
-      .child(div().pl(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
-        this.chRange = [range.start, range.end]; this.chEndKey = listKey;
-        const out = [];
-        for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
-        return out;
-      }).track_scroll(this.chScroll)
-        .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
-        .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
-        .h(h).w_full()))
-      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(0).w(16).h(h))));
+    // there's more, and the pill thumb shows where you are.
+    box.child(scrollArea(d, SID, v_flex().pl(8).children(list.map(row))).h(h).flex_none().w_full());
     if (n < ROWS && !q) box.child(newRow());
     return v_flex().pt(4).child(head).child(box);
   }

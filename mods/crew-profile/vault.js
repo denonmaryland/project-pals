@@ -9,7 +9,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, panes, exec, openOverlay, shared } from "herdr";
-import { openPanel, panelNote, channelName, channelOrder, ago, taskFor, taskTitle, tabHasAgent, modelOf, briefOf } from "./crew.js";
+import { openPanel, panelNote, channelName, channelOrder, ago, taskFor, taskTitle, tabHasAgent, modelOf, briefOf, scrollArea } from "./crew.js";
 import { homeData, fmtMinutes, NOTES } from "./vaultdata.js";
 import { missionTab, brainTab, openBrainFile } from "./project.js";
 import { notebookTab } from "./notebook.js";
@@ -30,7 +30,7 @@ export function vaultView(view, space, bot, t, d, full) {
     : note === "notebook" ? notebookTab(view, space, bot, d, full)
     : note === "brain" ? brainTab(view, space, bot, d, full)
     : homeNote(view, space, bot, d, full);
-  const scroll = (el) => div().id(`vault-scroll-${note}`).flex_1().min_w(0).min_h(0).overflow_y_scrollbar().child(el);
+  const scroll = (el) => scrollArea(d, `vault-scroll-${note}`, el).flex_1().min_w(0).min_h(0);
   if (!full) return v_flex().flex_1().min_h(0).child(noteStrip(view, d, note)).child(scroll(body));
   return h_flex().flex_1().min_h(0).items_start()
     .child(tree(view, space, bot, d, note))
