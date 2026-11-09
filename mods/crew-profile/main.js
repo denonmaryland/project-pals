@@ -380,7 +380,8 @@ export default class CrewProfile extends View {
   }
 
   // The pinned note, what it remembers (MEMORY.md, then the last notes), and how much of it a new
-  // session actually starts with (the primer keeps the last 6,000 characters).
+  // session actually starts with (the pinned note, MEMORY.md and USER.md whole, then the newest
+  // notes, up to 16,000 characters: MEMORY_CAP).
   memory(bot, d) {
     const m = this.mem?.bot === bot.name ? this.mem : null;
     const col = v_flex().gap(10);

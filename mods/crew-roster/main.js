@@ -644,14 +644,14 @@ export default class CrewRoster extends View {
 
   // The Focus hero (hero v2, DeNon 2026-11-08: "2 · Floor", then the name up top and the channels
   // full width). No box: the shown pal's pet and its laptop at the sidebar's full width, standing
-  // on a floor (a hairline with a pool of the state's colour under the pet: working blue, done
+  // on a floor (a pool of the state's colour under the pet, no line: working blue, done
   // mint, asks you amber and breathing, PR green, merged purple, closing red, stuck amber; none at
   // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
-  // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
+  // 36 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it; no state word). Under the floor: the pal's channels, full width,
-  // up to six rows then scrolling, with a search in their header; then the quick actions as
+  // up to four rows then scrolling, with a search in their header; then the quick actions as
   // pebbles: + Channel, Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
-  // name opens the profile panel too. Its task text is in its pal row below.
+  // name opens the profile panel too. Its pal row below shows the state word and channel.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
     const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
@@ -713,7 +713,7 @@ export default class CrewRoster extends View {
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
   // search: it filters as you type, Esc or × clears and closes it), then one 28 px row per channel
   // (pinned first, then your order or the smart one): "#", the name, a pin mark, and a blue/amber dot while it works or needs you, a green
-  // check when it finished, else when it last changed. The shown one is highlighted. Up to six rows
+  // check when it finished, else when it last changed. The shown one is highlighted. Up to four rows
   // show; more scroll. Click switches, right-click is the channel menu.
   heroChannels(space, bot, d) {
     // Pinned first, then your arrangement or the smart order (channelOrder).
