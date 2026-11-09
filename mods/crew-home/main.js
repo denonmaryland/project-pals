@@ -750,12 +750,19 @@ export default class CrewHome extends View {
       .child(recBar).child(optRow).child(foot);
   }
 
+  // Give Home the keyboard after this render, never during one: Herdr refuses focus() in render or
+  // layout (DeNon's first live test fell back to the old view). cx.spawn runs its body at once (up to
+  // its first await), so a one-shot timer on the foreground executor does it after the frame.
+  focusSoon(cx) { cx.timer.after(0, () => { try { this.handle.focus(); } catch {} }); }
+
   render(cx) {
     const t = tone(theme());
     const d = ds(t);
     this.d = d;
     const shown = homeMode();
-    if (shown && !this.shown) { this.loading = false; this.fresh = true; this.reload(cx, true); this.mode = "review"; this.at = 0; this.atKey = null; this.handle.focus(); }
+    // Shown: read everything, start the review at the oldest, and take the keyboard. Herdr refuses
+    // focus() during render (the view falls back to its last good version), so it's done in a task.
+    if (shown && !this.shown) { this.loading = false; this.fresh = true; this.reload(cx, true); this.mode = "review"; this.at = 0; this.atKey = null; this.focusSoon(cx); }
     if (!shown && this.shown) this.drawer = null;   // left Home: the drawer is closed next time
     this.shown = shown;
     const needs = this.needs(), prog = this.progress();

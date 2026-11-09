@@ -128,7 +128,13 @@ try {
     { id: "c-held01", kind: "tell", status: "held", held: "draft", held_since: iso(41), from: "Orca#general", from_kind: "pal", to: "Herdr Mod#site", title: "Go", created: iso(41), tray: "herdr-mod" },
   ] };
 
-  const run = async (f) => { const tasks = []; const cx = { notify() {}, spawn: (g) => tasks.push(g(cx)), timer: { every() {}, after() {} }, focus_handle: () => ({ focus() {} }), stop_propagation() {} };
+  // cx.spawn runs its body at once, as Herdr's does (up to the first await); cx.timer.after later.
+  // Herdr refuses FocusHandle.focus() during render or layout ("mutate state from an event handler or
+  // task"; DeNon's first live test of the review fell back to the old view). The stub throws the same.
+  let rendering = false, focused = 0;
+  const handle = { focus() { if (rendering) throw new Error("FocusHandle.focus() cannot run during render or layout"); focused++; } };
+  const draw = (view, cx) => { rendering = true; try { return view.render(cx); } finally { rendering = false; } };
+  const run = async (f) => { const tasks = []; const cx = { notify() {}, spawn: (g) => tasks.push(g(cx)), timer: { every() {}, after: (_ms, f) => tasks.push(Promise.resolve().then(() => f(cx))) }, focus_handle: () => handle, stop_propagation() {} };
     // A task that never ends (the nextCommand loop) doesn't hold the test: each round waits 50 ms at most.
     f(cx); for (let i = 0; i < 6 && tasks.length; i++) await Promise.race([Promise.all(tasks.splice(0)), new Promise((r) => setTimeout(r, 50))]); return cx; };
 
@@ -148,8 +154,9 @@ try {
   const Home = (await import(pathToFileURL(join(dir, "crew-home.mjs")).href)).default;
   const v = new Home();
   await run((cx) => v.init({}, cx));
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   assert.ok(v.loaded, "it read its files when shown");
+  assert.ok(focused > 0, "showing Home gives it the keyboard (from a task, not during render)");
   const needs = v.needs();
   assert.deepEqual(needs.map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk"], "every kind, oldest first");
   const since = v.since();
@@ -159,7 +166,7 @@ try {
   assert.deepEqual(prog.rows.map((r) => r.ch), ["site", "desk", "general"], "working topics and a held one, longest first");
   assert.equal(prog.rows[0].held, "draft");
   assert.deepEqual(prog.desk.map((c) => c.id), ["c-orca01"], "what's open on the head pal's desk");
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
   // The review: one item at a time, the oldest first (the approval), with its recommendation.
   assert.equal(v.mode, "review");
@@ -179,7 +186,7 @@ try {
   assert.deepEqual(sp1.options.map((o) => o.label), ["Blur them", "Leave as is", "Park"]);
   assert.equal(sp1.options[0].does, "Re-renders the clip");
   assert.deepEqual(sp1.links, ["https://x.test/a", "~/b.html"]);
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   assert.ok(clicks.has("rv-l-0") && clicks.has("rv-i-0"), "links and images are clickable");
   fx.calls.length = 0;
   await key("2");
@@ -205,7 +212,7 @@ try {
   await key("escape");
   assert.equal(v.mode, "list");
   clicks.clear();
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   assert.ok(clicks.has("review-all"), "the list offers the review again");
   for (const id of ["ap-a-111111-ok", "ap-a-111111-no", "h-h-aaaaaa-o0", "h-h-aaaaaa-o1", "h-h-aaaaaa-park", "h-h-bbbbbb-go", "h-h-cccccc-copy", "h-h-cccccc-go",
     "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "what-happened"])
@@ -213,28 +220,28 @@ try {
   // Inbox zero: the page is the list; the rest is in the drawer, closed until asked for.
   assert.equal(v.drawer, null, "the drawer starts closed");
   clicks.clear();
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   assert.ok(!clicks.has("mark-seen") && !clicks.has("drawer-x"), "no drawer controls while it's closed");
   clicks.get("what-happened")(null, { notify() {} });
   assert.equal(v.drawer, "today", "What happened today opens the drawer on Today");
   const tabIds = { today: ["mark-seen", "drawer-x", "drawer-tab-working"], working: ["prog-w-t1"], releases: ["rel-h-ffffff"], parked: ["park-up-h-111111", "park-drop-h-111111"] };
   for (const [tab, ids] of Object.entries(tabIds)) {
     v.openDrawer(tab); clicks.clear();
-    await run((cx) => v.render(cx));
+    await run((cx) => draw(v, cx));
     for (const id of ids) assert.ok(clicks.has(id), `${tab}: has ${id}`);
   }
   clicks.get("drawer-x")(null, { notify() {} });
   assert.equal(v.drawer, null, "× closes it");
   clicks.clear();
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   clicks.get("what-happened")(null, { notify() {} });
   assert.equal(v.drawer, "parked", "it opens on the tab you used last");
   // Leaving Home closes it.
   fx.layout.children[0].active = "tab-view";
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
   assert.equal(v.drawer, null, "leaving Home closes the drawer");
   fx.layout.children[0].active = "home-view";
-  await run((cx) => v.render(cx));
+  await run((cx) => draw(v, cx));
 
   // Actions: the owner's are clicks (pal … --click), the rest plain.
   fx.calls.length = 0;
@@ -272,8 +279,8 @@ try {
   fx.files["data/crew-installs.jsonl"] = "";
   const w = new Home();
   await run((cx) => w.init({}, cx));
-  await run((cx) => w.render(cx));
-  await run((cx) => w.render(cx));
+  await run((cx) => draw(w, cx));
+  await run((cx) => draw(w, cx));
   assert.equal(w.needs().length, 0);
   assert.equal(w.progress().rows.length, 0);
   // Hidden: it reads nothing.
@@ -281,7 +288,7 @@ try {
   fx.calls.length = 0;
   const h = new Home();
   await run((cx) => h.init({}, cx));
-  await run((cx) => h.render(cx));
+  await run((cx) => draw(h, cx));
   assert.ok(!fx.calls.some((c) => c[0] === "tail"), "hidden, it reads nothing");
   Date.now = realNow;
   console.log("home view: ok");
