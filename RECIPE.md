@@ -383,8 +383,9 @@ rectangular segments and tags.
     has a layout section) / All brain files, Notes (up to 12), then On disk with the folder, "Plain
     markdown: it opens in Obsidian." and Open folder) | the note (max 820 px) | on Home, a 260 px
     rail (This week 2×2, Latest decisions). The tree's counts and brain rows fill in once their data
-    has loaded: the brain loads on Home, Mission or Brain, the journal on Home or Journal, so a
-    Vault opened straight onto Journal shows no brain counts until you visit one of those.
+    has loaded: the brain and the journal both load on every Vault note (refreshed every 8 s and
+    5 s while the Vault shows). A brain file that arrives after you moved on (another pal, note,
+    file or the list) is dropped.
     Side: a Home · Mission · Journal · Brain strip (34 px) over the note.
     `crew-profile.<name>` (keys.json or `herdr-app do`, while the panel shows) opens a tab or note:
     profile, vault, agents, home, mission, notebook, brain. `vault` (and the header's Vault tab)

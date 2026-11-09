@@ -85,4 +85,9 @@ assert.deepEqual(empty.columns, { now: [], next: [], blocked: [], done: [] });
 assert.equal(empty.week.entries, 0);
 assert.deepEqual(empty.decisions, []);
 
+// The week is the last 7 calendar days, also across a clock change (Mar 8 2026: spring forward).
+const dst = weekStats({ days: [{ day: "2026-03-07", entries: [{ took: "1h" }] }, { day: "2026-03-08", entries: [{ took: "1h" }] }] },
+  new Date(2026, 2, 14, 12, 0).getTime());
+assert.equal(dst.days, 1, "Mar 8 to 14 is the week; Mar 7 isn't in it");
+
 console.log("test_vault: ok");

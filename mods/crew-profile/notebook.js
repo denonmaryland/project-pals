@@ -7,17 +7,18 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { notify } from "herdr";
-import { crewCli, ownerCli, panelNote, shortDate, shortTime } from "./crew.js";
+import { crewCli, ownerCli, panelNote, panelTab, shortDate, shortTime } from "./crew.js";
 import { localDay } from "./vaultdata.js";
 
 export function initNotebook(view, cx) {
   view.nb = null; view.nbFor = null; view.nbFilter = "all"; view.nbArmed = null;
   view.nbView = "notebook"; view.dreams = null; view.dreaming = false;
   cx.timer.every(10000, (cx) => { if (view.isOpen() && panelNote() === "notebook" && view.nbView === "dreams") loadDreams(view, cx); });
-  cx.timer.every(5000, (cx) => { if (view.isOpen() && ["home", "notebook"].includes(panelNote())) loadNotebook(view, cx, true); });
+  // Every Vault note: in Full the tree shows the Journal's day count.
+  cx.timer.every(5000, (cx) => { if (view.isOpen() && panelTab() === "vault") loadNotebook(view, cx, true); });
   cx.timer.every(400, (cx) => {
     const s = view.shown();
-    if (s && view.isOpen() && ["home", "notebook"].includes(panelNote()) && view.nbFor !== s.bot.name && !view.nbLoading) loadNotebook(view, cx);
+    if (s && view.isOpen() && panelTab() === "vault" && view.nbFor !== s.bot.name && !view.nbLoading) loadNotebook(view, cx);
   });
 }
 

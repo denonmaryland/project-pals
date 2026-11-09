@@ -61,7 +61,7 @@ export default class CrewProfile extends View {
       }
       return;
     }
-    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); } catch {} cx.notify(); });
+    const ops = (cx) => cx.spawn(async (cx) => { try { this.ops = await loadOps(); this.opsLoaded = true; } catch {} cx.notify(); });
     ops(cx);
     cx.timer.every(5000, (cx) => { if (this.isOpen()) ops(cx); });
     cx.timer.every(8000, (cx) => { if (this.isOpen()) this.loadMemory(cx, true); });
@@ -91,7 +91,7 @@ export default class CrewProfile extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "focus") this.h.focus();
-        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; openPanel(c); }
+        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; this.brainSeq = (this.brainSeq ?? 0) + 1; openPanel(c); }
         cx.notify();
       }
     });

@@ -27,7 +27,8 @@ export function initProject(view, cx) {
   view.editor = EditorState.new({ language: "markdown", soft_wrap: true, font_family: "JetBrains Mono", font_size: 12, folding: false });
   view.viewer = EditorState.new({ language: "markdown", soft_wrap: true, font_family: "JetBrains Mono", font_size: 12, folding: false, readonly: true });
   view.note = InputState.new({ placeholder: "What this change is for (goes in the brain's change log)" });
-  cx.timer.every(8000, (cx) => { if (view.isOpen() && ["home", "mission", "brain"].includes(panelNote())) loadBrain(view, cx, true); });
+  // Journal too: in Full its tree counts the brain's decisions and changes.
+  cx.timer.every(8000, (cx) => { if (view.isOpen() && panelTab() === "vault") loadBrain(view, cx, true); });
   cx.timer.every(15000, (cx) => { if (view.isOpen() && panelTab() === "agents" && !view.edit && !view.review) loadAgents(view, cx, true); });
   cx.timer.every(5000, (cx) => { if (view.isOpen()) loadProposals(view, cx); });
   // A proposal opened from the Inbox (shared crew.panel.proposal): straight to its review.
@@ -42,7 +43,7 @@ export function initProject(view, cx) {
 export function ensureProject(view, cx, bot) {
   followShown(view, view.shown());
   const tab = panelTab();
-  if (["home", "mission", "brain"].includes(panelNote()) && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
+  if (tab === "vault" && view.brainFor !== bot.name && !view.brainLoading) loadBrain(view, cx);
   if (tab === "agents" && view.agentsFor !== bot.name && !view.agentsLoading) loadAgents(view, cx);
 }
 
@@ -55,7 +56,7 @@ export function loadBrain(view, cx, quiet = false) {
     try {
       const b = JSON.parse(await crewCli(["brain", "ls", name, "--json"]));
       if (view.shown()?.bot.name === name) {
-        if (view.brainFor !== name) { view.brainFile = null; view.edit = null; view.review = null; }
+        if (view.brainFor !== name) { view.brainFile = null; view.brainSeq = (view.brainSeq ?? 0) + 1; view.edit = null; view.review = null; }
         view.brain = b; view.brainFor = name;
       }
     } catch (e) { if (!quiet) notify({ title: "Couldn't read the brain", body: String(e.message ?? e).slice(0, 200), level: "warning" }); view.brainFor = name; }
@@ -385,15 +386,21 @@ function acceptMission(view, cx, p) {
 
 // Open one brain file in the Brain note (the Vault's tree links here too).
 export function openBrainFile(view, cx, bot, file, project = false) {
+  // Still wanted when it arrives? Another pal, another note, another file or the list since the
+  // click (each bumps brainSeq): drop it.
+  const seq = view.brainSeq = (view.brainSeq ?? 0) + 1;
+  const wanted = () => view.brainSeq === seq && view.shown()?.bot?.name === bot.name && (project || panelNote() === "brain");
   cx.spawn(async (cx) => {
     try {
       if (project) {
         const text = await readTextFile(`${bot.folder}/${file}`);
         const info = JSON.parse(await crewCli(["agents", "show", bot.name, "--json"]));
+        if (!wanted()) return;
         view.agentsInfo = info; view.agentsFor = bot.name;
         view.brainFile = { file, text, sha: await shaOf(text), project: true };
       } else {
         const r = JSON.parse(await crewCli(["brain", "show", bot.name, file, "--json"]));
+        if (!wanted()) return;
         view.brainFile = { file, text: r.text, sha: r.sha };
       }
     } catch (e) { notify({ title: `Couldn't open ${file}`, body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
@@ -421,7 +428,7 @@ export function brainTab(view, space, bot, d, full) {
       .child(f.text ? div().p(10).rounded(d.r.md).border_1().border_color(d.line).text_size(12).text_color(d.body).child(TextView.markdown(`pp-bf-${slugOf(f.file)}`, f.text.slice(0, 20000)))
         : div().text_size(12).text_color(d.fg3).child("Empty.")),
       h_flex().gap(12)
-        .child(link(d, "pp-bback", "← Files", () => { view.brainFile = null; }))
+        .child(link(d, "pp-bback", "← Files", () => { view.brainFile = null; view.brainSeq = (view.brainSeq ?? 0) + 1; }))
         .child(link(d, "pp-bedit", "Edit", () => {
           view.editor.set_value(f.text ?? "");
           view.edit = { kind: f.project ? "brain-project" : "brain", file: f.file, sha: f.sha, target: targetOf(view.shown()), gen: view.gen };
