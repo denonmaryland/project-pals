@@ -163,6 +163,13 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     in 11.5px mono (#EDEDED for the shown one) and when it changed; a click opens that topic,
     right-click is its menu. Only those rows are added: nothing else moves. Resting, asleep and
     hidden pals never unfold.
+    While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
+    ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
+    (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
+    **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
+    the search button, flips the same `palTrees` (so it's remembered and the Settings switch
+    always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list
+    ("Unfold all topics"). Same size either way, so the header never shifts. No per-pal folding.
     The sidebar and the dialog's preview draw rows with one renderer (`crew.js palLookRow` /
     `palLookTree`; the look list and its pure helpers in `lib/palstyles.js`, copied into every
     mod). The dialog: the ten looks on the left (number, name, pet size, a check on the chosen
@@ -301,7 +308,11 @@ rectangular segments and tags.
     rows end 11px in and the pill sits in that gap, never over a time, pin or dot) and "+N more"
     (#808082, rows below the
     box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
-    shown topic is scrolled into view when it changes. Order: pinned topics first (in pin order,
+    shown topic is scrolled into view when it changes. The header's last button, a 22px chevron
+    after the magnifier, folds the list to the header alone ("Topics 18 · 3 working · 1 needs
+    you"; no "+N more"), and unfolds it. It's ONE remembered state for every pal
+    (`heroTopicsFolded` in crew-settings.json; DeNon, 2026-11-08), so folded or not the hero is
+    the same height whoever you switch to. Opening the search unfolds it. Order: pinned topics first (in pin order,
     with a small pin mark), then, once you've arranged that pal's topics, Herdr's tab order, else
     the smart order (needs you, finished, working, idle agents, plain shells). Right-click a topic:
     Pin / Unpin, Review changes (a worktree topic only: `crew-review`), and Move up / Move down
@@ -605,6 +616,11 @@ still travels through crewd's queue, carrying the card's id.
   gear menu): a 560 px dialog with To (Auto = To route until triage ships, a pal, or a topic),
   Low · Normal · Soon · Now, images, and "Track on the board" (on for multi-line text). Enter
   drops; the toast names the card ("Dropped on Helper #build · c-7f3a9e").
+- **Triage:** a card dropped with **Auto** waits in To route (`route: auto`) while crewd asks a cheap
+  model (`run_headless`: `claude -p --model haiku`, else agy) which pal and topic should take it. It
+  goes there with a "routed #topic · triage · why" receipt, or stays in To route as needs you
+  (`route: manual`) with the reason: unsure (below 0.6), an answer naming anything not on the
+  roster, no model, triage off (`desk.triage`), no pals, or the day's 100 calls used up.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
@@ -862,6 +878,10 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
 - **The card format is parsed twice** (`crewdesk.parse` and `parseCard` in crew.js): change both
   and the fixtures in `tests/fixtures/desk/` together. A body line that is exactly `## Receipts` or
   `## Reply` is written with a leading `\`.
+- **Triage only routes** (§9.2, §10.4): the card goes to the model as quoted data, the answer must
+  name a pal and topic from the roster exactly, its urgency is at most `soon` and never replaces the
+  owner's own pick, and `routes.jsonl` keeps a hash of the input, never the card's text. Its calls
+  count against `desk.triage_daily_cap` in `budget.json`; over the cap no model is called.
 - **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal), `now` is the owner's
   only, and a `--re` thread stops at 6 cards deep.
 - **The shipped `pal-desk` skill** is replaced on update only while it's unchanged since the last
@@ -934,3 +954,6 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   "edited by hand" receipt; an owner card edited by hand shows "edited after sending · unverified"
   until Confirm as mine.
 - `node tests/test_desk_parser.mjs` and `node tests/test_desk_view.mjs` pass.
+- A card dropped with Auto lands on a topic within about 20 seconds with a "routed #topic" receipt,
+  or waits in To route as needs you with the reason; an answer naming a pal or topic that isn't
+  there is thrown away (`tests/test_desk.py` Triage).

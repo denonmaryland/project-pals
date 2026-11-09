@@ -123,6 +123,7 @@ class Crewd:
         self.first_seen = {}   # terminal → when crewd first saw it (the trust question only comes first)
         self.reviews = load_json(DATA / "crew-reviews.json", {})   # terminal → {turn, at}
         self.busy = threading.Lock()   # one headless model run at a time
+        self.triaging = threading.Lock()   # the Desk's triage: its own lane, so a long review doesn't hold a drop up
         self.last_minute = None
         self.last_stall_check = 0
 
@@ -144,6 +145,7 @@ class Crewd:
             return
         self.transitions(terms)
         self.deliver(terms)
+        self.desk_triage()
         if time.time() - self.last_trust_check > 10:
             self.last_trust_check = time.time()
             self.trust_prompts(terms)
@@ -268,6 +270,24 @@ class Crewd:
                 enqueue(sender, msg, sender="crew", kind="callback")
             except CrewError:
                 pass
+
+    def desk_triage(self):
+        """Cards dropped with Auto: one at a time, in the background (a cheap model picks the topic)."""
+        try:
+            if not crewdesk.pending_triage() or not self.triaging.acquire(blocking=False):
+                return
+        except Exception:
+            return
+        def work():
+            try:
+                for card in crewdesk.pending_triage():
+                    _, what = crewdesk.triage(card["id"], herdr_spaces, lambda p: run_headless(p, "review", timeout=90))
+                    log(f"desk triage {card['id']}: {what}")
+            except Exception:
+                log("desk triage failed:\n" + traceback.format_exc())
+            finally:
+                self.triaging.release()
+        threading.Thread(target=work, daemon=True).start()
 
     def desk_upkeep(self):
         """Every minute: hand edits checked, expired and old cards tidied, and cards that couldn't go
