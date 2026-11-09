@@ -27,7 +27,7 @@ from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, lo
                      hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
                      herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
                      trust_prompt, trust_notice, input_draft, DraftInTheWay, batch_text, claim_queue,
-                     unclaim, finish_claimed, hooked, tidy_queue)
+                     unclaim, finish_claimed, hooked, tidy_queue, mod_alive)
 import crewskills
 import crewroutines
 import crewupdate
@@ -345,6 +345,8 @@ class Crewd:
             recently = time.time() - self.last_sent.get(addr, 0) < 6
             if not idle and hooked(addr):
                 continue   # its hooks hand these over mid-turn or as its turn ends, without typing
+            if mod_alive(addr):
+                continue   # the Claude Code pals mod hands them over itself (busy or idle), no typing
             batch = urgent if (urgent and not idle) else (due if idle and not recently else [])
             if not batch:
                 continue

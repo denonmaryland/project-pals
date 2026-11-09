@@ -680,6 +680,67 @@ class DeskSettings(unittest.TestCase):
         self.assertIn("owner's to change", r.stderr)
 
 
+def hook(env, *args, term=None, interactive="1"):
+    e = {**env, "CREW_HOOK_INTERACTIVE": interactive, **({"HC_TERMINAL_ID": term} if term else {})}
+    r = subprocess.run([sys.executable, str(BIN / "crew-hook"), *args], input="{}", capture_output=True, text=True, env=e, timeout=60)
+    return json.loads(r.stdout) if r.stdout.strip() else r
+
+
+class ClaudeMod(unittest.TestCase):
+    """Stage 5: the Claude Code pals mod's side of things (claude-mod/pals; its own tests are
+    `claude plugin test claude-mod/pals`)."""
+
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+
+    def test_mod_take_hands_over_with_its_receipt(self):
+        cid = cid_of(pal(self.env, "tell", "Helper#build", "Over to the mod", term="tW").stdout)
+        out = hook(self.env, "mod-take", "mod:append", term="tH")
+        self.assertIn(f"📥 Desk card {cid}", out["text"])
+        c = card(self.env, cid)
+        self.assertEqual((c["status"], c["last"]["via"], c["last"]["by"]), ("seen", "mod:append", "tH"))
+        self.assertEqual(hook(self.env, "mod-take", "mod:submit", term="tH"), {"text": None}, "taken once")
+        # A `claude -p` the pal started isn't the pal: it never takes the pal's messages.
+        pal(self.env, "tell", "Helper#build", "Another", term="tW")
+        self.assertEqual(hook(self.env, "mod-take", "mod:submit", term="tH", interactive="0"), {"text": None})
+
+    def test_mod_status_counts_this_topic(self):
+        pal(self.env, "desk", "send", "Helper#build", "one", "--soon", term="tW")
+        pal(self.env, "desk", "send", "Helper#docs", "elsewhere", term="tW")
+        self.assertEqual(hook(self.env, "mod-status", term="tH"), {"pal": "Helper", "topic": "build", "open": 1, "held": 0, "soon": 1})
+
+    def test_crewd_leaves_typing_to_the_mod(self):
+        beat = self.data / "crew-desk" / ".mod" / "tH"
+        beat.parent.mkdir(parents=True, exist_ok=True)
+        beat.touch()
+        self.assertTrue(py(self.env, "import crewlib; print(json.dumps(crewlib.mod_alive('tH')))"))
+        os.utime(beat, (time.time() - 60, time.time() - 60))
+        self.assertFalse(py(self.env, "import crewlib; print(json.dumps(crewlib.mod_alive('tH')))"), "a stale heartbeat: crewd types again")
+        py(self.env, "import crewlib; crewlib.tidy_queue({'tW'}); print(1)")
+        self.assertFalse(beat.exists(), "a gone terminal's heartbeat is tidied")
+
+    def test_roll_back_to_a_version_without_the_mod_takes_it_away(self):
+        home = Path(self.env["HOME"])
+        mod = home / ".claude" / "project-pals" / "pals" / "hooks"
+        mod.mkdir(parents=True)
+        (mod / "register.tsx").write_text("x")
+        mine = home / ".claude" / "skills" / "mine"
+        mine.mkdir(parents=True)
+        import tarfile
+        snap = self.root / "update-old.tar.gz"
+        src = self.root / "pal"
+        src.write_text("#!/bin/sh\n")
+        with tarfile.open(snap, "w:gz") as tar:
+            tar.add(src, arcname=".local/bin/pal")
+        code = ("import sys; sys.path.insert(0, sys.argv[1]); import crewupdate as u\n"
+                "u.rollback(sys.argv[2], log=lambda *_: None); print('ok')")
+        r = subprocess.run([sys.executable, "-c", code, str(BIN), str(snap)], capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse((home / ".claude" / "project-pals").exists())
+        self.assertTrue(mine.exists(), "the person's own ~/.claude stays")
+        self.assertTrue((home / ".local" / "bin" / "pal").exists())
+
+
 class Install(unittest.TestCase):
     def test_skill_replaced_when_unchanged_kept_when_edited(self):
         root, env, data = sandbox()

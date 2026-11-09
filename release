@@ -44,6 +44,11 @@ if command -v node >/dev/null; then
 fi
 # The regression tests (tests/): throwaway CREW_DATA and homes, nothing real is touched.
 python3 -m unittest discover -s tests -q || { echo "tests failed" >&2; exit 2; }
+# The Desk's Claude Code mod: validated and tested by Claude Code itself, where it's installed.
+if command -v claude >/dev/null; then
+  claude plugin validate claude-mod/pals >/dev/null || { echo "claude-mod/pals doesn't validate" >&2; exit 2; }
+  claude plugin test claude-mod/pals >/dev/null || { echo "claude-mod/pals tests failed" >&2; exit 2; }
+fi
 if command -v node >/dev/null; then for t in tests/*.mjs; do [ -f "$t" ] && { node "$t" || { echo "test failed: $t" >&2; exit 2; }; }; done; fi
 find . -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 

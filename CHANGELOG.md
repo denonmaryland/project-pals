@@ -27,6 +27,10 @@
   `block`, `pass`, `send`, `sent`. The shipped `pal-desk` skill teaches every pal how to use it.
 - **Settings → Desk** shows today's numbers and lets you turn triage off, change its daily cap,
   when the head pal hears about held or quiet cards, and when closed cards are archived.
+- **Claude Code pals get cards without typing.** A Claude Code mod in each pal hands a card over
+  mid-step while the pal works, or starts a turn when it's idle. Whatever you've half-typed in its box
+  stays put, and a band above its prompt shows the topic's open cards (`/desk` lists them). It's
+  loaded only in pals, never your other Claude Code sessions.
 - **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title
   or text by hand; its status and who sent it can't be changed that way.
 

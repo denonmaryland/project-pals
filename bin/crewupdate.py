@@ -236,6 +236,7 @@ def _snapshot(label):
     app += [HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
     user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline")]
     user += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service"]
+    user += [home / ".claude" / "project-pals"]   # the Desk's Claude Code mod (pals load it with --plugin-dir)
     # Without the generated mascots (they're redrawn on install).
     skip = lambda ti: None if "/mascots/" in ti.name and ti.name.endswith(".svg") else ti
     with tarfile.open(path, "w:gz") as tar:
@@ -291,6 +292,9 @@ def rollback(path=None, log=print):
         for d in (HOME / "mods").glob("crew-*"):
             if d.name not in kept:
                 shutil.rmtree(d, ignore_errors=True)
+        # The Claude Code mod too: a version without it takes it away (its pals stop loading it).
+        if not any(m.name == ".claude/project-pals" or m.name.startswith(".claude/project-pals/") for m in members):
+            shutil.rmtree(home / ".claude" / "project-pals", ignore_errors=True)
         ours = [m for m in members if m.name == APP or m.name.startswith(APP + "/")]
         rest = [m for m in members if m not in ours]
         for m in ours:

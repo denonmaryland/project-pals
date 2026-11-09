@@ -80,6 +80,11 @@ try {
 
   fixtures.shared["crew.settings"] = { ...fixtures.shared["crew.settings"], pal_prompt_suggestions: "keep" };
   assert.deepEqual(crew.palArgv(["claude"], "claude"), ["claude"], "keep: left on");
+  // The Desk's Claude Code mod (stage 5): Claude Code pals load it with --plugin-dir; nothing else does.
+  fixtures.shared["crew.settings"] = { owner: "DeNon", head: "Orca", claude_mod: "/h/.claude/project-pals/pals" };
+  assert.deepEqual(crew.palArgv(["claude"], "claude"), ["claude", "--plugin-dir", "/h/.claude/project-pals/pals", ...OFF]);
+  assert.deepEqual(crew.palArgv(["codex"], "codex"), ["codex"], "not other brains");
+  assert.deepEqual(crew.palArgv(["claude", "--plugin-dir", "/mine"], "claude"), ["claude", "--plugin-dir", "/mine", ...OFF], "one already given is kept");
   console.log("launch: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

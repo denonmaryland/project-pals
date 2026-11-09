@@ -1,0 +1,7 @@
+{
+  "name": "pals",
+  "version": "0.4.0",
+  "author": { "name": "Project Pals" },
+  "description": "Project Pals: Desk cards reach this pal mid-step or when idle, without typing in its box, and show as cards",
+  "types": "./types/index.d.ts"
+}

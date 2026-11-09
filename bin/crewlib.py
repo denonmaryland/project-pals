@@ -593,6 +593,18 @@ def mark_hooked(terminal):
         pass
 
 
+MOD_BEAT = DATA / "crew-desk" / ".mod"
+
+
+def mod_alive(terminal, within=10):
+    """The Claude Code pals mod is loaded in this terminal (its heartbeat, written every 2 s): it hands
+    messages over itself, mid-turn and when idle, so crewd doesn't type them in."""
+    try:
+        return time.time() - (MOD_BEAT / terminal).stat().st_mtime < within
+    except OSError:
+        return False
+
+
 def hooked(terminal, within=24 * 3600):
     # Long on purpose: if the hooks are gone, a busy pal's messages just wait until it's idle.
     try:
@@ -612,10 +624,11 @@ def tidy_queue(live, stale=120):
                         unclaim([(taken, None)])
                 except OSError:
                     pass
-    if HOOKED.exists():
-        for f in HOOKED.iterdir():
-            if f.name not in live:
-                f.unlink(missing_ok=True)
+    for d in (HOOKED, MOD_BEAT):   # hook marks and the Claude Code mod's heartbeats of terminals that are gone
+        if d.exists():
+            for f in d.iterdir():
+                if f.name not in live:
+                    f.unlink(missing_ok=True)
 
 
 def feed(kind, **fields):

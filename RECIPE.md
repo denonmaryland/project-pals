@@ -646,6 +646,15 @@ still travels through crewd's queue, carrying the card's id.
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
   The card says what to do: pass it on, cancel it if stale, or tell the owner; never clear a box.
+- **Claude Code pals carry the `pals` mod** (`claude-mod/pals`, installed to
+  `~/.claude/project-pals/pals`, loaded with `--plugin-dir` only in pals). Every 2 s it writes a
+  heartbeat (`data/crew-desk/.mod/<terminal>`; crewd then never types to that pal) and looks at the
+  pal's queue. It takes what waits with `crew-hook mod-take` (receipt `seen · mod:append` or
+  `mod:submit`). While the pal works, it appends the card to the conversation, shows a toast and a
+  notice row, and if the turn ends before another step, submits a short prompt so the card is read.
+  While the pal is idle, it submits the card as a turn of its own. Nothing is typed, and a draft in the
+  box stays. Above the prompt: "📥 Desk · #topic: N open cards · M held · /desk". `/desk` lists the
+  topic's cards.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
@@ -917,6 +926,11 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   `send-draft`, `discard` (besides the partner's own) and `send --from-draft` need the click. Sending
   re-stamps the card, so its newest event carries the owner as sender: the hand-edit check (which
   takes the latest stamp from events.jsonl) keeps it the owner's.
+- **The Claude Code mod can't redraw rows it submitted itself** (the engine's rule): cards it hands
+  over show under "Prompt from the pals plugin" as plain text, and only cards that came by a hook or
+  typing are drawn as cards. Its functions that take `$` must be declared at the top of the file
+  (`claude plugin validate` refuses closures), and `turn.step` hooks are async generators. A pal
+  started before the install has no mod until it's restarted; its hooks and crewd still deliver.
 - **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal), `now` is the owner's
   only, and a `--re` thread stops at 6 cards deep.
 - **The shipped `pal-desk` skill** is replaced on update only while it's unchanged since the last
@@ -996,3 +1010,7 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
 - `pal hire --partner` hires MUSE (Sonnet, `data/crew-partner`, #ideas); its `pal desk draft` waits in
   Drafts, nothing is delivered until Send, and the card then arrives as "[from <owner>]" with the task
   made when it was drafted with `--task` (`tests/test_desk.py` Drafts).
+- `claude plugin validate claude-mod/pals` passes and `claude plugin test claude-mod/pals` runs its 5
+  tests. In a sandbox `claude --plugin-dir claude-mod/pals` session, a card queued while idle
+  starts its own turn with a draft left in the box, and one queued during a `sleep 20` is read in
+  that turn (`tests/test_desk.py` ClaudeMod covers mod-take, mod-status, the heartbeat and Roll back).

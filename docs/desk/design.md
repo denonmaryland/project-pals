@@ -266,13 +266,20 @@ while the pal is **already** idle.
 
 The mod polls `.pending/<terminal>` every 2 s (`$.clock.every`) and writes its heartbeat.
 
-- working: `$.session.append({type: "user", isMeta: true})`. The model reads it at the next loop
-  step, **even inside a step that calls no tool**. That covers the gap PostToolUse leaves: a long
-  thinking or writing step.
+- working: `$.session.append({type: "user"})` (stored isMeta). The model reads it at its **next**
+  loop step. Checked in a sandbox session (2026-11-08): a card that lands during a step that calls no
+  tool is not read in that step. So when the turn ends before another step, the mod submits a short
+  prompt, and the model handles the card then.
 - idle: `$.prompt.submit(text)`. It starts its own turn once the session is idle and **never lands in
   DeNon's draft**. This removes the last place typing is used for Claude Code.
 - It also draws the card as a card in the transcript (cli-mods #1). The model still reads the plain
-  text.
+  text. The engine won't let a mod redraw a row it submitted itself, so cards the mod hands over
+  show under "Prompt from the pals plugin" as plain text. Cards that came by a hook or typing are
+  drawn as cards.
+- Built (stage 5): `claude-mod/pals`, installed to `~/.claude/project-pals/pals`, loaded by Claude
+  Code pals with `--plugin-dir` (crew-settings.json `claude_mod`). Checked live in a sandbox session:
+  idle → submitted (`seen · mod:submit`, a draft in the box untouched), working → appended mid-step
+  (`seen · mod:append`).
 
 ### 6.4 Antigravity CLI (agy), from PR #2
 
@@ -962,7 +969,7 @@ and the Inbox's needs-you cards. Stage 2 was installed live as 052716e (2026-11-
 triage is built for Auto drops and for pal-tray cards with several live topics, with the sidebar
 `Desk N` and topic markers, and MUSE: `pal hire --partner`, `partner/AGENTS.md`, `pal desk draft`,
 `send-draft` / `discard` / Edit by click, and the draft toast. The head pal's check-in and its brief
-section come next, with #orca-home (Orca's home view); stages 5–6 are not started. The list is kept as it was asked:
+section are built too, and so is stage 5 (the Claude Code `pals` mod); stage 6 is not started. The list is kept as it was asked:
 
 
 1. **Owner authority only by click**: the quick-drop, a draft's Send. A shell `pal tell` becomes

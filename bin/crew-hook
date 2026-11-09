@@ -9,6 +9,8 @@
   crew-hook stop                Claude Code Stop: messages that came in during the turn keep it going
   crew-hook post-tool-use       Claude Code PostToolUse: hands over messages mid-turn, between tools
   crew-hook agy-stop            Antigravity CLI Stop: the same as stop
+  crew-hook mod-take VIA         the Claude Code pals mod: waiting messages as {"text"} (VIA: the receipt)
+  crew-hook mod-status          the Claude Code pals mod: this topic's desk counts for its band
   crew-hook agy-pre-invocation  Antigravity CLI PreInvocation: hands over messages before each model call,
                                 and the primer again after agy compacts the conversation
 
@@ -344,13 +346,34 @@ def agy_pre_invocation(event):
         print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": text}}]}))
 
 
+def mod_take(event):
+    """For the Claude Code `pals` mod (claude-mod/pals): this pal's waiting messages, taken off the
+    queue with the receipt `via` (argv[2]: mod:append mid-turn, mod:submit when idle), as JSON
+    {"text": …} (null when nothing is waiting). The same atomic claim as the hooks and crewd."""
+    via = sys.argv[2] if len(sys.argv) > 2 else "mod"
+    text = inbox(event, via=via)
+    print(json.dumps({"text": text}))
+
+
+def mod_status(event):
+    """For the mod's band: {"pal", "topic", "open", "held", "soon"} for this topic's lane and pal tray."""
+    me = crew_bot()
+    if not me:
+        print("null")
+        return
+    import crewdesk
+    rows = [c for _, c in crewdesk.mine(me[1], me[2]) if not c.get("unreadable")]
+    print(json.dumps({"pal": me[1], "topic": me[2], "open": len(rows), "held": sum(c.get("status") == "held" for c in rows),
+                      "soon": sum(c.get("urgency") in ("soon", "now") for c in rows)}))
+
+
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else ""
     if what in ("-h", "--help", ""):
         print(__doc__)
         return
     try:
-        event = json.load(sys.stdin)
+        event = json.load(sys.stdin) if not sys.stdin.isatty() else {}
     except ValueError:
         event = {}
     handlers = {
@@ -362,6 +385,8 @@ def main():
         "post-tool-use": post_tool_use,
         "agy-stop": agy_stop,
         "agy-pre-invocation": agy_pre_invocation,
+        "mod-take": mod_take,
+        "mod-status": mod_status,
     }
     try:
         handlers[what](event)

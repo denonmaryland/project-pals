@@ -198,6 +198,18 @@ if [[ $helpers -eq 1 ]]; then
   [[ $claude_hooks -eq 0 ]] && hook_flags+=(--no-claude)
   [[ $agy_hooks -eq 0 ]] && hook_flags+=(--no-agy)
   python3 "$src/install-hooks.py" ${hook_flags[@]+"${hook_flags[@]}"} "$home/.crew-backups/$stamp" || echo "skipped the agent hooks (see above)"
+  # The Desk's Claude Code mod (claude-mod/pals): it hands cards to Claude Code pals mid-step and when
+  # idle without typing in their box, and draws them as cards. Copied to ~/.claude/project-pals/pals
+  # (the old copy backed up first); Claude Code pals load it with --plugin-dir (crew-settings.json
+  # "claude_mod"), so your other Claude Code sessions never do. Skipped with --no-claude-hooks.
+  if [[ $claude_hooks -eq 1 && -d "$src/claude-mod/pals" ]]; then
+    cmod="$HOME/.claude/project-pals/pals"
+    if [[ -d "$cmod" ]]; then mkdir -p "$backup/claude-mod"; cp -a "$cmod" "$backup/claude-mod/"; fi
+    rm -rf "$cmod.new"; mkdir -p "$cmod.new"
+    (cd "$src/claude-mod/pals" && find . -type f ! -name '*.test.*' ! -path './.claude-plugin/types/*' -exec install -D -m 644 {} "$cmod.new/{}" \;)
+    rm -rf "$cmod"; mv "$cmod.new" "$cmod"
+    claude_mod_path="$cmod"
+  fi
   # Shared skills: link any into ~/.claude/skills, ~/.codex/skills and ~/.gemini/config/skills.
   python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewskills, crewchat; crewskills.curate(lambda *_: None); crewchat.refresh_agy_models()' "$HOME/.local/lib/herdr-crew" || true
 elif [[ "$(crewd_code)" != "$crewd_before" ]] && command -v systemctl >/dev/null \
@@ -214,6 +226,20 @@ mkdir -p "$home/data"
 if [[ ! -f "$home/data/crew-settings.json" ]]; then
   python3 -c 'import sys, json; sys.path.insert(0, sys.argv[1]); import crewlib; json.dump({"owner": crewlib._default_owner(), "bypass": False}, open(sys.argv[2], "w"), indent=2)' \
     "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json"
+fi
+# Where Claude Code pals load the Desk's mod from (set above when it was installed).
+if [[ -n "${claude_mod_path:-}" ]]; then
+    python3 - "$home/data/crew-settings.json" "$claude_mod_path" <<'PY'
+import json, sys
+path, mod = sys.argv[1:]
+try:
+    s = json.load(open(path))
+except (OSError, ValueError):
+    s = {}
+if s.get("claude_mod") != mod:
+    s["claude_mod"] = mod
+    json.dump(s, open(path, "w"), indent=2)
+PY
 fi
 # The head pal's name became a setting (Orchestrator by default). One already hired keeps its name.
 python3 - "$home/data/crew-settings.json" "$home/shared.json" <<'PY'
