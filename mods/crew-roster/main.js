@@ -21,9 +21,7 @@ const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
 // with their names (about 32 px more each) from this sidebar width up: 16 of padding, three labeled
 // pebbles, four 6 px gaps and the two 28 px icon pebbles need 384.
-// Labels need 3 × 96, the 28 px icon pebbles (Profile, Sleep, and Home when the layout has it), the
-// 6 px gaps and 16 px padding: 390 px, 424 with Home.
-const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390, HERO_LABELS_AT_HOME = 424;
+const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
 // Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
@@ -717,7 +715,7 @@ export default class CrewRoster extends View {
     // the tooltips, and show on the pebbles only once the sidebar is wide enough for all three
     // (HERO_LABELS_AT). Each keeps a fixed count slot, a spacer takes what's left, and profile and the
     // moon stay icon-only on the right: a count appearing or a pal switch never moves anything.
-    const labels = (w ?? 0) >= (hasHome() ? HERO_LABELS_AT_HOME : HERO_LABELS_AT);
+    const labels = (w ?? 0) >= HERO_LABELS_AT;
     const quick = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, slot: 18,
       w: labels ? HERO_PEBBLE_LABELED : HERO_PEBBLE, extra: count ? (count > 99 ? "99+" : count) : null, onClick: action,
       tooltip: tip, ...more });
@@ -732,10 +730,6 @@ export default class CrewRoster extends View {
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        // Home (icon-only, first): the head pal's page; while it shows, a terminal icon (primary) that
-        // goes back to the topic. Ctrl+Shift+H does the same.
-        .when(hasHome(), (el) => el.child(pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(),
-          onClick: () => toggleHome(), tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })))
         .child(quick("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
           needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
@@ -751,7 +745,14 @@ export default class CrewRoster extends View {
         .child(div().flex_1().min_w(0))
         // Profile: the right-side profile panel (again: closes it); the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
-        .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
+        // The last pebble: Put to sleep, except on the head pal, which never sleeps (its menu has no
+        // Sleep either). There it's Home (a terminal icon, primary, while Home shows: back to the
+        // topic), in the same slot, so the row is the same width for every pal and fits a narrow
+        // sidebar (a sixth pebble pushed the moon off at 281 px). Ctrl+Shift+H does the same.
+        .child(bot.god && hasHome()
+          ? pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(), onClick: () => toggleHome(),
+            tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })
+          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
