@@ -498,6 +498,93 @@ class Triage(unittest.TestCase):
         self.assertEqual(out["triage"], "auto")
 
 
+def make_partner(root):
+    """Helper is the idea partner (a record with partner: true in the sandbox app's shared.json)."""
+    app = root / "app"
+    app.mkdir(exist_ok=True)
+    (app / "shared.json").write_text(json.dumps({"crew": {"bots": [{"id": "b2", "name": "Helper", "space": "s2", "partner": True,
+                                                                     "role": "Idea partner"}]}}))
+
+
+class Drafts(unittest.TestCase):
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+        make_partner(self.root)
+
+    def draft(self, *args, term="tH"):
+        r = pal(self.env, "desk", "draft", *args, term=term)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return cid_of(r.stdout)
+
+    def test_only_the_partner_drafts(self):
+        r = pal(self.env, "desk", "draft", "--to", "Worker#general", "an idea", term="tW")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("only the idea partner", r.stderr)
+        self.assertNotEqual(pal(self.env, "desk", "draft", "an idea").returncode, 0, "nor a shell")
+
+    def test_a_draft_goes_nowhere_until_the_owners_send(self):
+        cid = self.draft("--to", "Worker#general", "--task", "Ship the docs\nWhy: users ask")
+        c = card(self.env, cid)
+        self.assertEqual((c["status"], c["tray"], c["to"], c["kind"], c["from"], c["track"]),
+                         ("draft", "_drafts", "Worker#general", "idea", "Helper#build", "yes"))
+        self.assertEqual(queue(self.data, "tW") if (self.data / "crew-queue" / "tW").exists() else [], [])
+        ls = json.loads(pal(self.env, "desk", "ls", "--all", "--json").stdout)
+        self.assertEqual((ls["counts"]["drafts"], ls["counts"]["open"]), (1, 0))
+        # The partner can't send it, nor can a shell without the click.
+        self.assertNotEqual(pal(self.env, "desk", "send-draft", cid, term="tH").returncode, 0)
+        self.assertNotEqual(pal(self.env, "desk", "send-draft", cid).returncode, 0)
+        r = owner(self.env, self.data, "desk", "send-draft", cid)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        c = card(self.env, cid)
+        self.assertEqual((c["status"], c["from"], c["from_kind"], c["drafted_by"], c["tray"], c["verified"], c["task"]),
+                         ("queued", OWNER, "owner", "Helper#build", "worker", True, "T1"))
+        [item] = queue(self.data, "tW")
+        self.assertTrue(item["text"].startswith(f"[from {OWNER}] 📥 Desk card {cid}"), item["text"])
+        # crewd's hand-edit check keeps it the owner's (the send's event is the record now).
+        self.assertEqual(py(self.env, "import crewdesk; print(json.dumps(crewdesk.reconcile()))"), {})
+        self.assertEqual(card(self.env, cid)["from_kind"], "owner")
+
+    def test_send_to_another_topic_or_auto(self):
+        cid = self.draft("--to", "Worker#general", "idea one")
+        owner(self.env, self.data, "desk", "send-draft", cid, "--to", "Helper#docs")
+        self.assertEqual(card(self.env, cid)["to"], "Helper#docs")
+        cid = self.draft("idea two")   # no --to: auto
+        self.assertEqual(card(self.env, cid)["to"], "auto")
+        owner(self.env, self.data, "desk", "send-draft", cid)
+        c = card(self.env, cid)
+        self.assertEqual((c["tray"], c["route"], c["status"]), ("_route", "auto", "queued"))
+
+    def test_edit_and_discard(self):
+        cid = self.draft("--to", "Worker#general", "rough idea")
+        r = owner(self.env, self.data, "desk", "send", "Worker#general", "polished idea", "--from-draft", cid)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        new = cid_of(r.stdout)
+        self.assertEqual(card(self.env, new)["from_kind"], "owner")
+        c = card(self.env, cid)
+        self.assertEqual((c["status"], c["last"]["note"]), ("cancelled", f"edited and sent as {new}"))
+        self.assertNotEqual(pal(self.env, "desk", "send", "Worker#general", "x", "--from-draft", cid, term="tH").returncode, 0)
+        cid = self.draft("another")
+        self.assertNotEqual(pal(self.env, "desk", "discard", cid, term="tW").returncode, 0, "not someone else's")
+        self.assertEqual(owner(self.env, self.data, "desk", "discard", cid).returncode, 0)
+        self.assertEqual(card(self.env, cid)["status"], "cancelled")
+
+    def test_sends_as_itself_when_set(self):
+        s = json.loads((self.data / "crew-settings.json").read_text())
+        s["desk"] = {"partner_sends_as_itself": True}
+        (self.data / "crew-settings.json").write_text(json.dumps(s))
+        r = pal(self.env, "desk", "draft", "--to", "Worker#general", "straight out", term="tH")
+        c = card(self.env, cid_of(r.stdout))
+        self.assertEqual((c["status"], c["from_kind"], c["tray"]), ("queued", "pal", "worker"))
+
+    def test_partner_brief_renders(self):
+        tpl = self.root / "partner-template.md"
+        tpl.write_text("# You are {{OWNER}}'s idea partner\n{{HEAD}} is the head pal.\n")
+        py(self.env, f"import crewlib; crewlib.render_partner({str(tpl)!r}); print(1)")
+        home = self.data / "crew-partner"
+        self.assertEqual((home / "AGENTS.md").read_text(), f"# You are {OWNER}'s idea partner\nBoss is the head pal.\n")
+        self.assertEqual((home / "CLAUDE.md").read_text(), "@AGENTS.md\n")
+
+
 class Install(unittest.TestCase):
     def test_skill_replaced_when_unchanged_kept_when_edited(self):
         root, env, data = sandbox()

@@ -14,6 +14,10 @@
 - **Auto finds the pal for you.** Drop a card with Auto and a quick, cheap model picks the pal and
   topic it belongs to. If it isn't sure, the card waits in To route for you to place it, with the
   reason. At most 100 a day; set `desk.triage` to `off` to always place cards yourself.
+- **MUSE, your idea partner.** Hire it from the hire dialog (or `pal hire --partner`) and riff with it
+  in its #ideas topic: half-formed ideas, screenshots. It asks sharp questions and turns them into clean
+  card drafts with the right pal suggested. Nothing goes out until you click Send (or Edit, or
+  Discard); then it's your own card.
 - **`pal desk`** for pals (and you, in a shell): their cards, `take`, `done "result"`, `reply`,
   `block`, `pass`, `send`, `sent`. The shipped `pal-desk` skill teaches every pal how to use it.
 - **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title

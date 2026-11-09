@@ -621,6 +621,14 @@ still travels through crewd's queue, carrying the card's id.
   goes there with a "routed #topic · triage · why" receipt, or stays in To route as needs you
   (`route: manual`) with the reason: unsure (below 0.6), an answer naming anything not on the
   roster, no model, triage off (`desk.triage`), no pals, or the day's 100 calls used up.
+- **MUSE, the idea partner** (optional: `pal hire --partner`, or the hire dialog's Idea partner):
+  a Claude Code pal on Sonnet in `data/crew-partner` (its brief, `partner/AGENTS.md`, rendered with
+  the owner's and head pal's names), topic `#ideas`. The owner riffs with it; it writes **drafts**
+  with `pal desk draft` into `_drafts/` (status `draft`, kind `idea`, `to` its suggestion, `track: yes`
+  for a task). A toast says "MUSE drafted a card"; the Desk view's **Drafts** has Send (`send-draft`:
+  the card becomes the owner's own, from the owner, `drafted_by` MUSE, in the ledger), Edit (the
+  quick-drop prefilled; dropping sends it with `--from-draft`, and the draft closes "edited and sent
+  as c-…") and Discard. `desk.partner_sends_as_itself` sends its cards at once as a pal's instead.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
@@ -837,6 +845,11 @@ still travels through crewd's queue, carrying the card's id.
   name a pal and topic from the roster exactly, its urgency is at most `soon` and never replaces the
   owner's own pick, and `routes.jsonl` keeps a hash of the input, never the card's text. Its calls
   count against `desk.triage_daily_cap` in `budget.json`; over the cap no model is called.
+- **Only the owner's click sends a draft.** `pal desk draft` is refused for any pal that isn't the
+  idea partner (`partner: true` on its record, or the Idea partner role) and for shells;
+  `send-draft`, `discard` (besides the partner's own) and `send --from-draft` need the click. Sending
+  re-stamps the card, so its newest event carries the owner as sender: the hand-edit check (which
+  takes the latest stamp from events.jsonl) keeps it the owner's.
 - **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal), `now` is the owner's
   only, and a `--re` thread stops at 6 cards deep.
 - **The shipped `pal-desk` skill** is replaced on update only while it's unchanged since the last
@@ -908,3 +921,7 @@ still travels through crewd's queue, carrying the card's id.
 - A card dropped with Auto lands on a topic within about 20 seconds with a "routed #topic" receipt,
   or waits in To route as needs you with the reason; an answer naming a pal or topic that isn't
   there is thrown away (`tests/test_desk.py` Triage).
+
+- `pal hire --partner` hires MUSE (Sonnet, `data/crew-partner`, #ideas); its `pal desk draft` waits in
+  Drafts, nothing is delivered until Send, and the card then arrives as "[from <owner>]" with the task
+  made when it was drafted with `--task` (`tests/test_desk.py` Drafts).

@@ -3,7 +3,9 @@
 // one, one with a reply and images) without throwing; its actions call `pal desk …` with a click
 // token; the quick-drop sends what was typed, to where and how urgent, with --task for multi-line text,
 // to Auto (triage) by default and To route when triage is off or there are no pals; To route shows
-// Auto cards as sorting and triage's leftovers with why; the sidebar's per-topic markers read right.
+// Auto cards as sorting and triage's leftovers with why; the sidebar's per-topic markers read right;
+// the idea partner's drafts: their desk, Send / Edit / Discard as clicks, the Edit prefill with
+// --from-draft, the empty Drafts state, and one toast per new draft.
 // Run: node tests/test_desk_view.mjs
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, cpSync } from "node:fs";
@@ -210,6 +212,90 @@ try {
   assert.equal(crewjs.deskLaneText(crewjs.deskLane("Herdr Mod", "review")), null, "nothing for a topic with no cards");
   assert.ok(crewjs.deskLaneMark({ r: { xs: 3 }, line: "#1E1E20", fg3: "#808082", warnText: "#E8AA0A" }, crewjs.deskLane("Herdr Mod", "desk")));
   assert.equal(crewjs.deskLaneMark({}, null), null);
+  // ── MUSE's drafts (design §13) ──
+  const deskmod = await import(pathToFileURL(join(dir, "crew-desk.mjs")).href);
+  const draftCard = { id: "c-d00001", kind: "idea", status: "draft", from: "MUSE#ideas", from_kind: "pal", to: "Herdr Mod#docs", urgency: "soon", track: "yes",
+    title: "Docs index", body: "**Why:** stale\n**Done when:** links work", reply: null, receipts: [r("draft", "MUSE#ideas", "pal desk draft")], tray: "_drafts", verified: false };
+  const autoDraft = { ...draftCard, id: "c-d00002", to: "auto", track: undefined, urgency: "normal", title: "Something" };
+  fx.desk = { counts: { open: 1, drafts: 2 }, cards: [draftCard, autoDraft, { id: "c-999999", kind: "tell", status: "queued", from: "DeNon", from_kind: "owner", to: "Herdr Mod#desk", title: "x", receipts: [], tray: "herdr-mod", verified: true }] };
+  v.cards = fx.desk.cards;
+  assert.deepEqual(v.cards.filter((c) => v.match("drafts", c)).map((c) => c.id), ["c-d00001", "c-d00002"], "the Drafts desk");
+  assert.deepEqual(v.cards.filter((c) => v.match("all", c)).map((c) => c.id), ["c-999999"], "drafts aren't on a desk until sent");
+  assert.deepEqual(v.cards.filter((c) => v.match("pal:herdr-mod", c)).map((c) => c.id), ["c-999999"]);
+  v.pick = "drafts"; v.openId = "c-d00001";
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  for (const id of ["da-send", "da-edit", "da-discard", "dt-to"]) assert.ok(clicks.has(id), `a draft offers ${id}`);
+  assert.ok(!clicks.has("da-move") && !clicks.has("da-cancel"), "a draft has its own actions");
+  fx.calls.length = 0;
+  await run((cx) => clicks.get("da-send")(null, cx));
+  const sd = fx.calls.find((c) => c[0] === "pal" && c[2] === "send-draft");
+  assert.deepEqual(sd.slice(0, 6), ["pal", "desk", "send-draft", "c-d00001", "--to", "Herdr Mod#docs"], "Send goes to its suggestion");
+  assert.ok(sd.includes("--click"), "Send is the owner's click");
+  assert.ok(!sd.includes("--urgency"), "its own urgency unless changed");
+  // A different place and urgency.
+  await run((cx) => clicks.get("dt-to")(null, cx));
+  assert.ok(v.draftPicking);
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  await run((cx) => clicks.get("dt-route")(null, cx));
+  await run((cx) => clicks.get("dt-u-low")(null, cx));
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  fx.calls.length = 0;
+  await run((cx) => clicks.get("da-send")(null, cx));
+  assert.deepEqual(fx.calls.find((c) => c[2] === "send-draft").slice(3, 8), ["c-d00001", "--to", "route", "--urgency", "low"]);
+  await run((cx) => clicks.get("da-discard")(null, cx));
+  assert.ok(fx.calls.some((c) => c.join(" ").startsWith("pal desk discard c-d00001 --click")), "Discard is a click");
+  assert.deepEqual(deskmod.editProps(draftCard), { text: "Docs index\n\n**Why:** stale\n**Done when:** links work", to: "Herdr Mod#docs", urgency: "soon", task: true, fromDraft: "c-d00001", drafter: "MUSE" });
+  assert.equal(deskmod.editProps(autoDraft).to, "auto");
+  assert.equal(deskmod.draftTarget("To route"), "route");
+  v.openId = "c-d00002"; await run((cx) => v.render(cx));
+  // No drafts: hire an idea partner (none yet), else whose drafts show here.
+  fx.desk = { counts: {}, cards: [] }; v.cards = []; v.openId = null; v.loaded = false; clicks.clear();
+  await run((cx) => v.render(cx));
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  assert.ok(clicks.has("desk-hire-partner"), "no partner yet: Hire an idea partner");
+  fx.shared.crew = { bots: [{ id: "b1", name: "MUSE", partner: true }] };
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  assert.ok(!clicks.has("desk-hire-partner"), "with one hired, no Hire button");
+  delete fx.shared.crew;
+
+  // Edit: the quick-drop prefilled from the draft; dropping retires it (--from-draft).
+  fx.props = { ...deskmod.editProps(draftCard), overlay: "o9" };
+  const qe = new Drop();
+  await run((cx) => qe.init({}, cx));
+  await run((cx) => qe.render(cx));
+  assert.equal(qe.input.value(), "Docs index\n\n**Why:** stale\n**Done when:** links work");
+  assert.equal(qe.toLabel(), "Herdr Mod #docs");
+  assert.equal(qe.urgency, "soon");
+  assert.equal(qe.tracking(), true);
+  qe.track = false;
+  fx.calls.length = 0;
+  await run((cx) => qe.drop(cx));
+  const se = fx.calls.find((c) => c[0] === "pal" && c[2] === "send");
+  assert.deepEqual(se.slice(3, 9), ["Herdr Mod#docs", "Docs index\n\n**Why:** stale\n**Done when:** links work", "--urgency", "soon", "--from-draft", "c-d00001"]);
+  assert.ok(!se.includes("--task") && se.includes("--click"));
+  fx.props = {};
+
+  // The toast: once per draft; a first run takes today's drafts as seen.
+  const first = crewjs.newDrafts([draftCard], null);
+  assert.deepEqual([first.fresh.length, first.seen], [0, ["c-d00001"]], "a first run toasts nothing");
+  const next = crewjs.newDrafts([draftCard, autoDraft], first.seen);
+  assert.deepEqual(next.fresh.map((c) => c.id), ["c-d00002"], "a new draft toasts");
+  assert.deepEqual(crewjs.newDrafts([draftCard, autoDraft], next.seen).fresh, [], "once");
+  assert.deepEqual(crewjs.newDrafts([autoDraft], next.seen).seen, ["c-d00002"], "a sent or discarded draft drops out");
+  assert.deepEqual(crewjs.newDrafts([{ ...draftCard, status: "cancelled" }], []).fresh, [], "only open drafts");
+  const toast = crewjs.draftToast(draftCard);
+  assert.equal(toast.title, "MUSE drafted a card");
+  assert.equal(toast.body, "Docs index → Herdr Mod #docs. Review and Send in the Desk.");
+  assert.deepEqual(toast.action, { name: "crew-header.drafts" });
+  assert.equal(crewjs.draftToast(autoDraft).body, "Something → Auto. Review and Send in the Desk.");
+  assert.equal(crewjs.partnerOf({ bots: [{ name: "X", role: "Idea partner" }] }).name, "X");
+  assert.equal(crewjs.partnerOf({ bots: [{ name: "Y", role: "Writer" }] }), null);
+
   console.log("desk view: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

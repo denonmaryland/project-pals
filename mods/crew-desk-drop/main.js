@@ -13,7 +13,9 @@
 // Enter drops, Shift+Enter is a new line. The card goes as the owner's, with a click token
 // (ownerCli: `pal desk send … --click`); a toast says where it landed ("Dropped on Pal #topic · c-7f3a",
 // "Dropped · sorting it to a pal · c-7f3a", "Waiting in To route · c-7f3a", or "Held · …" with why).
-// props: { to? }.
+// props: { to?, text?, urgency?, task?, fromDraft?, drafter? }. Edit on an idea partner's draft (the Desk
+// view) opens it prefilled with the draft (`fromDraft`: its id); the title says "Edit MUSE's draft", and
+// Drop sends the edited text as the owner's card with --from-draft, which retires the draft.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, InputState, Input } from "gpui-base";
@@ -48,10 +50,14 @@ export default class CrewDeskDrop extends View {
     this.filter.on("change", (_e, cx) => cx.notify());
     this.filter.on("submit", (_e, cx) => { const first = this.targets()[0]; if (first) this.pickTo(first.to, cx); });
     this.handle = cx.focus_handle();
-    this.to = props()?.to ?? (autoOk() ? AUTO : ROUTE);
+    const p = props() ?? {};
+    this.fromDraft = p.fromDraft ?? null;
+    this.drafter = p.drafter ?? null;
+    if (p.text) this.input.set_value(p.text);
+    this.to = p.to ?? (autoOk() ? AUTO : ROUTE);
     this.toOpen = false;
-    this.urgency = "normal";
-    this.track = null;     // null: on for multi-line text; true/false once clicked
+    this.urgency = URGENCIES.includes(p.urgency) ? p.urgency : "normal";
+    this.track = typeof p.task === "boolean" ? p.task : null;   // null: on for multi-line text; true/false once clicked
     this.files = [];
     this.busy = false;
     this.lastPick = shared("crew.attach.add")?.nonce ?? null;
@@ -128,7 +134,7 @@ export default class CrewDeskDrop extends View {
     const files = this.files, track = this.tracking();
     const to = this.to === AUTO && !autoOk() ? ROUTE : this.to;
     const args = ["desk", "send", to, text, "--urgency", this.urgency, ...(track ? ["--task"] : []),
-      ...files.flatMap((f) => ["--attach", f.path]), "--json"];
+      ...files.flatMap((f) => ["--attach", f.path]), ...(this.fromDraft ? ["--from-draft", this.fromDraft] : []), "--json"];
     this.input.set_value("");
     this.files = [];
     this.busy = true;
@@ -189,8 +195,8 @@ export default class CrewDeskDrop extends View {
 
     return sheet(d, "crew-desk-drop", this.handle, (e, cx) => { if (e.key === "escape") { if (this.toOpen) { this.toOpen = false; cx.notify(); } else this.close(); cx.stop_propagation(); } })
       .on_drop((e, cx) => this.attach(e.paths ?? [], cx))
-      .child(sheetHeader(d, { id: "dd", title: "Drop a card", onClose: () => this.close(),
-        sub: "It lands on a desk with a status and receipts; the Desk view follows it." }))
+      .child(sheetHeader(d, { id: "dd", title: this.fromDraft ? `Edit ${this.drafter ?? "the idea partner"}'s draft` : "Drop a card", onClose: () => this.close(),
+        sub: this.fromDraft ? "Dropping sends it as yours and retires the draft." : "It lands on a desk with a status and receipts; the Desk view follows it." }))
       .child(sheetBody()
         .child(v_flex().id("dd-compose").rounded(6).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "enter" && !e.modifiers?.shift && !this.toOpen) this.drop(cx); })

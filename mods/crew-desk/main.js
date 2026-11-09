@@ -17,12 +17,18 @@
 // Data: `pal desk ls --all --json`, read when this view is shown: every 10 s, and whenever the
 // header's watch on data/crew-desk publishes new counts (shared "crew.desk"). Hidden, it reads nothing.
 // No pals yet: "No pals yet. Cards you drop wait in To route until you hire one." and a Hire button.
+//
+// Drafts (§13): the idea partner's (MUSE's) cards waiting for the owner's Send, in their own desk
+// under Needs you, with a dashed outline. A draft's actions: Send (to its suggestion, or another
+// place, at an urgency: `desk send-draft ID --to … --urgency …`, a click), Edit (the quick-drop,
+// prefilled; dropping sends the edited text and retires the draft: `--from-draft ID`) and Discard.
+// No drafts and no idea partner yet: "Hire an idea partner".
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, shared, setShared, run, notify, openOverlay } from "herdr";
 import { ds, tone, scrollArea, pebble, channelName, loadDesk, deskMode, showTabs, ownerCli, deskSlug, cardAge,
-  CARD_OPEN, CARD_STATUS_WORD, URGENCIES, urgencyColor, cardStatusColor, openDrop } from "./crew.js";
+  CARD_OPEN, CARD_STATUS_WORD, URGENCIES, urgencyColor, cardStatusColor, openDrop, partnerOf, PARTNER_NAME } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const LEFT = 232, RIGHT = 400;
@@ -33,6 +39,15 @@ export function receiptWord(status) {
   const m = /^routed (#\S+)$/.exec(status ?? "");
   return m ? `Routed to ${m[1]}` : status ?? "";
 }
+// A draft's suggestion (its `to`) as `desk send-draft --to` takes it, and as people read it.
+export const draftTarget = (to) => (!to || to === "auto" ? "auto" : to === "To route" ? "route" : to);
+export const targetLabel = (to) => (to === "auto" ? "Auto (a pal picks it)" : to === "route" ? "To route (I'll pick)" : to.replace("#", " #"));
+// The quick-drop's props for Edit: the draft's words, where it suggests, how urgent, its board flag.
+export function editProps(c) {
+  return { text: [c.title, c.body].filter(Boolean).join("\n\n"), to: draftTarget(c.to), urgency: c.urgency ?? "normal",
+    task: c.track === "yes", fromDraft: c.id, drafter: String(c.from ?? PARTNER_NAME).split("#")[0] };
+}
+
 // Its second line: who and how, then the note. Triage's reads "by triage: <why>" (the model's reason).
 export function receiptLine(r) {
   if (r.via === "triage" && /^routed /.test(r.status ?? "")) return `by triage${r.note ? `: ${r.note}` : ""}`;
@@ -49,6 +64,9 @@ export default class CrewDesk extends View {
     this.pick = "all";
     this.openId = null;
     this.moving = false;
+    this.draftTo = null;      // the open draft's Send target (null: its suggestion)
+    this.draftUrg = null;     // and urgency (null: its own)
+    this.draftPicking = false;
     this.busy = false;
     this.seenAt = null;
     this.shown = false;
@@ -82,6 +100,8 @@ export default class CrewDesk extends View {
   }
 
   match(key, c) {
+    if (key === "drafts") return c.tray === "_drafts";
+    if (c.tray === "_drafts") return false;   // drafts aren't on anyone's desk until they're sent
     if (key === "all") return true;
     if (key === "needs") return c.status === "needs you" || c.tray === "_owner";
     if (key === "route") return c.tray === "_route";
@@ -103,6 +123,7 @@ export default class CrewDesk extends View {
       catch (e) { notify({ title: `Couldn't ${label}`, body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.busy = false;
       this.moving = false;
+      this.draftPicking = false;
       this.reload(cx);
     });
   }
@@ -130,7 +151,7 @@ export default class CrewDesk extends View {
     const on = this.pick === key;
     return h_flex().id(`dk-${key}`).h(28).flex_none().items_center().gap(8).pl(10 + indent).pr(10).rounded(d.r.sm).cursor_pointer()
       .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { this.pick = key; this.openId = null; this.moving = false; cx.notify(); })
+      .on_click((_e, cx) => { this.pick = key; this.openId = null; this.moving = false; this.draftPicking = false; cx.notify(); })
       .child(div().flex_1().min_w(0).truncate().text_size(13).when(mono, (el) => el.font_family(d.mono).text_size(12))
         .text_color(on ? d.fg1 : indent ? d.fg2 : d.body).child(label))
       .when(n > 0, (el) => el.child(div().flex_none().text_size(11).font_family(d.mono).text_color(warn ? d.warnText : d.fg3).child(String(n))));
@@ -142,10 +163,12 @@ export default class CrewDesk extends View {
     const held = (key) => cs.some((c) => c.status === "held" && this.match(key, c));
     const list = v_flex().gap(1).p(8).pr(12)
       .child(this.deskRow(d, "needs", "Needs you", count("needs"), { warn: true }))
+      .child(this.deskRow(d, "drafts", "Drafts", count("drafts")))
       .child(this.deskRow(d, "route", "To route", count("route")))
       .child(this.deskRow(d, "held", "Held", count("held"), { warn: true }))
       .child(this.deskRow(d, "all", "All", cs.length))
       .child(div().h(1).my(6).mx(10).bg(d.lineSoft));
+    // (the "all" count leaves drafts out: they aren't on a desk yet)
     for (const p of this.pals()) {
       const key = `pal:${p.slug}`;
       list.child(this.deskRow(d, key, p.name, count(key), { warn: held(key) }));
@@ -175,9 +198,13 @@ export default class CrewDesk extends View {
     const sub = unplaced ? `waits on you · ${last.note}`
       : [`${c.from_kind === "owner" ? this.owner() : c.from ?? "?"} → ${c.to ?? "?"}`, cardAge(c.created),
         last ? `${receiptWord(last.status)}${last.by ? ` · ${last.by}` : ""}` : null].filter(Boolean).join("  ·  ");
+    // A draft (not sent yet) has a dashed outline (design §5's table).
+    const draft = c.status === "draft";
+    const sub2 = draft ? `${String(c.from ?? "?").split("#")[0]} suggests ${targetLabel(draftTarget(c.to))}  ·  ${cardAge(c.created)}` : sub;
     return v_flex().id(`dc-${c.id}`).flex_none().gap(2).px(10).py(7).rounded(d.r.sm).cursor_pointer()
+      .when(draft, (el) => el.border_1().border_dashed().border_color(d.lineMid))
       .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { this.openId = on ? null : c.id; this.moving = false; cx.notify(); })
+      .on_click((_e, cx) => { this.openId = on ? null : c.id; this.moving = false; this.draftTo = null; this.draftUrg = null; this.draftPicking = false; cx.notify(); })
       .child(h_flex().gap(8).items_center()
         .child(div().size(6).flex_none().rounded(3).bg(dot ?? "#00000000"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("17px").text_color(c.unreadable ? d.warnText : d.fg1)
@@ -186,7 +213,7 @@ export default class CrewDesk extends View {
         .when(sorting, (el) => el.child(div().flex_none().text_size(11).text_color(d.infoText)
           .loop("opacity", { from: 0.45, to: 1, period: 1200 }).child("sorting…")))
         .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg4).child(c.id ?? "")))
-      .child(div().pl(14).truncate().text_size(11).line_height("14px").text_color(unplaced ? d.warnText : d.fg3).child(sub));
+      .child(div().pl(14).truncate().text_size(11).line_height("14px").text_color(unplaced ? d.warnText : d.fg3).child(sub2));
   }
 
   middle(d) {
@@ -203,6 +230,14 @@ export default class CrewDesk extends View {
         .child(h_flex().gap(8)
           .child(pebble(d, { id: "desk-hire", label: "Hire a pal…", primary: true, onClick: () => openOverlay({ mod: "crew-hire", kind: "dialog", width: 520, modal: true }) }))
           .child(pebble(d, { id: "desk-drop0", label: "Drop a card", onClick: () => openDrop() }))));
+    } else if (this.pick === "drafts" && !shown.length) {
+      const partner = partnerOf();
+      body.child(v_flex().pt(48).gap(12).items_center()
+        .child(div().text_size(16).font_weight(500).text_color(d.fg1).child("No drafts"))
+        .child(div().max_w(380).text_center().text_size(13).line_height("19px").text_color(d.fg2)
+          .child(partner ? `${partner.name}'s drafts show up here.` : "Hire an idea partner to turn your riffs into cards."))
+        .when(!partner, (el) => el.child(pebble(d, { id: "desk-hire-partner", label: "Hire an idea partner…", primary: true,
+          onClick: () => openOverlay({ mod: "crew-hire", kind: "dialog", width: 520, modal: true, props: { partner: true } }) }))));
     } else if (!shown.length) {
       body.child(div().p(16).text_size(13).text_color(d.fg3).child(this.loaded ? "Nothing here. Every card on this desk is closed." : "Reading the desk…"));
     } else {
@@ -226,10 +261,11 @@ export default class CrewDesk extends View {
     const owner = this.owner();
     if (c.from_kind === "owner") {
       return c.verified
-        ? div().text_size(12).text_color(d.body).child(`from ${owner} (clicked in Project Pals)`)
+        ? div().text_size(12).text_color(d.body).child(`from ${owner} (clicked in Project Pals)${c.drafted_by ? ` · drafted by ${String(c.drafted_by).split("#")[0]}` : ""}`)
         : div().px(8).py(4).rounded(d.r.sm).bg(AMBER_FILL).border_1().border_color(AMBER_EDGE).text_size(12).text_color(d.warnText)
           .child(`claims to be from ${owner} · edited after sending · unverified`);
     }
+    if (c.status === "draft") return div().text_size(12).text_color(d.body).child(`a draft by ${String(c.from ?? "?").split("#")[0]}: nothing goes out until you Send it`);
     if (c.from_kind === "pal") return div().text_size(12).text_color(d.body).child(`from ${c.from} (a pal${c.relaying ? `, relaying ${c.relaying}: not ${owner}` : ""})`);
     if (c.from_kind === "system") return div().text_size(12).text_color(d.body).child("from Project Pals");
     return div().text_size(12).text_color(d.warnText).child(`from ${c.from ?? "a shell"} (unverified)`);
@@ -250,6 +286,7 @@ export default class CrewDesk extends View {
     const waitsOnOwner = c.status === "needs you" || c.tray === "_owner";
     const spacesNow = spaces();
     const hasTopic = spacesNow.some((s) => deskSlug(s.name) === c.tray);
+    if (c.status === "draft") return pane.child(scrollArea(d, "desk-right", this.draftPane(d, c)).flex_1().min_h(0));
     const actions = h_flex().flex_wrap().gap(6)
       .when(hasTopic, (el) => el.child(pebble(d, { id: "da-open", label: "Open topic", onClick: () => this.openTopic(c) })))
       .when(open, (el) => el.child(pebble(d, { id: "da-move", label: this.moving ? "Moving…" : "Move…", onClick: (cx) => { this.moving = !this.moving; cx.notify(); } })))
@@ -314,6 +351,56 @@ export default class CrewDesk extends View {
     return pane.child(scrollArea(d, "desk-right", body).flex_1().min_h(0));
   }
 
+  // The open draft: its words, where it would go and how urgently (both changeable), Send / Edit / Discard.
+  draftPane(d, c) {
+    const to = this.draftTo ?? draftTarget(c.to);
+    const urg = this.draftUrg ?? c.urgency ?? "normal";
+    const pick = () => {
+      const list = v_flex().gap(1).p(4);
+      const opt = (id, target) => list.child(div().id(id).h(28).flex_none().flex().items_center().px(8).rounded(4).cursor_pointer()
+        .when(target === to, (el) => el.bg(d.sel)).when(target !== to, (el) => el.hover((st) => st.bg(d.hover)))
+        .on_click((_e, cx) => { this.draftTo = target; this.draftPicking = false; cx.notify(); })
+        .child(div().truncate().text_size(12).text_color(d.body).child(targetLabel(target))));
+      opt("dt-auto", "auto");
+      opt("dt-route", "route");
+      for (const s of spaces()) for (const t of s.tabs ?? []) opt(`dt-${s.id}-${t.id}`, `${s.name}#${channelName(t)}`);
+      return scrollArea(d, "desk-draft-to", list).max_h(200).rounded(6).bg(d.raised).border_1().border_color(d.line);
+    };
+    const urgRow = h_flex().h(26).flex_none().items_center().p(2).gap(2).rounded(6).bg(d.raised).border_1().border_color(d.line)
+      .children(URGENCIES.map((u) => div().id(`dt-u-${u}`).h(20).px(8).flex().items_center().gap(5).rounded(4).cursor_pointer()
+        .when(u === urg, (el) => el.bg(d.sel)).when(u !== urg, (el) => el.hover((st) => st.bg(d.hover)))
+        .on_click((_e, cx) => { this.draftUrg = u; cx.notify(); })
+        .when(Boolean(urgencyColor(d, u)), (el) => el.child(div().size(6).rounded(3).bg(urgencyColor(d, u))))
+        .child(div().text_size(12).font_weight(500).text_color(u === urg ? d.fg1 : d.fg2).child(u[0].toUpperCase() + u.slice(1)))));
+    const sendArgs = ["send-draft", c.id, "--to", to, ...(urg !== (c.urgency ?? "normal") ? ["--urgency", urg] : []), "--json"];
+    const by = String(c.from ?? PARTNER_NAME).split("#")[0];
+    return v_flex().gap(12).p(16).pr(18)
+      .child(div().text_size(15).line_height("20px").font_weight(600).text_color(d.fg1).child(c.title || "(no title)"))
+      .child(h_flex().flex_wrap().gap(6)
+        .child(div().flex_none().h(20).px(6).flex().items_center().rounded(3).border_1().border_dashed().border_color(d.lineMid)
+          .text_size(11).font_weight(500).text_color(d.fg2).child("Draft"))
+        .when(c.track === "yes", (el) => el.child(div().flex_none().h(20).px(6).flex().items_center().rounded(3).bg(d.raised).border_1().border_color(d.line)
+          .text_size(11).font_weight(500).text_color(d.fg2).child("goes on the board")))
+        .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg4).child(c.id)))
+      .child(this.fromLine(d, c))
+      .when(Boolean(c.body), (el) => el.child(this.text(d, "dbody", c.body, d.body)))
+      .when((c.attachments ?? []).length > 0, (el) => el.child(h_flex().flex_wrap().gap(6).children((c.attachments ?? []).map((a, i) =>
+        div().id(`dimg-${i}`).w(112).h(80).flex_none().rounded(4).overflow_hidden().border_1().border_color(d.line).tooltip(a).child(image(`data/${a}`).w(112).h(80))))))
+      .child(v_flex().gap(6)
+        .child(div().text_size(11).font_weight(600).text_color(d.fg3).child("SEND TO"))
+        .child(div().id("dt-to").h(28).flex().items_center().gap(6).px(8).rounded(6).cursor_pointer().bg(d.raised).border_1()
+          .border_color(this.draftPicking ? d.lineStrong : d.line).on_click((_e, cx) => { this.draftPicking = !this.draftPicking; cx.notify(); })
+          .child(div().flex_1().min_w(0).truncate().text_size(12).font_weight(500).text_color(d.body).child(targetLabel(to)))
+          .child(svg(`${ICON}/${this.draftPicking ? "chevron-down" : "chevron-right"}.svg`).size(10).flex_none().text_color(d.fg3)))
+        .when(this.draftPicking, (el) => el.child(pick()))
+        .child(urgRow))
+      .child(h_flex().flex_wrap().gap(6)
+        .child(pebble(d, { id: "da-send", label: this.busy ? "Sending…" : "Send", primary: true, tooltip: `Goes out as yours (${by} drafted it)`,
+          onClick: (cx) => this.act("send it", sendArgs, cx) }))
+        .child(pebble(d, { id: "da-edit", label: "Edit…", onClick: () => openDrop({ ...editProps(c), to, urgency: urg }) }))
+        .child(pebble(d, { id: "da-discard", label: "Discard", onClick: (cx) => this.act("discard it", ["discard", c.id], cx) })));
+  }
+
   render(cx) {
     const t = tone(theme());
     const d = ds(t);
@@ -331,7 +418,7 @@ export default class CrewDesk extends View {
       .child(div().text_size(14).font_weight(600).text_color(d.fg1).child("Desk"))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(d.fg3)
         .child([`${n.open ?? this.cards.length} open`, n.held ? `${n.held} held` : null, n["needs you"] ? `${n["needs you"]} need you` : null,
-          n["to route"] ? `${n["to route"]} to route` : null].filter(Boolean).join(" · ")))
+          n["to route"] ? `${n["to route"]} to route` : null, n.drafts ? `${n.drafts} draft${n.drafts === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")))
       .child(pebble(d, { id: "desk-drop", label: "Drop a card", onClick: () => openDrop(this.presetTo() ? { to: this.presetTo() } : {}) }))
       .child(div().id("desk-back").size(26).flex_none().flex().items_center().justify_center().rounded(d.r.sm).cursor_pointer()
         .tooltip("Back to the topic").hover((s) => s.bg(d.hover)).on_click(() => showTabs())

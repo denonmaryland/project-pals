@@ -115,6 +115,7 @@ def save_settings(**changes):
     s.pop("pro", None)
     save_json(SETTINGS, s)
     render_god()
+    render_partner()
     return settings()
 
 
@@ -131,6 +132,27 @@ def render_god(template=None):
     st = settings()
     (dest / "AGENTS.md").write_text(src.read_text().replace("{{OWNER}}", st["owner"]).replace("{{HEAD}}", st["head"]))
     (dest / "CLAUDE.md").write_text("@AGENTS.md\n")
+
+
+PARTNER_TEMPLATE = Path.home() / ".local" / "lib" / "herdr-crew" / "partner-AGENTS.md"
+
+
+def render_partner(template=None):
+    """The idea partner's (MUSE's) standing brief, rendered into data/crew-partner, its home folder."""
+    src = Path(template) if template else PARTNER_TEMPLATE
+    if not src.exists():
+        return None
+    dest = DATA / "crew-partner"
+    dest.mkdir(parents=True, exist_ok=True)
+    st = settings()
+    (dest / "AGENTS.md").write_text(src.read_text().replace("{{OWNER}}", st["owner"]).replace("{{HEAD}}", st["head"]))
+    (dest / "CLAUDE.md").write_text("@AGENTS.md\n")
+    return dest
+
+
+def is_partner(record):
+    """Is this pal the idea partner (hired with the Idea partner role)?"""
+    return bool((record or {}).get("partner")) or (record or {}).get("role", "").strip().lower() == "idea partner"
 
 
 def append_jsonl(path, entry):

@@ -33,7 +33,7 @@ DESK = DATA / "crew-desk"
 EVENTS = DESK / "events.jsonl"
 LEDGER = DESK / ".owner-ledger.jsonl"
 INDEX = DESK / ".index.json"
-ROUTE, OWNER_TRAY = "_route", "_owner"
+ROUTE, OWNER_TRAY, DRAFTS = "_route", "_owner", "_drafts"
 
 FIELDS = ("id", "kind", "status", "from", "from_kind", "proof", "relaying", "to", "urgency", "size",
           "held", "held_since", "task", "thread", "depth", "reply_to", "expires", "created", "updated",
@@ -181,7 +181,7 @@ def render(card):
 
 def ensure():
     """The folder, its README and the trays (install.sh runs this too; never touches cards)."""
-    for d in (DESK, DESK / ROUTE, DESK / ROUTE / "open", DESK / OWNER_TRAY, DESK / OWNER_TRAY / "open"):
+    for d in (DESK, DESK / ROUTE, DESK / ROUTE / "open", DESK / OWNER_TRAY, DESK / OWNER_TRAY / "open", DESK / DRAFTS, DESK / DRAFTS / "open"):
         d.mkdir(parents=True, exist_ok=True)
         os.chmod(d, 0o700)
     if not (DESK / "README.md").exists():
@@ -326,7 +326,10 @@ def truth(cid):
     evs = events(cid)
     if not evs:
         return None
-    t = {k: evs[0].get(k) for k in GUARDED if k != "status" and evs[0].get(k) is not None}
+    t = {}
+    for e in evs:   # a draft that the owner sent becomes theirs: the latest stamp wins
+        if any(e.get(k) is not None for k in ("from", "from_kind")):
+            t = {k: e.get(k) for k in GUARDED if k != "status" and e.get(k) is not None}
     t["status"] = next((e["status"] for e in reversed(evs) if _status_of(e["status"])), None)
     t["receipts"] = [{k: e.get(k, "") for k in ("at", "status", "by", "via", "note")} for e in evs]
     return t
@@ -431,7 +434,7 @@ def split_text(text):
 
 def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None, urgency="normal", status="queued",
            by=None, via="pal desk send", task=None, thread=None, depth=0, reply_to=None, expires=None,
-           attachments=(), extra=None):
+           attachments=(), extra=None, folder=None):
     """A new card on `to`'s desk ('Pal#topic', 'Pal', the owner, or '' for To route). Returns it."""
     if kind not in KINDS:
         raise DeskError(f"kind is one of {', '.join(KINDS)}")
@@ -452,7 +455,7 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None,
     title, body = check_text(title, body)
     ensure()
     cid = new_id("c-")
-    folder = folder_of(to)
+    folder = folder or folder_of(to)
     card = {"id": cid, "kind": kind, "status": status, "from": frm, "from_kind": from_kind, "proof": proof,
             "relaying": relaying, "to": to or "To route", "urgency": urgency, "task": task, "thread": thread or cid,
             "depth": str(int(depth or 0)), "reply_to": reply_to, "expires": expires, "created": iso(), "updated": iso(),
@@ -704,7 +707,7 @@ def reconcile():
             _event(card, "edited by hand", "a person", "editor", note)
             card["updated"] = iso()
             dest = path
-            if folder_of(card.get("to")) != folder and card.get("status") not in CLOSED:
+            if folder_of(card.get("to")) != folder and card.get("status") not in CLOSED + ("draft",):
                 dest = DESK / folder_of(card["to"]) / "open" / path.name
             _write(dest, card)
             if dest != path:
@@ -783,9 +786,12 @@ def removed(pal):
 
 
 def counts(pal=None):
-    out = {"open": 0, "held": 0, "needs you": 0, "to route": 0}
+    out = {"open": 0, "held": 0, "needs you": 0, "to route": 0, "drafts": 0}
     for path, card in cards():
         if pal and path.parent.parent.name != slug(pal):
+            continue
+        if path.parent.parent.name == DRAFTS:
+            out["drafts"] += 1
             continue
         out["open"] += 1
         if card.get("status") == "held":
@@ -1102,7 +1108,7 @@ def by_pal():
     """Open cards per pal and topic, for the sidebar: {pal folder: {open, held, held_since, topics: {topic: {…}}}}."""
     out = {}
     for path, card in cards():
-        if card.get("unreadable"):
+        if card.get("unreadable") or path.parent.parent.name == DRAFTS:
             continue
         folder = path.parent.parent.name
         p = out.setdefault(folder, {"pal": pal_of(card.get("to")), "open": 0, "held": 0, "held_since": None, "topics": {}})
@@ -1115,3 +1121,44 @@ def by_pal():
                 if hs and (not x["held_since"] or hs < x["held_since"]):
                     x["held_since"] = hs
     return out
+
+
+# ── the idea partner's drafts (§13) ────────────────────────────────────────────────────────────
+
+def draft(frm, proof, suggest, title, body, urgency="normal", task=False, attachments=()):
+    """MUSE's draft: in _drafts/, status draft, `to` = where it suggests. Nothing is delivered."""
+    return create("idea", suggest or "To route", title, body, frm=frm, from_kind="pal", proof=proof, urgency=urgency,
+                  status="draft", via="pal desk draft", attachments=attachments, folder=DRAFTS,
+                  extra={"track": "yes"} if task else None)
+
+
+def send_draft(cid, to, urgency=None, auto=False, task=None):
+    """The owner's Send (a click): the draft becomes the owner's card (from the owner, drafted_by the
+    partner), on `to`'s desk, in the ledger. The caller delivers it. Returns the card."""
+    path = need(cid)
+    src = path.parent.parent.name
+    dst = folder_of(to)
+    with held_locks(src, dst):
+        path = need(cid)
+        card = read(path)
+        if card.get("status") != "draft":
+            raise DeskError(f"{card['id']} isn't a draft (it's {card.get('status')})")
+        card["drafted_by"] = card.get("from")
+        card.update({"from": OWNER, "from_kind": "owner", "proof": "click", "to": to or "To route", "status": "queued",
+                     "updated": iso()})
+        card.pop("relaying", None)
+        if urgency:
+            card["urgency"] = urgency
+        if auto:
+            card["route"] = "auto"
+        if task:
+            card["task"] = task
+        card.pop("track", None)
+        _event(card, "queued", OWNER, "send-draft", f"{OWNER} sent {card['drafted_by']}'s draft",
+               **{k: card.get(k) for k in GUARDED if k != "status"}, to=card["to"], urgency=card.get("urgency"))
+        dest = DESK / dst / "open" / path.name
+        _write(dest, card)
+        if dest != path:
+            path.unlink(missing_ok=True)
+    ledger_add(card)
+    return card

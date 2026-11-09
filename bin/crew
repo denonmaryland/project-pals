@@ -26,10 +26,13 @@ The Desk (everything sent to you is a card with a status and receipts)
   pal desk send <Pal[#topic]|owner|route|auto> "text" [--soon|--low] [--ask] [--task] [--attach F]... [-F file]
             [--relaying] [--re ID]   a new card (pal tell / ask / task add --for send cards too)
   pal desk sent [--json] | cancel ID | attach FILE | stats | check
-  (the owner, from Project Pals: urgency ID LEVEL, confirm ID, prune --older 180d)
+  pal desk draft --to <Pal#topic|auto|route> [--urgency U] [--task] [--attach F]... -F draft.md
+                                     the idea partner's draft: it waits for the owner's Send (ls --drafts)
+  (the owner, from Project Pals: urgency ID LEVEL, confirm ID, send-draft ID [--to …], discard ID, prune --older 180d)
 
 Hiring
   pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--topic general] [--folder DIR] [--machine M] [--task T]
+  pal hire --partner [Name]         the idea partner (MUSE by default): you riff, it drafts cards you Send
   pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
                                      a new topic (a tab); --worktree gives it its own git branch and folder.
                                      pal channel is the same command (topics were called channels before 0.3.1)
@@ -716,6 +719,37 @@ def desk_may(card, who, what, sender_ok=False):
     die(f"{card['id']} is on {crewdesk.pal_of(card.get('to')) or 'no'} desk: only that pal or {OWNER} can {what} it")
 
 
+def desk_to(spaces, spec, who=None):
+    """'auto' | 'route' | the owner | 'Pal[#topic]' → (to, auto)."""
+    low = (spec or "").lower()
+    if low in ("route", "to route", "auto", ""):
+        return "", low == "auto"
+    if low in (OWNER.lower(), "owner"):
+        return OWNER, False
+    space, tab = find(spec, spaces)
+    to = f"{space['name']}#{chan(tab)}" if "#" in spec else space["name"]
+    if who and who.get("me") and to.lower() == who["me"].lower():
+        die("that's you")
+    return to, False
+
+
+def desk_text(pos, o):
+    text = " ".join(pos)
+    if o.get("file"):
+        text = (text + "\n" if text else "") + Path(o["file"]).read_text()
+    if not text.strip():
+        die("what should it say? give the text, or -F file")
+    return text
+
+
+def desk_attachments():
+    out = []
+    for a in [ARGV[i + 1] for i, x in enumerate(ARGV[:-1]) if x == "--attach"]:
+        src = Path(a).expanduser()
+        out.append(str(src.resolve()) if (DATA / "crew-attachments").resolve() in src.resolve().parents else desk_attach(src))
+    return out
+
+
 def cmd_desk(spaces, rest):
     sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
@@ -724,13 +758,16 @@ def cmd_desk(spaces, rest):
     via = f"pal desk {sub}"
     by = who["from"]
     if sub in ("ls", "list"):
-        pos, o = opts(args, (), ("all", "route", "owner", "held", "done", "json"))
+        pos, o = opts(args, (), ("all", "route", "owner", "held", "done", "drafts", "json"))
         where = ("open", "done") if o.get("done") else ("open",)
         rows = crewdesk.cards(where=where)
         if o.get("done"):
             since = time.time() - 7 * 86400
             rows = [(p, c) for p, c in rows if p.parent.name == "open" or crewdesk.parse_iso(c.get("updated")) >= since]
-        if o.get("route"):
+        if o.get("drafts"):
+            rows = [(p, c) for p, c in rows if p.parent.parent.name == crewdesk.DRAFTS
+                    and (owner or not who["me"] or (c.get("from") or "").lower() == who["me"].lower())]
+        elif o.get("route"):
             rows = [(p, c) for p, c in rows if p.parent.parent.name == crewdesk.ROUTE]
         elif o.get("owner"):
             rows = [(p, c) for p, c in rows if p.parent.parent.name == crewdesk.OWNER_TRAY or c.get("status") == "needs you"]
@@ -823,7 +860,9 @@ def cmd_desk(spaces, rest):
         crewdesk.ledger_add(card)
         print(crewdesk.line(crewdesk.mark(card["id"], "confirmed", by, via, f"{OWNER} confirmed the edited card")))
     elif sub == "send" and len(args) >= 1:
-        pos, o = opts(args, ("attach", "re", "urgency", "file"), ("soon", "low", "now", "ask", "task", "relaying", "json"))
+        pos, o = opts(args, ("attach", "re", "urgency", "file", "from-draft"), ("soon", "low", "now", "ask", "task", "relaying", "json"))
+        if o.get("from-draft") and not owner:
+            die(f"only {OWNER} sends an edited draft (from Project Pals)")
         attach = [ARGV[i + 1] for i, a in enumerate(ARGV[:-1]) if a == "--attach"]
         if not pos:
             die('pal desk send <Pal[#topic]|owner|route> "text"')
@@ -890,6 +929,11 @@ def cmd_desk(spaces, rest):
                     if d["id"] == did:
                         d["to"] = t
                 save_json(DATA / "crew-delegations.json", [d for d in dels if d.get("to")])
+        if o.get("from-draft"):
+            try:
+                crewdesk.mark(o["from-draft"], "cancelled", by, via, f"edited and sent as {card['id']}")
+            except CrewError:
+                pass
         if o.get("json"):
             print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
         else:
@@ -920,9 +964,57 @@ def cmd_desk(spaces, rest):
             die("pal desk prune --older 180d")
         print(f"deleted {crewdesk.prune(int(m.group(1)))} archived cards")
     elif sub == "draft":
-        die("drafts come with the idea partner, MUSE (Desk stage 4)")
+        # The idea partner's draft (§13): nothing goes out until the owner clicks Send.
+        pos, o = opts(args, ("to", "urgency", "attach", "file"), ("task", "json"))
+        rec = record_of(where_of(ME, spaces)[0], records()) if who["me"] else {}
+        from crewlib import is_partner
+        if not is_partner(rec):
+            die(f"only the idea partner writes drafts; send a card with pal desk send (or {OWNER} drops one with Ctrl+Shift+D)")
+        text = desk_text(pos, o)
+        to, auto = desk_to(spaces, o.get("to") or "auto")
+        urgency = o.get("urgency") or "normal"
+        if urgency not in ("low", "normal", "soon"):
+            die("a draft's urgency is low, normal or soon")
+        title, body = crewdesk.split_text(text)
+        atts = desk_attachments()
+        if crewdesk.conf().get("partner_sends_as_itself"):
+            # The owner's setting: the partner's cards go out at once, as a pal's (no owner authority).
+            card = crewdesk.create("idea", to, title, body, frm=who["from"], from_kind="pal", proof=who["proof"], urgency=urgency,
+                                   via="pal desk draft", attachments=atts, extra={"route": "auto"} if auto else None)
+            card, t, what = crewdesk.deliver(card, spaces)
+            print(f"{card['id']} → {card['to']}: {what} (sent as you: partner_sends_as_itself is on)")
+            return
+        card = crewdesk.draft(who["from"], who["proof"], "auto" if auto else to, title, body, urgency, bool(o.get("task")), atts)
+        if o.get("json"):
+            print(json.dumps(crewdesk.summary(card, crewdesk.need(card["id"])), ensure_ascii=False))
+        else:
+            print(f"{card['id']} drafted for {card['to']}: it waits for {OWNER}'s Send (the toast, or the Desk view's Drafts). "
+                  f"Show {OWNER} the draft in your reply; \"send it\" typed here isn't the click.")
+    elif sub == "send-draft" and args:
+        if not owner:
+            require_owner("send a draft")
+        pos, o = opts(args, ("to", "urgency"), ("json",))
+        _, card = desk_card(pos[0])
+        if card.get("status") != "draft":
+            die(f"{card['id']} isn't a draft")
+        to, auto = desk_to(spaces, o.get("to") or card.get("to") or "auto")
+        task = None
+        if card.get("track") == "yes" and to and to != OWNER:
+            task = crewtasks.add(card["title"], spaces, None, OWNER, card.get("body") or None, to, notify_assignee=False)["id"]
+        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task)
+        card, t, what = crewdesk.deliver(card, spaces) if not auto else (card, None, "sorting it to a pal")
+        if o.get("json"):
+            print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
+        else:
+            print(f"{card['id']} → {card['to']}: {what}")
+    elif sub == "discard" and args:
+        _, card = desk_card(args[0])
+        if card.get("status") != "draft":
+            die(f"{card['id']} isn't a draft")
+        desk_may(card, who, "discard", sender_ok=True)
+        print(crewdesk.line(crewdesk.mark(card["id"], "cancelled", by, via, "draft discarded")))
     else:
-        die("pal desk ls|open|take|later|done|reply|block|pass|send|sent|cancel|attach|stats|check (see pal --help)")
+        die("pal desk ls|open|take|later|done|reply|block|pass|send|sent|cancel|draft|attach|stats|check (see pal --help)")
 
 
 def desk_attach(src):
@@ -1766,9 +1858,22 @@ def main(argv):
         pos, o = opts(rest, ("lines", "n"))
         cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
     elif cmd == "hire" and rest:
-        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show"))
+        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner"))
         if not pos and o.get("god"):
             pos = [settings()["head"]]
+        if o.get("partner"):
+            # The idea partner, MUSE (Desk §13): its own home with its brief, the Idea partner role, and
+            # Sonnet unless a model is given.
+            from crewlib import render_partner
+            pos = pos or ["MUSE"]
+            home = render_partner()
+            if not home:
+                die("the idea partner's brief isn't installed (run ./install.sh)")
+            o.setdefault("folder", str(home))
+            o.setdefault("role", "Idea partner")
+            o.setdefault("channel", "ideas")
+            if (o.get("harness") or "claude") == "claude":
+                o.setdefault("model", "sonnet")
         if not pos:
             die("hire who? pal hire <Name> [--harness claude] ...")
         if o.get("folder"):

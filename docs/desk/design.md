@@ -960,8 +960,9 @@ quick-drop and header button, is built on `crew/desk` too (2026-11-08); still to
 Codex hook check, the styled `hc read` request, the seen-without-receipt check-in, Settings → Desk,
 and the Inbox's needs-you cards. Stage 2 was installed live as 052716e (2026-11-08). From stage 4,
 triage for Auto drops is built, with the sidebar `Desk N` and topic markers (pal-tray cards with several
-live topics still go by the rules). MUSE, the head pal's check-in and its brief section are not
-started, nor are stages 5–6. The list is kept as it was asked:
+live topics still go by the rules), and MUSE: `pal hire --partner`, `partner/AGENTS.md`, `pal desk draft`,
+`send-draft` / `discard` / Edit by click, and the draft toast. The head pal's check-in and its brief
+section come next, with #orca-home (Orca's home view); stages 5–6 are not started. The list is kept as it was asked:
 
 
 1. **Owner authority only by click**: the quick-drop, a draft's Send. A shell `pal tell` becomes

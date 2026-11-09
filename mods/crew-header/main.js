@@ -12,13 +12,15 @@
 // quick-drop composer, crew-header.desk the view. The header is always shown, so it's the one place
 // that reads the desk's counts (`pal desk ls --all --json`, when data/crew-desk changes, else every
 // 10 s) and publishes them as shared("crew.desk") = { counts, pals, triage, at } for the other mods
-// (pals: open / held per pal folder and topic, for the sidebar; triage: "auto" | "off").
+// (pals: open / held per pal folder and topic, for the sidebar; triage: "auto" | "off"). It also
+// toasts each new draft from the idea partner, once; crew-header.drafts (the toast's click) opens
+// the Desk on Drafts.
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, theme, focused, layout, nextCommand, shared, setShared, watchFolder, appHome } from "herdr";
+import { spaces, theme, focused, layout, nextCommand, shared, setShared, watchFolder, appHome, notify } from "herdr";
 import { shownRoom, roomMembers, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX,
-  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR } from "./crew.js";
+  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR, newDrafts, draftToast } from "./crew.js";
 
 const SIDE = 160;        // the Desk button and the split buttons, kept clear on both sides so the field stays centred
 const FIELD_Y = 11;      // (52 - 30) / 2
@@ -37,6 +39,7 @@ export default class CrewHeader extends View {
         if (c === "search") this.open(null);
         if (c === "drop") openDrop();
         if (c === "desk") this.toggleDesk();
+        if (c === "drafts") showDesk("drafts");   // the draft toast's click
         cx.notify();
       }
     });
@@ -62,8 +65,15 @@ export default class CrewHeader extends View {
     this.deskBusy = true;
     cx.spawn(async (cx) => {
       try {
-        const { counts, pals, triage } = await loadDesk();
+        const { cards, counts, pals, triage } = await loadDesk();
         this.lastDesk = Date.now();
+        // The idea partner's new drafts: one toast each, once (the ids already toasted are kept in
+        // this copy's localStorage, so a restart doesn't toast them again). Click: the Desk on Drafts.
+        let seen = null;
+        try { seen = JSON.parse(localStorage.getItem("drafts-seen") ?? "null"); } catch { seen = null; }
+        const { fresh, seen: now0 } = newDrafts(cards, seen);
+        for (const c of fresh) notify(draftToast(c));
+        if (JSON.stringify(now0) !== JSON.stringify(seen)) localStorage.setItem("drafts-seen", JSON.stringify(now0));
         // Published only when something changed: the counts, any pal's or topic's (the sidebar's
         // Desk button and topic markers), or whether triage is on (the quick-drop's Auto).
         const was = shared("crew.desk");

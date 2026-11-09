@@ -242,6 +242,11 @@ god="$home/data/crew-god"
 if [[ -f "$god/AGENTS.md" ]]; then mkdir -p "$backup/crew-god"; cp -a "$god/AGENTS.md" "$backup/crew-god/"; fi
 install -m 644 "$src/god/AGENTS.md" "$HOME/.local/lib/herdr-crew/god-AGENTS.md"
 python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_god()' "$HOME/.local/lib/herdr-crew"
+# The idea partner's (MUSE's) brief, the same way: its home is data/crew-partner (pal hire --partner).
+if [[ -f "$src/partner/AGENTS.md" ]]; then
+  install -m 644 "$src/partner/AGENTS.md" "$HOME/.local/lib/herdr-crew/partner-AGENTS.md"
+  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_partner()' "$HOME/.local/lib/herdr-crew"
+fi
 
 # The Desk (every pal's cards): data/crew-desk with its README and trays, the desk settings that are
 # missing, and the shipped pal-desk skill (an edited one is kept and the new one written beside it as
