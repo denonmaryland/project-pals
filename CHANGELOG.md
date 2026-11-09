@@ -68,8 +68,8 @@ Thanks to **goodboimax** for native Antigravity CLI support and the hook deliver
 - **Round scrollbars.** Everything Project Pals scrolls (the sidebar, the topics, profiles,
   dialogs) has a slim pill-shaped thumb with round ends, quiet until you hover or drag it.
 - **Trees.** In any look, a pal that's working or needs you shows its live topics underneath
-  (at most four), each one a click away. On by default; fold or unfold them all from the tree
-  button in the Pals header, or in Pal list style.
+  (at most four), each one a click away, and the row itself then shows just the state. On by
+  default; fold or unfold them all from the tree button in the Pals header, or in Pal list style.
 - **Fold the hero's topics.** A chevron on the hero's Topics header folds the list to one line
   ("Topics 18 · 3 working"). It's one setting for every pal, so switching pals never jumps.
 
