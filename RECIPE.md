@@ -637,6 +637,11 @@ still travels through crewd's queue, carrying the card's id.
   each with Open in Desk and Done (a click), and they count in the status bar's "N need you" as
   "Card: <title> · <sender>". The header publishes them (`shared("crew.desk").needs`, via
   `needsYouCards`); Home uses the same filter, so the three agree.
+- **Settings → Desk** (About → Settings → Desk, `crew-desk-settings`, 520 px): today's numbers on
+  top (open, held, needs you, drafts; triage calls against the cap; the last check-in), then Triage
+  (Auto / Off), −/+ steppers for the triage cap, pals' soon cards per topic an hour, the check-in's
+  held and quiet minutes and the archive days, and "MUSE sends as itself". Each change saves at once
+  with `pal settings desk.<key> <value>` (validated; pals are refused, as for every setting).
 - **The head pal's check-in:** at most every 15 minutes, when something's stuck, crewd puts one low
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.

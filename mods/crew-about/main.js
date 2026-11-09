@@ -193,6 +193,13 @@ export default class CrewAbout extends View {
           .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
         () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // The Desk: triage, its cap, the check-in's flags, archiving, MUSE (its own dialog, crew-desk-settings).
+      .child(row("set-desk", "Desk", "How cards are placed, flagged and kept",
+        h_flex().items_center().gap(8)
+          .child(div().text_size(12.5).text_color(t.muted).child(shared("crew.desk")?.triage === "off" ? "Triage off" : "Triage on"))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-desk-settings", kind: "dialog", width: 520 }); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // How the sidebar lists the pals: its own dialog, the looks beside a live preview (crew-palstyle).
       .child(row("set-pallist", "Pal list style", "How the sidebar lists your pals",
         h_flex().items_center().gap(8)

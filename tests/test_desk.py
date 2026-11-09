@@ -657,6 +657,29 @@ class CheckIn(unittest.TestCase):
         self.assertIsNone(self.run_checkin(60))
 
 
+class DeskSettings(unittest.TestCase):
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+
+    def test_set_and_show(self):
+        r = pal(self.env, "settings", "desk.triage_daily_cap", "40")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "desk.triage_daily_cap = 40"), r.stderr)
+        self.assertEqual(pal(self.env, "settings", "desk.partner_sends_as_itself", "on").stdout.strip(), "desk.partner_sends_as_itself = on")
+        d = json.loads((self.data / "crew-settings.json").read_text())["desk"]
+        self.assertEqual((d["triage_daily_cap"], d["partner_sends_as_itself"], d["archive_after_days"]), (40, True, 14))
+        self.assertIn("desk.triage = auto", pal(self.env, "settings", "desk").stdout)
+        st = json.loads(pal(self.env, "desk", "stats", "--json").stdout)
+        self.assertEqual((st["triage_cap"], st["triage_today"], st["settings"]["partner_sends_as_itself"]), (40, 0, True))
+
+    def test_bad_values_and_pals_are_refused(self):
+        for key, val in (("desk.triage", "maybe"), ("desk.triage_daily_cap", "-1"), ("desk.archive_after_days", "0"),
+                         ("desk.nope", "1")):
+            self.assertNotEqual(pal(self.env, "settings", key, val).returncode, 0, key)
+        r = pal(self.env, "settings", "desk.triage", "off", term="tW")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("owner's to change", r.stderr)
+
+
 class Install(unittest.TestCase):
     def test_skill_replaced_when_unchanged_kept_when_edited(self):
         root, env, data = sandbox()

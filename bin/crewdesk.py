@@ -1263,3 +1263,52 @@ def checkin(spaces, now=None):
                   proof="crewd", urgency="low", via="crewd check-in")
     card, _, _ = deliver(card, spaces)
     return card
+
+
+# ── Settings → Desk (§12.9): pal settings desk.<key> <value> ─────────────────────────────────────
+
+SETTING_HELP = {
+    "triage": ("auto | off", "a cheap model places Auto drops and pal-tray cards (off: you place them)"),
+    "triage_daily_cap": ("0–1000", "triage calls a day; over it, cards wait for you"),
+    "pal_soon_per_hour": ("0–60", "soon cards pals may send one topic in an hour"),
+    "held_flag_after_min": ("1–1440", "minutes held before the head pal's check-in lists a card"),
+    "seen_no_receipt_flag_min": ("1–1440", "minutes seen with no receipt before the check-in lists it"),
+    "archive_after_days": ("1–3650", "days a closed card stays in done/ before archive/"),
+    "partner_sends_as_itself": ("on | off", "MUSE's cards go out at once as a pal's, with no Send click"),
+}
+_RANGES = {"triage_daily_cap": (0, 1000), "pal_soon_per_hour": (0, 60), "held_flag_after_min": (1, 1440),
+           "seen_no_receipt_flag_min": (1, 1440), "archive_after_days": (1, 3650)}
+
+
+def set_setting(key, value):
+    """Validate and save one desk setting; returns its new value. Raises DeskError."""
+    from crewlib import SETTINGS
+    value = str(value).strip().lower()
+    if key == "triage":
+        if value not in ("auto", "off"):
+            raise DeskError("desk.triage is auto or off")
+        v = value
+    elif key == "partner_sends_as_itself":
+        if value not in ("on", "off"):
+            raise DeskError("desk.partner_sends_as_itself is on or off")
+        v = value == "on"
+    elif key in _RANGES:
+        lo, hi = _RANGES[key]
+        if not value.isdigit() or not lo <= int(value) <= hi:
+            raise DeskError(f"desk.{key} is a whole number from {lo} to {hi}")
+        v = int(value)
+    else:
+        raise DeskError("desk settings: " + ", ".join(SETTING_HELP))
+    s = load_json(SETTINGS, {})
+    s["desk"] = {**DEFAULTS, **(s.get("desk") if isinstance(s.get("desk"), dict) else {}), key: v}
+    save_json(SETTINGS, s)
+    return v
+
+
+def stats():
+    """Today's numbers for Settings → Desk: the counts, triage calls against the cap, the last check-in."""
+    b = load_json(BUDGET, {})
+    today = b.get("day") == time.strftime("%Y-%m-%d")
+    c = conf()
+    return {**counts(), "triage_today": b.get("triage", 0) if today else 0, "triage_cap": c.get("triage_daily_cap"),
+            "triage": c.get("triage"), "checkin_at": b.get("checkin_at"), "settings": {k: c.get(k) for k in SETTING_HELP}}

@@ -25,6 +25,8 @@
   Discard); then it's your own card.
 - **`pal desk`** for pals (and you, in a shell): their cards, `take`, `done "result"`, `reply`,
   `block`, `pass`, `send`, `sent`. The shipped `pal-desk` skill teaches every pal how to use it.
+- **Settings → Desk** shows today's numbers and lets you turn triage off, change its daily cap,
+  when the head pal hears about held or quiet cards, and when closed cards are archived.
 - **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title
   or text by hand; its status and who sent it can't be changed that way.
 

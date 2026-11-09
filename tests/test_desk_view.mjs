@@ -56,6 +56,7 @@ try {
     export const exec = async (cmd, args) => {
       fx.calls.push([cmd.split("/").pop(), ...args]);
       if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "ls") return { stdout: JSON.stringify(fx.desk), stderr: "", code: 0 };
+      if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "stats") return { stdout: JSON.stringify(fx.stats), stderr: "", code: 0 };
       if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "send") return { stdout: JSON.stringify({ card: { id: "c-abcdef", to: "Herdr Mod#desk" }, terminal: "t1", what: "queued" }), stderr: "", code: 0 };
       return { stdout: "", stderr: "", code: 0 };
     };
@@ -65,7 +66,7 @@ try {
     export const hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
-  for (const m of ["crew-desk", "crew-desk-drop"]) { cpSync(join(root, "mods", m, "main.js"), join(dir, `${m}.mjs`)); }
+  for (const m of ["crew-desk", "crew-desk-drop", "crew-desk-settings"]) { cpSync(join(root, "mods", m, "main.js"), join(dir, `${m}.mjs`)); }
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
 
@@ -295,6 +296,29 @@ try {
   assert.equal(crewjs.draftToast(autoDraft).body, "Something → Auto. Review and Send in the Desk.");
   assert.equal(crewjs.partnerOf({ bots: [{ name: "X", role: "Idea partner" }] }).name, "X");
   assert.equal(crewjs.partnerOf({ bots: [{ name: "Y", role: "Writer" }] }), null);
+
+  // ── Settings → Desk ──
+  fx.stats = { open: 3, held: 1, "needs you": 0, "to route": 0, drafts: 2, triage_today: 12, triage_cap: 100, triage: "auto", checkin_at: null,
+    settings: { triage: "auto", triage_daily_cap: 100, pal_soon_per_hour: 6, held_flag_after_min: 10, seen_no_receipt_flag_min: 30,
+      archive_after_days: 14, partner_sends_as_itself: false } };
+  const Settings = (await import(pathToFileURL(join(dir, "crew-desk-settings.mjs")).href)).default;
+  const ds_ = new Settings();
+  fx.calls.length = 0;
+  await run((cx) => ds_.init({}, cx));
+  await run((cx) => ds_.render(cx));
+  assert.ok(fx.calls.some((c) => c.join(" ") === "pal desk stats --json"), "it reads today's numbers");
+  assert.equal(ds_.st.triage_today, 12);
+  fx.calls.length = 0;
+  await run((cx) => clicks.get("ds-triage_daily_cap-up")(null, cx));
+  assert.ok(fx.calls.some((c) => c.join(" ") === "pal settings desk.triage_daily_cap 110"), "the stepper saves at once");
+  await run((cx) => ds_.render(cx));
+  await run((cx) => clicks.get("ds-triage-t")(null, cx));
+  assert.ok(fx.calls.some((c) => c.join(" ") === "pal settings desk.triage off"), "triage switches off");
+  fx.stats.settings.archive_after_days = 1;
+  await run((cx) => ds_.load(cx)); await run((cx) => ds_.render(cx));
+  fx.calls.length = 0;
+  await run((cx) => clicks.get("ds-archive_after_days-dn")(null, cx));
+  assert.ok(!fx.calls.some((c) => c.join(" ").startsWith("pal settings desk.archive_after_days 0")), "never below the minimum");
 
   console.log("desk view: ok");
 } finally {

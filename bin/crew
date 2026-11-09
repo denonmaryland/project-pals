@@ -89,6 +89,7 @@ Memory and skills
 Settings
   pal settings                      who the pals work for, head pal, bypass, and background LLM
   pal settings owner "Name" | head "Name" | bypass on|off | llm auto|claude|agy
+  pal settings desk | desk.<key> <value>   the Desk's settings (triage, caps, flags, archive, MUSE)
 
 Updates
   pal version                       what's installed
@@ -955,11 +956,12 @@ def cmd_desk(spaces, rest):
         print(desk_attach(Path(args[0]).expanduser()))
     elif sub == "stats":
         pos, o = opts(args, (), ("json",))
-        c = crewdesk.counts()
+        st = crewdesk.stats()
         if o.get("json"):
-            print(json.dumps(c))
+            print(json.dumps(st))
         else:
-            print(", ".join(f"{v} {k}" for k, v in c.items()))
+            print(", ".join(f"{st[k]} {k}" for k in ("open", "held", "needs you", "to route", "drafts"))
+                  + f"; triage {st['triage']}: {st['triage_today']}/{st['triage_cap']} calls today")
     elif sub == "check":
         crewdesk.ensure()
         out = crewdesk.reconcile()
@@ -1699,6 +1701,12 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
 def cmd_settings(rest):
     """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off | pal settings llm auto|claude|agy"""
     from crewlib import save_settings
+    if rest and rest[0] == "desk":
+        c = crewdesk.conf()
+        for k, (vals, what) in crewdesk.SETTING_HELP.items():
+            v = c.get(k)
+            print(f"desk.{k} = {('on' if v else 'off') if isinstance(v, bool) else v}    ({vals}: {what})")
+        return
     if not rest:
         st = settings()
         print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
@@ -1706,6 +1714,11 @@ def cmd_settings(rest):
     if ME and is_bot_terminal(ME):
         die("settings are the owner's to change, not a pal's")
     key, val = rest[0], " ".join(rest[1:]).strip()
+    if key.startswith("desk."):
+        # The Desk's settings apply at once (crewd reads them each time), so no restart.
+        v = crewdesk.set_setting(key[5:], val)
+        print(f"{key} = {('on' if v else 'off') if isinstance(v, bool) else v}")
+        return
     if key == "owner" and val:
         st = save_settings(owner=val)
     elif key == "bypass" and val in ("on", "off"):
@@ -1728,7 +1741,7 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings llm auto|claude|agy')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings llm auto|claude|agy | pal settings desk.<key> <value> (pal settings desk lists them)')
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'} · llm: {st.get('llm', 'auto')}")
