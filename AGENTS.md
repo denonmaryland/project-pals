@@ -18,6 +18,7 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 | `install.sh`, `install-hooks.py` | The installer. The hooks script edits `~/.claude/settings.json` and `~/.gemini/config/hooks.json` (backing them up first). |
 | `release` | The release script (see below). |
 | `pals.json`, `VERSION` | The manifest (name, GitHub repo, layout) and the current version, both read by the updater. |
+| `claude-mod/pals/` | The Desk's Claude Code mod (function hooks: `hooks/register.tsx`). Installed to `~/.claude/project-pals/pals` and loaded only by Claude Code pals (`--plugin-dir`). Check it with `claude plugin validate claude-mod/pals` and `claude plugin test claude-mod/pals`. |
 | `skills/` | Skills Project Pals ships (`pal-desk`), copied into `data/crew-skills/` by the installer (an edited one is kept; the new one goes beside it as `SKILL.md.new`). |
 | `docs/` | Longer notes, e.g. `mac-support.md`; `docs/desk/design.md` is the Desk's design. |
 
