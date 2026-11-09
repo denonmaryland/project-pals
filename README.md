@@ -4,7 +4,9 @@ A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of
 spirit of Grok's bots but for any harness: Claude Code, Antigravity CLI (`agy`), Codex, Grok CLI,
 Gemini CLI, opencode, Hermes and more.
 
-![Project Pals in Herdr: the pals sidebar with pocket pets, a pal's topics and its terminal](preview.png)
+**Website:** [project-pals.vercel.app](https://project-pals.vercel.app)
+
+![Project Pals in Herdr: the pals sidebar with pocket pets, a pal's topics and a Claude Code session at work](preview.png)
 
 **Linux only for now.** The helpers run as a systemd user service, so macOS (and WSL or containers
 without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
