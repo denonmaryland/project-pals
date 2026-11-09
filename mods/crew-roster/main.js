@@ -8,7 +8,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
   crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
-  migrateChannelKeys, linkRecords, updateBot,
+  migrateChannelKeys, linkRecords, updateBot, refreshMachines,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
@@ -49,6 +49,9 @@ export default class CrewRoster extends View {
     // Channel data follows tab ids, so renames keep categories and briefs.
     migrateChannelKeys();
     cx.timer.every(5000, () => { migrateChannelKeys(); linkRecords(); });
+    // The machines (hc machine ls) and this computer, for every mod: shared "crew.machines".
+    cx.spawn(async () => { await refreshMachines(); });
+    cx.timer.every(20000, (cx) => cx.spawn(async () => { await refreshMachines(); }));
     // New channels get a color from the theme's palette right away.
     autoColor();
     // A pal renamed (from its menu or in Herdr): its memory and routines follow the new name.
