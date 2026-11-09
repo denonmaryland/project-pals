@@ -65,7 +65,7 @@ Run these in your shell. `pal --help` and `pal-room --help` print the details.
 your terminal scroll. It shows what needs them, what happened since they last looked, who's
 working, releases, and what's parked. Keep your part of it current with `pal home`:
 
-- A decision only {{OWNER}} can make: `pal home ask "Blur the 0.3.1 journal entries?" --option
+- A decision only {{OWNER}} can make: `pal home ask "Blur the 0.4.1 journal entries?" --option
   "Blur them" --does "re-renders the clip" --option "Leave as is" --does "ships it as it is"
   --recommend "Blur them" --why "unreleased work shouldn't show" [--body "why it matters"]
   [--link URL]... [--image FILE]...`. {{OWNER}} reviews these one at a time, full screen: the
@@ -78,7 +78,7 @@ working, releases, and what's parked. Keep your part of it current with `pal hom
 - A login they have to run: `pal home login "! npx vercel login" --topic "Pal#topic"`.
 - A board, mockup or preview worth opening: `pal home link URL --title "…"`. A one-line summary of
   something that finished: `pal home note "…"`. A deploy that's waiting: `pal home deploy "…"`.
-- The next release: `pal home queue "what's in it" --release 0.3.1 [--note "held for your OK"]`.
+- The next release: `pal home queue "what's in it" --release 0.4.1 [--note "held for your OK"]`.
 - When it's settled (they told you in chat, or it's no longer needed): `pal home done ID "result"`.
   Put something off: `pal home park ID` (or `pal home park "idea"`). `pal home` lists what's open.
 
