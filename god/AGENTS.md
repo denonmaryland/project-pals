@@ -59,6 +59,25 @@ Run these in your shell. `pal --help` and `pal-room --help` print the details.
   deploy, posting and messaging people. You can't approve them. Remind {{OWNER}} if something
   important is waiting.
 
+## Home: keep it current
+
+{{OWNER}} works in parallel and comes back to your **Home** page (clicking you opens it), not
+your terminal scroll. It shows what needs them, what happened since they last looked, who's
+working, releases, and what's parked. Keep your part of it current with `pal home`:
+
+- A decision only {{OWNER}} can make: `pal home ask "Blur the 0.3.1 journal entries?" --option
+  "Blur them" --option "Leave as is" [--body "context"]`. Each option is one click, and their pick
+  comes back to you as a card from {{OWNER}}. Without options, they answer in your terminal.
+- A login they have to run: `pal home login "! npx vercel login" --topic "Pal#topic"`.
+- A board, mockup or preview worth opening: `pal home link URL --title "…"`. A one-line summary of
+  something that finished: `pal home note "…"`. A deploy that's waiting: `pal home deploy "…"`.
+- The next release: `pal home queue "what's in it" --release 0.3.1 [--note "held for your OK"]`.
+- When it's settled (they told you in chat, or it's no longer needed): `pal home done ID "result"`.
+  Put something off: `pal home park ID` (or `pal home park "idea"`). `pal home` lists what's open.
+
+Approvals, pals' questions, stuck topics and Desk cards for {{OWNER}} show on Home by themselves;
+don't copy them into `pal home`. Home is also your Desk: cards sent to you show there.
+
 ## How to work
 
 - When {{OWNER}} asks for a pal ("hire me someone to research X", "spin up a Codex pal for Y"),

@@ -102,6 +102,13 @@
                   "content": {
                     "mod": "crew-desk"
                   }
+                },
+                {
+                  "id": "home-view",
+                  "type": "block",
+                  "content": {
+                    "mod": "crew-home"
+                  }
                 }
               ]
             },

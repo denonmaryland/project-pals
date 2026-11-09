@@ -17,7 +17,7 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, theme, focused, layout, nextCommand, shared, setShared, watchFolder, appHome } from "herdr";
 import { shownRoom, roomMembers, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX,
-  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR } from "./crew.js";
+  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR, homeMode } from "./crew.js";
 
 const SIDE = 160;        // the Desk button and the split buttons, kept clear on both sides so the field stays centred
 const FIELD_Y = 11;      // (52 - 30) / 2
@@ -137,6 +137,6 @@ export default class CrewHeader extends View {
       .child(commandField(d, { w: this.fieldW(), onOpen: (e) => this.open(e) }))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
         .child(this.deskButton(d))
-        .child(space && tab && !deskMode() ? splitButtons(d) : div()));
+        .child(space && tab && !deskMode() && !homeMode() ? splitButtons(d) : div()));
   }
 }

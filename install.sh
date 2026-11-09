@@ -116,11 +116,12 @@ fi
 # Project Pals' shortcuts in keys.json's global map: ctrl-shift-i → crew-roster.profile (the profile
 # panel, 2026-11-08), ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
 # it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
-# crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json). Each only when
+# crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
+# crew-roster.home (Home, the head pal's page; free in both too). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop"; do
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
@@ -251,13 +252,42 @@ python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewdesk; print(
 
 # What's installed, for the updater (About → Check for updates).
 mkdir -p "$home/data"
-python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$claude_hooks" "$agy_hooks" "$from" <<'PY'
-import json, sys, time
-manifest, out, version, helpers, claude_hooks, agy_hooks, source = sys.argv[1:]
+# Which build this is (Home's "Installed" line and its install log): the commit, its branch and
+# subject, and whether the folder had uncommitted changes. Only from a git checkout (a release tarball
+# has none). data/crew-installs.jsonl keeps one line per install (the last 200).
+python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$claude_hooks" "$agy_hooks" "$from" "$src" "$home/data/crew-installs.jsonl" <<'PY'
+import json, os, subprocess, sys, time
+manifest, out, version, helpers, claude_hooks, agy_hooks, source, src, log = sys.argv[1:]
 m = json.load(open(manifest))
-json.dump({"name": m.get("name"), "repo": m.get("repo"), "version": version, "helpers": helpers == "1",
-           "claude_hooks": claude_hooks == "1", "agy_hooks": agy_hooks == "1",
-           "source": source, "installed": int(time.time())}, open(out, "w"), indent=2)
+def git(*a):
+    try:
+        r = subprocess.run(["git", "-C", src, *a], capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+build = None
+if os.path.exists(os.path.join(src, ".git")) and git("rev-parse", "--short", "HEAD"):
+    build = {"hash": git("rev-parse", "--short", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+             "subject": (git("log", "-1", "--format=%s") or "")[:160], "dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
+             "tag": git("describe", "--tags", "--abbrev=0"), "ahead": None}
+    if build["tag"]:
+        n = git("rev-list", "--count", f"{build['tag']}..HEAD")
+        build["ahead"] = int(n) if n and n.isdigit() else None
+now = int(time.time())
+rec = {"name": m.get("name"), "repo": m.get("repo"), "version": version, "helpers": helpers == "1",
+       "claude_hooks": claude_hooks == "1", "agy_hooks": agy_hooks == "1",
+       "source": source, "installed": now}
+if build:
+    rec["build"] = build
+json.dump(rec, open(out, "w"), indent=2)
+try:
+    lines = open(log).read().splitlines()[-199:]
+except OSError:
+    lines = []
+lines.append(json.dumps({"at": now * 1000, "version": version, "source": source, "build": build}))
+tmp = log + ".tmp"
+open(tmp, "w").write("\n".join(lines) + "\n")
+os.replace(tmp, log)
 PY
 
 echo "installed Project Pals $version into $home"

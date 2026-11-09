@@ -28,6 +28,15 @@ The Desk (everything sent to you is a card with a status and receipts)
   pal desk sent [--json] | cancel ID | attach FILE | stats | check
   (the owner, from Project Pals: urgency ID LEVEL, confirm ID, prune --older 180d)
 
+Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
+  pal home [--json]                 what's on Home
+  pal home ask "question" [--option A]... [--topic P#t] [--body …]   a decision for the owner (options: one click each)
+  pal home login "! npx vercel login" --topic P#t [--title …]       a login the owner runs in that topic
+  pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
+  pal home queue ["what"] [--release 0.3.1] [--note "…"] | unqueue ID   the next release and what's in it
+  pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  (the owner, from Project Pals: answer ID "option", seen)
+
 Hiring
   pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--topic general] [--folder DIR] [--machine M] [--task T]
   pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
@@ -114,6 +123,7 @@ import crewskills
 import crewguard
 import crewupdate
 import crewdesk
+import crewhome
 
 
 def opts(rest, flags, bools=()):
@@ -1699,6 +1709,130 @@ def cmd_update(rest):
         print(f"put back {out['restored']}")
 
 
+# ── Home (bin/crewhome.py) ───────────────────────────────────────────────────────────────────
+
+def home_topic(spaces, spec):
+    """'Pal#topic' as Project Pals names it, when it's open; else as given (a pal asleep)."""
+    if not spec:
+        return None
+    try:
+        space, tab = find(spec, spaces)
+        return f"{space['name']}#{chan(tab)}" if "#" in spec else space["name"]
+    except SystemExit:
+        raise
+    except Exception:
+        return spec.strip()
+
+
+def home_answer_to(spaces, x, answer):
+    """The owner's answer, as a card from them to whoever asked (held on its desk if it's asleep)."""
+    to = x.get("by") or ""
+    if not to or "#" not in to and not to.strip():
+        return "nobody to tell (it wasn't asked from a topic)"
+    try:
+        space, tab = find(to, spaces)
+        dest = f"{space['name']}#{chan(tab)}"
+    except SystemExit:
+        return f"{to} isn't open; the answer is on Home"
+    except Exception:
+        return f"{to} isn't open; the answer is on Home"
+    who = crewdesk.sender(spaces)
+    title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
+    body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
+    card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
+                           via="pal home answer")
+    card, _, what = crewdesk.deliver(card, spaces)
+    return f"told {dest} ({what}) · card {card['id']}"
+
+
+def cmd_home(spaces, rest):
+    sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
+    args = rest[1:] if rest and not rest[0].startswith("--") else rest
+    me, name = whoami(spaces)
+    by = me or name
+    # --option can be given more than once.
+    options, clean, i = [], [], 0
+    while i < len(args):
+        if args[i] == "--option" and i + 1 < len(args):
+            options.append(args[i + 1]); i += 2
+        else:
+            clean.append(args[i]); i += 1
+    args = clean
+    if options and sub != "ask":
+        die("only pal home ask takes --option")
+    try:
+        if sub in ("ls", "list", "show"):
+            pos, o = opts(args, (), ("json", "all"))
+            h = crewhome.load()
+            if o.get("json"):
+                print(json.dumps({**h, "installs": crewhome.installs(10)}, ensure_ascii=False))
+                return
+            items = h["items"] if o.get("all") else [x for x in h["items"] if x.get("status") in ("open", "parked")]
+            print("\n".join(crewhome.line(x) for x in items) or "(nothing on Home)")
+            rel = h["release"]
+            if rel.get("next") or rel.get("queued"):
+                print(f"next release: {rel.get('next') or '?'}" + (f" · {rel['note']}" if rel.get("note") else ""))
+                for q in rel["queued"]:
+                    print(f"  {q['id']}  {q['text']}")
+        elif sub == "ask" and args:
+            pos, o = opts(args, ("topic", "body"))
+            x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")))
+            print(crewhome.line(x))
+        elif sub == "login" and args:
+            pos, o = opts(args, ("topic", "title"))
+            if not o.get("topic"):
+                die('pal home login "! command" --topic "Pal#topic" (where the owner types it)')
+            topic = home_topic(spaces, o["topic"])
+            x = crewhome.add("login", o.get("title") or "Log in to continue", by=by, command=" ".join(pos), topic=topic)
+            print(crewhome.line(x))
+        elif sub == "link" and args:
+            pos, o = opts(args, ("topic", "title"))
+            x = crewhome.add("link", o.get("title") or pos[0], by=by, url=pos[0], topic=home_topic(spaces, o.get("topic")), status="done")
+            print(crewhome.line(x))
+        elif sub == "note" and args:
+            x = crewhome.add("note", " ".join(args), by=by, status="done")
+            print(crewhome.line(x))
+        elif sub == "deploy" and args:
+            pos, o = opts(args, ("topic",))
+            x = crewhome.add("deploy", " ".join(pos), by=by, topic=home_topic(spaces, o.get("topic")))
+            print(crewhome.line(x))
+        elif sub == "queue":
+            pos, o = opts(args, ("release", "note"))
+            q, rel = crewhome.queue(" ".join(pos), by=by, release=o.get("release"), note=o.get("note"))
+            print(f"queued for {rel.get('next') or 'the next release'}: {q['id']} {q['text']}" if q else f"next release: {rel.get('next') or '?'}")
+        elif sub == "unqueue" and args:
+            q = crewhome.unqueue(args[0])
+            print(f"unqueued {q['id']} {q['text']}")
+        elif sub == "done" and args:
+            print(crewhome.line(crewhome.close(args[0], "done", by=by, result=" ".join(args[1:]) or None)))
+        elif sub == "drop" and args:
+            print(crewhome.line(crewhome.close(args[0], "dropped", by=by)))
+        elif sub == "park" and args:
+            text = " ".join(args)
+            if re.fullmatch(r"h-[0-9a-f]{2,6}", text):
+                print(crewhome.line(crewhome.park(text, by=by)))
+            else:
+                print(crewhome.line(crewhome.add("later", text, by=by, status="parked")))
+        elif sub == "unpark" and args:
+            print(crewhome.line(crewhome.unpark(args[0], by=by)))
+        elif sub == "answer" and len(args) >= 2:
+            # The owner's pick, from a click in Project Pals (main proved it); never a pal's, never typed.
+            if not owner_proven():
+                require_owner("answer a question on Home")
+            x = crewhome.answer(args[0], " ".join(args[1:]), by=OWNER)
+            print(crewhome.line(x))
+            print(home_answer_to(spaces, x, x["answer"]))
+        elif sub == "seen":
+            if not owner_proven():
+                require_owner("mark Home seen")
+            crewhome.mark_seen()
+            print("Home: all seen")
+        else:
+            die(__doc__)
+    except crewhome.HomeError as e:
+        die(str(e))
+
+
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
 def main(argv):
@@ -1712,7 +1846,7 @@ def main(argv):
     cmd, rest = argv[0], argv[1:]
     # The app speaks as the owner only with a click token for exactly this command line (tell, ask and
     # task: the Tasks dialog, Review's notes). A bad or used token is refused, never downgraded.
-    if click_of() and cmd in ("tell", "ask", "task", "desk"):
+    if click_of() and cmd in ("tell", "ask", "task", "desk", "home"):
         prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
@@ -1798,6 +1932,8 @@ def main(argv):
         cmd_task(spaces, rest)
     elif cmd == "desk":
         cmd_desk(spaces, rest)
+    elif cmd == "home":
+        cmd_home(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":

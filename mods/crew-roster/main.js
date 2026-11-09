@@ -15,7 +15,7 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab,
-  scrollArea, scrollState, scrollTo, scrollIntoView } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, showHome, toggleHome, homeMode, hasHome } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -126,6 +126,8 @@ export default class CrewRoster extends View {
         else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
         else if (c === "profile") togglePanel(panelTab());
+        // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
+        else if (c === "home") toggleHome();
         cx.notify();
       }
     });
@@ -546,7 +548,12 @@ export default class CrewRoster extends View {
   // The channel a pal's row stands for, and opens (crew.js palLeadTab): one that needs you, else
   // one that finished, else one working, else the most recently active.
   leadTab(space) { return palLeadTab(space); }
-  open(space) { this.go(space, this.leadTab(space)); }
+  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
+  // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
+  open(space) {
+    if (botOf(space).god && hasHome()) { showHome(); return; }
+    this.go(space, this.leadTab(space));
+  }
 
   // Focus: the shown pal as the hero card, then the pals.
   focusColumn(rows, asleep, waiting, t, extra) {
@@ -708,6 +715,10 @@ export default class CrewRoster extends View {
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
+        // Home (icon-only, so Inbox and Tasks keep their widths): the head pal's page; while it shows,
+        // a terminal icon that goes back to the topic.
+        .when(hasHome(), (el) => el.child(pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(),
+          onClick: () => toggleHome(), tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : "Home (Ctrl+Shift+H)" })))
         .child(btn("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"),
           needs ? (needs > 99 ? "99+" : needs) : null, 18, { extraColor: needs ? d.warnText : null, tooltip: needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "Nothing needs you" }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
