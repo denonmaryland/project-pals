@@ -289,6 +289,13 @@ try {
     fixtures.shared["crew.marks"].tabs = {};
     fixtures.shared["crew.settings"] = {};
   }
+  // No "+N more" in the Topics header (DeNon, 2026-11-08): the count beside "Topics" says it.
+  {
+    const h = heroOf(many, true);
+    assert.ok(!ids(h).some((n) => n.args.id?.[0] === "hero-ch-more"), "no +N more button");
+    assert.ok(!/\+\d+ more/.test(text(ids(h).find((n) => n.args.id?.[0] === "hero-ch-head"))), "no +N more in the header");
+    assert.ok(box(h), "the fixed box (with its cut fifth row) is still there");
+  }
   // The Topics fold (DeNon, 2026-11-08): the chevron folds the hero's list to its header, for every
   // pal at once (remembered in crew-settings), so the hero is still one height whoever is shown.
   {

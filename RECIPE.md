@@ -307,15 +307,15 @@ rectangular segments and tags.
     leave the rest blank, with a faint "+ New topic" row (#56565A, opens the New topic dialog) after the last
     when not searching; past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, scrolling in our own area with the pill thumb (see Scrolling below; the
-    rows end 11px in and the pill sits in that gap, never over a time, pin or dot) and "+N more"
-    (#808082, rows below the
-    box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
+    rows end 11px in and the pill sits in that gap, never over a time, pin or dot). No "+N more"
+    in the header (DeNon, 2026-11-08): "Topics 18" says it, and the cut row, the pill and the
+    fixed box show there's more. The
     shown topic is scrolled into view when it changes. **Topic colours:** a 3x12px bar with
     round ends just before each "#" (here, in the Trees rows and in the topic picker), in the
     topic's saved colour (right-click → colour); no colour leaves the slot empty, so names never
     move (`crew.js topicMark`; DeNon 2026-11-08). The header's last button, a 22px chevron
     after the magnifier, folds the list to the header alone ("Topics 18 · 3 working · 1 needs
-    you"; no "+N more"), and unfolds it. It's ONE remembered state for every pal
+    you"), and unfolds it. It's ONE remembered state for every pal
     (`heroTopicsFolded` in crew-settings.json; DeNon, 2026-11-08), so folded or not the hero is
     the same height whoever you switch to. Opening the search unfolds it. Order: pinned topics first (in pin order,
     with a small pin mark), then, once you've arranged that pal's topics, Herdr's tab order, else

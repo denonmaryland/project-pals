@@ -801,8 +801,8 @@ export default class CrewRoster extends View {
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
-    // Past four rows, how many are below the box (DeNon: say the list scrolls): rows whose top is
-    // under the box's bottom edge, from our own scroll offset (scrollArea), so it's gone at the end.
+    // No "+N more" in the header (DeNon, 2026-11-08: "Topics 18" says it; the cut fifth row, the
+    // pill and the fixed box show there's more).
     const ROWS = 4, ROW = 30, SID = "hero-ch-list";
     const BOX = ROWS * ROW + 12;
     const sc = scrollState(SID);
@@ -811,7 +811,6 @@ export default class CrewRoster extends View {
     // hero is still the same height whichever pal you switch to. Searching unfolds it.
     const folded = topicsFolded() && !this.chSearchOpen;
     const setFolded = (f, cx) => { saveUiSettings({ heroTopicsFolded: f }); cx.notify(); };
-    const below = !folded && list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -826,10 +825,6 @@ export default class CrewRoster extends View {
       const summary = [String(ordered.length), working && `${working} working`, asks && `${asks} need${asks === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
       head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
         .child(div().flex_1().min_w(0).truncate().text_size(11).line_height("14px").text_color(d.fg4).child(folded ? summary : String(ordered.length)))
-        .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
-          .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
-          .on_click((_e, cx) => { scrollTo(SID, Infinity); cx.notify(); })
-          .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Search topics")
           .on_click((_e, cx) => { if (topicsFolded()) saveUiSettings({ heroTopicsFolded: false }); this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
