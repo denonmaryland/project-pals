@@ -730,8 +730,15 @@ shows, the header hides the split buttons.
   [--link URL]… [--image FILE]…` (images are copied into `data/crew-attachments`), and for an
   approval, a Desk card or an ask afterwards `pal home recommend <a-…|c-…|h-…> <approve|decline |
   done|open | an option> --why "…"` (stored in home.json `recs`, kept 14 days).
+- **The head pal's terminal, one step away:** "Talk to <Head>" (a 26 px pebble with the terminal
+  icon and a T key cap) at the right of the header, after "What happened today ›"; "T <Head>'s
+  terminal" after a hairline at the end of the review's top bar; the **T** key; Ctrl+Shift+H from
+  Home; and any topic in the hero. Each leaves Home, shows that topic and puts the keyboard in its
+  lead pane (`openTerminal`: `pane.focus {terminal}`); the hero's topics did the first two before but
+  left the keyboard on the hidden Home.
 - **All caught up** when nothing waits: the head pal's pet (120 px) with its aura, "All caught up"
-  18/600, and "N decisions answered today. <Head> puts new ones here first."
+  18/600, "N decisions answered today. <Head> puts new ones here first.", and a quiet blue
+  "Message <Head> ›" that opens its terminal with the keyboard in it.
 - **The drawer** (420 px, over the page on the right, a strong left hairline and a shadow; ×, the
   link again, or leaving Home closes it; it reopens on the tab you used last), tabs with counts:
   **Today** (since midnight, newest first, 36 px rows, a blue time while newer than Mark all

@@ -52,7 +52,7 @@ try {
   mod("herdr", `
     export const fx = { calls: [], toasts: [], closed: 0, shared: { "crew.settings": { owner: "DeNon", head: "Orca" } }, layout: null, desk: null,
       spaces: [{ id: "s1", name: "Herdr Mod", active: true, tabs: [{ id: "tb1", name: "desk", active: true }, { id: "tb2", name: "docs" }] }] };
-    export const spaces = () => fx.spaces, agents = () => fx.agents ?? [], panes = () => [], shared = (k) => fx.shared[k], setShared = (k, v) => { fx.shared[k] = v; };
+    export const spaces = () => fx.spaces, agents = () => fx.agents ?? [], panes = () => fx.panes ?? [], shared = (k) => fx.shared[k], setShared = (k, v) => { fx.shared[k] = v; };
     export const exec = async (cmd, args) => {
       fx.calls.push([cmd.split("/").pop(), ...args]);
       if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "ls") return { stdout: JSON.stringify(fx.desk), stderr: "", code: 0 };
@@ -92,6 +92,7 @@ try {
     { address: "t2", space: "s1", tab: "tb2", status: "blocked", title: "", seq: 1 },
     { address: "tm", space: "sm", tab: "tm", status: "idle", title: "", seq: 0 },
   ];
+  fx.panes = [{ tab: "tg", terminal: "tg", program: { agent: true } }, { tab: "tb1", terminal: "t1", program: { agent: true } }];
   fx.shared["crew.needs"] = { count: 1, items: [{ why: "question", tab: "tb2", label: "Herdr Mod #landing" }] };
   fx.approvals = JSON.stringify({ id: "a-111111", status: "pending", at: now - 129 * min, bot: "Herdr Mod", channel: "site", rule: "deploy", why: "deploys a site", command: "vercel deploy --prod" });
   const feed = [
@@ -208,12 +209,24 @@ try {
   v.chat({ topic: "Ghost#x", who: "Ghost#x", title: "x" });
   assert.equal(fx.overlays.at(-1).layout.children[1].content.terminal, "tm", "an asleep asker: the idea partner");
   assert.equal(fx.overlays.at(-1).layout.children[0].content.props.muse, true);
+  // T: the head pal's terminal, with the keyboard (DeNon: a fast, obvious way to Orca's terminal).
+  assert.ok(clicks.has("rv-term"), "the review's top bar has the terminal");
+  fx.calls.length = 0;
+  await key("t");
+  const runs = fx.calls.filter((c) => c[0] === "run").map((c) => `${c[1]} ${c[2]}`);
+  assert.ok(runs.some((r) => r.startsWith("layout.select") && r.includes("tab-view")), "T leaves Home");
+  assert.ok(runs.some((r) => r.startsWith("space.select") && r.includes("s0")), "T shows the head pal");
+  assert.ok(runs.some((r) => r.startsWith("pane.focus") && r.includes('"terminal":"tg"')), "T puts the keyboard in its terminal");
   // Esc: the list.
   await key("escape");
   assert.equal(v.mode, "list");
   clicks.clear();
   await run((cx) => draw(v, cx));
   assert.ok(clicks.has("review-all"), "the list offers the review again");
+  assert.ok(clicks.has("open-terminal"), "the list's header has Talk to Orca");
+  fx.calls.length = 0;
+  clicks.get("open-terminal")(null, { notify() {} });
+  assert.ok(fx.calls.some((c) => c[1] === "pane.focus" && c[2].includes('"terminal":"tg"')), "Talk to Orca opens its terminal, focused");
   for (const id of ["ap-a-111111-ok", "ap-a-111111-no", "h-h-aaaaaa-o0", "h-h-aaaaaa-o1", "h-h-aaaaaa-park", "h-h-bbbbbb-go", "h-h-cccccc-copy", "h-h-cccccc-go",
     "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "what-happened"])
     assert.ok(clicks.has(id), `has a ${id} button`);
@@ -268,6 +281,7 @@ try {
   fx.calls.length = 0;
   crewjs.toggleHome();
   assert.ok(fx.calls.some((c) => c[1] === "layout.select" && c[2].includes("tab-view")));
+  assert.ok(fx.calls.some((c) => c[1] === "pane.focus"), "Ctrl+Shift+H from Home: the terminal, focused");
   // A layout without home-view (an older one): no Home.
   const keep = fx.layout; fx.layout = { id: "root", children: [{ id: "center", type: "stack", active: "tab-view", children: [] }] };
   assert.equal(crewjs.showHome(), false);
@@ -282,6 +296,10 @@ try {
   await run((cx) => draw(w, cx));
   await run((cx) => draw(w, cx));
   assert.equal(w.needs().length, 0);
+  assert.ok(clicks.has("message-head"), "All caught up has Message Orca");
+  fx.calls.length = 0;
+  clicks.get("message-head")(null, { notify() {} });
+  assert.ok(fx.calls.some((c) => c[1] === "pane.focus" && c[2].includes('"terminal":"tg"')), "Message Orca: its terminal, focused");
   assert.equal(w.progress().rows.length, 0);
   // Hidden: it reads nothing.
   fx.layout.children[0].active = "tab-view";

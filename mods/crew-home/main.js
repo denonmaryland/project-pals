@@ -20,6 +20,10 @@
 //   asking topic's live terminal in a window over Home; Muse when that topic is asleep). Keys: 1-9
 //   pick, Enter takes the recommended (nothing without one), C, J, K, L, Esc (to the list, which has
 //   "Review one at a time"). A decision slides to the next; the last ends on "All caught up".
+// - Nothing waiting: a calm "All caught up" with the head pal's pet, and "Message <Head> ›".
+// - The head pal's terminal is always one step away (DeNon via Orca, 2026-11-08): "Talk to <Head> T"
+//   in the header, "T <Head>'s terminal" in the review's bar, the T key, Ctrl+Shift+H, and its
+//   topics in the hero; each leaves Home and puts the keyboard in that terminal (openTerminal).
 // - "What happened today ›" opens a 420 px drawer on the right (again, or ×, closes it) with tabs:
 //   Today (installs with their build hash, tasks done, topics finished, answers, links, notes, cards
 //   the head pal closed; blue while new; Mark all seen), Working (every working topic, held and
@@ -36,7 +40,7 @@ import { theme, spaces, agents, shared, run, notify, exec, appHome, home as home
 import {
   ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
-  openProposalPanel, workingMark, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
+  openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
 } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -329,7 +333,11 @@ export default class CrewHome extends View {
       .child(this.face(head, "idle", 120, t))
       .child(div().pt(6).text_size(18).line_height("24px").font_weight(600).text_color(d.fg1).child("All caught up"))
       .child(div().text_size(12.5).line_height("18px").text_color(d.fg2)
-        .child(answered ? `${answered} decision${answered === 1 ? "" : "s"} answered today. ${head} puts new ones here first.` : `Nothing needs you. ${head} puts new decisions here first.`));
+        .child(answered ? `${answered} decision${answered === 1 ? "" : "s"} answered today. ${head} puts new ones here first.` : `Nothing needs you. ${head} puts new decisions here first.`))
+      // A quiet way to say something: the head pal's terminal with the keyboard in it.
+      .child(div().id("message-head").mt(4).h(24).px(8).flex().items_center().rounded(d.r.xs).cursor_pointer()
+        .hover((s) => s.bg(d.hover)).on_click((_e, cx) => { openTerminal(); cx.notify(); })
+        .child(div().text_size(12.5).text_color(d.infoText).child(`Message ${head} ›`)));
   }
 
   // The one status line, from the data: who's working (and on what), what shipped today, held or
@@ -641,6 +649,7 @@ export default class CrewHome extends View {
     const k = e.keystroke;
     const n = this.mode === "review" ? this.current(list) : null;
     if (k === "escape") { if (this.drawer) this.drawer = null; else this.mode = this.mode === "review" ? "list" : "review"; }
+    else if (k === "t") openTerminal();
     else if (!n) return;
     else if (k === "j") this.move(list, 1);
     else if (k === "k") this.move(list, -1);
@@ -678,7 +687,9 @@ export default class CrewHome extends View {
       .child(navBtn("rv-back", "K", "Back", () => this.move(list, -1), total < 2))
       .child(navBtn("rv-skip", "J", "Skip", () => this.move(list, 1), total < 2))
       .child(navBtn("rv-later", "L", "Later", (cx) => { if (sp.later) sp.later(cx); else this.move(list, 1); }, !sp.later && total < 2))
-      .child(navBtn("rv-list", "Esc", "List", () => { this.mode = "list"; }));
+      .child(navBtn("rv-list", "Esc", "List", () => { this.mode = "list"; }))
+      .child(div().w(1).h(16).mx(4).flex_none().bg(d.lineMid))
+      .child(navBtn("rv-term", "T", `${headName()}'s terminal`, () => openTerminal()));
     const whoName = sp.who ? short(sp.who.split("#")[0]) : ownerName();
     const whoTopic = sp.topic && sp.topic.includes("#") ? `#${sp.topic.split("#")[1]}` : "";
     const who = h_flex().h(56).mt(18).flex_none().items_center().gap(12)
@@ -781,13 +792,23 @@ export default class CrewHome extends View {
     const reviewBtn = needs.length ? h_flex().id("review-all").h(22).px(6).mb(2).flex_none().items_center().rounded(d.r.xs).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click((_e, cx) => { this.mode = "review"; this.handle.focus(); cx.notify(); })
       .child(div().text_size(12).text_color(d.infoText).child("Review one at a time ›")) : null;
+    // Orca's terminal, one click (or T) away, next to What happened today.
+    const termBtn = h_flex().id("open-terminal").h(26).px(9).mb(0).flex_none().items_center().gap(7).rounded(5).cursor_pointer()
+      .bg("#1C1C1E").border_1().border_color("#00000080").hover((s) => s.border_color(d.lineStrong))
+      .tooltip(`${headName()}'s terminal (T, or Ctrl+Shift+H)`)
+      .on_click((_e, cx) => { openTerminal(); cx.notify(); })
+      .child(svg(`${ICON}/ds-terminal.svg`).size(12).flex_none().text_color(d.iconOn))
+      .child(div().text_size(12).font_weight(500).text_color(d.body).child(`Talk to ${headName()}`))
+      .child(div().flex_none().h(16).px(4).flex().items_center().rounded(3).border_1().border_color(d.lineStrong)
+        .text_size(10.5).font_family(d.mono).text_color(d.fg2).child("T"));
     const page = v_flex().id("home-page").size_full().px(28).pt(20).pb(24).gap(12)
       .child(h_flex().h(28).flex_none().items_end().gap(12)
         .child(div().flex_none().text_size(20).line_height("26px").font_weight(600).text_color(d.fg1).child("Needs you"))
         .child(div().w(40).flex_none().text_size(20).line_height("26px").font_weight(600).text_color(needs.length ? d.warnText : d.fg3).child(String(needs.length)))
         .child(div().flex_1())
         .when(Boolean(reviewBtn), (el) => el.child(reviewBtn))
-        .child(link))
+        .child(link)
+        .child(termBtn))
       .child(this.statusLine(d, prog))
       .child(needs.length ? this.needsList(d, t, needs) : this.caughtUp(d, t));
     if (!this.loaded) page.child(div().absolute().top(12).right(28).text_size(11).text_color(d.fg4).child("reading…"));

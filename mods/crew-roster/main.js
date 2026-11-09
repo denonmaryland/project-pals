@@ -15,7 +15,7 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
@@ -196,11 +196,8 @@ export default class CrewRoster extends View {
     return f.error ? null : f;
   }
 
-  go(space, tab) {
-    showTabs();
-    run("space.select", { id: space.id });
-    if (tab) run("tab.select", { id: tab.id });
-  }
+  // A topic: its terminal, with the keyboard (from Home, a room or the Desk too).
+  go(space, tab) { openTerminal(space, tab); }
 
   // A hired pal whose space was closed: open it again with its first channel.
   wake(rec) { wakePal(rec); }
