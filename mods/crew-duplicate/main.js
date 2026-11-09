@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
+import { botOf, updateBot, openTopic, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
   sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter, categoryName } from "./crew.js";
 
 export default class CrewDuplicate extends View {
@@ -33,7 +33,7 @@ export default class CrewDuplicate extends View {
     this.handle = cx.focus_handle();
     this.channel.focus();
     cx.spawn(async (cx) => {
-      try { this.agents = (await knownAgents({ on: this.bot?.machine ?? null })).filter((x) => x.installed); } catch { this.agents = []; }
+      try { this.agents = (await knownAgents({ on: this.bot?.target ?? this.bot?.machine ?? null })).filter((x) => x.installed); } catch { this.agents = []; }
       this.same = this.agents.find((x) => x.key === this.bot?.harness) ?? null;
       cx.notify();
     });
@@ -84,7 +84,8 @@ export default class CrewDuplicate extends View {
     const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, primerHint(argv, brainKey), memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
     const spec = launchSpec(brainKey, argv, argv ? task : "");
     closeOverlay(props().overlay);
-    run("tab.new", { space: space.id, name, argv: spec.argv, folder: bot.folder || undefined, task: spec.task });
+    // On the machine the pal works on (Change machine…): its space there, else a new one there.
+    openTopic(bot, { name, argv: spec.argv, task: spec.task });
   }
 
   key(e, cx) {

@@ -155,6 +155,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     live preview of your own pals in the look under the pointer (else the chosen one), with or
     without Trees, at the sidebar's width on the right; a click applies at once, Done keeps it,
     Cancel or Esc puts back the look and Trees you had. Unknown values fall back to Large pets.
+    **Machine tag** (DeNon, 2026-11-08; `palMachine`: true / false, unset = the look's default):
+    a pal on another machine gets a tiny tag after its name (the machine's laptop / desktop /
+    server icon, amber when it isn't connected, and its name in 10.5px mono). On by default in
+    Rich detail and Table, off elsewhere; the dialog's **Machine tag** switch sets it for every
+    look (Cancel puts it back). No tag means this computer. A pal open on two machines (it moved
+    and its old topics still run) is tagged in every look, "this computer" included.
   - Species (kit, bun, cub, fox, mochi, dino, owl, pup) comes from the record's `pet`
     (`{species, acc, eyes}`) or a hash of the pal's name; what it wears from its brain (Claude
     headphones, Codex glasses, Grok hood, Gemini antenna, Hermes scarf, OpenCode cap, other
@@ -357,6 +363,34 @@ rectangular segments and tags.
     commands held for approval, proposals, stuck topics; shows the asking topic, else the
     Inbox), **Hiccups** (red: the notebook's hiccups in 7 days and the minutes they cost; opens
     the Journal). Side: a compact hero (92 px pet) and the cards 2×2, then the sections below.
+  - **Which computer it works on** (DeNon 2026-11-08; `lib/machines.js`, `crew-machine`). The
+    roster publishes the machines as shared `crew.machines` every 20 s (`hc machine ls --json`,
+    plus this computer's host name and laptop-or-desktop from its battery). The hero has a machine
+    chip under the mission (icon, name, host; an amber dot when it isn't connected; "→ new topics
+    on <m>" after a move); a click opens **Change machine…**. The **Machine** card (Full: a panel,
+    Side: a section above Facts) shows the machine (icon by kind: a saved
+    `machineKinds[<name>]`, else from its name, else server), its host, how Herdr reaches it
+    ("this computer (local)", "SSH via Tailscale · user@100.x" for Tailscale's 100.64/10 or
+    *.ts.net, "SSH", "via <command>"), connected or not, the project folder on it; when new
+    topics start elsewhere, a blue note with Open one there; each of the pal's spaces on other
+    machines ("also running: N topics", Show); Change machine…. A pal open on two machines lists
+    its topics from both, each with a machine tag.
+    **Change machine…** (a 560 px sheet): this computer, then every added machine (icon, name,
+    host · connection · target, the state dot and word, "new topics start here", "N running");
+    Add machine… (`hc machine add <target> --name <name> --json`, or Herdr's Machines settings);
+    then the **project folder on** the picked machine (what it had there before, else the same
+    path under that machine's home), checked there (`test -d` run on it, 0.7 s after typing
+    stops; an offline machine says it can't look), with **Clone it there** (`git clone` of the
+    project's origin, run there) and, on this computer, **Choose folder…**; a warning when the
+    pal's brain isn't installed there. Move to <m> (ready once the folder is found) saves the
+    record: `machine` (where new topics start and where it wakes), `folder`, and `folders` (the
+    folder per machine, "" for this computer, for moving back). Terminals can't move: running
+    topics stay where they are, and the sheet says so. Then **Open a topic on <m>** (an awake
+    pal) or **Wake on <m>** (an asleep one). Every new topic (+ Topic too) goes through
+    `openTopic`: a tab in the pal's space on that machine, else a new space there with the pal's
+    name, linked to the record as `also`, so it stays one pal (`recordOf`, `sleepers`,
+    `palSpaces`); `linkRecords` forgets closed `also` spaces and hands over to one when the pal's
+    own space closes.
   - **Profile in Full is the dashboard** (`profile-dash`): the header with the tabs inline, ⤡ Side
     and ×; then a row: the **stage** (`dash-stage`, scrolling: the hero across its width, the four
     cards in a row, then calm panels (#161617, r8, a 34 px mono header): **Topics** (live state

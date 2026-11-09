@@ -18,12 +18,13 @@ import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
   tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, shortDate, num, VAULT_NOTES, dashShown,
+  palSpaces, machineTag, openMachinePicker,
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
 import { initNotebook } from "./notebook.js";
 import { vaultView } from "./vault.js";
-import { initStage, heroStage, statCards, stagePart } from "./stage.js";
+import { initStage, heroStage, statCards, stagePart, machineCard } from "./stage.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
@@ -259,6 +260,8 @@ export default class CrewProfile extends View {
     const facts = sec("facts", "Facts", v_flex().gap(6).child(this.roleRow(bot, d)).child(this.facts(space, bot, d)),
       this.link("pf-look", "Customize look", d, () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })));
     const channels = sec("channels", "Topics", this.channels(space, bot, d));
+    // Which computer it works on, and Change machine… (DeNon 2026-11-08).
+    const machine = sec("machine", "Machine", machineCard(this, space, bot, d), this.link("pf-machine", "Change…", d, () => openMachinePicker(space.id)));
     const memory = sec("memory", "Memory", this.memory(bot, d), h_flex().gap(10)
       .child(this.link("pf-remember", "Remember…", d, () => { this.showRemember = !this.showRemember; if (this.showRemember) this.remember.focus(); }))
       .when(Boolean(this.mem?.folder), (el) => el.child(this.link("pf-memfolder", "Open folder", d, () => exec("xdg-open", [this.mem.folder]).catch(() => {})))));
@@ -269,7 +272,7 @@ export default class CrewProfile extends View {
     // (Full on Profile is the dashboard, so this is Side; without the dashboard layout, Full gets it too.)
     const body = v_flex().px(16).pb(24);
     if (memFirst) body.child(memory);
-    body.child(facts).child(channels);
+    body.child(machine).child(facts).child(channels);
     if (!memFirst) body.child(memory);
     body.child(routines).child(actions);
     return div().id("pf-body").flex_1().min_h(0).overflow_y_scrollbar().child(v_flex().child(hero).child(cards).child(body));
@@ -303,7 +306,6 @@ export default class CrewProfile extends View {
     const rows = [
       ["brain", (bot.harnessName ?? (bot.harness ? bot.harness : "no agent running")) + (model ? ` · ${model}` : ""), false],
       ["folder", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~"), true],
-      ["machine", bot.machine ?? "this computer", false],
       ["branch", lead?.branch ?? null, true],
       ["pet", p ? `${p.species} · ${p.acc.join(" + ") || "nothing"}` : "folder mascot", false],
       ["hired", hired ? `${hired}${bot.hiredBy ? ` · by ${bot.hiredBy}` : ""}` : null, false],
@@ -322,7 +324,10 @@ export default class CrewProfile extends View {
     const all = agents();
     const ps = panes();
     const list = v_flex().rounded(d.r.md).border_1().border_color(d.line);
-    channelOrder(space, bot).forEach((tab, i) => {
+    // A pal open on two machines (it moved; old topics still run): both, each tagged with its machine.
+    const spaces2 = [space, ...palSpaces(bot).filter((x) => x.id !== space.id)];
+    const spans = spaces2.length > 1;
+    spaces2.flatMap((sp) => channelOrder(sp, botOf(sp)).map((tab) => [sp, tab])).forEach(([sp, tab], i) => {
       const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
       const awake = tabHasAgent(tab, ps);
       const status = awake ? tab.status : null;
@@ -333,12 +338,13 @@ export default class CrewProfile extends View {
       const wt = worktreeOf(bot, tab);
       list.child(v_flex().id(`pf-ch-${tab.id}`).px(10).py(7).gap(3).cursor_pointer()
         .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
-        .when(tab.active, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
-        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
+        .when(tab.active && sp.id === space.id, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
+        .on_click((_e, cx) => { this.go(sp, tab); cx.notify(); })
         .child(h_flex().items_center().gap(8)
           .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : awake ? div().size(7).flex_none().rounded(4).bg(d.fg4)
             : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).font_weight(500).text_color(d.fg1).child(`#${channelName(tab)}`))
+          .when(spans, (el) => el.child(machineTag(d, sp.machine, { dim: true })))
           .child(div().flex_none().text_size(11).text_color(status === "blocked" ? d.warnText : d.fg3).child(since && since !== "now" ? `${word} ${since}` : word)))
         .when(Boolean(on), (el) => el.child(div().pl(15).truncate().text_size(12).line_height("16px").text_color(d.body).child(on)))
         .when(Boolean(wt), (el) => el.child(h_flex().pl(15).items_center().gap(6)
@@ -347,7 +353,7 @@ export default class CrewProfile extends View {
           .child(div().flex_1())
           .child(div().id(`pf-review-${tab.id}`).h(20).px(7).flex().items_center().rounded(d.r.xs).border_1().border_color(d.lineMid)
             .cursor_pointer().hover((s) => s.border_color(d.lineStrong).bg(d.hover))
-            .on_click((_e, cx) => { cx.stop_propagation(); openReview(space, tab); })
+            .on_click((_e, cx) => { cx.stop_propagation(); openReview(sp, tab); })
             .text_size(11).font_weight(500).text_color(d.body).child("Review")))));
     });
     return list;

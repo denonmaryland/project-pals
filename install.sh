@@ -64,15 +64,17 @@ for dir in "$src"/mods/crew-*; do
   # main.js goes in LAST, after the shared JS and the mod's other files: Herdr reloads a mod when
   # its files change, and a reload that ran between main.js and crew.js kept the old crew.js (seen
   # live 2026-11-08: Trees didn't show; nothing errored, as the old crew.js had every name). So:
-  # the shared JS (crew.js, pets.js, palstyles.js: the pal list's looks), then the mirror (keeping
+  # the shared JS (crew.js, pets.js, palstyles.js: the pal list's looks, machines.js: which computer
+  # a pal works on), then the mirror (keeping
   # the files Herdr writes itself: jsconfig.json, *.d.ts; the shared JS and main.js are excluded,
   # which also keeps --delete off them), then main.js, copied fresh so the last change is its own.
-  cp "$src/lib/crew.js" "$dest/crew.js"
+  cp "$src/lib/machines.js" "$dest/machines.js"
   cp "$src/lib/pets.js" "$dest/pets.js"
   cp "$src/lib/palstyles.js" "$dest/palstyles.js"
+  cp "$src/lib/crew.js" "$dest/crew.js"
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
-  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/main.js' "$dir/" "$dest/"
+  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
   cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
 done
 

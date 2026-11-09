@@ -11,7 +11,8 @@ import { View, div, svg } from "gpui-kit";
 import { theme, props, closeOverlay, spaces, panes } from "herdr";
 import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetToggle, saveUiSettings, loadOps, crew, botOf, mood, sleepers,
   palOrder, palSections, palGroups, marks, palStylePreviewW, PAL_LIST_STYLES, palListStyle, palListStyleOf, palFacts, sleeperFacts,
-  palPet, palLookRow, palLookTree, palTreesOn } from "./crew.js";
+  palPet, palLookRow, palLookTree, palTreesOn, machineTagOn } from "./crew.js";
+import { shared } from "herdr";
 
 const ICON = "mods/crew-roster/icons";
 const LIST_W = 214, PREVIEW_H = 452;
@@ -20,6 +21,7 @@ export default class CrewPalStyle extends View {
   init(_props, cx) {
     this.was = palListStyle().id;
     this.wasTrees = palTreesOn();
+    this.wasMachine = shared("crew.settings")?.palMachine;   // true / false / unset (the look's default)
     this.hot = null;
     this.tasks = [];
     this.handle = cx.focus_handle();
@@ -32,8 +34,12 @@ export default class CrewPalStyle extends View {
   // Trees: any working or needs-you pal unfolds its live topics under its row, in every look.
   setTrees(on) { if (on !== palTreesOn()) saveUiSettings({ palTrees: on }); }
 
+  // The machine tag (pals on another machine): on by default in Rich detail and Table.
+  setMachine(on) { saveUiSettings({ palMachine: on }); }
+
   close(keep) {
     if (!keep) { this.pick(this.was); this.setTrees(this.wasTrees); }
+    if (!keep && shared("crew.settings")?.palMachine !== this.wasMachine) saveUiSettings({ palMachine: this.wasMachine ?? null });
     closeOverlay(props()?.overlay);
   }
 
@@ -116,7 +122,12 @@ export default class CrewPalStyle extends View {
       // The Trees option, for every look (DeNon, 2026-11-08).
       .child(div().flex().flex_col().gap(4)
         .child(sheetToggle(d, "ps-trees", { label: "Trees", on: palTreesOn(), onClick: () => this.setTrees(!palTreesOn()) }))
-        .child(div().text_size(11.5).line_height("16px").text_color(d.fg2).child("Show working topics under each pal: what's working or needs you, at most four, a click opens it.")));
+        .child(div().text_size(11.5).line_height("16px").text_color(d.fg2).child("Show working topics under each pal: what's working or needs you, at most four, a click opens it.")))
+      // The machine tag (DeNon, 2026-11-08: which computer a pal works on).
+      .child(div().flex().flex_col().gap(4).pt(8)
+        .child(sheetToggle(d, "ps-machine", { label: "Machine tag", on: machineTagOn(shared("crew.settings"), chosen.id),
+          onClick: () => this.setMachine(!machineTagOn(shared("crew.settings"), chosen.id)) }))
+        .child(div().text_size(11.5).line_height("16px").text_color(d.fg2).child("Tag pals that work on another machine with its name. On in Rich detail and Table; a pal open on two machines is always tagged.")));
     const body = sheetBody().child(div().flex().items_start().gap(14).child(list).child(this.preview(d, t, shown, w)));
     return sheet(d, "crew-palstyle", this.handle, (e, cx) => { if (e.key === "escape") { this.close(false); cx.stop_propagation(); } })
       .child(sheetHeader(d, { id: "ps",

@@ -20,6 +20,7 @@ import { panes, agents, run, notify, openOverlay, setShared, settings } from "he
 import {
   mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor,
   openPanel, worktreeOf, openReview, briefOf, taskTitle, tabHasAgent, leadPane, channelOrder, showTabs, TAG_WORDS,
+  botOf, palSpaces, machineInfo, machineKind, machineKinds, kindIcon, machineState, machineLabel, connectionOf, machineTag, openMachinePicker, sameMachine,
 } from "./crew.js";
 import { stageTone, stateLine, weekCards, boardOf } from "./stagedata.js";
 import { homeData } from "./vaultdata.js";
@@ -86,7 +87,7 @@ export function heroStage(view, space, bot, t, d, { compact = false, w = 420 } =
   const line = stateLine({ word, since, channel: tone && tab ? channelName(tab) : null });
   const p = petOf(bot);
   const PH = compact ? 92 : 140, PW = Math.round(PH * 138 / 108);
-  const H = compact ? 186 : 252;
+  const H = compact ? 214 : 284;
   const W = Math.max(200, Math.round(w));
   const mis = view.brain && view.brainFor === bot.name ? view.brain.mission : null;
   const pet = div().relative().w(PW).h(PH).flex_none()
@@ -114,13 +115,69 @@ export function heroStage(view, space, bot, t, d, { compact = false, w = 420 } =
       .tooltip(mis?.statement ? "The mission (in the Vault)" : "Write its mission (in the Vault)")
       .on_click((_e, cx) => { openPanel("mission"); cx.notify(); })
       .text_size(12.5).line_height("18px").text_color(mis?.statement ? d.fg2 : d.fg3)
-      .child(mis?.statement || (bot.role ? bot.role : "No mission yet · write one")));
+      .child(mis?.statement || (bot.role ? bot.role : "No mission yet · write one")))
+    .child(div().mt(compact ? 6 : 8).child(machineChip(view, space, bot, d)));
   view.draft.follow(space, bot);
   const cw = Math.min(compact ? W - 24 : 600, W - 32);
   return v_flex().id(`${view.draft.key}-hero`).w(W).flex_none().items_center()
     .on_drop((e, cx) => view.draft.attach(e.paths ?? [], cx))
     .child(stage)
     .child(div().pt(compact ? 10 : 14).pb(compact ? 4 : 6).child(view.draft.view(d, `${view.draft.key}-compose`, cw)));
+}
+
+// ─── the machine ──────────────────────────────────────────────────────────────────────────────
+// Which computer it works on, in the hero: the machine's icon, its name, and a red-amber dot when
+// it's not connected. A click: Change machine….
+function machineChip(view, space, bot, d) {
+  const m = machineInfo(bot.machine);
+  const st = machineState(m);
+  const moved = !sameMachine(bot.target, bot.machine);
+  return h_flex().id(`${view.draft.key}-machine`).h(22).px(8).gap(6).items_center().rounded(d.r.sm).cursor_pointer()
+    .bg("#00000040").border_1().border_color(d.line).hover((s) => s.border_color(d.lineMid))
+    .tooltip(`${machineLabel(bot.machine)}${m?.host ? ` (${m.host})` : ""} · ${connectionOf(m)} · ${st.word}. Click to change.`)
+    .on_click((_e, cx) => { openMachinePicker(space.id); cx.notify(); })
+    .child(svg(`${ICON}/${kindIcon(machineKind(m, machineKinds()))}.svg`).size(12).flex_none().text_color(st.up ? d.iconOn : d.warn))
+    .child(div().text_size(11.5).line_height("16px").font_weight(500).text_color(d.body).child(machineLabel(bot.machine)))
+    .when(Boolean(m?.host), (el) => el.child(div().text_size(11).line_height("16px").font_family(d.mono).text_color(d.fg3).child(m.host)))
+    .when(!st.up, (el) => el.child(div().size(6).rounded(3).bg(d.warn)))
+    .when(moved, (el) => el.child(div().text_size(11).line_height("16px").text_color(d.infoText).child(`→ new topics on ${machineLabel(bot.target)}`)));
+}
+
+// The machine card (Full: its own panel; Side: a section): the machine (icon, name, host), how
+// Herdr reaches it, whether it's connected, the project folder on it; where new topics start when
+// that's another machine; the pal's topics still running on other machines; Change machine….
+export function machineCard(view, space, bot, d) {
+  const m = machineInfo(bot.machine);
+  const st = machineState(m);
+  const kind = machineKind(m, machineKinds());
+  const row = (k, v, mono = false, color = d.body) => h_flex().min_h(24).items_center().gap(10)
+    .child(div().w(72).flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child(k))
+    .child(div().flex_1().min_w(0).truncate().text_size(12).when(mono, (el) => el.font_family(d.mono)).text_color(color).child(v));
+  const col = v_flex().gap(4)
+    .child(h_flex().items_center().gap(10).pb(4)
+      .child(div().size(36).flex_none().flex().items_center().justify_center().rounded(d.r.md).bg(d.bg0).border_1().border_color(d.line)
+        .child(svg(`${ICON}/${kindIcon(kind)}.svg`).size(18).text_color(st.up ? d.iconOn : d.fg4)))
+      .child(v_flex().flex_1().min_w(0)
+        .child(div().truncate().text_size(14).line_height("18px").font_weight(600).text_color(d.fg1).child(machineLabel(bot.machine)))
+        .child(div().truncate().text_size(11).line_height("15px").font_family(d.mono).text_color(d.fg3).child([m?.host, kind].filter(Boolean).join(" · "))))
+      .child(h_flex().flex_none().items_center().gap(5)
+        .child(div().size(7).rounded(4).bg(st.up ? d.ok : d.warn))
+        .child(div().text_size(11.5).text_color(st.up ? d.okHi : d.warnText).child(st.word))))
+    .child(row("reached", m?.local ? "this computer (local)" : `${connectionOf(m)}${m?.target ? ` · ${m.target}` : ""}`, !m?.local))
+    .child(row("folder", String(bot.folder ?? space.folder ?? "its home").replace(/^\/(home|Users)\/[^/]+/, "~"), true));
+  if (!sameMachine(bot.target, bot.machine)) col.child(h_flex().mt(4).px(8).py(6).gap(8).items_center().rounded(d.r.sm).bg("#4CA1F214").border_1().border_color("#4CA1F233")
+    .child(div().flex_1().min_w(0).text_size(11.5).line_height("16px").text_color(d.infoText)
+      .child(`New topics start on ${machineLabel(bot.target)}. These keep running here until you close them.`))
+    .child(smallBtn(d, `mk-open-${space.id}`, `Open one there`, () => openMachinePicker(space.id))));
+  const others = palSpaces(bot).filter((x) => x.id !== space.id);
+  for (const o of others) col.child(h_flex().id(`mk-also-${o.id}`).mt(2).px(8).py(5).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+    .border_1().border_color(d.line).hover((s) => s.bg(d.hover))
+    .on_click((_e, cx) => { const tab = o.tabs.find((x) => x.active) ?? o.tabs[0]; if (tab) pointAt(o, tab); cx.notify(); })
+    .child(machineTag(d, o.machine))
+    .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(d.body).child(`also running: ${o.tabs.length} topic${o.tabs.length === 1 ? "" : "s"}`))
+    .child(div().text_size(11).text_color(d.fg3).child("Show")));
+  col.child(h_flex().pt(6).child(smallBtn(d, `mk-change-${space.id}`, "Change machine…", () => openMachinePicker(space.id))));
+  return col;
 }
 
 // ─── the week cards ───────────────────────────────────────────────────────────────────────────
@@ -162,12 +219,14 @@ export function stagePart(view, space, bot, t, d) {
   const panels = [
     ["channels", () => channelsPanel(view, space, bot, d)],
     ["tasks", () => tasksPanel(view, space, bot, d)],
+    ["machine", () => panel(d, "machine", "Machine", null, link(d, "ps-machine-change", "Change…", () => openMachinePicker(space.id)), machineCard(view, space, bot, d))],
     ["vault", () => vaultPanel(view, space, bot, d)],
     ["memory", () => panel(d, "memory", "Memory", null, link(d, "ps-mem-add", "Remember…", () => { view.showRemember = !view.showRemember; if (view.showRemember) view.remember.focus(); }), view.memory(bot, d))],
     ["about", () => aboutPanel(view, space, bot, t, d)],
   ];
   const n = inner >= 980 ? 3 : inner >= 600 ? 2 : 1;
-  const order = { 1: [[0, 1, 2, 3, 4]], 2: [[0, 2, 4], [1, 3]], 3: [[0, 2], [1, 4], [3]] }[n];
+  // Panels: 0 Topics, 1 Tasks, 2 Machine, 3 Vault, 4 Memory, 5 About.
+  const order = { 1: [[0, 2, 1, 3, 4, 5]], 2: [[0, 3, 5], [2, 1, 4]], 3: [[0, 3], [2, 1], [4, 5]] }[n];
   const gap = 12;
   const pw = Math.floor((inner - gap * (n - 1)) / n);
   col.child(h_flex().w(inner).pt(14).gap(gap).items_start()
@@ -202,8 +261,11 @@ function smallBtn(d, id, text, fn) {
 function channelsPanel(view, space, bot, d) {
   const ps = panes();
   const list = v_flex().mx(-6);
-  for (const tab of channelOrder(space, bot)) {
-    const c = channelsOf(space, bot).find((x) => x.id === tab.id);
+  // A pal open on two machines (it moved; old topics still run) lists both, each with its machine.
+  const all = [space, ...palSpaces(bot).filter((x) => x.id !== space.id)];
+  const spans = all.length > 1;
+  for (const [sp, tab] of all.flatMap((sp) => channelOrder(sp, botOf(sp)).map((tab) => [sp, tab]))) {
+    const c = channelsOf(sp, bot).find((x) => x.id === tab.id);
     const st = c.awake ? tab.status : null;
     const dot = { working: d.info, blocked: d.warn, done: d.ok }[st] ?? null;
     const word = !c.awake ? "no agent" : { working: "working", blocked: "asks you", done: "done", idle: "idle" }[st] ?? "idle";
@@ -212,12 +274,13 @@ function channelsPanel(view, space, bot, d) {
     const lead = leadPane(tab.id, ps);
     list.child(v_flex().id(`ps-ch-${tab.id}`).px(6).py(6).gap(2).rounded(d.r.sm).cursor_pointer()
       .when(tab.active, (el) => el.bg(d.sel)).when(!tab.active, (el) => el.hover((s) => s.bg(d.hover)))
-      .tooltip(tab.active ? "Shown in the terminal" : "Show it in the terminal")
-      .on_click((_e, cx) => { if (!tab.active) pointAt(space, tab); cx.notify(); })
+      .tooltip(tab.active && sp.id === space.id ? "Shown in the terminal" : "Show it in the terminal")
+      .on_click((_e, cx) => { if (!tab.active || sp.id !== space.id) pointAt(sp, tab); cx.notify(); })
       .child(h_flex().items_center().gap(8)
         .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : c.awake ? div().size(7).flex_none().rounded(4).bg(d.fg4)
           : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
         .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).font_weight(500).text_color(c.awake ? d.fg1 : d.fg2).child(`#${channelName(tab)}`))
+        .when(spans, (el) => el.child(machineTag(d, sp.machine, { dim: true })))
         .child(div().flex_none().text_size(11).text_color(st === "blocked" ? d.warnText : st === "done" ? d.okHi : st === "working" ? d.infoText : d.fg3)
           .child(since && since !== "now" ? `${word} ${since}` : word)))
       .when(Boolean(c.title), (el) => el.child(div().pl(15).truncate().text_size(12).line_height("16px").text_color(c.awake ? d.body : d.fg3).child(c.title)))
@@ -225,9 +288,9 @@ function channelsPanel(view, space, bot, d) {
         .child(div().h(16).px(5).flex().items_center().rounded(d.r.xs).border_1().border_color(d.lineMid)
           .text_size(10).font_family(d.mono).text_color(d.fg2).child(wt ? `worktree · ${wt.branch ?? channelName(tab)}` : lead.branch))
         .child(div().flex_1())
-        .when(Boolean(wt), (e) => e.child(smallBtn(d, `ps-rev-${tab.id}`, "Review", () => openReview(space, tab)))))));
+        .when(Boolean(wt), (e) => e.child(smallBtn(d, `ps-rev-${tab.id}`, "Review", () => openReview(sp, tab)))))));
   }
-  return panel(d, "channels", "Topics", space.tabs.length,
+  return panel(d, "channels", "Topics", all.reduce((n, x) => n + x.tabs.length, 0),
     link(d, "ps-ch-new", "+ Topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })), list);
 }
 
