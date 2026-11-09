@@ -747,6 +747,13 @@ still travels through crewd's queue, carrying the card's id.
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
   The card says what to do: pass it on, cancel it if stale, or tell the owner; never clear a box.
+- **The head pal's inbox topic** (0.4.2, T60): About → Settings "Head pal's inbox topic" (`pal settings
+  head-topic ops|none`, the owner's click; `head_topic` in crew-settings.json). When set and the head
+  pal has that topic, everything pushed to it without a #topic goes there: `pal tell Orca`, cards to
+  its tray, the check-in, task notices to "Orca", dream digests and crewd's alerts. `Orca#general`
+  still reaches #general, so the owner's chat topic stays quiet. Unset, or a topic it doesn't have:
+  as before, the topic it shows, else its first tab. Typed pushes (alerts, digests) only go to a topic with an agent running;
+  cards for an inbox that's asleep wait there (held: asleep).
 - **Claude Code pals carry the `pals` mod** (`claude-mod/pals`, installed to
   `~/.claude/project-pals/pals`, loaded with `--plugin-dir` only in pals). Every 2 s it writes a
   heartbeat (`data/crew-desk/.mod/<terminal>`; crewd then never types to that pal) and looks at the
