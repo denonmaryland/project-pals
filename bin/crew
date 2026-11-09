@@ -195,6 +195,32 @@ def watch_for_trust(bot, channel, wait=15):
                 return   # it got going: no question in the way
 
 
+def watch_start(bot, channel, brain="its brain", wait=20):
+    """After pal topic: wait for the new topic's agent to show up (T24: on an asleep pal it used to
+    open a bare shell and say nothing). Claude Code's folder-trust question counts as started (it is,
+    and the notice says what it waits for). Returns True when the agent is there."""
+    want = channel.lstrip("#").lower()
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            space = next((s for s in herdr_spaces() if s["name"] == bot), None)
+        except CrewError:
+            return True   # can't see Herdr from here: nothing to report either way
+        tab = next((t for t in (space or {}).get("tabs", []) if chan(t).lower() == want), None)
+        addrs = [x["terminal"] for x in (tab or {}).get("terminals", []) if x and x.get("terminal")]
+        live = hc_terminals()
+        for addr in addrs:
+            if trust_prompt(screen(addr)):
+                print(trust_notice(bot, want))
+                return True
+            if is_agent(live.get(addr)) or (live.get(addr) or {}).get("status") == "working":
+                return True
+    print(f"{bot} #{want} opened, but no agent is running in it after {wait}s ({brain} didn't start), so its "
+          f"brief hasn't been given. Look at that tab, or close it and try again with --harness.")
+    return False
+
+
 def cmd_bots(spaces):
     if not spaces:
         print('no pals yet: open a space in Herdr, or hire one: pal hire "Name" --folder ~/Projects/x')
@@ -2071,9 +2097,13 @@ def main(argv):
             extra["folder"] = extra["worktree"]["path"]
         o.pop("base", None)
         out = request("channel", spaces, bot=pos[0], name=" ".join(pos[1:]), **o, **extra)
-        print(f"{out['bot']} now has {out['channel']}" + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
-        if "claude" in str(out.get("argv") or o.get("harness") or "").lower():
-            watch_for_trust(out["bot"], out["channel"])
+        brain = out.get("harness") or "its brain"
+        print(f"{out['bot']} now has {out['channel']}, running {brain}"
+              + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
+        if out.get("guessed"):
+            print(f"({out['bot']}'s own brain isn't on record, so this uses {'yours' if out.get('why') == 'yours' else 'the default'}; "
+                  f"pick another with --harness)")
+        watch_start(out["bot"], out["channel"], brain)
     elif cmd == "invite" and len(rest) >= 2:
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):

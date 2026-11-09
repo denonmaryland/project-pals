@@ -224,6 +224,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Hire / Add topic / invite:** a pal or you runs `pal hire|topic|invite` (`pal channel` is the same as `pal topic`). That drops a
   request in `data/crew-requests/`, which the roster carries out with `space.new` / `tab.new`
   and answers with `<id>.result.json`. Your view stays where it was.
+  A new topic always starts a brain (T24), picked in this order: `--harness`, the pal's own
+  command line, the brain it runs or was seen running (`rememberBrains`: a record without one
+  learns it while the pal is awake), a brain one of its topics used, the asking pal's, else Claude
+  Code. A guess is said ("its own brain isn't on record, so this uses yours") and kept for that
+  topic. A brain that can't start is an error, never a bare shell that drops the brief. `pal topic`
+  then waits up to 20s for the agent and says plainly if none came up.
 - **Rooms:**
   - Messages are lines in `data/crew-rooms/<room>.jsonl`.
   - Pals post with `pal-room say`, and @mentions deliver. A pal's message lands after a typing

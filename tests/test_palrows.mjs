@@ -92,8 +92,8 @@ try {
     export const settings = () => ({ zoom: 1 }), layout = () => fixtures.layout ?? null, props = () => ({}), keys = () => ({});
     export const machines = () => [], terminals = () => [];
     const nop = () => {}, later = async () => ({ stdout: "", stderr: "", code: 0 });
-    export const run = nop, notify = nop, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
-    export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
+    export const run = (op, a) => { (fixtures.ran ??= []).push([op, a]); }, notify = nop, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
+    export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => fixtures.known ?? [];
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods/crew-roster/main.js"), join(dir, "roster.js"));
@@ -444,6 +444,42 @@ try {
     assert.ok(/this\.treesToggle\(d\)\)\s*\.child\(div\(\)\.id\("pals-search"\)/.test(src), "the toggle sits just before the search button");
     for (const f of ["ds-tree.svg", "ds-tree-folded.svg"]) assert.ok(existsSync(join(root, "mods/crew-roster/icons", f)), f);
   }
+  // T24: `pal topic` on a pal that's asleep (no agent running) and has no brain on record (a space
+  // Project Pals didn't hire, like Hello Lock) opened a bare shell and dropped its brief.
+  const saved = fixtures.shared.crew;
+  // A record without a brain learns the one it runs while awake; one with a brain keeps it.
+  fixtures.shared.crew = { bots: [{ id: "r1", name: "Project Pals - Herdr Mod", space: "s1" }, { id: "r2", name: "Orca", space: "s2", harness: "claude" },
+    { id: "r3", name: "Softly - Dictation App with a very long name indeed", space: "s3" }] };
+  assert.equal(crew.rememberBrains(), true);
+  const byId = (id) => fixtures.shared.crew.bots.find((b) => b.id === id);
+  assert.equal(byId("r1").harness, "claude", "seen awake: its brain is remembered");
+  assert.equal(byId("r1").harnessName, "Claude Code");
+  assert.equal(byId("r2").harness, "claude", "a hired brain isn't overridden by what runs (codex)");
+  assert.equal(byId("r3").harness, undefined, "asleep and never seen: nothing to remember");
+  assert.equal(crew.rememberBrains(), false, "nothing new the second time");
+  // The order a new topic's brain is picked in.
+  const keys = (req, bot, caller) => crew.topicBrains(req, bot, caller).map((c) => `${c.key}:${c.why}`);
+  assert.deepEqual(keys({ harness: "codex" }, { harness: "claude" }), ["codex:asked"], "asked for: only that, no fallback");
+  assert.deepEqual(keys({}, { harness: "codex", record: { harness: "codex", argv: ["codex"] } }, "claude"), ["codex:hired", "codex:its own", "claude:yours"]);
+  assert.deepEqual(keys({}, { harness: null, record: { brains: { "#a": "agy" } } }, "codex"), ["agy:a topic's", "codex:yours", "claude:default"]);
+  assert.deepEqual(keys({}, { harness: null, record: {} }, null), ["claude:default"], "never 'no brain'");
+  assert.equal(crew.topicBrains({}, { record: {} }, "codex")[0].guessed, true);
+  // The request itself: Softly is asleep (no agent) with no brain on record; Orca (codex here) asks.
+  fixtures.known = [{ key: "codex", name: "Codex", installed: true, run: ["codex"] }];
+  fixtures.ran = [];
+  const res = await crew.requestHandlers.channel({ op: "channel", bot: "Softly", name: "lock-loss-2", brief: "Find why the lock drops", by: "Orca#general", byName: "Orca" });
+  assert.equal(res.ok, true);
+  assert.equal(res.argv?.[0], "codex", "it starts a brain (the asking pal's), not a bare shell");
+  assert.equal(res.guessed, true); assert.equal(res.why, "yours"); assert.equal(res.harness, "Codex");
+  const made = fixtures.ran.find(([op]) => op === "tab.new")[1];
+  assert.equal(made.name, "#lock-loss-2"); assert.equal(made.argv?.[0], "codex");
+  assert.ok(String(made.task).includes("Find why the lock drops"), "the brief goes to the new topic");
+  assert.equal(byId("r3").brains["#lock-loss-2"], "codex", "the guess is remembered for that topic");
+  // Asked for a brain that isn't installed: an error, never a bare shell.
+  fixtures.ran = [];
+  await assert.rejects(crew.requestHandlers.channel({ op: "channel", bot: "Softly", name: "x", harness: "nope" }), /couldn't start a brain for Softly.*no harness called "nope"/);
+  assert.equal(fixtures.ran.filter(([op]) => op === "tab.new").length, 0);
+  fixtures.shared.crew = saved; delete fixtures.known; delete fixtures.ran;
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });

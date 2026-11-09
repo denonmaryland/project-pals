@@ -73,6 +73,10 @@ Thanks to **goodboimax** for native Antigravity CLI support and the hook deliver
 
 ## 0.3.1 (not released yet)
 
+- **New topics on a sleeping pal start its brain.** `pal topic` on a pal with no agent running
+  used to open a plain shell and drop the brief when the pal's brain wasn't on record. Now pals
+  remember their brain while awake. A topic always starts one (its own, else yours, and it says
+  so), and `pal topic` tells you if the agent didn't come up.
 - **Channels are now topics.** A pal's tabs are the topics it's working on, so everything you
   see says so: the hero's Topics list and "+ New topic", the picker, the right-click menu, the
   command bar, dialogs, the profile and Vault panels, the pal list ("3 topics"), help text and

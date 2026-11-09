@@ -7,6 +7,7 @@ import io
 import os
 import sys
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -33,6 +34,9 @@ class TopicNames(unittest.TestCase):
         self.crew.request = lambda op, spaces, **f: (self.sent.append((op, f)), {"bot": "Docs", "channel": "#" + f["name"], "name": "Docs", "harness": "shell"})[1]
         self.crew.herdr_spaces = lambda *a, **k: []
         self.crew.watch_for_trust = lambda *a, **k: None
+        self.watched = []
+        self.real_watch_start = self.crew.watch_start
+        self.crew.watch_start = lambda *a, **k: self.watched.append(a) or True
 
     def run_cli(self, *argv):
         out = io.StringIO()
@@ -46,6 +50,33 @@ class TopicNames(unittest.TestCase):
             out = self.run_cli(cmd, "Docs", "pricing", "--brief", "the pricing page")
             self.assertEqual(self.sent, [("channel", {"bot": "Docs", "name": "pricing", "brief": "the pricing page"})], cmd)
             self.assertIn("Docs now has #pricing", out)
+            self.assertEqual(self.watched[-1][:2], ("Docs", "#pricing"), "it checks the agent started")
+
+    def test_says_when_the_brain_was_a_guess(self):
+        # T24: a pal asleep with no brain on record gets the asking pal's brain, and says so.
+        self.crew.request = lambda op, spaces, **f: {"bot": "Hello Lock - App", "channel": "#lock-loss-2", "harness": "Claude Code", "guessed": True, "why": "yours"}
+        out = self.run_cli("topic", "Hello Lock", "lock-loss-2", "--brief", "why the lock drops")
+        self.assertIn("Hello Lock - App now has #lock-loss-2, running Claude Code", out)
+        self.assertIn("own brain isn't on record, so this uses yours; pick another with --harness", out)
+
+    def test_watch_start_says_when_no_agent_came_up(self):
+        c = self.crew
+        clock = iter(range(0, 1000, 5))
+        c.time = types.SimpleNamespace(sleep=lambda s: None, time=lambda: next(clock))   # this module's time only
+        c.herdr_spaces = lambda *a, **k: [{"name": "Hello Lock - App", "tabs": [{"name": "#lock-loss-2", "terminals": [{"terminal": "t9"}]}]}]
+        c.screen = lambda *a, **k: "$ "
+        c.hc_terminals = lambda: {"t9": {"state": "live", "agent": "bash"}}   # a bare shell
+        out = io.StringIO()
+        with redirect_stdout(out):
+            ok = self.real_watch_start("Hello Lock - App", "#lock-loss-2", "Claude Code", wait=20)
+        self.assertFalse(ok)
+        self.assertIn("no agent is running in it after 20s (Claude Code didn't start)", out.getvalue())
+        c.hc_terminals = lambda: {"t9": {"state": "live", "agent": "claude"}}
+        clock = iter(range(0, 1000, 5))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertTrue(self.real_watch_start("Hello Lock - App", "#lock-loss-2", "Claude Code", wait=20))
+        self.assertEqual(out.getvalue(), "")
 
     def test_topic_flag_is_channel(self):
         pos, o = self.crew.opts(["Ana", "--topic", "research"], ("channel", "folder"))
