@@ -34,7 +34,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     one needs you. Click a pal to open it; its topics are the tabs along the top, not rows
     here. Right-click a pal for Pin to the top, Rename (memory and routines follow: the roster
     remembers each space's name and runs `pal renamed` when it changes), Customize look, New
-    topic, Put to sleep (keeps the model it's on; Herdr asks "Close space?"). Right-click a
+    topic, Sleep (keep topics, free RAM) / Wake (resume topics), Close pal (end its space; keeps the model it's on; Herdr asks "Close space?"). Right-click a
     sleeping pal for Wake / Unpin / Forget, a room card for Open / Close room. A pal hired in the
     last 10 minutes with no brain yet shows "starting". Pinned pals
     sit first, in the order pinned, with a small pin after the name and a hairline under them.
@@ -238,6 +238,37 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     delay (1.5s + 45ms per character, capped at 9s).
   - After 12 pal messages in a row, room messages stop being delivered until the owner posts.
   - Inviting an asleep pal wakes it in a new `#room` topic.
+- **Sleep (keep topics, free RAM) and Wake (resume topics), in place** (PR #4, goodboimax; 0.4.1):
+  - `pal sleep <Pal|Pal#topic|#topic>` or `--idle` stops the agent in a topic and keeps its shell,
+    tab and room seats. In the app: a pal's right-click and pal menu (Sleep (keep topics, free RAM) /
+    Wake (resume topics)), a topic's right-click (Sleep this topic / Wake this topic), a room's
+    (Sleep all / Wake all, its seats only). They run `pal … --notify` detached; the outcome comes
+    back as a toast (`power-report` request), refusals with their reason. Close pal (end its space)
+    is the other rest: it closes the space (it was "Put to sleep" before 0.4.1).
+  - It refuses, saying why, and has no `--force`: working (or "esc to interrupt" on screen), blocked
+    or a folder-trust prompt, unsent text in its box, an input box it can't read, a message being
+    handed over, or work the agent still runs itself (a descendant started more than 20s after it,
+    seen twice 1.5s apart, at any depth, a helper's later children too; Claude Code's "N shells still
+    running"). `--idle` skips the head pal, and naming it needs the owner's click (the menus send
+    one, a one-time token for exactly those arguments).
+  - Only this machine's pals, and only the one known agent (`claude`, `agy`, `codex`, …) directly
+    under the topic's shell, with `HC_TERMINAL_ID` naming that terminal in both the shell's and the
+    agent's environment. It's pinned with a pidfd and checked again before any signal. TERM, a 5s
+    wait, then KILL only if it's still there. A dev server or editor in the tab is never touched.
+  - Sleep writes `data/crew-slept/<terminal>.json` (the session link it had); crewd forgets markers
+    of gone terminals.
+  - `pal wake` asks the app for the brain (`wake-brain`, T27's order per topic: the topic's brain on
+    record, the pal's command on record, its harness started fresh, else Claude Code) and types it
+    into the bare shell (nothing else may run there). It resumes (`claude --resume <id>`,
+    `agy --conversation=<id>`) only a session linked by the hook, unchanged since it was put to
+    sleep, of the brain being started, in the folder the shell is in (Claude), and not open in
+    another topic; else it starts fresh with the primer hint and says why. Never `--continue`.
+    `pal wake Pal` wakes the topics `pal sleep` put to sleep, else its room seats, else its active topic.
+  - Messages: crewd never types into a bare shell. Cards queued for it go back to the Desk, held:
+    asleep, and are delivered once an agent runs there; messages without a card wait in the queue.
+  - agy doesn't clear its Herdr status (OSC 7501) when it exits, so a dead agy tab looked awake.
+    Sleep, and crewd for any agent tab whose shell has no children left, write
+    `\e]7501;state=clear\a` to the shell's terminal.
 - **Helper (crewd, optional):**
   - Messages wait for a pal's turn to end.
   - Whoever handed out work is told when it's done.
@@ -461,7 +492,7 @@ rectangular segments and tags.
     editable and saved on blur; what a new session starts with and what the 6,000-character primer
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tasks (the
-    `crew-tasks` dialog), + Topic, Customize look, Put to sleep, as pebbles.
+    `crew-tasks` dialog), + Topic, Customize look, Close pal, as pebbles.
   - **Vault** (DeNon 2026-11-08: it replaced the Notebook, Mission and Brain tabs, which are now
     its notes; their old keys still open them, e.g. `openPanel("mission")`). Opens Full. Full: the
     file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count (the
@@ -555,7 +586,7 @@ rectangular segments and tags.
   its field on the header's and centred on it: the field again, live (the same recessed field with
   its blue ring, 6 px in: a magnifier, the query, "esc" as a tiny pebble), then the rows, then a foot ("↑↓ move · ↵ open · esc close"). An empty box lists the pal
   menu's rows unchanged (`palMenuItems` in crew.js, shared with `crew-palmenu`) under "<Pal> · The
-  pal" and "<Pal> · The project", Put to sleep after a hairline, then "Project Pals": New topic
+  pal" and "<Pal> · The project", Sleep (keep topics, free RAM) or Wake (resume topics) and Close pal (end its space) after a hairline, then "Project Pals": New topic
   (for the shown pal), Hire a pal…, New group…, Check for updates, Project Pals settings (the gear's
   `quick` rows, `appMenuItems`). Typing searches pals (asleep ones say "wake" and Enter wakes them),
   topics (a state dot: blue working, amber needs you, green done; their task title is searchable),
@@ -573,7 +604,7 @@ rectangular segments and tags.
   command bar replaced the chip, whose empty list shows the same rows): the pal's
   name and "harness · folder", then The pal (Profile with its shortcut, Vault, Memory, Tasks with
   the open count: the `crew-tasks` dialog), The project (AGENTS.md, Review changes on
-  a worktree topic, Open folder), then Put to sleep. No topics: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
+  a worktree topic, Open folder), then Sleep / Wake and Close pal. No topics: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
   **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while

@@ -27,6 +27,11 @@ work together in rooms. A head pal (Orchestrator unless you rename it) oversees 
   today's journal and the week, updating as work lands.
 - **Tasks:** give a pal a task (with screenshots attached); it lands on its desk as a card.
   Routines run on a schedule.
+- **Sleep (keep topics, free RAM):** a pal's agents stop while its topics' tabs and room seats
+  stay; **Wake (resume topics)** starts them again where they were, resuming each topic's session.
+  It never stops a pal that's working, asking you something, being typed to, or still running work
+  of its own, and says why. **Close pal (end its space)** is the other way to rest one: its space
+  closes and it waits under Hidden pals. (`pal sleep` / `pal wake` from the command line.)
 - Hire pals and add topics on any harness, with a model per pal (cheap helpers on Haiku).
 - Memory and shared skills, branch-per-topic review, and an approval gate.
 

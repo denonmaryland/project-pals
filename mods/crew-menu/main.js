@@ -1,9 +1,10 @@
 // Project Pals menu: what a right-click offers, as a small popup at the pointer.
-// - A tab: pin it, review its branch (a worktree channel), color it (from the theme's own colors, so it follows the theme), rename, close.
+// - A tab: pin it, review its branch (a worktree channel), sleep or wake its agent in place, color it (from the theme's own colors,
+//   so it follows the theme), rename, close.
 // - A pal: its profile (the right-side panel), pin it to the top, rename it (its memory and routines follow the name), change its look,
-//   add a channel, put it to sleep.
+//   add a channel, Sleep (keep topics, free RAM) / Wake (resume topics), or Close pal (end its space).
 // - A sleeping pal: wake it, unpin it, or forget it (its memory folder stays on disk).
-// - A room: open it, or close it (its transcript is kept).
+// - A room: open it, sleep or wake everyone in it, or close it (its transcript is kept).
 // - A chat message: copy it, or one of its code blocks.
 
 import { View, div, svg } from "gpui-kit";
@@ -12,7 +13,8 @@ import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
   canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
-  crew, wakePal, forgetPal, rememberModel, rooms, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview } from "./crew.js";
+  crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview,
+  powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -65,13 +67,17 @@ export default class CrewMenu extends View {
         .child(careful("m-forget", "Forget this pal", "Click again to forget", () => { forgetPal(rec); this.close(); }));
     }
 
-    // A room: open it, or close it (Project Pals keeps its transcript).
+    // A room: open it, sleep or wake its pals, or close it (Project Pals keeps its transcript).
     if (p.what === "room") {
       const room = rooms().find((r) => r.id === p.room);
       if (!room) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That room is gone."));
+      const names = roomMembers(room).map((m) => (m.channel ? `${m.name}#${m.channel}` : m.name));   // its seats, not every tab
       return root
         .child(title(`#${room.name}`))
         .child(item("m-open", null, "Open", () => showRoom(room.id)))
+        .when(names.length > 0, (el) => el
+          .child(item("m-room-sleep", "ds-moon", "Sleep all (keep seats, free RAM)", () => powerPals("sleep", names)))
+          .child(item("m-room-wake", null, "Wake all (resume seats)", () => powerPals("wake", names))))
         .child(line())
         .child(careful("m-close-room", "Close room", "Click again to close it", () => { deleteRoom(room.id); showTabs(); this.close(); }));
     }
@@ -99,6 +105,10 @@ export default class CrewMenu extends View {
         .child(item("m-pin", "pin", pinned ? "Unpin topic" : "Pin topic", () => pinTab(space, tab, !pinned)))
         // A worktree channel's branch: its diff against where it came from, with comments and Land.
         .when(Boolean(worktreeOf(botOf(space), tab)), (el) => el.child(item("m-review", "ds-review", "Review changes", () => openReview(space, tab))))
+        // This topic only: its agent stops (its tab stays), or starts again resuming its session.
+        .when(!space.machine, (el) => el.child(topicAwake(tab)
+          ? item("m-tab-sleep", "ds-moon", "Sleep this topic (free RAM)", () => powerPals("sleep", [`${space.name}#${channelName(tab)}`]))
+          : item("m-tab-wake", null, "Wake this topic", () => powerPals("wake", [`${space.name}#${channelName(tab)}`]))))
         .child(moves("m-move", (dir) => canMoveChannel(space, tab, dir), (dir) => moveChannel(space, tab, dir)))
         .child(div().px(10).pt(8).pb(4).text_size(12).text_color(t.dim).child("Color"))
         .child(h_flex().px(8).pb(6).gap(4).flex_wrap().child(swatch(null)).children(TAB_COLORS.map((k) => swatch(k))))
@@ -137,6 +147,11 @@ export default class CrewMenu extends View {
       .child(item("m-rename", null, "Rename", () => run("space.rename", { id: space.id })))
       .child(item("m-look", null, "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
       .child(item("m-add", "plus", "New topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })))
+      // Sleep in place: its topics' tabs stay and its agents stop (pal sleep refuses a busy one and
+      // says why); Wake starts them again where they are. A pal on another machine has neither.
+      .when(!space.machine, (el) => el.child(bot.awake
+        ? item("m-power", "ds-moon", SLEEP_LABEL, () => powerPals("sleep", [space.name]))
+        : item("m-power", null, WAKE_LABEL, () => powerPals("wake", [space.name]))))
       // Its group: one row per group (the current one checked), Unassigned, and a new one.
       .when(!bot.god, (el) => {
         const cur = groupOf(bot);
@@ -146,7 +161,7 @@ export default class CrewMenu extends View {
         }
         return el.child(item("m-grp-new", "plus", "New group…", () => openOverlay({ mod: "crew-group", kind: "dialog", width: 400, props: { mode: "new", bot: bot.id } })));
       })
-      // Put to sleep: closes its space (every channel stops; Herdr asks first); it waits under Asleep
+      // Close pal: closes its space (every topic stops; Herdr asks first); it waits under Hidden pals
       // and a click wakes it.
       .child(line())
       .child(h_flex().id("m-sleep").h(32).px(10).gap(10).items_center().rounded(8).cursor_pointer()
@@ -162,6 +177,6 @@ export default class CrewMenu extends View {
           });
         })
         .child(div().w(16).flex_none().flex().justify_center().child(svg(`${ICON}/x.svg`).size(14).text_color(t.blocked)))
-        .child(div().text_size(13).text_color(t.foreground).child("Put to sleep")));
+        .child(div().text_size(13).text_color(t.foreground).child(CLOSE_LABEL)));
   }
 }

@@ -48,6 +48,12 @@ Hiring
   pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
                                      a new topic (a tab); --worktree gives it its own git branch and folder.
                                      pal channel is the same command (topics were called channels before 0.4.0)
+  pal sleep [<Pal[#topic]>... | #topic | --idle] [-n]
+                                     Sleep (keep topics, free RAM): stop a pal's agent; its tabs and room seats
+                                     stay. Refuses one that's working, asking, being typed to or running work.
+                                     (Close pal, in the app, ends its space instead.)
+  pal wake <Pal[#topic]|#topic>... [-n]   Wake (resume topics): its brain again in the same tab, resuming
+                                     that topic's session when it can vouch for it, else fresh (it says why)
 
 Work
   pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
@@ -109,9 +115,12 @@ pal channel still work, as before 0.4.0). hire, topic and invite are carried out
 so Herdr has to be open on it. crewd (herdr-crew.service) delivers messages between turns, runs
 routines and reports back; without it, messages are typed in right away.
 """
+import contextlib
 import json
 import os
 import re
+import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -119,9 +128,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
+from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, HOOKED, ME, SHELLS, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
-                     live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
+                     live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, agent_running, owns_terminal, screen, meaningful,
+                     enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
                      trust_prompt, trust_notice)
 import crewtasks
@@ -236,7 +246,8 @@ def cmd_bots(spaces):
         for t in s["tabs"]:
             x = lead(t)
             mine = "  ← you" if me == f"{s['name']}#{chan(t)}" else ""
-            print(f"  #{chan(t)}: {(x or {}).get('status') or 'idle'}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
+            st = (x or {}).get("status") or ("idle" if (x or {}).get("app") else "asleep")
+            print(f"  #{chan(t)}: {st}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
 
 
 def cmd_overview(spaces, deep=False):
@@ -397,8 +408,8 @@ def target(spaces, spec):
     if x["terminal"] == ME:
         die("that's you")
     if x["terminal"] not in live_agents():
-        die(f"{space['name']} #{chan(tab)} is asleep (no agent running there). Wake it by inviting it to a room, "
-            f"or give it a fresh topic: pal topic \"{space['name']}\" <name> --brief \"...\"")
+        die(f"{space['name']} #{chan(tab)} is asleep (no agent running there). Wake it: pal wake \"{space['name']}#{chan(tab)}\", "
+            f"or invite it to a room, or give it a fresh topic: pal topic \"{space['name']}\" <name> --brief \"...\"")
     return space, tab, x["terminal"]
 
 
@@ -666,6 +677,213 @@ def cmd_land(spaces, spec, check=None):
             pass
     append_jsonl(FEED, {"at": now_ms(), "kind": "landed", "bot": space["name"], "channel": chan(tab), "branch": wt["branch"]})
     print(f"landed {wt['branch']} on {wt['base']} in {repo}")
+
+
+# ── sleeping and waking (in place: the topic's tab and shell stay; bin/crewsleep.py has the safety) ──
+
+def _room_seats():
+    seats = set()
+    for f in ROOMS.glob("*.json") if ROOMS.exists() else ():
+        seats |= {m.get("terminal") for m in (load_json(f, None) or {}).get("members") or [] if m.get("terminal")}
+    return seats
+
+
+def _targets(spec, spaces):
+    """'Pal#topic' or '#topic' → [(space, tab)]; 'Pal' → its tabs, or every pal whose name starts with it
+    (an exact name wins: 'navi-Jefe' doesn't also take 'navi-Jefe-2')."""
+    if spec.startswith("#"):
+        want = spec[1:].lower()
+        mine, _ = where_of(ME, spaces) if ME else (None, None)
+        hits = [(s, t) for s in spaces for t in s["tabs"] if chan(t).lower() == want]
+        hits = [h for h in hits if h[0] is mine] or hits
+        if len(hits) != 1:
+            raise CrewError(f"#{want}: " + (f"in {', '.join(s['name'] for s, _ in hits)}; say Pal#{want}" if hits else "no such topic"))
+        return hits
+    if "#" in spec:
+        return [find(spec, spaces)]
+    low = spec.lstrip("@").lower()
+    if not low:
+        raise CrewError("name a pal")
+    group = ([s for s in spaces if s["name"].lower() == low]
+             or [s for s in spaces if s["name"].lower().startswith(low)] or [find(spec, spaces)[0]])
+    return [(s, t) for s in group for t in s["tabs"]]
+
+
+def _tell_app(mode, lines, refused):
+    """--notify (the menus run pal detached): the outcome as a toast, through the app's request queue.
+    Best effort: a few seconds, then the request is taken back."""
+    if not lines:
+        return
+    rid = f"{int(time.time())}-{new_id()}"
+    try:
+        REQS.mkdir(parents=True, exist_ok=True)
+        tmp = REQS / f"{rid}.tmp"
+        tmp.write_text(json.dumps({"op": "power-report", "mode": mode, "lines": lines[:12], "refused": bool(refused)}))
+        tmp.rename(REQS / f"{rid}.req.json")
+    except OSError:
+        return
+    deadline = time.time() + 8
+    while time.time() < deadline and not (REQS / f"{rid}.result.json").exists():
+        time.sleep(0.3)
+    (REQS / f"{rid}.result.json").unlink(missing_ok=True)
+    (REQS / f"{rid}.req.json").unlink(missing_ok=True)
+
+
+def _stop_tab(space, tab, terms, dry=False, quiet=False, out=None, head=False):
+    """Put one topic's agent to sleep and keep its shell. Returns 'slept', 'asleep' or 'refused'."""
+    import crewsleep, crewchat
+    loud = lambda m: (print(m), out is not None and out.append(m))
+    say = (lambda m: None) if quiet else loud   # --idle says nothing about the topics it leaves alone
+    label = f"{space['name']} #{chan(tab)}"
+    if head and not owner_proven():
+        # The head pal oversees the rest: only the owner's click (its menu) puts it to sleep (Grok T50).
+        say(f"not putting {label} to sleep: it's the head pal; only {OWNER}'s click in Project Pals does that")
+        return "refused"
+    addr = (lead(tab) or {}).get("terminal")
+    info = term_info(addr) if crewsleep.is_local(space, addr) and addr != ME else {}
+    try:
+        shell, agent = crewsleep.check_sleep(space, addr, ME, info, screen(addr, 60) if info else [])
+    except crewsleep.Refused as e:
+        say(f"not putting {label} to sleep: {e}")
+        return "refused"
+    if agent is None:
+        if not dry and shell_is_bare(shell) and ((info.get("status") or {}).get("app") or is_agent(terms.get(addr) or {})):
+            clear_osc_status(shell)   # agy leaves its status behind when it exits
+            (HOOKED / addr).unlink(missing_ok=True)
+        say(f"{label}: already asleep")
+        return "asleep"
+    app = (info.get("status") or {}).get("app") or proc_comm(agent)
+    if dry:
+        loud(f"would put {label} to sleep ({app}, {addr})")
+        return "slept"
+    # Looked at once more right before the signal: a message may have just started a turn.
+    st = (term_info(addr).get("status") or {}).get("state")
+    if st in ("working", "blocked"):
+        say(f"not putting {label} to sleep: it just became {st}")
+        return "refused"
+    crewsleep.mark_slept(addr, pal=space["name"], topic=chan(tab), app=app, link=crewchat.links().get(addr))
+    try:
+        how = crewsleep.stop_agent(agent, shell, addr)
+    except crewsleep.Refused as e:
+        crewsleep.unmark(addr)
+        loud(f"couldn't put {label} to sleep: {e}")
+        return "refused"
+    clear_osc_status(shell)
+    (HOOKED / addr).unlink(missing_ok=True)
+    loud(f"put {label} to sleep ({app}, {addr})" + (" (it needed KILL)" if how == "kill" else ""))
+    return "slept"
+
+
+def cmd_sleep(spaces, rest):
+    """pal sleep <Pal|Pal#topic|#topic>... | --idle [-n] [--notify]"""
+    if "--force" in rest:
+        die("pal sleep has no --force: a pal that's mid-turn, waiting on a prompt, typing, or running work "
+            "isn't put to sleep. Let it finish (or stop that work), then sleep it.")
+    pos, o = opts([a for a in rest if a != "-n"], (), ("idle", "notify"))
+    dry = "-n" in rest
+    if not pos and not o.get("idle"):
+        die("pal sleep <Pal[#topic]|#topic>... | --idle [-n]")
+    recs, terms, out = records(), hc_terminals(), []
+    named = []
+    for spec in pos:
+        try:
+            named += _targets(spec, spaces)
+        except CrewError as e:
+            print(f"{spec}: {e}"); out.append(f"{spec}: {e}")
+    # --idle sweeps every topic but the head pal's, quietly: it says nothing about the ones it leaves.
+    swept = [(s, t) for s in spaces if not record_of(s, recs).get("god") for t in s["tabs"]] if o.get("idle") else []
+    seen, n, refused = set(), 0, False
+    for (s, t), loud in [(p, True) for p in named] + [(p, False) for p in swept]:
+        addr = (lead(t) or {}).get("terminal")
+        if addr in seen:
+            continue
+        seen.add(addr)
+        r = _stop_tab(s, t, terms, dry, quiet=not loud, out=out, head=bool(record_of(s, recs).get("god")))
+        n += r == "slept"
+        refused |= r == "refused"
+    if o.get("idle") and not n:
+        print("no idle pals to put to sleep")
+    if o.get("notify"):
+        _tell_app("sleep", out, refused)
+
+
+def _wake_line(spaces, space, tab, addr, info):
+    """(the command to type, what it says about the brain and the session). The brain is T27's pick,
+    made by the app (wake-brain): this topic's brain on record, else the pal's command on record,
+    else its harness started fresh, else Claude Code."""
+    import crewsleep, crewchat
+    brain = request("wake-brain", spaces, space=space["id"], tab=tab["id"])
+    base = crewsleep.base_argv(brain.get("argv"), brain.get("key"))
+    if not base:
+        raise crewsleep.Refused("no brain to start for it")
+    live = {a for a, t in hc_terminals().items() if is_agent(t)}
+    extra, why = crewsleep.resume_args(addr, brain.get("key"), base, crewsleep.shell_cwd(info["pid"], info), crewchat.links(), live)
+    hint = [] if extra else ([brain["hint"]] if brain.get("hint") else [])
+    said = f"{brain.get('name') or brain.get('key') or 'its brain'}" + (f" ({brain['why']})" if brain.get("why") else "")
+    return shlex.join([*base, *extra, *hint]), f"{said}; {why}"
+
+
+def cmd_wake(spaces, rest):
+    """pal wake <Pal|Pal#topic|#topic>... [-n] [--notify]"""
+    import crewsleep
+    pos, o = opts([a for a in rest if a != "-n"], (), ("notify",))
+    dry = "-n" in rest
+    if not pos:
+        die("pal wake <Pal[#topic]|#topic>... [-n]")
+    seats, out, refused = _room_seats(), [], False
+    def say(m):
+        print(m); out.append(m)
+    # Without the caller's own address, so hc send types the command as is (no <hc from=…> wrap).
+    # The variables that find the core (HC_SESSION, HC_SOCKET, HC_TERMINAL_SOCKET) stay: without
+    # them hc asks the default core, which may not be the one the topic runs on (found live, T41).
+    raw_env = {k: v for k, v in os.environ.items() if k not in ("HC_TERMINAL_ID", "HC_SCOPE")}
+    for spec in pos:
+        try:
+            pairs = _targets(spec, spaces)
+        except CrewError as e:
+            say(f"{spec}: {e}"); refused = True
+            continue
+        asleep = []
+        for s, t in pairs:
+            addr = (lead(t) or {}).get("terminal")
+            if addr and crewsleep.is_local(s, addr) and not agent_running(addr)[0]:
+                asleep.append((s, t, addr))
+        if "#" not in spec:
+            # A whole pal: the topics pal sleep put to sleep, else its room seats, else one topic
+            # (the active one), unless it's already up.
+            picked = []
+            for sp in {id(p[0]): p[0] for p in pairs}.values():
+                xs = [x for x in asleep if x[0] is sp]
+                awake = any(agent_running(a)[0] for _, t in pairs if t in sp["tabs"] and (a := (lead(t) or {}).get("terminal")))
+                wake = ([x for x in xs if crewsleep.slept(x[2])] or [x for x in xs if x[2] in seats]
+                        or ([] if awake else [next((x for x in xs if x[1].get("active")), xs[0])] if xs else []))
+                picked += wake
+                if not wake:
+                    say(f"{sp['name']}: already awake" if awake else f"{sp['name']}: nothing to wake here")
+            asleep = picked
+        elif not asleep:
+            say(f"{spec}: already awake (or on another machine)")
+        for s, t, addr in asleep:
+            label = f"{s['name']} #{chan(t)}"
+            info = term_info(addr)
+            try:
+                crewsleep.check_wake(s, addr, info)
+                line, said = _wake_line(spaces, s, t, addr, info)
+            except crewsleep.Refused as e:
+                say(f"not waking {label}: {e}"); refused = True
+                continue
+            if dry:
+                say(f"would wake {label} ({addr}) with {said}: {line}")
+                continue
+            subprocess.run(["hc", "keys", addr, "ctrl+c"], env=raw_env, capture_output=True, timeout=10)
+            r = subprocess.run(["hc", "send", "--force", addr, line], env=raw_env, capture_output=True, text=True, timeout=30)
+            if r.returncode != 0:
+                say(f"couldn't wake {label}: {(r.stderr or r.stdout).strip() or 'hc send failed'}"); refused = True
+                continue
+            crewsleep.unmark(addr)
+            say(f"woke {label} ({addr}) with {said}")
+    if o.get("notify"):
+        _tell_app("wake", out, refused)
 
 
 # ── tasks, routines, memory, skills, approvals ───────────────────────────────────────────────
@@ -2020,7 +2238,7 @@ def main(argv):
     cmd, rest = argv[0], argv[1:]
     # The app speaks as the owner only with a click token for exactly this command line (tell, ask and
     # task: the Tasks dialog, Review's notes). A bad or used token is refused, never downgraded.
-    if click_of() and cmd in ("tell", "ask", "task", "desk", "home"):
+    if click_of() and cmd in ("tell", "ask", "task", "desk", "home", "sleep", "wake"):
         prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
@@ -2118,6 +2336,10 @@ def main(argv):
                 print(f"woke {', '.join(out['woke'])} in a new topic for the room (it was asleep)")
         if out.get("skipped"):
             print(f"already in it: {', '.join(out['skipped'])}")
+    elif cmd == "sleep":
+        cmd_sleep(spaces, rest)
+    elif cmd == "wake":
+        cmd_wake(spaces, rest)
     elif cmd == "task":
         cmd_task(spaces, rest)
     elif cmd == "desk":
