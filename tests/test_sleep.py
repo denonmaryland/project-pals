@@ -155,7 +155,7 @@ class FakeApp:
 
 
 def run_crew(sb, *args, me=None, timeout=30):
-    env = dict(sb["env"])
+    env = {**sb["env"], "HC_SESSION": "ppsbx-test", "HC_SCOPE": "t99"}
     if me:
         env["HC_TERMINAL_ID"] = me
     return subprocess.run([sys.executable, str(REPO / "bin" / "crew"), *args], capture_output=True, text=True, env=env, timeout=timeout)
@@ -292,6 +292,12 @@ class SleepChecks(unittest.TestCase):
         with mock.patch.object(crewsleep, "own_work", side_effect=once), mock.patch.object(crewsleep, "SETTLE", 0.01):
             self.assertEqual(crewsleep.check_sleep(self.space, "t1", "t9", self.info, IDLE), (500, 600))
         self.assertEqual(len(calls), 2)
+
+    def test_the_same_words_further_up_are_output_not_state(self):
+        # Found live (sandbox, T41): an earlier spinner line, or a pal quoting it, isn't a turn.
+        self.agent()
+        old = ["✻ Working… (esc to interrupt)", RULE, "❯ ", RULE, "  ? for shortcuts", "notes: 1 shell still running earlier", "got: done"]
+        self.assertEqual(crewsleep.check_sleep(self.space, "t1", "t9", self.info, old + IDLE[1:]), (500, 600))
 
     def test_claude_footer_background_shells_are_refused(self):
         self.agent()
@@ -604,8 +610,10 @@ class WakeCli(unittest.TestCase):
 
     def sent(self):
         calls = [json.loads(l) for l in self.sb["calls"].read_text().splitlines()] if self.sb["calls"].exists() else []
-        for c in calls:
-            self.assertEqual(c["hc_env"], {})   # HC_* stripped: hc send never wraps it in <hc from=…>
+        for c in calls:   # the caller's address stripped (no <hc from=…> wrap); what finds the core kept
+            self.assertNotIn("HC_TERMINAL_ID", c["hc_env"])
+            self.assertNotIn("HC_SCOPE", c["hc_env"])
+            self.assertEqual(c["hc_env"].get("HC_SESSION"), "ppsbx-test")
         return {c["args"][2]: c["args"][3] for c in calls if c["args"][:2] == ["send", "--force"]}
 
     def test_wake_types_the_brain_resumes_only_its_own_session_and_prefers_seats(self):

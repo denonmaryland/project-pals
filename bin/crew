@@ -829,7 +829,10 @@ def cmd_wake(spaces, rest):
     seats, out, refused = _room_seats(), [], False
     def say(m):
         print(m); out.append(m)
-    raw_env = {k: v for k, v in os.environ.items() if not k.startswith("HC_")}   # so hc send doesn't wrap it in <hc from=…>
+    # Without the caller's own address, so hc send types the command as is (no <hc from=…> wrap).
+    # The variables that find the core (HC_SESSION, HC_SOCKET, HC_TERMINAL_SOCKET) stay: without
+    # them hc asks the default core, which may not be the one the topic runs on (found live, T41).
+    raw_env = {k: v for k, v in os.environ.items() if k not in ("HC_TERMINAL_ID", "HC_SCOPE")}
     for spec in pos:
         try:
             pairs = _targets(spec, spaces)

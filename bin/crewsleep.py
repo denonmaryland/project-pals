@@ -22,7 +22,7 @@ import signal
 import time
 from pathlib import Path
 
-from crewlib import (DATA, QUEUE, SHELLS, CrewError, load_json, save_json, proc_comm, child_pids, owns_terminal,
+from crewlib import (DATA, QUEUE, SHELLS, RULE, CrewError, load_json, save_json, proc_comm, child_pids, owns_terminal,
                      input_draft, trust_prompt, screen)
 
 # The harnesses' process names. A CLI wrapped in node shows up as "node" and is never signalled.
@@ -126,14 +126,19 @@ def own_work(agent, proc_dir=None):
 
 
 def check_screen(lines):
-    """Why the screen says not to stop it now, or None. A box we can't read counts as a no."""
+    """Why the screen says not to stop it now, or None. A box we can't read counts as a no.
+    Claude Code's spinner ("esc to interrupt") sits just above its input box and its footer ("1 shell
+    still running") just below, so only those lines are read: the same words further up are output."""
     if trust_prompt(lines):
         return "it's waiting on a question (Claude Code's folder-trust prompt)"
-    tail = "\n".join(lines[-12:])
-    if WORKING.search(tail):
+    rules = [i for i, l in enumerate(lines) if RULE.match(l)]
+    boxed = len(rules) >= 2 and rules[-1] - rules[-2] >= 2
+    above = "\n".join(lines[max(0, rules[-2] - 3):rules[-2]]) if boxed else ""
+    below = "\n".join(lines[rules[-1] + 1:]) if boxed else ""
+    if WORKING.search(above):
         return "it's mid-turn (its screen says esc to interrupt)"
-    if BG_WORK.search(tail):
-        return f"its agent still has work running ({BG_WORK.search(tail).group(0)})"
+    if BG_WORK.search(below):
+        return f"its agent still has work running ({BG_WORK.search(below).group(0)})"
     draft = input_draft(lines)
     if draft:
         return f"there's unsent text in its box (\"{draft[:40]}{'…' if len(draft) > 40 else ''}\")"
