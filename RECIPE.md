@@ -629,6 +629,10 @@ still travels through crewd's queue, carrying the card's id.
   the card becomes the owner's own, from the owner, `drafted_by` MUSE, in the ledger), Edit (the
   quick-drop prefilled; dropping sends it with `--from-draft`, and the draft closes "edited and sent
   as c-…") and Discard. `desk.partner_sends_as_itself` sends its cards at once as a pal's instead.
+- **The head pal's check-in:** at most every 15 minutes, when something's stuck, crewd puts one low
+  `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
+  with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
+  The card says what to do: pass it on, cancel it if stale, or tell the owner; never clear a box.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 

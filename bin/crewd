@@ -298,6 +298,10 @@ class Crewd:
                 log(f"desk: {cid} {what}")
             crewdesk.tidy()
             crewdesk.redeliver(herdr_spaces)   # asks Herdr only when a card is waiting
+            if crewdesk.stuck():
+                card = crewdesk.checkin(herdr_spaces())
+                if card:
+                    log(f"desk check-in for the head pal: {card['id']} {card['title']}")
         except CrewError as e:
             log(f"desk upkeep: {e}")
         except Exception:

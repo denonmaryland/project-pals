@@ -38,7 +38,7 @@ ROUTE, OWNER_TRAY, DRAFTS = "_route", "_owner", "_drafts"
 FIELDS = ("id", "kind", "status", "from", "from_kind", "proof", "relaying", "to", "urgency", "size",
           "held", "held_since", "task", "thread", "depth", "reply_to", "expires", "created", "updated",
           "attachments", "result")
-KINDS = ("tell", "ask", "task", "idea", "callback", "routine", "system")
+KINDS = ("tell", "ask", "task", "idea", "callback", "routine", "system", "checkin")
 OPEN = ("draft", "queued", "held", "seen", "working", "blocked", "needs you")
 CLOSED = ("done", "cancelled", "expired")
 URGENCY = ("low", "normal", "soon", "now")
@@ -642,6 +642,10 @@ def frame(card):
     out = f"{who(card)} 📥 Desk card {cid} · {' · '.join(bits)}\n{esc(card.get('title'))}"
     if body:
         out += "\n" + body
+    if card.get("kind") == "checkin":
+        out += (f"\n→ For each: pal desk pass <id> \"Pal#topic\" \"why\" to a topic that can take it, cancel it if it's stale, "
+                f"or tell {OWNER} in one line. Never clear an input box or answer a prompt yourself. Then pal desk done {cid}.")
+        return out
     if card.get("kind") == "ask":
         out += f"\n→ Answer it in your next message (or pal desk reply {cid} \"answer\"), then carry on."
     else:
@@ -1161,4 +1165,77 @@ def send_draft(cid, to, urgency=None, auto=False, task=None):
         if dest != path:
             path.unlink(missing_ok=True)
     ledger_add(card)
+    return card
+
+
+# ── the head pal's check-in (§11.6, §12.7) ───────────────────────────────────────────────────────
+# At most every 15 minutes crewd puts one low card on the head pal's desk listing cards held over
+# desk.held_flag_after_min and cards seen with no receipt from their pal for desk.seen_no_receipt_flag_min.
+# A card is listed again only after REMIND_AFTER; titles only, never bodies.
+
+CHECKIN_EVERY = 15 * 60
+REMIND_AFTER = 2 * 3600
+
+
+def stuck(now=None):
+    """[(kind 'held' | 'quiet', minutes, card)] worth the head pal's attention, oldest first."""
+    now = now or time.time()
+    c = conf()
+    held_after = float(c.get("held_flag_after_min") or 10) * 60
+    quiet_after = float(c.get("seen_no_receipt_flag_min") or 30) * 60
+    out = []
+    for path, card in cards():
+        if card.get("unreadable") or card.get("kind") in NEWS + ("checkin",) or path.parent.parent.name in (DRAFTS, OWNER_TRAY):
+            continue
+        if card.get("status") == "held":
+            age = now - parse_iso(card.get("held_since") or card.get("updated"))
+            if age >= held_after:
+                out.append(("held", int(age // 60), card))
+        elif card.get("status") == "seen":
+            last = (card.get("receipts") or [{}])[-1]
+            age = now - parse_iso(last.get("at") or card.get("updated"))
+            if age >= quiet_after:
+                out.append(("quiet", int(age // 60), card))
+    return sorted(out, key=lambda x: -x[1])
+
+
+def checkin_text(items):
+    lines = []
+    for what, mins, card in items:
+        age = f"{mins}m" if mins < 120 else f"{mins // 60}h"
+        if what == "held":
+            lines.append(f"- {card['id']} held ({card.get('held') or '?'}) {age} · {card.get('to')} · {card.get('title')}")
+        else:
+            lines.append(f"- {card['id']} seen {age} ago, no receipt from its pal · {card.get('to')} · {card.get('title')}")
+    return "\n".join(lines)
+
+
+def checkin(spaces, now=None):
+    """Put a check-in card on the head pal's desk when something's stuck and the last one was 15+
+    minutes ago. Returns the card, or None."""
+    now = now or time.time()
+    with locked("desk-budget"):
+        b = load_json(BUDGET, {})
+        if now - float(b.get("checkin_at") or 0) < CHECKIN_EVERY:
+            return None
+        told = {k: v for k, v in (b.get("checkin_told") or {}).items() if now - v < REMIND_AFTER}
+        items = [x for x in stuck(now) if x[2]["id"] not in told]
+        if not items:
+            b["checkin_told"] = told
+            save_json(BUDGET, b)
+            return None
+        for _, _, card in items:
+            told[card["id"]] = now
+        b.update({"checkin_at": now, "checkin_told": told})
+        save_json(BUDGET, b)
+    from crewlib import find, chan, CrewError as _E
+    try:
+        space, tab = find(HEAD, spaces)
+    except _E:
+        return None   # no head pal yet: To route's own lane shows what waits
+    n_held = sum(1 for x in items if x[0] == "held")
+    title = "Desk check-in: " + ", ".join(p for p in (f"{n_held} held" if n_held else "", f"{len(items) - n_held} quiet" if len(items) > n_held else "") if p)
+    card = create("checkin", f"{space['name']}#{chan(tab)}", title, checkin_text(items), frm="crew", from_kind="system",
+                  proof="crewd", urgency="low", via="crewd check-in")
+    card, _, _ = deliver(card, spaces)
     return card

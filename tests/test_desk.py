@@ -585,6 +585,44 @@ class Drafts(unittest.TestCase):
         self.assertEqual((home / "CLAUDE.md").read_text(), "@AGENTS.md\n")
 
 
+class CheckIn(unittest.TestCase):
+    """The head pal's check-in card (§11.6): held over 10 min and seen with no receipt for 30."""
+
+    def setUp(self):
+        self.root, self.env, self.data = sandbox(helper_state="finished")
+        s = json.loads((self.data / "crew-settings.json").read_text())
+        s["head"] = "Worker"
+        (self.data / "crew-settings.json").write_text(json.dumps(s))
+
+    def run_checkin(self, minutes):
+        return py(self.env, f"import crewdesk, crewlib, time; c = crewdesk.checkin(crewlib.herdr_spaces(), now=time.time() + {minutes} * 60)\n"
+                            "print(json.dumps(c and crewdesk.summary(c)))")
+
+    def test_held_cards_reach_the_head_pal_once(self):
+        cid = cid_of(pal(self.env, "desk", "send", "Helper#build", "for later", term="tD").stdout)
+        self.assertEqual(card(self.env, cid)["status"], "held")
+        self.assertIsNone(self.run_checkin(5), "not yet: held 5 minutes")
+        c = self.run_checkin(12)
+        self.assertEqual((c["kind"], c["to"], c["from_kind"], c["urgency"]), ("checkin", "Worker#general", "system", "low"))
+        self.assertIn(f"{cid} held (asleep)", c["body"])
+        self.assertIn("for later", c["body"])
+        [item] = queue(self.data, "tW")
+        self.assertIn("pal desk pass", item["text"])
+        self.assertIsNone(self.run_checkin(40), "already told about it")
+        self.assertIsNotNone(self.run_checkin(12 + 130), "reminded after two hours")
+
+    def test_seen_with_no_receipt(self):
+        cid = cid_of(pal(self.env, "tell", "Worker#general", "please do it", term="tD").stdout)
+        py(self.env, "import crewlib; crewlib.take_queue('tW', via='hook:post-tool-use'); print(1)", term="tW")
+        self.assertIsNone(self.run_checkin(20))
+        c = self.run_checkin(35)
+        self.assertIn(f"{cid} seen", c["body"])
+        self.assertIn("no receipt", c["body"])
+
+    def test_nothing_stuck_no_card(self):
+        self.assertIsNone(self.run_checkin(60))
+
+
 class Install(unittest.TestCase):
     def test_skill_replaced_when_unchanged_kept_when_edited(self):
         root, env, data = sandbox()
