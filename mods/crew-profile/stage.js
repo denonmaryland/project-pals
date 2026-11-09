@@ -34,6 +34,10 @@ const ICON = "mods/crew-roster/icons";
 // key: "profile-main" (Side) or "profile-stage" (Full). shownHere(): is this copy on screen.
 export function initStage(view, cx, key, shownHere) {
   view.draft = new TaskDraft(key, (cx) => refreshOps(view, cx));
+  // The composer's field for the shown pal is made here, never in render (compose.js follow/ensure).
+  const ensureDraft = (cx) => { const s = view.shown(); if (s && view.draft.ensure(s.space, s.bot)) cx?.notify(); };
+  ensureDraft(null);
+  cx.timer.every(200, (cx) => { if (shownHere()) ensureDraft(cx); });
   view.openCard = null;
   view.stageW = 0;
   const need = (cx, quiet) => {
