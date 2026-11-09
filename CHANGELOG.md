@@ -1,7 +1,29 @@
 # Changelog
 
-## Unreleased (v1 work)
+## 0.4.1: sleep, wake and a clean uninstall
 
+Put a pal to sleep to free its memory and wake it where it was, take Project Pals out cleanly,
+and know which Herdr versions it works with.
+
+### Sleep and wake, in place
+- **Sleep (keep topics, free RAM).** A pal's right-click or pal menu, a topic's right-click
+  (Sleep this topic) or a room's (Sleep all): its agents stop, while its tabs, shells and room
+  seats stay. `pal sleep <Pal|Pal#topic|#topic>`, or `--idle` for every idle pal, from the command
+  line. The result comes back as a toast.
+- **Wake (resume topics)** starts each topic's brain again in its own shell and resumes the
+  session it had, when that session is still the one it left; otherwise it starts fresh and says
+  why. `pal wake` from the command line.
+- **It never stops work.** Sleep refuses, and says why, when a pal is working, asking you
+  something, has text in its box, is being handed a message, or still runs work of its own (a
+  build it started, a helper's children). Only that topic's agent is stopped: a dev server or
+  editor in the tab is never touched, and only on this machine. Putting the head pal to sleep by
+  name needs your click.
+- Cards sent to an asleep pal wait on the Desk as held: asleep and are delivered once it's awake.
+- **Close pal (end its space)** is the other way to rest one (it was "Put to sleep" before).
+- A dead agy tab no longer looks awake: its leftover Herdr status is cleared.
+- Thanks to goodboimax for the original sleep and wake (PR #4).
+
+### Install and uninstall
 - **Supported Herdr, stated and checked.** Project Pals works with Herdr 0.1.8 or newer and
   herdr-core 0.1.11 or newer, below 0.2 (tested on 0.1.8–0.1.14 and 0.1.11–0.1.19). The range is
   in `pals.json`; the installer checks both versions and warns loudly outside it, and `pal version`
@@ -21,6 +43,15 @@
   exactly Project Pals' commands; a hook of yours that mentions `crew-hook` was rewritten before.
   A config file that is a symlink (a dotfiles manager's) is no longer replaced with a plain file.
 - A crash in the Herdr version check is shown as a warning instead of passing silently.
+
+### Fixed
+- A card from you that a pal passes on still shows as verified from you and says who passed
+  it, instead of turning "unverified"; a pass can move your words, never change them.
+- Dialogs and Home wrap full sentences instead of cutting them off (the "Updated to 0.4.0" dialog
+  stopped mid-sentence).
+- The profile dashboard no longer shows "This view could not be rendered" the first time a pal
+  shows.
+- `pal peek` keeps a permission option that wraps onto a second line whole.
 
 ## 0.4.0: the Desk
 
