@@ -377,8 +377,19 @@ def waiting_question(status, live):
                 f"in that tab. ──")
     if status.get("state") != "blocked":
         return None
-    opts = [l.strip().lstrip("❯›>").strip() for l in live[-25:] if re.match(r"^\s*[❯›>]?\s*\d+[.)]\s+\S", l)]
-    out = ["── blocked" + (f" on a {status['kind']} prompt" if status.get("kind") else "") + " ──"]
+    # A long option wraps onto indented lines below it (Claude Code 2.1's "2. Yes, and always allow
+    # access to <folder> from / this project", seen live 2026-11-09): join them onto the option.
+    opts, indent = [], None
+    for l in live[-25:]:
+        m = re.match(r"^(\s*[❯›>]?\s*)\d+[.)]\s+\S", l)
+        if m:
+            opts.append(l.strip().lstrip("❯›>").strip())
+            indent = len(m.group(1))
+        elif opts and indent is not None and l.strip() and len(l) - len(l.lstrip()) > indent:
+            opts[-1] += " " + l.strip()
+        else:
+            indent = None
+    out =["── blocked" + (f" on a {status['kind']} prompt" if status.get("kind") else "") + " ──"]
     if status.get("msg"):
         out.append(f"asks: {status['msg']}")
     if opts:

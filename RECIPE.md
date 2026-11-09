@@ -957,9 +957,10 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   `wakePal`): `--settings '{"promptSuggestionEnabled":false}'` on the pal's own command line, never
   in the stored argv or `~/.claude/settings.json`. `hc read` is plain text, so ghost text looked
   like an unsent draft and held messages for an hour (2026-11-08). An argv with its own `--settings`
-  is left alone; `"pal_prompt_suggestions": "keep"` in crew-settings.json turns this off. Whether
-  the flag outranks a user setting of `true` is unverified (Claude Code's docs put command-line
-  settings above user settings).
+  is left alone; `"pal_prompt_suggestions": "keep"` in crew-settings.json turns this off. The flag
+  outranks a setting of `true` (checked live 2026-11-09, Claude Code 2.1.321, T49): with `true` in
+  the folder's `.claude/settings.local.json`, which itself outranks `~/.claude/settings.json`,
+  3 of 3 turns left ghost text ("run it", "commit this") without the flag and 0 of 2 with it.
 
 - **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
   pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and
@@ -1091,6 +1092,11 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   shows a typing bubble, then the message.
 - A Claude Code topic blocked on a question shows "asks you" on its pet and row, and nothing
   floats over its terminal.
+- `pal peek <Pal#topic>` on a topic blocked on a permission prompt prints its screen, then
+  `── blocked on a permission prompt ──`, `asks: approve Bash: <command>` and every option, a
+  wrapped one whole ("2. Yes, and always allow access to <folder> from this project"), and leaves
+  the prompt up. On the folder-trust question it says only the owner answers it. (Checked live
+  2026-11-09 on Claude Code 2.1.321, T49; `tests/test_peek.py` holds those screens.)
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
   `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose.
