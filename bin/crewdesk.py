@@ -661,15 +661,16 @@ def frame(card):
     return out
 
 
-def frame_for(item):
-    """A queue item's text at hand-over time: the card's frame when it has one, else the item's text."""
+def frame_for(item, strict=False):
+    """A queue item's text at hand-over time: the card's frame when it has one, else the item's text.
+    strict: None when its card can't be read (crewlib labels the text unverified, Grok review H2)."""
     cid = item.get("card")
     if not cid:
-        return item.get("text")
+        return None if strict else item.get("text")
     try:
         return frame(read(need(cid)))
     except (DeskError, OSError):
-        return item.get("text")
+        return None if strict else item.get("text")
 
 
 # ── upkeep (crewd, every minute) ───────────────────────────────────────────────────────────────

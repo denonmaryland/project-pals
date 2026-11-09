@@ -561,8 +561,8 @@ def writes_click(cmd):
 
 def writes_queue(cmd):
     """A write INTO data/crew-queue (as writes_click); `pal tell` writing its own file isn't a shell write."""
-    return any("crew-queue" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-queue/", cmd))
+    return any({"crew-queue", "crew-queue-sent"} & set(os.path.normpath(t.strip("'\"")).split(os.sep)) for t in write_targets(cmd)) \
+        or bool(re.match(r"^edit\s+.*/crew-queue(?:-sent)?/", cmd))
 
 
 def writes_desk(cmd):
