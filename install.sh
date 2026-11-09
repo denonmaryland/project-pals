@@ -253,8 +253,11 @@ python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewdesk; print(
 # What's installed, for the updater (About → Check for updates).
 mkdir -p "$home/data"
 # Which build this is (Home's "Installed" line and its install log): the commit, its branch and
-# subject, and whether the folder had uncommitted changes. Only from a git checkout (a release tarball
-# has none). data/crew-installs.jsonl keeps one line per install (the last 200).
+# subject, and whether the folder had uncommitted changes. From a git checkout; else, from an export
+# (git archive, which the head pal installs from so other pals' untracked files stay out), from
+# CREW_BUILD=<hash> (with CREW_BUILD_BRANCH / CREW_BUILD_SUBJECT if known) or a BUILD file at the
+# root (a hash, or JSON with hash, branch, subject, tag, ahead). A release tarball has none.
+# data/crew-installs.jsonl keeps one line per install (the last 200).
 python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$claude_hooks" "$agy_hooks" "$from" "$src" "$home/data/crew-installs.jsonl" <<'PY'
 import json, os, subprocess, sys, time
 manifest, out, version, helpers, claude_hooks, agy_hooks, source, src, log = sys.argv[1:]
@@ -273,6 +276,30 @@ if os.path.exists(os.path.join(src, ".git")) and git("rev-parse", "--short", "HE
     if build["tag"]:
         n = git("rev-list", "--count", f"{build['tag']}..HEAD")
         build["ahead"] = int(n) if n and n.isdigit() else None
+else:
+    import re
+    given = None
+    if os.environ.get("CREW_BUILD", "").strip():
+        given = {"hash": os.environ["CREW_BUILD"].strip(), "branch": os.environ.get("CREW_BUILD_BRANCH") or None,
+                 "subject": os.environ.get("CREW_BUILD_SUBJECT") or None}
+    elif os.path.isfile(os.path.join(src, "BUILD")):
+        raw = open(os.path.join(src, "BUILD")).read().strip()
+        try:
+            given = json.loads(raw) if raw.startswith("{") else {"hash": raw.split()[0] if raw else ""}
+        except ValueError:
+            given = None
+    if given is not None and not isinstance(given, dict):
+        given = {"hash": ""}
+    h = str((given or {}).get("hash") or "").strip()
+    if re.fullmatch(r"[0-9a-f]{4,40}", h):
+        g = given
+        ahead = g.get("ahead")
+        build = {"hash": h[:12] if len(h) > 12 else h, "branch": (str(g["branch"])[:80] if g.get("branch") else None),
+                 "subject": (str(g["subject"])[:160] if g.get("subject") else None), "dirty": False,
+                 "tag": (str(g["tag"])[:40] if g.get("tag") else None), "ahead": ahead if isinstance(ahead, int) else None,
+                 "export": True}
+    elif given is not None:
+        print(f"ignored the build id {h[:40]!r} (CREW_BUILD or BUILD): it isn't a commit hash", file=sys.stderr)
 now = int(time.time())
 rec = {"name": m.get("name"), "repo": m.get("repo"), "version": version, "helpers": helpers == "1",
        "claude_hooks": claude_hooks == "1", "agy_hooks": agy_hooks == "1",

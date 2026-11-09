@@ -667,7 +667,11 @@ open|answered|done|parked|dropped, title ≤160, body ≤2 KB, options ≤4 (ask
 {next, note, queued: [{id r-6hex, text, at, by}]}}`. Closed items go after 14 days. `pal home
 answer ID "option"` and `pal home seen` are the owner's (a click); an answer is told to whoever
 asked as a card from the owner. install.sh adds `build` (`hash`, `branch`, `subject`, `dirty`,
-`tag`, `ahead`) to `crew-install.json` and a line to `data/crew-installs.jsonl` (the last 200).
+`tag`, `ahead`) to `crew-install.json` and a line to `data/crew-installs.jsonl` (the last 200):
+from git in a checkout, else (an export: `git archive`, how the head pal installs) from
+`CREW_BUILD=<hash>` with optional `CREW_BUILD_BRANCH` / `CREW_BUILD_SUBJECT`, or a `BUILD` file at
+the root (a hash, or JSON with those fields); `export: true` marks it. Anything that isn't a hex
+hash is ignored, with a warning.
 Home reads only while it shows: files every 4 s, `pal desk ls --all --json --done` every 10 s.
 
 ## Built from

@@ -179,6 +179,43 @@ class InstallRecordsTheBuild(unittest.TestCase):
         self.assertEqual(len(log), 2, "one line per install")
         self.assertEqual(log[-1]["build"]["hash"], head)
 
+    def export(self):
+        """The tree as the head pal installs it: a git archive of HEAD, no .git."""
+        out = self.root / "export"
+        out.mkdir()
+        arc = subprocess.run(["git", "-C", str(REPO), "archive", "HEAD"], capture_output=True, check=True).stdout
+        subprocess.run(["tar", "-x", "-C", str(out)], input=arc, check=True)
+        # The working tree's install.sh, so this test checks the code under test, not HEAD's.
+        shutil.copy(REPO / "install.sh", out / "install.sh")
+        return out
+
+    def install_from(self, src, **env):
+        r = subprocess.run(["bash", str(src / "install.sh"), "--no-helpers"], capture_output=True, text=True, env={**self.env, **env}, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r, json.loads((self.app / "data" / "crew-install.json").read_text())
+
+    def test_an_export_takes_its_build_from_crew_build_or_a_build_file(self):
+        src = self.export()
+        _, rec = self.install_from(src)
+        self.assertNotIn("build", rec, "an export with nothing to say which build has none")
+        _, rec = self.install_from(src, CREW_BUILD="16bafd5", CREW_BUILD_BRANCH="crew/next", CREW_BUILD_SUBJECT="Home pebble")
+        self.assertEqual((rec["build"]["hash"], rec["build"]["branch"], rec["build"]["subject"], rec["build"]["export"]),
+                         ("16bafd5", "crew/next", "Home pebble", True))
+        (src / "BUILD").write_text(json.dumps({"hash": "73efbd5", "subject": "Merge Home", "tag": "v0.2.3", "ahead": 150}))
+        _, rec = self.install_from(src)
+        self.assertEqual((rec["build"]["hash"], rec["build"]["tag"], rec["build"]["ahead"]), ("73efbd5", "v0.2.3", 150))
+        (src / "BUILD").write_text("abc1234\n")
+        _, rec = self.install_from(src)
+        self.assertEqual(rec["build"]["hash"], "abc1234")
+        r, rec = self.install_from(src, CREW_BUILD="not a hash; rm -rf /")
+        self.assertNotIn("build", rec)
+        self.assertIn("ignored the build id", r.stderr)
+        (src / "BUILD").write_text("[1, 2]")
+        _, rec = self.install_from(src)
+        self.assertNotIn("build", rec)
+        log = [json.loads(x) for x in (self.app / "data" / "crew-installs.jsonl").read_text().splitlines()]
+        self.assertEqual([(x["build"] or {}).get("hash") for x in log], [None, "16bafd5", "73efbd5", "abc1234", None, None])
+
     def test_a_taken_key_is_left_alone(self):
         (self.app / "keys.json").write_text(json.dumps({"global": {"ctrl-shift-h": "pane.go:left"}}))
         out = self.install()
