@@ -629,8 +629,9 @@ still travels through crewd's queue, carrying the card's id.
 The head pal's page, so coming back after working in parallel isn't a terminal scroll (mock:
 `data/crew-boards/orca-home/index.html`). It's `crew-home`, the `center` stack's fourth child
 (`home-view`). **Clicking the head pal** (its row, rail face or hero art) opens it; so do the
-hero's **Home** pebble (icon-only, first in the row; while Home shows it's a terminal icon,
-primary, that goes back to the topic), "<Head> home" in the command bar and gear menu, and
+head pal's hero **Home** pebble (icon-only, in the moon's place: the head pal never sleeps; while
+Home shows it's a terminal icon, primary, that goes back to the topic; its Desk pebble opens Home
+too), "<Head> home" in the command bar and gear menu, and
 **Ctrl+Shift+H** (`crew-roster.home`, bound by install.sh only when free). Showing it selects the
 head pal, so the hero is its. Picking any topic, room or the Desk leaves it (`showTabs`). While it
 shows, the header hides the split buttons.
