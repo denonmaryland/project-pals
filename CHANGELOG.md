@@ -1,6 +1,26 @@
 # Changelog
 
-## 0.4.0 (not released yet): the Desk, stage 1
+## 0.4.0 (not released yet): the Desk
+
+### New
+- **Every pal has a desk.** Everything sent to a pal (a tell, a question, a task, how something
+  you asked went) is now a card with a status: queued, seen, working, done, held or needs you.
+  You see when a pal actually got it, and its result, instead of guessing from its screen.
+- **The Desk view.** The header's Desk button opens every desk at once: what waits on you, what
+  has no pal yet, what's held and why, then each pal and its topics. Move, raise, lower, close or
+  cancel any card with a click.
+- **Drop a card from anywhere** with Ctrl+Shift+D: type it, pick a pal or topic (or leave it in
+  To route), set how urgent it is, add images. Multi-line cards go on the task board too.
+- **`pal desk`** for pals (and you, in a shell): their cards, `take`, `done "result"`, `reply`,
+  `block`, `pass`, `send`, `sent`. The shipped `pal-desk` skill teaches every pal how to use it.
+- **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title
+  or text by hand; its status and who sent it can't be changed that way.
+
+### Fixed
+- A message waiting for a topic whose terminal closed used to be dropped with it. Its card now
+  waits as held and goes out once that topic has an agent running again.
+
+## Stage 1 (in 0.4.0)
 
 Messages reach busy pals without typing into their input box, and nobody can send a message
 labelled as you without your click.

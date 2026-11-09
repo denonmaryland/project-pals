@@ -1,0 +1,45 @@
+{
+  "id": "c-7f3a9e",
+  "kind": "tell",
+  "status": "seen",
+  "from": "Orca#general",
+  "from_kind": "pal",
+  "proof": "terminal t33",
+  "relaying": "DeNon",
+  "to": "Project Pals - Herdr Mod#desk",
+  "urgency": "soon",
+  "task": "T19",
+  "thread": "c-7f3a9e",
+  "depth": "0",
+  "created": "2026-11-08T23:02:11Z",
+  "updated": "2026-11-08T23:04:40Z",
+  "attachments": [
+    "crew-attachments/a-3f1c.png"
+  ],
+  "title": "Design the Desk communication backbone",
+  "body": "DeNon wants every pal to have a desk: tells, tasks and ideas as cards with a status…\n\nSecond paragraph: colons: fine, \"quotes\" too.",
+  "reply": null,
+  "receipts": [
+    {
+      "at": "2026-11-08T23:02:11Z",
+      "status": "queued",
+      "by": "Orca#general",
+      "via": "pal desk send",
+      "note": ""
+    },
+    {
+      "at": "2026-11-08T23:02:11Z",
+      "status": "routed #desk",
+      "by": "Project Pals",
+      "via": "rules",
+      "note": "topic named in the title"
+    },
+    {
+      "at": "2026-11-08T23:04:40Z",
+      "status": "seen",
+      "by": "t4w",
+      "via": "hook:post-tool-use",
+      "note": ""
+    }
+  ]
+}

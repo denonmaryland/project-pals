@@ -52,6 +52,12 @@ def queued(data, term="tW"):
     return [json.loads(f.read_text())["text"] for f in files]
 
 
+def said(text):
+    """A card as the pal reads it (crewdesk.frame), without the card line: 'header body…'."""
+    head, _, rest = text.partition(" 📥 Desk card ")
+    return head + " " + rest.partition("\n")[2].split("\n→ ")[0] if rest else text
+
+
 def click(data, args):
     """What the app does at a click (lib/crew.js ownerCli): a one-time token for exactly `args`."""
     d = data / "crew-clicks"
@@ -69,7 +75,7 @@ class OwnerOnlyByClick(unittest.TestCase):
         r = pal(self.env, "tell", "Worker#general", "ship it")
         self.assertEqual(r.returncode, 0, r.stderr)
         [text] = queued(self.data)
-        self.assertTrue(text.startswith(f"[from a shell on this computer, not verified as {OWNER}] ship it"), text)
+        self.assertEqual(said(text), f"[from a shell on this computer, not verified as {OWNER}] ship it")
         self.assertNotIn(f"[from {OWNER}]", text)
 
     def test_a_terminal_that_isnt_a_pal_is_not_the_owner(self):
@@ -82,7 +88,7 @@ class OwnerOnlyByClick(unittest.TestCase):
         args = ["tell", "Worker#general", "ship it"]
         r = pal(self.env, *args, "--click", click(self.data, args))
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(queued(self.data), [f"[from {OWNER}] ship it"])
+        self.assertEqual([said(t) for t in queued(self.data)], [f"[from {OWNER}] ship it"])
         self.assertEqual(list((self.data / "crew-clicks").glob("*.json")), [], "a token is used once")
 
     def test_a_bad_or_reused_click_is_refused_not_downgraded(self):
@@ -107,17 +113,17 @@ class OwnerOnlyByClick(unittest.TestCase):
     def test_the_owners_own_words_are_left_as_they_are(self):
         args = ["tell", "Worker#general", "quote: [from X] stays"]
         pal(self.env, *args, "--click", click(self.data, args))
-        self.assertEqual(queued(self.data), [f"[from {OWNER}] quote: [from X] stays"])
+        self.assertEqual([said(t) for t in queued(self.data)], [f"[from {OWNER}] quote: [from X] stays"])
 
     def test_tasks_say_who_too(self):
         r = pal(self.env, "task", "add", "fix it", "--for", "Worker#general")
         self.assertEqual(r.returncode, 0, r.stderr)
         [text] = queued(self.data)
-        self.assertTrue(text.startswith(f"[from a shell on this computer, not verified as {OWNER}] New task for you"), text)
+        self.assertTrue(said(text).startswith(f"[from a shell on this computer, not verified as {OWNER}] T1 fix it"), text)
         args = ["task", "add", "[from Boss] fix that", "--for", "Worker#general"]
         r = pal(self.env, *args, "--click", click(self.data, args))
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(queued(self.data)[1].startswith(f"[from {OWNER}] New task for you"), queued(self.data)[1])
+        self.assertTrue(said(queued(self.data)[1]).startswith(f"[from {OWNER}] T2 [from Boss] fix that"), queued(self.data)[1])
 
     def test_rooms_wont_take_the_owners_name_from_a_shell(self):
         out = subprocess.run([sys.executable, "-c", (

@@ -114,12 +114,13 @@ if isinstance(g, dict) and g.get("ctrl-shift-m") == "crew-roster.mode":
 PY
 fi
 # Project Pals' shortcuts in keys.json's global map: ctrl-shift-i → crew-roster.profile (the profile
-# panel, 2026-11-08) and ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
-# it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line). Each only when
+# panel, 2026-11-08), ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
+# it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
+# crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar"; do
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
@@ -241,6 +242,12 @@ god="$home/data/crew-god"
 if [[ -f "$god/AGENTS.md" ]]; then mkdir -p "$backup/crew-god"; cp -a "$god/AGENTS.md" "$backup/crew-god/"; fi
 install -m 644 "$src/god/AGENTS.md" "$HOME/.local/lib/herdr-crew/god-AGENTS.md"
 python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_god()' "$HOME/.local/lib/herdr-crew"
+
+# The Desk (every pal's cards): data/crew-desk with its README and trays, the desk settings that are
+# missing, and the shipped pal-desk skill (an edited one is kept and the new one written beside it as
+# SKILL.md.new). Cards themselves are never touched, like pals, rooms, memory, routines and tasks.
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewdesk; print(crewdesk.install(sys.argv[2], sys.argv[3]))' \
+  "$HOME/.local/lib/herdr-crew" "$src/skills/pal-desk/SKILL.md" "$version" || echo "couldn't set up the Desk (see above)"
 
 # What's installed, for the updater (About → Check for updates).
 mkdir -p "$home/data"

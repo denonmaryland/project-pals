@@ -72,7 +72,25 @@ def startup_context(bot, ch):
             and (crewtasks.same(t.get("assignee") or "", bot) or crewtasks.same(t.get("claimed_by") or "", bot))]
     if mine:
         parts.append("Your open tasks:\n" + "\n".join(crewtasks.line(t) for t in mine))
+    desk = desk_line(bot, ch)
+    if desk:
+        parts.append(desk)
     return "\n\n".join(parts)
+
+
+def desk_line(bot, ch):
+    """'Your desk: 3 open cards (1 soon, 1 held). pal desk to see them.' (nothing when it's empty)"""
+    try:
+        import crewdesk
+        rows = [c for _, c in crewdesk.mine(bot, ch) if not c.get("unreadable")]
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    bits = [f"{n} {k}" for k, n in (("soon", sum(c.get("urgency") in ("soon", "now") for c in rows)),
+                                    ("held", sum(c.get("status") == "held" for c in rows))) if n]
+    return (f"Your desk: {len(rows)} open card{'s' if len(rows) != 1 else ''}" + (f" ({', '.join(bits)})" if bits else "")
+            + ". pal desk to see them.")
 
 
 def guard_reason(held, again="run the same command again"):
@@ -153,7 +171,7 @@ def pre_tool_use(event):
         # agents-file rule): the owner changes those with a click (P6). An edit of the owner's click
         # tokens, or of crewd's message queue (a forged message), is held too. Anything else: no hook work.
         path = inp.get("file_path") or inp.get("notebook_path") or ""
-        if "/crew-clicks/" in path or "/crew-queue/" in path:
+        if "/crew-clicks/" in path or "/crew-queue/" in path or "/crew-desk/" in path:
             cmd = f"edit {path}"
         elif os.path.basename(path) in AGENT_FILES:
             cmd, extra = edit_request(tool, inp, path)
@@ -247,7 +265,7 @@ def interactive_agent():
     return False
 
 
-def inbox(event, harness="claude"):
+def inbox(event, harness="claude", via="hook"):
     """This pal's waiting messages as one text (taken off the queue), or None. Kept cheap: the
     agy PreInvocation hook runs before every model call."""
     t = os.environ.get("HC_TERMINAL_ID")
@@ -263,19 +281,19 @@ def inbox(event, harness="claude"):
             crewchat.link(t, tpath, event.get("session_id") or event.get("conversationId"), "hook", harness=harness)
         except Exception:
             pass
-    return take_queue(t)
+    return take_queue(t, via=via)
 
 
 def stop(event):
     if event.get("stop_hook_active"):
         return   # already carrying on because of this hook: let the turn end
-    text = inbox(event)
+    text = inbox(event, via="hook:stop")
     if text:
         print(json.dumps({"decision": "block", "reason": text}))
 
 
 def post_tool_use(event):
-    text = inbox(event)
+    text = inbox(event, via="hook:post-tool-use")
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
 
@@ -284,7 +302,7 @@ def agy_stop(event):
     # Stdout stays empty when there's nothing to say (agy reads "{}" as a decision).
     if event.get("terminationReason") != "NO_TOOL_CALL":
         return   # canceled, errored or out of budget: don't push it on
-    text = inbox(event, "antigravity")
+    text = inbox(event, "antigravity", via="hook:agy-stop")
     if text:
         print(json.dumps({"decision": "continue", "reason": text}))
 
@@ -313,7 +331,7 @@ def compacted(terminal, tpath):
 
 
 def agy_pre_invocation(event):
-    text = inbox(event, "antigravity")
+    text = inbox(event, "antigravity", via="hook:agy-pre-invocation")
     t, tpath = os.environ.get("HC_TERMINAL_ID"), event.get("transcriptPath")
     try:   # the messages are already off the queue: whatever happens here, they still go out
         if t and tpath and interactive_agent() and compacted(t, tpath):

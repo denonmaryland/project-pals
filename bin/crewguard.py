@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 9
+DEFAULTS_VERSION = 10
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -51,6 +51,10 @@ DEFAULT = {
         # crewd's message queue (data/crew-queue): a file written there by hand reaches a pal with
         # whatever header it claims, "[from <owner>]" included. Pals send with pal tell / ask / task.
         {"name": "queue-write", "why": "writes into the pals' message queue (send with pal tell instead)", "check": "queue-writes", "pattern": r"$^"},
+        # The Desk's cards (data/crew-desk): a card written or edited by hand could claim any sender or
+        # status. Pals move cards with pal desk (its own writes aren't shell commands); the owner may
+        # edit a card in an editor, and crewd notes it (Desk design §10.3, §12.2).
+        {"name": "desk-write", "why": "writes into the Desk's cards (use pal desk instead)", "check": "desk-writes", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -173,7 +177,14 @@ def writes_queue(cmd):
         or bool(re.match(r"^edit\s+.*/crew-queue/", cmd))
 
 
-CHECKS = {"agent-file-writes": writes_agent_file, "click-writes": writes_click, "queue-writes": writes_queue}
+def writes_desk(cmd):
+    """A write INTO data/crew-desk (as writes_queue)."""
+    return any("crew-desk" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
+        or bool(re.match(r"^edit\s+.*/crew-desk/", cmd))
+
+
+CHECKS = {"agent-file-writes": writes_agent_file, "click-writes": writes_click, "queue-writes": writes_queue,
+          "desk-writes": writes_desk}
 
 
 def matches(cmd):

@@ -71,7 +71,7 @@ def line(t):
     return f"{t['id']} [{t['status']}] {t['title']} · {who}{deps}"
 
 
-def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None):
+def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None, notify_assignee=True):
     if assignee:
         s, tab = find(assignee, spaces)
         assignee = f"{s['name']}#{chan(tab)}" if "#" in assignee else s["name"]
@@ -87,11 +87,24 @@ def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=Non
         save_json(STORE, board)
     feed("task", task=t["id"], status="open", title=title, by=me_name, to=assignee)
     blocked_by = [d for d in t["deps"] if get(load(), d)["status"] != "done"]
-    if assignee and not blocked_by:
-        notify(assignee, f"{header(me, me_name)} New task for you: {t['id']} {clean(title)}"
-               + (f"\n{clean(body)}" if body else "") + f"\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
-               spaces, me_name)
+    if assignee and not blocked_by and notify_assignee:
+        task_card(t, spaces, me, me_name)
     return t
+
+
+def task_card(t, spaces, me, me_name):
+    """A new task for someone is a card on their desk (kind task), with the task's id on it."""
+    import crewdesk
+    who = crewdesk.sender(spaces)
+    try:
+        card = crewdesk.create("task", t["assignee"], f"{t['id']} {t['title']}",
+                               (t.get("body") or "") + f"\n\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
+                               frm=who["from"], from_kind=who["from_kind"], proof=who["proof"], task=t["id"], via="pal task add")
+        crewdesk.deliver(card, spaces)
+    except CrewError:
+        notify(t["assignee"], f"{header(me, me_name)} New task for you: {t['id']} {clean(t['title'])}"
+               + (f"\n{clean(t['body'])}" if t.get("body") else "") + f"\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
+               spaces, me_name)
 
 
 def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=False, assignee=None):

@@ -461,11 +461,25 @@ def enqueue(terminal, text, sender=None, kind="msg", not_before=0.0, urgent=Fals
     return item
 
 
+def _desk():
+    try:
+        import crewdesk
+        return crewdesk
+    except ImportError:   # an older install's modules: plain messages only
+        return None
+
+
+def item_text(m):
+    """A queue item as the pal reads it: a card's frame is rebuilt from the card at hand-over time."""
+    desk = _desk() if m.get("card") else None
+    return desk.frame_for(m) if desk else m["text"]
+
+
 def batch_text(msgs):
     """One message as is; several as one block, oldest first."""
     if len(msgs) == 1:
-        return msgs[0]["text"]
-    return "Messages that came in while you were busy:\n\n" + "\n\n".join(m["text"] for m in msgs)
+        return item_text(msgs[0])
+    return "Messages that came in while you were busy:\n\n" + "\n\n".join(item_text(m) for m in msgs)
 
 
 def claim_queue(terminal, only=None):
@@ -491,6 +505,10 @@ def claim_queue(terminal, only=None):
         if m.get("not_before", 0) > now_ms():
             taken.rename(f)
             continue
+        desk = _desk() if m.get("card") else None
+        if desk and not desk.deliverable(m["card"]):
+            taken.unlink(missing_ok=True)   # its card was cancelled, expired or passed on meanwhile
+            continue
         out.append((taken, m))
     return out
 
@@ -503,11 +521,19 @@ def unclaim(claimed):
             pass
 
 
-def finish_claimed(claimed, by_hook=False):
+def finish_claimed(claimed, by_hook=False, via=None):
+    """They've been handed over: off the queue, the sender's delegation marked, and each card's
+    `seen` receipt (via: how, e.g. "hook:post-tool-use" or "typed")."""
     for taken, m in claimed:
         taken.unlink(missing_ok=True)
         if m.get("delegation"):
             mark_delivered(m["delegation"], by_hook)
+        desk = _desk() if m.get("card") and via else None
+        if desk:
+            try:
+                desk.delivered(m["card"], m.get("terminal") or "?", via)
+            except Exception:
+                pass   # the message is out; a receipt that can't be written mustn't undo that
 
 
 def mark_delivered(did, by_hook=False):
@@ -523,13 +549,14 @@ def mark_delivered(did, by_hook=False):
         save_json(path, dels)
 
 
-def take_queue(terminal):
+def take_queue(terminal, via="hook"):
     """For a hook: this terminal's due messages as one text (now delivered), or None."""
     claimed = claim_queue(terminal)
     if not claimed:
         return None
-    finish_claimed(claimed, by_hook=True)
-    return batch_text([m for _, m in claimed])
+    text = batch_text([m for _, m in claimed])
+    finish_claimed(claimed, by_hook=True, via=via)
+    return text
 
 
 HOOKED = DATA / "crew-hooked"
@@ -609,6 +636,9 @@ def renamed(old, new):
             m["bot"] = new
         if seats:
             save_json(path, meta)
+    desk = _desk()
+    if desk:
+        desk.renamed(old, new)
 
 
 def memory_dir(bot_name):
@@ -702,6 +732,7 @@ def memory_report(bot_name, pinned=""):
 PRIMER = f"""You're a pal in {OWNER}'s Project Pals crew: each Herdr space is a pal (a project with a brain) and its tabs are its topics (each a clone of it, working on one thing). {HEAD} is the head pal over everyone.
 Commands you have (each has --help):
 - pal overview / pal team: the team. pal tell "Pal#topic" "...": message a pal (handed over between its steps, or when its turn ends); pal ask: message and wait for the answer.
+- pal desk: things sent to you are cards. They arrive between your steps as 📥 lines; decide: urgent or tiny → now, big → a sub-agent, else after your step; close each with pal desk done/reply/block. pal tell, pal ask and pal task --for send cards. The pal-desk skill has the details.
 - pal task ls / ready / claim / note / block / done: the shared task board. Claim before you work on a task; mark it done (with a result) or blocked (with why).
 - pal remember "fact" (--user for something about {OWNER}): save what future sessions should know. pal memory: what's remembered.
 - pal skill ls / show / save: shared how-to skills. When you work out a reusable procedure, save it as a skill.

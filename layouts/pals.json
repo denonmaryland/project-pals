@@ -95,6 +95,13 @@
                   "content": {
                     "mod": "crew-room"
                   }
+                },
+                {
+                  "id": "desk-view",
+                  "type": "block",
+                  "content": {
+                    "mod": "crew-desk"
+                  }
                 }
               ]
             },

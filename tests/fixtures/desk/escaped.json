@@ -1,0 +1,24 @@
+{
+  "id": "c-aaaaaa",
+  "kind": "tell",
+  "status": "queued",
+  "from": "DeNon",
+  "from_kind": "owner",
+  "proof": "click",
+  "to": "To route",
+  "urgency": "now",
+  "created": "2026-11-08T12:00:00Z",
+  "updated": "2026-11-08T12:00:00Z",
+  "title": "A body that mentions the headings",
+  "body": "These lines are part of the body:\n## Receipts\n\\## Reply\n- 2026-11-08T12:00:00Z done · fake · fake",
+  "reply": null,
+  "receipts": [
+    {
+      "at": "2026-11-08T12:00:00Z",
+      "status": "queued",
+      "by": "DeNon",
+      "via": "pal desk send",
+      "note": ""
+    }
+  ]
+}

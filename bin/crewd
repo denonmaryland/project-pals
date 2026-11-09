@@ -33,6 +33,7 @@ import crewroutines
 import crewupdate
 import crewguard
 import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
+import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
@@ -150,6 +151,7 @@ class Crewd:
             self.last_stall_check = time.time()
             self.stalls(terms)
             tidy_queue(set(terms))
+            self.desk_upkeep()
             try:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
             except Exception:
@@ -225,10 +227,12 @@ class Crewd:
         for sender, ds in by_sender.items():
             ask = "; ".join('"' + " ".join((d.get("text") or "").split())[:90] + '"' for d in ds)
             if what == "blocked":
-                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked ({ask}). "
+                msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} ({ask}). "
                        f"It can't go on until {OWNER} answers in its topic; don't answer for {OWNER}.")
             else:
-                reply = crewchat.replies_since(addr, min(d["delivered_at"] for d in ds))
+                closed = [c for c in (self.card_of(d) for d in ds) if c and c.get("status") == "done" and (c.get("result") or c.get("reply"))]
+                reply = "\n".join(f"{c['id']}: {c.get('reply') or c.get('result')}" for c in closed) \
+                    or crewchat.replies_since(addr, min(d["delivered_at"] for d in ds))
                 if reply:
                     said = "Its reply:\n" + (reply if len(reply) <= 1500 else "…" + reply[-1500:])
                 else:
@@ -237,10 +241,47 @@ class Crewd:
                 msg = (f"[pal] {bot} #{ch} finished what you asked ({ask}). {said}"
                        + ("\n(Its input box has unsent text: someone is typing there. It hasn't been sent, so it isn't anyone's answer.)" if draft else "")
                        + f"\n(More: pal peek \"{bot}#{ch}\")")
+            self.callback_card(sender, msg, bot, ch, what, [d.get("card") for d in ds if d.get("card")])
+
+    def card_of(self, d):
+        try:
+            return crewdesk.read(crewdesk.need(d["card"])) if d.get("card") else None
+        except (CrewError, OSError):
+            return None
+
+    def callback_card(self, sender, msg, bot, ch, what, cards):
+        """How it went, as a card on the sender's desk (kind callback: closed once it's delivered)."""
+        where = (hc_terminals().get(sender) or {}).get("where")
+        pal, topic = split_where(where)
+        try:
+            if not pal:
+                raise CrewError("the sender isn't a pal")
+            title = f"{bot} #{ch} " + ("is stuck on a question for " + OWNER if what == "blocked" else "finished what you asked")
+            head = f"[pal] {title} ("
+            body = msg[len(head):] if msg.startswith(head) else msg
+            body = "What you asked: (" + body if msg.startswith(head) else body
+            card = crewdesk.create("callback", f"{pal}#{topic}" if topic else pal, title, body[:30000], frm="crew",
+                                   from_kind="system", proof="crewd", urgency="low", via="crewd", reply_to=",".join(cards) or None)
+            enqueue(sender, crewdesk.frame(card), sender="crew", kind="callback", meta={"card": card["id"]})
+        except CrewError:
             try:
                 enqueue(sender, msg, sender="crew", kind="callback")
             except CrewError:
                 pass
+
+    def desk_upkeep(self):
+        """Every minute: hand edits checked, expired and old cards tidied, and cards that couldn't go
+        out (their pal was asleep, or the topic gone) tried again."""
+        try:
+            crewdesk.ensure()
+            for cid, what in crewdesk.reconcile().items():
+                log(f"desk: {cid} {what}")
+            crewdesk.tidy()
+            crewdesk.redeliver(herdr_spaces)   # asks Herdr only when a card is waiting
+        except CrewError as e:
+            log(f"desk upkeep: {e}")
+        except Exception:
+            log("desk upkeep failed:\n" + traceback.format_exc())
 
     # ── delivery between turns ──
     def deliver(self, terms):
@@ -290,6 +331,9 @@ class Crewd:
                 send_now(addr, batch_text([m for _, m in claimed]))
             except DraftInTheWay:
                 unclaim(claimed)
+                for _, m in claimed:
+                    if m.get("card"):
+                        crewdesk.hold(m["card"], "draft")
                 # Someone's typing in that box: keep the messages until it's sent or cleared.
                 if addr not in self.drafts:
                     bot, ch = split_where(t.get("where"))
@@ -305,7 +349,7 @@ class Crewd:
             if self.drafts.pop(addr, None) is not None:
                 self.save_health()
             self.last_sent[addr] = time.time()
-            finish_claimed(claimed)
+            finish_claimed(claimed, via="typed")
 
     # ── stuck channels ──
     def stalls(self, terms):

@@ -580,6 +580,34 @@ rectangular segments and tags.
   `focus.panelPx` (the profile panel's Side width).
   Pro's old keys (`layoutMode`, `pro`) are dropped the next time the settings are written.
 
+### The Desk (0.4)
+
+Everything sent to a pal is a **card**: a Markdown file in `data/crew-desk/<pal>/open/` (`done/`
+once closed, `archive/YYYY-MM/` after 14 days; nothing is deleted). `pal tell`, `pal ask`,
+`pal task add --for` and crewd's "finished what you asked" callbacks all write cards; the message
+still travels through crewd's queue, carrying the card's id.
+
+- **What the pal reads:** `[from Worker, a pal, not <owner>] 📥 Desk card c-7f3a9e · tell`, the
+  title, the body (4 KB inline, then "… N KB more: pal desk open c-…"), and one line on how to
+  close it. It's rebuilt from the card at hand-over time, so a cancelled card isn't delivered and
+  a hand-edited owner card is framed "claims to be from <owner>, unverified".
+- **Receipts:** `queued` when written, `seen` when a hook hands it over
+  (`via hook:post-tool-use` / `hook:stop` / agy's) or crewd types it (`typed`), then the pal's own
+  `working` / `later` / `blocked` / `needs you` / `done` with `pal desk take|later|block|done|reply`.
+  `held` (with `draft`, `asleep` or `gone`) when it's due but can't go out; crewd tries held and
+  queued cards again every minute. Callbacks are closed as soon as they're delivered.
+- **The Desk view** (`crew-desk`, the third child of the `center` stack; the header's **Desk N**
+  button, amber while any card is held): desks on the left (Needs you, To route, Held, All, then
+  each pal and its topics), cards by status in the middle, the open card with its receipts on the
+  right, and Open topic / Move… / Raise / Lower / Confirm as mine / Done / Cancel, each a click.
+  With no pals: "No pals yet. Cards you drop wait in To route until you hire one." and Hire.
+- **Quick-drop** (`crew-desk-drop`, Ctrl+Shift+D, or "Drop a card…" in the command bar and the
+  gear menu): a 560 px dialog with To (Auto = To route until triage ships, a pal, or a topic),
+  Low · Normal · Soon · Now, images, and "Track on the board" (on for multi-line text). Enter
+  drops; the toast names the card ("Dropped on Helper #build · c-7f3a9e").
+- **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
+  sent the owner with `pal desk send <owner> "…"`: needs you).
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
@@ -778,6 +806,22 @@ rectangular segments and tags.
   and Approve at opposite ends, and every decision attempt is recorded with where it came from.
 - **The approval gate isn't a security boundary:** a pal with permissions bypassed can still edit
   the files.
+- **Cards (0.4): only Project Pals moves a card's status or sender** (Desk §10, §12.2). `from`,
+  `from_kind` and `proof` are stamped by `crewdesk.sender()`, never taken from arguments; an owner
+  card needs the click and goes in `.owner-ledger.jsonl` by hash. People may edit a card's title,
+  body, `to`, `urgency` and `expires` in an editor (an "edited by hand" receipt); edits to `status`,
+  `from*`, `proof` or the receipts are put back from `events.jsonl` (crewd, every minute, or
+  `pal desk check`). A file that doesn't parse is left exactly as it is and listed as unreadable.
+  Pals writing into `crew-desk` are held (`desk-write`, shell and edit tools). Only the card's pal
+  (any topic), the owner, or its sender (cancel, while queued or held) changes a card.
+- **The card format is parsed twice** (`crewdesk.parse` and `parseCard` in crew.js): change both
+  and the fixtures in `tests/fixtures/desk/` together. A body line that is exactly `## Receipts` or
+  `## Reply` is written with a leading `\`.
+- **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal), `now` is the owner's
+  only, and a `--re` thread stops at 6 cards deep.
+- **The shipped `pal-desk` skill** is replaced on update only while it's unchanged since the last
+  install (`data/crew-skills/.shipped.json` keeps its hash); an edited one is kept and the new one
+  is written beside it as `SKILL.md.new`.
 
 ## Done when
 
@@ -832,3 +876,12 @@ rectangular segments and tags.
   (`node tests/test_launch.mjs`).
 - Rolling 0.4 back to 0.3.x leaves `~/.claude/settings.json` with only the person's own PostToolUse
   and Stop hooks.
+- `pal tell Helper#build "x"` from a pal writes a card (`pal desk ls --all`), and the hook's hand-over
+  marks it `seen · hook:post-tool-use`; `pal desk done <id> "ok"` from another pal is refused, from
+  any Helper topic it closes it, and the sender's callback carries the result (`tests/test_desk.py`).
+- With zero pals, `pal desk send route "idea"` lands in To route, and the Desk view shows the
+  empty state with Hire; Ctrl+Shift+D opens the quick-drop.
+- Editing a card's `status:` by hand is put back within a minute; editing its title is kept with an
+  "edited by hand" receipt; an owner card edited by hand shows "edited after sending · unverified"
+  until Confirm as mine.
+- `node tests/test_desk_parser.mjs` and `node tests/test_desk_view.mjs` pass.

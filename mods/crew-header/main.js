@@ -7,13 +7,19 @@
 // 2026-11-08 (channels switch from the hero's list; "no agent" shows there). In a room: the room's
 // members. Under it is the channel's terminal (terminal-first, DeNon 2026-11-08).
 // keys.json / herdr-app do: crew-header.search opens the command bar from anywhere.
+// The Desk (design §11.1): a "Desk N" button on the right (open cards; amber while any are held)
+// toggles the Desk view, the center stack's desk-view. crew-header.drop (Ctrl+Shift+D) opens the
+// quick-drop composer, crew-header.desk the view. The header is always shown, so it's the one place
+// that reads the desk's counts (`pal desk ls --all --json`, when data/crew-desk changes, else every
+// 10 s) and publishes them as shared("crew.desk") = { counts, at } for the other mods.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, theme, focused, layout, nextCommand, shared, setShared } from "herdr";
-import { shownRoom, roomMembers, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX } from "./crew.js";
+import { spaces, theme, focused, layout, nextCommand, shared, setShared, watchFolder, appHome } from "herdr";
+import { shownRoom, roomMembers, mascotEl, mood, tone, ds, commandField, openCommandBar, splitButtons, FIELD_MAX,
+  loadDesk, deskMode, showDesk, showTabs, openDrop, keyHint, DESK_DIR } from "./crew.js";
 
-const SIDE = 70;         // the split buttons' side, kept clear on both sides so the field stays centred
+const SIDE = 160;        // the Desk button and the split buttons, kept clear on both sides so the field stays centred
 const FIELD_Y = 11;      // (52 - 30) / 2
 
 const findNode = (n, id) => { if (n?.id === id) return n; for (const c of n?.children ?? []) { const f = findNode(c, id); if (f) return f; } return null; };
@@ -28,9 +34,60 @@ export default class CrewHeader extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "search") this.open(null);
+        if (c === "drop") openDrop();
+        if (c === "desk") this.toggleDesk();
         cx.notify();
       }
     });
+    // The desk's counts: on every change under data/crew-desk, with a 10 s timer as the fallback
+    // (and a minute's check even while the watch works).
+    this.watching = false;
+    this.lastDesk = 0;
+    this.deskBusy = false;
+    this.deskAgain = false;
+    this.refreshDesk(cx);
+    cx.timer.every(10000, (cx) => { if (!this.watching || Date.now() - this.lastDesk > 60000) this.refreshDesk(cx); });
+    cx.spawn(async (cx) => {
+      for (;;) {
+        try { await watchFolder(`${appHome()}/${DESK_DIR}`); this.watching = true; }
+        catch { this.watching = false; return; }   // no desk folder yet (or too big): the timer carries on
+        this.refreshDesk(cx);
+      }
+    });
+  }
+
+  refreshDesk(cx) {
+    if (this.deskBusy) { this.deskAgain = true; return; }
+    this.deskBusy = true;
+    cx.spawn(async (cx) => {
+      try {
+        const { counts } = await loadDesk();
+        this.lastDesk = Date.now();
+        const was = shared("crew.desk")?.counts;
+        if (JSON.stringify(was) !== JSON.stringify(counts)) setShared("crew.desk", { counts, at: this.lastDesk });
+      } catch { /* no pal desk yet (an older install): no count */ }
+      this.deskBusy = false;
+      if (this.deskAgain) { this.deskAgain = false; this.refreshDesk(cx); }
+      cx.notify();
+    });
+  }
+
+  toggleDesk() { if (deskMode()) showTabs(); else showDesk(); }
+
+  deskButton(d) {
+    const c = shared("crew.desk")?.counts ?? {};
+    const open = c.open ?? 0, held = c.held ?? 0;
+    const on = deskMode();
+    const hint = keyHint("crew-header.drop");
+    return div().id("desk-btn").h(26).flex().flex_none().items_center().gap(6).px(8).rounded(d.r.sm).cursor_pointer()
+      .bg(on ? d.sel : "#00000000").border_1().border_color(on ? d.lineMid : "#00000000").hover((s) => s.bg(d.hover))
+      .tooltip(`The Desk: every pal's cards${held ? ` · ${held} held` : ""}${hint ? ` · ${hint} drops a card` : ""}`)
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.toggleDesk(); cx.notify(); })
+      .child(svg("mods/crew-roster/icons/ds-inbox.svg").size(13).text_color(held ? d.warnText : on ? d.fg1 : d.fg2))
+      .child(div().text_size(12).font_weight(500).text_color(on ? d.fg1 : d.fg2).child("Desk"))
+      .when(open > 0, (el) => el.child(div().px(5).h(16).flex().items_center().rounded(3)
+        .bg(held ? "#E8AA0A29" : d.raised).border_1().border_color(held ? "#E8AA0A47" : d.line)
+        .text_size(11).font_family(d.mono).text_color(held ? d.warnText : d.fg2).child(String(open))));
   }
 
   fieldW() { return Math.max(200, Math.min(FIELD_MAX, this.w - 2 * (SIDE + 16))); }
@@ -79,6 +136,7 @@ export default class CrewHeader extends View {
       .child(h_flex().flex_1().flex_basis(0).min_w(0))
       .child(commandField(d, { w: this.fieldW(), onOpen: (e) => this.open(e) }))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
-        .child(space && tab ? splitButtons(d) : div()));
+        .child(this.deskButton(d))
+        .child(space && tab && !deskMode() ? splitButtons(d) : div()));
   }
 }
