@@ -3,11 +3,12 @@
 ## 0.4.0 (not released yet): the Desk
 
 ### New
-- **Home: one page to come back to.** Click your head pal (or press Ctrl+Shift+H) for its Home:
-  everything that needs you, oldest first, with one-click Approve, Decline and answers; what
-  finished, got installed or was linked since you last looked; who's working and for how long,
-  and what's held or stuck; public, installed and next release; and what you parked. Your head
-  pal keeps its decisions, logins and links there with `pal home`.
+- **Home: one page to come back to.** Click your head pal (or press Ctrl+Shift+H): one list of
+  everything that needs you, oldest first, with one-click Approve, Decline and answers, under one
+  line saying who's working and what shipped today; "All caught up" when there's nothing.
+  "What happened today" opens a drawer with what finished, got installed or was linked, who's
+  working, releases, and what you parked. Your head pal keeps its decisions, logins and links
+  there with `pal home`.
 - **Every pal has a desk.** Everything sent to a pal (a tell, a question, a task, how something
   you asked went) is now a card with a status: queued, seen, working, done, held or needs you.
   You see when a pal actually got it, and its result, instead of guessing from its screen.

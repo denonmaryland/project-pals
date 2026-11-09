@@ -1,39 +1,42 @@
-// Home: the head pal's page (RECIPE "Home"; mock: data/crew-boards/orca-home; DeNon via Orca,
-// 2026-11-08). What you come back to after working in parallel, instead of the head pal's terminal
+// Home: the head pal's page (RECIPE "Home"; mocks: data/crew-boards/orca-home, index.html and
+// simple.html). What you come back to after working in parallel, instead of the head pal's terminal
 // scroll. The center stack's fourth child (home-view, beside the topic's terminal, rooms and the
-// Desk). Clicking the head pal opens it; so do the hero's Home pebble, the command bar and
+// Desk). Clicking the head pal opens it; so do its hero's Home pebble, the command bar and
 // Ctrl+Shift+H (crew-roster.home), and again goes back to the topic.
 //
-// Five boxes, most important first:
+// "Inbox zero" (DeNon's pick, 2026-11-08, from five simpler directions): the page is one list.
+// - "Needs you N", and one status line built from the data: who's working (and on what), what
+//   shipped today (a release, else the last install), held or stuck in amber, crewd down in amber.
 // - Needs you: everything waiting on the owner, oldest first, each a 76 px card with its age and
 //   one-click actions: approvals (Approve / Decline), the head pal's questions (one button per
 //   option: `pal home answer`, which tells the asker as a card from the owner), logins (Copy, Open
 //   the topic), topics asking you (Open), Desk cards waiting on you (Done, Open in Desk), proposals
-//   (Decline, View) and stuck topics (Open). Up to four show, then "+N more" and it scrolls.
-// - Since you last looked (home.json `seen`; Mark all seen): installs with their build hash, tasks
-//   done, topics that finished (24 h at most, Orca's call), answers, links (boards, previews),
-//   notes, and cards the head pal closed.
-// - In progress: every working topic (how long, its terminal title), held and stuck ones, and what's
-//   open on the head pal's desk (Home is its Desk: Orca's call, 2026-11-08).
-// - Releases & shipping: public (GitHub) vs installed (with the build) vs next, what's queued for it,
-//   pending deploys.
-// - Parked: things put off; Unpark puts one back, Drop closes it.
+//   (Decline, View) and stuck topics (Open). Answering removes a card; the next one takes its slot.
+// - Nothing waiting: a calm "All caught up" with the head pal's pet.
+// - "What happened today ›" opens a 420 px drawer on the right (again, or ×, closes it) with tabs:
+//   Today (installs with their build hash, tasks done, topics finished, answers, links, notes, cards
+//   the head pal closed; blue while new; Mark all seen), Working (every working topic, held and
+//   stuck ones, what's open on the head pal's desk: Home is its Desk), Releases (public / installed
+//   + build / next, queued, deploys) and Parked (Unpark, Drop).
 //
 // Nothing jumps (DeNon's fixed-height rule): every row has a fixed height, counts and ages sit in
-// fixed right-aligned slots, text truncates, and each box scrolls on its own (our pill thumb).
+// fixed right-aligned slots, text truncates, and lists scroll on their own (our pill thumb).
 // Data is read only while Home shows: every 4 s (files) and 10 s (the desk), and at once when shown.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, agents, shared, run, notify, exec, appHome, readTextFile, settings } from "herdr";
 import {
-  ds, tone, scrollArea, scrollState, scrollTo, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
+  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
   openProposalPanel, workingMark, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
 } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
-const CARD = 76, ROW = 36, PROW = 48, BOXHEAD = 36, NEED_SHOWN = 4, AGE_W = 52, COUNT_W = 28;
+const CARD = 76, ROW = 36, PROW = 48, AGE_W = 52, DRAWER_W = 420;
+const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"]];
+const hhmm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`; };
+const midnight = (now = Date.now()) => { const t = new Date(now); t.setHours(0, 0, 0, 0); return t.getTime(); };
 const short = (name) => String(name ?? "").split(" - ")[0];
 const clip = (s, n) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
@@ -53,6 +56,8 @@ export default class CrewHome extends View {
     this.shown = false;
     this.loading = false;
     this.deskAt = 0;
+    this.drawer = null;   // null, or a TABS key
+    try { this.lastTab = localStorage.getItem("drawer-tab") || "today"; } catch { this.lastTab = "today"; }
     cx.timer.every(4000, (cx) => { if (homeMode()) this.reload(cx); });
     // Ages ("12m") stay true while it shows.
     cx.timer.every(60000, (cx) => { if (homeMode()) cx.notify(); });
@@ -139,9 +144,9 @@ export default class CrewHome extends View {
   }
 
   since() {
-    const seen = this.home.seen || 0;
+    // What happened today (since local midnight); what's newer than "Mark all seen" is blue.
     const now = Date.now();
-    const floor = Math.max(seen, now - 7 * 86400000);
+    const floor = midnight(now);
     const out = [];
     for (const i of this.installs) if (i.at > floor) out.push({ kind: "install", at: i.at, i });
     for (const x of this.home.items) {
@@ -149,7 +154,7 @@ export default class CrewHome extends View {
       else if (x.status === "answered" && (x.answered_at ?? 0) > floor) out.push({ kind: "answered", at: x.answered_at, x });
       else if (x.status === "done" && (x.closed_at ?? 0) > floor && x.kind !== "link" && x.kind !== "note") out.push({ kind: "closed", at: x.closed_at, x });
     }
-    for (const f of feedSince(this.feed, seen, now)) out.push(f);
+    for (const f of feedSince(this.feed, floor, now)) out.push(f);
     // Cards the head pal closed (Home is its Desk).
     const hs = this.headSlug();
     for (const c of this.cards) {
@@ -208,16 +213,6 @@ export default class CrewHome extends View {
     return div().flex_none().h(16).px(5).flex().items_center().rounded(3).border_1().border_color(color + "66")
       .text_size(9.5).line_height("14px").font_weight(600).text_color(color).child(word.toUpperCase());
   }
-
-  box(d, id, title, count, { right = null, warn = false } = {}) {
-    return h_flex().id(`${id}-head`).h(BOXHEAD).flex_none().items_center().gap(8).pl(14).pr(12).border_b_1().border_color(d.line)
-      .child(div().flex_none().text_size(12).line_height("16px").font_weight(600).text_color(d.fg1).child(title))
-      .child(div().w(COUNT_W).flex_none().text_size(11).line_height("14px").font_weight(500).text_color(warn && count ? d.warnText : d.fg2).child(count == null ? "" : String(count)))
-      .child(div().flex_1())
-      .when(Boolean(right), (el) => el.child(right));
-  }
-
-  frame(d, id) { return v_flex().id(id).min_h(0).overflow_hidden().rounded(8).border_1().border_color(d.line).bg(d.bg1); }
 
   age(d, at, old = false) {
     return div().w(AGE_W).flex_none().text_right().text_size(11.5).line_height("16px").font_weight(500).text_color(old ? d.warnText : d.fg2).child(homeAge(at));
@@ -303,26 +298,105 @@ export default class CrewHome extends View {
       .child(this.age(d, n.at, Date.now() - (n.at || Date.now()) > 3600000));
   }
 
-  needsBox(d, t, list) {
-    if (!list.length) {
-      return h_flex().id("needs-clear").h(52).flex_none().items_center().gap(12).px(14).rounded(8).border_1().border_color(d.line).bg(d.bg1)
-        .child(this.tag(d, "All clear", d.okHi))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(d.body).child(`Nothing needs you. Approvals, questions and ${headName()}'s decisions land here first.`));
-    }
-    const SID = "home-needs";
-    const shown = Math.min(list.length, NEED_SHOWN);
-    const sc = scrollState(SID);
-    const below = list.length > NEED_SHOWN ? Math.max(0, list.length - Math.floor((sc.y + shown * CARD + 1) / CARD)) : 0;
-    const more = list.length > NEED_SHOWN;
-    const kinds = {};
-    for (const n of list.slice(NEED_SHOWN)) kinds[n.kind] = (kinds[n.kind] ?? 0) + 1;
+  // The page's list: every card, in a box that takes the rest of the page and scrolls.
+  needsList(d, t, list) {
     const body = v_flex().children(list.map((n, i) => this.needCard(d, t, n, i === 0)));
-    return this.frame(d, "needs-box").flex_none()
-      .child(this.box(d, "needs", "Needs you", list.length, { warn: true, right: div().text_size(11.5).text_color(d.fg2).child("oldest first") }))
-      .child(more ? scrollArea(d, SID, body).h(shown * CARD).flex_none() : body)
-      .when(more, (el) => el.child(h_flex().id("needs-more").h(30).flex_none().items_center().justify_center().border_t_1().border_color(d.line).cursor_pointer()
-        .hover((s) => s.bg(d.hover)).on_click((_e, cx) => { scrollTo(SID, below ? Infinity : 0); cx.notify(); })
-        .child(div().text_size(11.5).text_color(d.fg2).child(below ? `+${below} more · ${Object.entries(kinds).map(([k, v]) => `${v} ${k}`).join(", ")} · scroll` : "back to the top"))));
+    return v_flex().id("needs-box").flex_1().min_h(0).overflow_hidden().rounded(8).border_1().border_color(d.line).bg(d.bg1)
+      .child(scrollArea(d, "home-needs", body).flex_1().min_h(0));
+  }
+
+  // Nothing waiting: the head pal's pet, "All caught up", one quiet line.
+  caughtUp(d, t) {
+    const answered = this.home.items.filter((x) => x.status === "answered" && (x.answered_at ?? 0) >= midnight()).length;
+    const head = headName();
+    return v_flex().id("caught-up").flex_1().min_h(0).items_center().justify_center().gap(10)
+      .child(this.face(head, "idle", 120, t))
+      .child(div().pt(6).text_size(18).line_height("24px").font_weight(600).text_color(d.fg1).child("All caught up"))
+      .child(div().text_size(12.5).line_height("18px").text_color(d.fg2)
+        .child(answered ? `${answered} decision${answered === 1 ? "" : "s"} answered today. ${head} puts new ones here first.` : `Nothing needs you. ${head} puts new decisions here first.`));
+  }
+
+  // The one status line, from the data: who's working (and on what), what shipped today, held or
+  // stuck, crewd down. Fixed 20 px; it truncates.
+  statusLine(d, prog) {
+    const now = Date.now(), today = midnight(now);
+    const parts = [];
+    const working = prog.rows.filter((r) => !r.idle);
+    const dot = (c) => div().size(6).flex_none().rounded(3).bg(c);
+    const sep = () => div().flex_none().text_color(d.fg4).child("·");
+    const line = h_flex().id("status-line").h(20).flex_none().items_center().gap(8).min_w(0).overflow_hidden().text_size(12).line_height("16px").text_color(d.fg2);
+    if (working.length) {
+      const byPal = new Map();
+      for (const r of working) (byPal.get(short(r.s.name)) ?? byPal.set(short(r.s.name), []).get(short(r.s.name))).push(`#${r.ch}`);
+      const who = [...byPal.entries()].map(([p, chs]) => `${p} on ${chs.length > 2 ? `${chs.length} topics` : chs.join(" and ")}`).join(", ");
+      parts.push(h_flex().flex_none().gap(6).items_center().child(div().flex_none().child(workingMark(d)))
+        .child(div().flex_none().font_weight(500).text_color(d.body).child(`${working.length} working`)));
+      parts.push(div().min_w(0).truncate().child(who));
+    } else parts.push(div().flex_none().child("Nobody's working"));
+    const pub = this.update.published ? Date.parse(this.update.published) : 0;
+    const inst = this.installs.find((i) => i.at >= today && i.build);
+    if (pub >= today && this.update.latest) parts.push(h_flex().flex_none().gap(6).items_center().child(dot(d.ok))
+      .child(div().font_weight(500).text_color(d.body).child(`${this.update.latest} shipped`)).child(div().child(hhmm(pub))));
+    else if (inst) parts.push(h_flex().flex_none().gap(6).items_center().child(dot("#8A5CF0"))
+      .child(div().font_weight(500).text_color(d.body).child(`Installed ${inst.build.hash}`)).child(div().child(hhmm(inst.at))));
+    const held = prog.rows.filter((r) => r.held).length, stuck = prog.rows.filter((r) => r.stuck).length;
+    if (held || stuck) parts.push(div().flex_none().text_color(d.warnText).child([held ? `${held} held` : null, stuck ? `${stuck} stuck` : null].filter(Boolean).join(" · ")));
+    if (!this.ops.daemon) parts.push(div().flex_none().text_color(d.warnText).child("crewd isn't running: messages wait"));
+    parts.forEach((p, i) => { if (i > 1 || (i === 1 && !working.length)) line.child(sep()); line.child(p); });
+    return line;
+  }
+
+  // The drawer: what happened today and the rest, 420 px on the right, over the page.
+  drawerEl(d, t, since, prog) {
+    const tab = this.drawer;
+    const seen = this.home.seen || 0;
+    const nNew = since.filter((r) => r.at > seen).length;
+    const nPark = this.home.items.filter((x) => x.status === "parked").length;
+    const count = { today: nNew || null, working: prog.rows.length || null, releases: null, parked: nPark || null };
+    const tabs = h_flex().h(40).flex_none().items_end().gap(2).px(10).border_b_1().border_color(d.line)
+      .children(TABS.map(([k, label]) => {
+        const on = tab === k;
+        return h_flex().id(`drawer-tab-${k}`).h(32).flex_none().items_center().gap(6).px(10).cursor_pointer()
+          .border_b_2().border_color(on ? d.fg1 : "#00000000")
+          .on_click((_e, cx) => { this.openDrawer(k); cx.notify(); })
+          .child(div().text_size(12.5).font_weight(on ? 600 : 500).text_color(on ? d.fg1 : d.fg2).child(label))
+          .child(div().w(18).flex_none().text_size(11).text_color(k === "today" && nNew ? d.infoText : d.fg3).child(count[k] ? String(count[k]) : ""));
+      }))
+      .child(div().flex_1())
+      .child(div().id("drawer-x").size(26).mb(7).flex_none().flex().items_center().justify_center().rounded(d.r.sm).cursor_pointer()
+        .tooltip("Close").hover((s) => s.bg(d.hover)).on_click((_e, cx) => { this.drawer = null; cx.notify(); })
+        .child(svg(`${ICON}/x.svg`).size(11).text_color(d.fg3)));
+    let body;
+    if (tab === "today") {
+      const markAll = h_flex().id("mark-seen").h(22).px(6).flex_none().items_center().rounded(d.r.xs)
+        .when(!this.busy.seen && nNew > 0, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => this.act("seen", ["home", "seen"], null, cx)))
+        .child(div().text_size(11.5).text_color(nNew && !this.busy.seen ? d.body : d.fg4).child("Mark all seen"));
+      body = v_flex().flex_1().min_h(0)
+        .child(h_flex().h(32).flex_none().items_center().pl(14).pr(8).border_b_1().border_color(d.lineSoft)
+          .child(div().flex_1().text_size(11.5).text_color(d.fg2).child(nNew ? `${nNew} new since you last looked` : "Nothing new since you last looked"))
+          .child(markAll))
+        .child(since.length ? scrollArea(d, "home-since", v_flex().children(since.map((r, i) => this.sinceRow(d, r, i)))).flex_1().min_h(0)
+          : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nothing happened yet today."));
+    } else if (tab === "working") {
+      const pb = v_flex().children(prog.rows.map((r, i) => this.progressRow(d, t, r, i)));
+      if (prog.desk.length) {
+        pb.child(h_flex().h(28).flex_none().items_center().px(14).border_t_1().border_color(d.line)
+          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`On ${headName()}'s desk · ${prog.desk.length}`)));
+        pb.children(prog.desk.map((c, i) => this.deskRow(d, c, i)));
+      }
+      body = prog.rows.length || prog.desk.length ? scrollArea(d, "home-prog", pb).flex_1().min_h(0)
+        : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nobody's working right now.");
+    } else if (tab === "releases") body = this.releaseBody(d);
+    else body = this.parkedBody(d);
+    return v_flex().id("home-drawer").absolute().top(0).right(0).bottom(0).w(DRAWER_W).bg(d.bg1).border_l_1().border_color(d.lineStrong).shadow_lg()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(tabs).child(body);
+  }
+
+  openDrawer(k) {
+    this.drawer = k;
+    this.lastTab = k;
+    try { localStorage.setItem("drawer-tab", k); } catch {}
   }
 
   sinceRow(d, r, i) {
@@ -390,7 +464,7 @@ export default class CrewHome extends View {
       .child(div().w(40).flex_none().text_right().text_size(11).text_color(d.fg4).child(homeAge(Date.parse(c.created ?? "") || 0)));
   }
 
-  releaseBox(d) {
+  releaseBody(d) {
     const ins = this.install ?? {};
     const b = ins.build ?? null;
     const rel = this.home.release;
@@ -425,15 +499,15 @@ export default class CrewHome extends View {
         .child(div().min_w(0).truncate().text_size(12.5).text_color(d.body).child(r.text)))
       .child(div().flex_none().max_w(120).truncate().text_size(11).text_color(d.fg2).child(r.right))
       .child(div().w(40).flex_none().text_right().text_size(11).text_color(d.fg4).child(r.dot ? homeAge(r.at) : ""))));
-    const checked = this.update.checked ? `checked ${hm(when(this.update.checked))}` : "";
-    return this.frame(d, "rel-box").flex_1()
-      .child(this.box(d, "rel", "Releases & shipping", null, { right: div().text_size(11.5).text_color(d.fg2).child(checked) }))
+    const checked = this.update.checked ? `GitHub checked ${hm(when(this.update.checked))}` : "";
+    return v_flex().flex_1().min_h(0)
       .child(strip)
       .child(rows.length ? scrollArea(d, "home-rel", list).flex_1().min_h(0)
-        : div().px(14).py(10).text_size(12).text_color(d.fg4).child(`Nothing queued. ${headName()} adds to it with pal home queue.`));
+        : div().px(14).py(10).text_size(12).text_color(d.fg4).child(`Nothing queued. ${headName()} adds to it with pal home queue.`))
+      .child(div().h(28).flex_none().px(14).flex().items_center().border_t_1().border_color(d.line).text_size(11).text_color(d.fg4).child(checked));
   }
 
-  parkedBox(d) {
+  parkedBody(d) {
     const list = this.home.items.filter((x) => x.status === "parked").sort((x, y) => (y.parked_at ?? y.at) - (x.parked_at ?? x.at));
     const link = (id, label, onClick, disabled) => div().id(id).flex_none().text_size(11.5).text_color(disabled ? d.fg4 : d.fg2)
       .when(!disabled, (el) => el.cursor_pointer().hover((s) => s.text_color(d.fg1)).on_click((_e, cx) => onClick(cx))).child(label);
@@ -445,8 +519,7 @@ export default class CrewHome extends View {
       .child(div().text_size(11.5).text_color(d.fg4).child("·"))
       .child(link(`park-drop-${x.id}`, "Drop", (cx) => this.act(`park-${x.id}`, ["home", "drop", x.id], null, cx), this.busy[`park-${x.id}`]))
       .child(div().w(40).flex_none().text_right().text_size(11).text_color(d.fg4).child(homeAge(x.parked_at ?? x.at)))));
-    return this.frame(d, "park-box").flex_1()
-      .child(this.box(d, "park", "Parked", list.length, { right: div().text_size(11.5).text_color(d.fg2).child("later") }))
+    return v_flex().flex_1().min_h(0)
       .child(list.length ? scrollArea(d, "home-park", body).flex_1().min_h(0)
         : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nothing parked. Park a decision to take it off Needs you."));
   }
@@ -456,51 +529,26 @@ export default class CrewHome extends View {
     const d = ds(t);
     const shown = homeMode();
     if (shown && !this.shown) { this.loading = false; this.reload(cx, true); }
+    if (!shown && this.shown) this.drawer = null;   // left Home: the drawer is closed next time
     this.shown = shown;
-    const head = headName(), own = ownerName();
-    const needs = this.needs(), since = this.since(), prog = this.progress();
-    const seen = this.home.seen || 0;
-    const nNew = since.filter((r) => r.at > seen).length;
-    const tile = (id, value, label, color) => v_flex().id(id).h(44).w(112).flex_none().justify_center().px(10).rounded(6).border_1().border_color(d.line).bg(d.bg1)
-      .child(div().text_size(15).line_height("18px").font_weight(600).text_color(color).child(String(value)))
-      .child(div().truncate().text_size(11).line_height("14px").text_color(d.fg2).child(label));
-    const nextRel = this.home.release.next ?? this.install.version ?? "—";
-    const sub = [seen ? `You last looked ${homeAge(seen)} ago` : "First look", this.ops.daemon ? "crewd running" : "crewd isn't running: messages aren't delivered"].join(" · ");
-    const page = v_flex().id("home-page").size_full().px(24).pt(8).pb(20).gap(16)
-      .child(h_flex().h(48).flex_none().items_end().gap(16)
-        .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(18).line_height("24px").font_weight(600).text_color(d.fg1).child(`Welcome back, ${own}`))
-          .child(div().truncate().text_size(12).line_height("16px").text_color(this.ops.daemon ? d.fg2 : d.warnText).child(sub)))
-        .child(h_flex().flex_none().gap(6)
-          .child(tile("t-needs", needs.length, "need you", needs.length ? d.warnText : d.fg2))
-          .child(tile("t-since", nNew, "since you looked", nNew ? d.okHi : d.fg2))
-          .child(tile("t-prog", prog.rows.length, "in progress", prog.rows.length ? d.infoText : d.fg2))
-          .child(tile("t-next", nextRel, this.home.release.next ? "next release" : "installed", d.fg1))))
-      .child(this.needsBox(d, t, needs));
-    // Since you last looked
-    const markAll = div().id("mark-seen").flex_none().h(22).px(6).flex().items_center().rounded(d.r.xs)
-      .when(!this.busy.seen, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => this.act("seen", ["home", "seen"], null, cx)))
-      .child(div().text_size(11.5).text_color(nNew && !this.busy.seen ? d.body : d.fg4).child("Mark all seen"));
-    const sinceBox = this.frame(d, "since-box").flex_1()
-      .child(this.box(d, "since", "Since you last looked", nNew, { right: markAll }))
-      .child(since.length ? scrollArea(d, "home-since", v_flex().children(since.map((r, i) => this.sinceRow(d, r, i)))).flex_1().min_h(0)
-        : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nothing new since you last looked."));
-    // In progress
-    const nHeld = prog.rows.filter((r) => r.held).length, nStuck = prog.rows.filter((r) => r.stuck).length;
-    const progBody = v_flex().children(prog.rows.map((r, i) => this.progressRow(d, t, r, i)));
-    if (prog.desk.length) {
-      progBody.child(h_flex().h(28).flex_none().items_center().px(14).border_t_1().border_color(d.line)
-        .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`On ${head}'s desk · ${prog.desk.length}`)));
-      progBody.children(prog.desk.map((c, i) => this.deskRow(d, c, i)));
-    }
-    const progBox = this.frame(d, "prog-box").flex_1()
-      .child(this.box(d, "prog", "In progress", prog.rows.length, { right: div().text_size(11.5).text_color(nHeld || nStuck ? d.warnText : d.fg2).child(`${nHeld} held · ${nStuck} stuck`) }))
-      .child(prog.rows.length || prog.desk.length ? scrollArea(d, "home-prog", progBody).flex_1().min_h(0)
-        : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nobody's working right now."));
-    page.child(h_flex().flex_1().min_h(0).gap(16)
-      .child(v_flex().flex_1().min_w(0).h_full().gap(16).child(sinceBox).child(this.releaseBox(d)))
-      .child(v_flex().flex_1().min_w(0).h_full().gap(16).child(progBox).child(this.parkedBox(d))));
-    if (!this.loaded) page.child(div().absolute().top(12).right(24).text_size(11).text_color(d.fg4).child("reading…"));
-    return v_flex().id("crew-home").relative().size_full().bg(d.bg0).text_color(d.fg1).child(page);
+    const needs = this.needs(), prog = this.progress();
+    const since = this.drawer === "today" ? this.since() : [];
+    const open = Boolean(this.drawer);
+    const link = h_flex().id("what-happened").h(22).px(6).mb(2).flex_none().items_center().gap(4).rounded(d.r.xs).cursor_pointer()
+      .when(open, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
+      .on_click((_e, cx) => { if (open) this.drawer = null; else this.openDrawer(this.lastTab || "today"); cx.notify(); })
+      .child(div().text_size(12).text_color(d.infoText).child(open ? "Close ×" : "What happened today ›"));
+    const page = v_flex().id("home-page").size_full().px(28).pt(20).pb(24).gap(12)
+      .child(h_flex().h(28).flex_none().items_end().gap(12)
+        .child(div().flex_none().text_size(20).line_height("26px").font_weight(600).text_color(d.fg1).child("Needs you"))
+        .child(div().w(40).flex_none().text_size(20).line_height("26px").font_weight(600).text_color(needs.length ? d.warnText : d.fg3).child(String(needs.length)))
+        .child(div().flex_1())
+        .child(link))
+      .child(this.statusLine(d, prog))
+      .child(needs.length ? this.needsList(d, t, needs) : this.caughtUp(d, t));
+    if (!this.loaded) page.child(div().absolute().top(12).right(28).text_size(11).text_color(d.fg4).child("reading…"));
+    return v_flex().id("crew-home").relative().size_full().bg(d.bg0).text_color(d.fg1)
+      .child(page)
+      .when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
   }
 }
