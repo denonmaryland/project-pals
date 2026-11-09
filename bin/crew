@@ -32,7 +32,10 @@ The Desk (everything sent to you is a card with a status and receipts)
 
 Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
   pal home [--json]                 what's on Home
-  pal home ask "question" [--option A]... [--topic P#t] [--body …]   a decision for the owner (options: one click each)
+  pal home ask "question" [--option A [--does "what A does"]]... [--recommend A --why "…"] [--topic P#t]
+            [--body …] [--link URL]... [--image FILE]...   a decision for the owner (options: one click each)
+  pal home recommend <a-…|c-…|h-…> <option> --why "…"   your pick for an approval (approve|decline),
+                                     a Desk card (done|open) or an ask (one of its options)
   pal home login "! npx vercel login" --topic P#t [--title …]       a login the owner runs in that topic
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.3.1] [--note "…"] | unqueue ID   the next release and what's in it
@@ -1865,16 +1868,31 @@ def cmd_home(spaces, rest):
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
     me, name = whoami(spaces)
     by = me or name
-    # --option can be given more than once.
-    options, clean, i = [], [], 0
+    # Repeatable: --option (each may be followed by --does "what it does"), --link, --image.
+    options, does, links, images, clean, i = [], [], [], [], [], 0
     while i < len(args):
-        if args[i] == "--option" and i + 1 < len(args):
-            options.append(args[i + 1]); i += 2
+        a = args[i]
+        if a in ("--option", "--does", "--link", "--image") and i + 1 < len(args):
+            v = args[i + 1]
+            if a == "--option":
+                options.append(v)
+            elif a == "--does":
+                if not options:
+                    die("--does goes right after the --option it explains")
+                does.extend([""] * (len(options) - 1 - len(does)))
+                if len(does) >= len(options):
+                    die("one --does per --option")
+                does.append(v)
+            elif a == "--link":
+                links.append(v)
+            else:
+                images.append(v)
+            i += 2
         else:
-            clean.append(args[i]); i += 1
+            clean.append(a); i += 1
     args = clean
-    if options and sub != "ask":
-        die("only pal home ask takes --option")
+    if (options or does or links or images) and sub != "ask":
+        die("only pal home ask takes --option, --does, --link and --image")
     try:
         if sub in ("ls", "list", "show"):
             pos, o = opts(args, (), ("json", "all"))
@@ -1890,9 +1908,17 @@ def cmd_home(spaces, rest):
                 for q in rel["queued"]:
                     print(f"  {q['id']}  {q['text']}")
         elif sub == "ask" and args:
-            pos, o = opts(args, ("topic", "body"))
-            x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")))
+            pos, o = opts(args, ("topic", "body", "recommend", "why"))
+            if len(images) > crewhome.IMAGES_MAX:
+                die(f"at most {crewhome.IMAGES_MAX} images")
+            imgs = [str(Path(desk_attach(f)).resolve().relative_to(DATA)) for f in images]
+            x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")),
+                             does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs)
             print(crewhome.line(x))
+        elif sub == "recommend" and len(args) >= 2:
+            pos, o = opts(args, ("why",))
+            rec = crewhome.recommend(pos[0], " ".join(pos[1:]), by=by, why=o.get("why"))
+            print(f"recommended {rec['option']} for {pos[0]}" + (f": {rec['why']}" if rec.get("why") else ""))
         elif sub == "login" and args:
             pos, o = opts(args, ("topic", "title"))
             if not o.get("topic"):

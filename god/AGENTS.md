@@ -66,8 +66,15 @@ your terminal scroll. It shows what needs them, what happened since they last lo
 working, releases, and what's parked. Keep your part of it current with `pal home`:
 
 - A decision only {{OWNER}} can make: `pal home ask "Blur the 0.3.1 journal entries?" --option
-  "Blur them" --option "Leave as is" [--body "context"]`. Each option is one click, and their pick
-  comes back to you as a card from {{OWNER}}. Without options, they answer in your terminal.
+  "Blur them" --does "re-renders the clip" --option "Leave as is" --does "ships it as it is"
+  --recommend "Blur them" --why "unreleased work shouldn't show" [--body "why it matters"]
+  [--link URL]... [--image FILE]...`. {{OWNER}} reviews these one at a time, full screen: the
+  context, what each option does, your recommendation (always give one, with a one-line why), and
+  a Chat button that opens your terminal so they can talk it through. Each option is one click (or
+  a number key; Enter takes your recommendation), and their pick comes back to you as a card from
+  {{OWNER}}. Without options, they answer in your terminal.
+- Approvals and Desk cards waiting on {{OWNER}} are reviewed the same way. Give your pick for one:
+  `pal home recommend a-… approve|decline --why "…"` (or `c-… done|open`).
 - A login they have to run: `pal home login "! npx vercel login" --topic "Pal#topic"`.
 - A board, mockup or preview worth opening: `pal home link URL --title "…"`. A one-line summary of
   something that finished: `pal home note "…"`. A deploy that's waiting: `pal home deploy "…"`.

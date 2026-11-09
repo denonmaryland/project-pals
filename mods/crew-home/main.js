@@ -12,7 +12,14 @@
 //   option: `pal home answer`, which tells the asker as a card from the owner), logins (Copy, Open
 //   the topic), topics asking you (Open), Desk cards waiting on you (Done, Open in Desk), proposals
 //   (Decline, View) and stuck topics (Open). Answering removes a card; the next one takes its slot.
-// - Nothing waiting: a calm "All caught up" with the head pal's pet.
+// - The review (DeNon's pick, mock A of review.html): while anything waits, ONE item fills the page:
+//   progress dashes and "2 of 5", K Back · J Skip · L Later · Esc List; the asker (pet, Pal #topic,
+//   age); the title (24/600, two lines); the context (body, the command and diff for an approval,
+//   link chips, image thumbnails); the asker's Recommended banner with its why; the options as large
+//   cards (label, what it does, its number; the recommended one lit); "C Chat with <asker>" (the
+//   asking topic's live terminal in a window over Home; Muse when that topic is asleep). Keys: 1-9
+//   pick, Enter takes the recommended (nothing without one), C, J, K, L, Esc (to the list, which has
+//   "Review one at a time"). A decision slides to the next; the last ends on "All caught up".
 // - "What happened today ›" opens a 420 px drawer on the right (again, or ×, closes it) with tabs:
 //   Today (installs with their build hash, tasks done, topics finished, answers, links, notes, cards
 //   the head pal closed; blue while new; Mark all seen), Working (every working topic, held and
@@ -25,7 +32,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, spaces, agents, shared, run, notify, exec, appHome, readTextFile, settings } from "herdr";
+import { theme, spaces, agents, shared, run, notify, exec, appHome, home as homeDir, readTextFile, settings, openOverlay, nextCommand } from "herdr";
 import {
   ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
@@ -57,6 +64,13 @@ export default class CrewHome extends View {
     this.loading = false;
     this.deskAt = 0;
     this.drawer = null;   // null, or a TABS key
+    // The review (DeNon's pick, mock A of crew-boards/orca-home/review.html): one item at a time.
+    this.mode = "review";   // "review" or "list" (Esc)
+    this.at = 0;            // which item the review shows
+    this.atKey = null;      // …by key, so a refresh keeps it
+    this.handle = cx.focus_handle();
+    // mod.json "focusable": pane.go and a popup closing give Home the keyboard back.
+    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "focus") this.handle.focus(); cx.notify(); } });
     try { this.lastTab = localStorage.getItem("drawer-tab") || "today"; } catch { this.lastTab = "today"; }
     cx.timer.every(4000, (cx) => { if (homeMode()) this.reload(cx); });
     // Ages ("12m") stay true while it shows.
@@ -79,6 +93,8 @@ export default class CrewHome extends View {
       if (desk || Date.now() - this.deskAt > 10000) {
         try { const all = await loadDesk(true); this.cards = all.cards; this.deskAt = Date.now(); } catch {}
       }
+      // The first full read (on showing Home) starts the review at the oldest item.
+      if (this.fresh) { this.fresh = false; this.at = 0; this.atKey = null; }
       this.loaded = true;
       this.loading = false;
       cx.notify();
@@ -524,31 +540,250 @@ export default class CrewHome extends View {
         : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nothing parked. Park a decision to take it off Needs you."));
   }
 
+  // ── The review: one item at a time ─────────────────────────────────────────────────────────
+
+  // What one item shows and does: who asks, the words, the options (each { label, does, run, rec }).
+  spec(n) {
+    const recs = this.home.recs ?? {};
+    const topicOf = (spec) => (spec && spec.includes("#") ? spec : null);
+    const o = (label, does, run, extra = {}) => ({ label, does, run, ...extra });
+    const owner = (args, what) => (cx) => this.act(n.key, args, what, cx);
+    if (n.kind === "approval") {
+      const ap = n.ap, r = recs[ap.id];
+      return { tag: ["Approval", this.d.err], who: ap.bot, topic: `${ap.bot}#${ap.channel ?? ""}`, sub: `held ${homeAge(n.at)} ago · rule ${ap.rule ?? "?"} · ${ap.id}`,
+        title: `${short(ap.bot)} wants to ${wantsTo(ap.why || ap.rule)}`, mono: ap.command, diff: ap.diff ?? null,
+        rec: r ? { option: r.option === "approve" ? "Approve" : "Decline", why: r.why, by: r.by } : null,
+        options: [o("Decline", "The command is refused; the pal is told", owner(["deny", ap.id, "--inbox"], `Declined for ${short(ap.bot)}`)),
+          o("Approve", ap.diff ? "Lets exactly this edit through, once" : "Lets exactly this command run, once", owner(["approve", ap.id, "--inbox"], `Approved for ${short(ap.bot)}`), { gapBefore: true })] };
+    }
+    if (n.kind === "ask") {
+      const x = n.x;
+      const opts = (x.options ?? []).map((label, i) => o(label, x.does?.[i] || "", owner(["home", "answer", x.id, label], `You picked: ${label}`)));
+      if (!opts.length && x.by) opts.push(o(`Answer in #${(x.by.split("#")[1] ?? "topic")}`, "Shows the topic so you can reply there", () => this.openTopic(x.by)));
+      const later = (cx) => this.act(n.key, ["home", "park", x.id], null, cx);
+      opts.push(o("Park", "Decide later; it waits in Parked", later, { cap: "L" }));
+      return { tag: ["Decision", this.d.warnText], who: x.by, topic: topicOf(x.by) ?? x.topic, sub: `asked ${homeAge(n.at)} ago`, title: x.title, body: x.body,
+        links: x.links, images: x.images, rec: x.recommend ? { option: x.recommend, why: x.why, by: x.by } : null, options: opts, later };
+    }
+    if (n.kind === "login") {
+      const x = n.x, topic = x.topic ?? x.by, ch = (topic ?? "").split("#")[1];
+      return { tag: ["Login", this.d.infoText], who: x.by, topic, sub: `asked ${homeAge(n.at)} ago`, title: x.title, mono: x.command,
+        body: ch ? `Type it in #${ch}'s box: the ! runs it in that topic's terminal.` : null,
+        options: [o("Copy", "Copies the command", () => this.copy(x.command)), o(ch ? `Open #${ch}` : "Open the topic", "Shows the topic to type it", () => this.openTopic(topic))],
+        later: (cx) => this.act(n.key, ["home", "park", x.id], null, cx) };
+    }
+    if (n.kind === "question") {
+      const spec = `${n.space.name}#${channelName(n.tab)}`;
+      return { tag: ["Question", this.d.warnText], who: n.space.name, topic: spec, sub: `waiting ${homeAge(n.at)}`, title: `${short(n.space.name)} asks you in #${channelName(n.tab)}`,
+        body: n.msg ? n.msg : "A prompt is waiting in its terminal.", options: [o(`Open #${channelName(n.tab)}`, "Answer it in its terminal", () => this.openTopic(spec))] };
+    }
+    if (n.kind === "desk") {
+      const c = n.c, r = recs[c.id];
+      return { tag: ["Desk", this.d.warnText], who: c.from_kind === "owner" ? null : c.from, topic: topicOf(c.from), sub: `${c.id} · ${c.kind ?? "card"} · ${homeAge(n.at)} ago`,
+        title: c.title || "(no title)", body: [c.body, c.result ? `Result: ${c.result}` : null].filter(Boolean).join("\n\n"), images: c.attachments,
+        rec: r ? { option: r.option === "done" ? "Done" : "Open in Desk", why: r.why, by: r.by } : null,
+        options: [o("Done", "Closes the card; the sender sees it", owner(["desk", "done", c.id, "closed on Home"], "Closed")), o("Open in Desk", "Shows it with its receipts", () => showDesk("needs"))] };
+    }
+    if (n.kind === "proposal") {
+      const p = n.p;
+      return { tag: ["Proposal", "#B79CF7"], who: p.by, topic: topicOf(p.by), sub: `${p.id} · ${homeAge(n.at)} ago`,
+        title: `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`, body: p.note,
+        options: [o("Decline", "The pal is told", owner(["proposal", "decline", p.id], "Declined")),
+          o("View", "Opens the change in the profile panel", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { gapBefore: true })] };
+    }
+    const st = n.st;
+    return { tag: ["Stuck", this.d.warnText], who: st.bot, topic: `${st.bot}#${st.channel}`, sub: `no progress for ${homeAge(st.since)}`,
+      title: `${short(st.bot)} looks stuck in #${st.channel}`, body: "It's working, but its screen hasn't changed.",
+      options: [o(`Open #${st.channel}`, "Look at its terminal", () => this.openTopic(`${st.bot}#${st.channel}`))] };
+  }
+
+  // Which item shows: the one we were on, by key; else the same position (the next one slid in).
+  current(list) {
+    if (!list.length) return null;
+    let i = this.atKey ? list.findIndex((n) => n.key === this.atKey) : -1;
+    if (i < 0) i = Math.min(this.at, list.length - 1);
+    this.at = i; this.atKey = list[i].key;
+    return list[i];
+  }
+  move(list, by) {
+    if (!list.length) return;
+    this.at = (this.at + by + list.length) % list.length;
+    this.atKey = list[this.at].key;
+  }
+
+  // Chat about it: the asking topic's live terminal in a window over Home (a bar to drag it by, Open
+  // topic, ×); Muse, the idea partner, when that topic has no live agent.
+  chat(sp) {
+    const live = (spec) => {
+      const f = spec ? this.locate(spec) : null;
+      if (!f?.tab) return null;
+      const ag = agents().find((a) => a.tab === f.tab.id) ?? null;
+      return ag ? { f, address: ag.address } : null;
+    };
+    let target = live(sp.topic) ?? live(sp.who);
+    let muse = false;
+    if (!target) {
+      const rec = crew().bots.find((b) => b.partner || String(b.role ?? "").trim().toLowerCase() === "idea partner");
+      const s = rec ? spaces().find((x) => x.id === rec.space) : null;
+      const tab = s?.tabs.find((t) => agents().some((a) => a.tab === t.id));
+      if (tab) { target = live(`${s.name}#${channelName(tab)}`); muse = true; }
+    }
+    if (!target) return notify({ title: "Nobody to chat with", body: "That topic is asleep and there's no idea partner awake. Open the topic to wake it.", level: "info", timeout: 4000 });
+    const { f, address } = target;
+    openOverlay({ kind: "window", key: "home-chat", width: 560, height: 520,
+      layout: { type: "column", children: [
+        { type: "block", size: { px: 34 }, content: { mod: "crew-home-chat", props: { space: f.space.id, tab: f.tab.id, muse, about: sp.title } } },
+        { type: "block", content: { terminal: address } }] } });
+    if (muse) notify({ title: `Chatting with ${short(f.space.name)}`, body: `${short(sp.who ?? "The asker")} is asleep, so this is the idea partner. Paste the question in to talk it through.`, level: "info", timeout: 5000 });
+  }
+
+  key(e, list, cx) {
+    const k = e.keystroke;
+    const n = this.mode === "review" ? this.current(list) : null;
+    if (k === "escape") { if (this.drawer) this.drawer = null; else this.mode = this.mode === "review" ? "list" : "review"; }
+    else if (!n) return;
+    else if (k === "j") this.move(list, 1);
+    else if (k === "k") this.move(list, -1);
+    else {
+      const sp = this.spec(n);
+      if (/^[1-9]$/.test(k)) { const o = sp.options.filter((x) => !x.cap)[Number(k) - 1]; if (o && !this.busy[n.key]) o.run(cx); }
+      else if (k === "enter") { const o = sp.rec && sp.options.find((x) => x.label.toLowerCase() === sp.rec.option.toLowerCase()); if (o && !this.busy[n.key]) o.run(cx); }
+      else if (k === "c") this.chat(sp);
+      else if (k === "l") { if (sp.later) sp.later(cx); else this.move(list, 1); }
+      else return;
+    }
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  review(d, t, list) {
+    const n = this.current(list);
+    const sp = this.spec(n);
+    const i = this.at, total = list.length;
+    const keyCap = (k) => div().flex_none().h(16).px(4).flex().items_center().rounded(3).border_1().border_color(d.lineStrong)
+      .text_size(10.5).font_family(d.mono).text_color(d.fg2).child(k);
+    const navBtn = (id, k, label, onClick, disabled = false) => h_flex().id(id).h(26).px(8).flex_none().items_center().gap(6).rounded(d.r.sm)
+      .when(!disabled, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => { onClick(cx); cx.notify(); }))
+      .child(keyCap(k)).child(div().text_size(12).text_color(disabled ? d.fg4 : d.fg2).child(label));
+    const PIPS = Math.min(total, 12);
+    const pips = h_flex().flex_none().gap(4).children(Array.from({ length: PIPS }, (_, j) => {
+      const at = total > 12 ? Math.round(i * (PIPS - 1) / (total - 1)) : i;
+      return div().w(22).h(3).rounded(2).bg(j === at ? d.warnText : j < at ? d.fg3 : d.lineMid);
+    }));
+    const top = h_flex().h(32).flex_none().items_center().gap(12)
+      .child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg2).child("Needs you"))
+      .child(pips)
+      .child(div().w(64).flex_none().text_size(12).font_weight(500).text_color(d.body).child(`${i + 1} of ${total}`))
+      .child(div().flex_1())
+      .child(navBtn("rv-back", "K", "Back", () => this.move(list, -1), total < 2))
+      .child(navBtn("rv-skip", "J", "Skip", () => this.move(list, 1), total < 2))
+      .child(navBtn("rv-later", "L", "Later", (cx) => { if (sp.later) sp.later(cx); else this.move(list, 1); }, !sp.later && total < 2))
+      .child(navBtn("rv-list", "Esc", "List", () => { this.mode = "list"; }));
+    const whoName = sp.who ? short(sp.who.split("#")[0]) : ownerName();
+    const whoTopic = sp.topic && sp.topic.includes("#") ? `#${sp.topic.split("#")[1]}` : "";
+    const who = h_flex().h(56).mt(18).flex_none().items_center().gap(12)
+      .child(this.face(sp.who ? sp.who.split("#")[0] : headName(), n.kind === "approval" || n.kind === "question" || n.kind === "stuck" ? "blocked" : "idle", 56, t))
+      .child(v_flex().min_w(0).gap(2)
+        .child(h_flex().gap(6).items_center().min_w(0)
+          .child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg1).child(whoName))
+          .child(div().min_w(0).truncate().text_size(13).text_color(d.fg2).child(whoTopic))
+          .child(div().w(4).flex_none())
+          .child(this.tag(d, sp.tag[0], sp.tag[1])))
+        .child(div().truncate().text_size(12).text_color(d.fg2).child(sp.sub ?? "")));
+    const title = div().id("rv-title").h(64).mt(10).flex_none().max_w(880).overflow_hidden()
+      .text_size(24).line_height("32px").font_weight(600).text_color(d.fg1).child(sp.title ?? "");
+    // The context: the body, the command and its diff, links, images. It scrolls inside its space.
+    const ctx = v_flex().gap(12).pr(12).max_w(900);
+    if (sp.body) ctx.child(v_flex().gap(6).children(String(sp.body).split("\n").map((l, j) => div().id(`rv-b-${j}`).text_size(14).line_height("22px").text_color(d.body).child(l || " "))));
+    if (sp.mono) ctx.child(div().px(12).py(9).rounded(6).bg(d.inset).border_1().border_color(d.lineMid).text_size(12).line_height("19px").font_family(d.mono).text_color(d.fg1).child(sp.mono));
+    if (sp.diff) ctx.child(v_flex().px(12).py(8).rounded(6).bg(d.inset).border_1().border_color(d.lineMid)
+      .children(String(sp.diff).split("\n").map((l, j) => div().id(`rv-d-${j}`).text_size(12).line_height("19px").font_family(d.mono)
+        .text_color(l.startsWith("+") && !l.startsWith("+++") ? d.ok : l.startsWith("-") && !l.startsWith("---") ? d.err : d.fg2).child(l || " "))));
+    if (sp.links?.length) ctx.child(h_flex().flex_wrap().gap(8).children(sp.links.map((u, j) => h_flex().id(`rv-l-${j}`).h(26).px(9).flex_none().items_center().gap(6).rounded(5)
+      .bg(d.raised).border_1().border_color(d.line).cursor_pointer().hover((s) => s.border_color(d.lineMid))
+      .on_click(() => exec("xdg-open", [u.startsWith("~/") ? `${homeDir()}/${u.slice(2)}` : u]).catch(() => {}))
+      .child(div().text_size(12).text_color(d.infoText).child(clip(u.replace(/^https?:\/\//, "").replace(homeDir(), "~"), 60))))));
+    if (sp.images?.length) ctx.child(h_flex().gap(8).children(sp.images.slice(0, 4).map((a, j) => div().id(`rv-i-${j}`).w(150).h(94).flex_none().rounded(5).overflow_hidden()
+      .border_1().border_color(d.line).cursor_pointer().tooltip(a)
+      .on_click(() => exec("xdg-open", [`${appHome()}/data/${a.replace(/^data\//, "")}`]).catch(() => {}))
+      .child(image(`data/${a.replace(/^data\//, "")}`).w(150).h(94)))));
+    const rec = sp.rec;
+    const recBar = h_flex().id("rv-rec").h(52).mt(14).flex_none().max_w(900).items_center().gap(10).px(14).rounded(6).border_1()
+      .border_color(rec ? "#4CA1F255" : d.line).bg(rec ? "#4CA1F20D" : "#00000000")
+      .child(div().flex_none().text_size(11.5).font_weight(600).text_color(rec ? d.infoText : d.fg4).child(rec ? "RECOMMENDED" : "NO RECOMMENDATION"))
+      .child(rec ? h_flex().min_w(0).gap(6).items_center()
+          .child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg1).child(rec.option))
+          .when(Boolean(rec.why), (el) => el.child(div().min_w(0).truncate().text_size(13).text_color(d.body).child(`· ${short((rec.by ?? "").split("#")[0]) || "The asker"}: ${rec.why}`)))
+        : div().min_w(0).truncate().text_size(12.5).text_color(d.fg4).child("The asker didn't pick one. Chat about it if you're unsure."));
+    // The options: large cards, numbered; the recommended one lit. Approve sits apart from Decline.
+    const busy = Boolean(this.busy[n.key]);
+    const optRow = h_flex().id("rv-opts").h(72).mt(14).flex_none().max_w(900).gap(10);
+    let num = 0;
+    sp.options.forEach((op, j) => {
+      const on = rec && op.label.toLowerCase() === rec.option.toLowerCase();
+      const cap = op.cap ?? (++num <= 9 ? String(num) : null);
+      if (op.gapBefore) optRow.child(div().w(30).flex_none());
+      optRow.child(v_flex().id(`rv-o-${j}`).flex_1().min_w(0).h(72).px(14).py(10).gap(3).rounded(7)
+        .bg(on ? "#26364A" : "#1C1C1E").border_1().border_color(on ? "#4CA1F288" : "#00000080").shadow_xs()
+        .when(!busy, (el) => el.cursor_pointer().hover((s) => s.border_color(on ? "#4CA1F2" : d.lineStrong)).on_click((_e, cx) => { op.run(cx); cx.notify(); }))
+        .when(busy, (el) => el.opacity(0.5))
+        .child(h_flex().gap(8).items_center().min_w(0)
+          .child(div().min_w(0).truncate().text_size(14).line_height("20px").font_weight(600).text_color(d.fg1).child(op.label))
+          .when(Boolean(on), (el) => el.child(this.tag(d, "Recommended", d.infoText)))
+          .child(div().flex_1())
+          .child(cap ? keyCap(cap) : div()))
+        .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(on ? "#C9DCEF" : d.fg2).child(op.does || " ")));
+    });
+    const chatWho = sp.topic ? `${short(sp.topic.split("#")[0])}${sp.topic.includes("#") ? ` #${sp.topic.split("#")[1]}` : ""}` : "the idea partner";
+    const foot = h_flex().h(52).mt(10).flex_none().items_center().gap(8).border_t_1().border_color(d.lineSoft)
+      .child(h_flex().id("rv-chat").h(30).px(11).flex_none().items_center().gap(7).rounded(5).bg("#1C1C1E").border_1().border_color("#00000080")
+        .cursor_pointer().hover((s) => s.border_color(d.lineStrong)).on_click((_e, cx) => { this.chat(sp); cx.notify(); })
+        .child(keyCap("C")).child(div().text_size(12).font_weight(500).text_color(d.body).child(`Chat with ${chatWho}`)))
+      .child(div().flex_1())
+      .child(h_flex().flex_none().gap(12).items_center().text_size(11.5).text_color(d.fg3)
+        .child(h_flex().gap(4).items_center().child(keyCap("1")).child(div().child("–")).child(keyCap(String(Math.min(9, Math.max(1, sp.options.filter((x) => !x.cap).length))))).child(div().child("pick")))
+        .child(h_flex().gap(4).items_center().child(keyCap("Enter")).child(div().child(rec ? "recommended" : "—")))
+        .child(h_flex().gap(4).items_center().child(keyCap("J")).child(div().child("/")).child(keyCap("K")).child(div().child("next / back"))));
+    return v_flex().id(`review-${n.key}`).size_full().px(40).pt(16)
+      .child(top).child(who).child(title)
+      .child(scrollArea(d, `rv-ctx-${n.key}`, ctx).flex_1().min_h(0).mt(12))
+      .child(recBar).child(optRow).child(foot);
+  }
+
   render(cx) {
     const t = tone(theme());
     const d = ds(t);
+    this.d = d;
     const shown = homeMode();
-    if (shown && !this.shown) { this.loading = false; this.reload(cx, true); }
+    if (shown && !this.shown) { this.loading = false; this.fresh = true; this.reload(cx, true); this.mode = "review"; this.at = 0; this.atKey = null; this.handle.focus(); }
     if (!shown && this.shown) this.drawer = null;   // left Home: the drawer is closed next time
     this.shown = shown;
     const needs = this.needs(), prog = this.progress();
     const since = this.drawer === "today" ? this.since() : [];
     const open = Boolean(this.drawer);
+    const root = v_flex().id("crew-home").relative().size_full().bg(d.bg0).text_color(d.fg1)
+      .track_focus(this.handle).on_key_down((e, cx) => this.key(e, needs, cx))
+      .on_mouse_down("left", () => this.handle.focus());
+    if (needs.length && this.mode === "review") {
+      return root.child(this.review(d, t, needs)).when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
+    }
     const link = h_flex().id("what-happened").h(22).px(6).mb(2).flex_none().items_center().gap(4).rounded(d.r.xs).cursor_pointer()
       .when(open, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
       .on_click((_e, cx) => { if (open) this.drawer = null; else this.openDrawer(this.lastTab || "today"); cx.notify(); })
       .child(div().text_size(12).text_color(d.infoText).child(open ? "Close ×" : "What happened today ›"));
+    const reviewBtn = needs.length ? h_flex().id("review-all").h(22).px(6).mb(2).flex_none().items_center().rounded(d.r.xs).cursor_pointer()
+      .hover((s) => s.bg(d.hover)).on_click((_e, cx) => { this.mode = "review"; this.handle.focus(); cx.notify(); })
+      .child(div().text_size(12).text_color(d.infoText).child("Review one at a time ›")) : null;
     const page = v_flex().id("home-page").size_full().px(28).pt(20).pb(24).gap(12)
       .child(h_flex().h(28).flex_none().items_end().gap(12)
         .child(div().flex_none().text_size(20).line_height("26px").font_weight(600).text_color(d.fg1).child("Needs you"))
         .child(div().w(40).flex_none().text_size(20).line_height("26px").font_weight(600).text_color(needs.length ? d.warnText : d.fg3).child(String(needs.length)))
         .child(div().flex_1())
+        .when(Boolean(reviewBtn), (el) => el.child(reviewBtn))
         .child(link))
       .child(this.statusLine(d, prog))
       .child(needs.length ? this.needsList(d, t, needs) : this.caughtUp(d, t));
     if (!this.loaded) page.child(div().absolute().top(12).right(28).text_size(11).text_color(d.fg4).child("reading…"));
-    return v_flex().id("crew-home").relative().size_full().bg(d.bg0).text_color(d.fg1)
-      .child(page)
-      .when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
+    return root.child(page).when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
   }
 }

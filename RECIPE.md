@@ -707,6 +707,29 @@ shows, the header hides the split buttons.
   in a mono box, Copy via wl-copy, Open #topic), **Question** (a topic asking you, from
   `crew.needs`, with what it said; Open), **Desk** (a card waiting on you; Open in Desk, Done),
   **Proposal** (Decline, View), **Stuck** (Open). Answering removes a card.
+- **The review** (DeNon's pick, mock A of `crew-boards/orca-home/review.html`): while anything
+  waits, ONE item fills the page, oldest first (40 px sides): a 32 px top row (Needs you, progress
+  dashes 22×3 (amber the current one, grey the ones before), "2 of 5", then K Back · J Skip · L
+  Later · Esc List with their key caps); the asker (pet 56 px with its aura, name, #topic, the kind's
+  tag, "asked 10m ago"); the title at 24/600 in a fixed two-line 64 px band; the context, which
+  scrolls in the space left (the body at 14/22, the command in a mono box and an AGENTS.md diff in
+  green and red for an approval, link chips that open, up to four 150×94 image thumbnails that open);
+  a 52 px **Recommended** banner (blue edge: the pick and "Asker: why"; with none, a grey "No
+  recommendation" line in the same place); the options as 72 px cards (label 14/600, what it does
+  12 px, a key cap 1-9, or L for Park; the recommended one lit blue with a Recommended tag;
+  Approve and View 30 px apart from Decline); and a 52 px foot with **C Chat with <Pal #topic>**
+  and the key legend. Keys (Home takes the keyboard when it shows; `focusable` in mod.json): 1-9
+  pick, Enter takes the recommendation (nothing without one), C chat, J next, K back, L later (an
+  ask is parked; others skip), Esc to the list ("Review one at a time ›" comes back). A decision
+  removes the item and the next one takes its place; the last ends on All caught up.
+- **Chat about it** opens a window (key `home-chat`, 560×520) over Home: a 34 px bar
+  (`crew-home-chat`: pet, Pal, #topic, what it's about, Open topic, ×; drag the window by it) over
+  the asking topic's live terminal. When that topic has no live agent, the idea partner's (Muse's)
+  terminal instead, with a toast saying so.
+- **Recommendations:** `pal home ask … --option A --does "what A does" … --recommend A --why "…"
+  [--link URL]… [--image FILE]…` (images are copied into `data/crew-attachments`), and for an
+  approval, a Desk card or an ask afterwards `pal home recommend <a-…|c-…|h-…> <approve|decline |
+  done|open | an option> --why "…"` (stored in home.json `recs`, kept 14 days).
 - **All caught up** when nothing waits: the head pal's pet (120 px) with its aura, "All caught up"
   18/600, and "N decisions answered today. <Head> puts new ones here first."
 - **The drawer** (420 px, over the page on the right, a strong left hairline and a shadow; ×, the

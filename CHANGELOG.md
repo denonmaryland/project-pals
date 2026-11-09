@@ -9,6 +9,10 @@
   "What happened today" opens a drawer with what finished, got installed or was linked, who's
   working, releases, and what you parked. Your head pal keeps its decisions, logins and links
   there with `pal home`.
+- **Decide one thing at a time.** While anything needs you, Home shows one item full screen: who's
+  asking, the context (links, images, the command or diff), what each option does, and the asker's
+  recommendation with its why. Pick with a click or 1-9, Enter takes the recommendation, C opens a
+  chat with the asking pal's terminal, J/K move, L puts it off, Esc shows the list.
 - **Every pal has a desk.** Everything sent to a pal (a tell, a question, a task, how something
   you asked went) is now a card with a status: queued, seen, working, done, held or needs you.
   You see when a pal actually got it, and its result, instead of guessing from its screen.

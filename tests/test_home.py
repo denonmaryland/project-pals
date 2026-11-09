@@ -65,6 +65,38 @@ class HomeCli(unittest.TestCase):
         j = json.loads(self.ok("--json"))
         self.assertIn("installs", j)
 
+    def test_recommend_does_links_and_images(self):
+        png = self.root / "shot.png"
+        png.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                                      "1f15c4890000000d49444154789c6300010000000500010d0a2db40000000049454e44ae426082"))
+        self.ok("ask", "Blur them?", "--option", "Blur them", "--does", "Re-renders the clip", "--option", "Leave as is",
+                "--recommend", "blur them", "--why", "unreleased work shouldn't show", "--link", "https://x.test/a", "--image", str(png))
+        x = home(self.data)["items"][0]
+        self.assertEqual(x["does"], ["Re-renders the clip", ""])
+        self.assertEqual((x["recommend"], x["why"]), ("Blur them", "unreleased work shouldn't show"), "the recommendation takes the option's own spelling")
+        self.assertEqual(x["links"], ["https://x.test/a"])
+        self.assertEqual(len(x["images"]), 1)
+        self.assertTrue(x["images"][0].startswith("crew-attachments/"), "images are copied into data/crew-attachments")
+        self.assertTrue((self.data / x["images"][0]).exists())
+        bad = lambda *a: pal(self.env, "home", *a, term="tW")
+        self.assertNotEqual(bad("ask", "x", "--option", "A", "--recommend", "B").returncode, 0, "the recommendation is one of the options")
+        self.assertNotEqual(bad("ask", "x", "--does", "y").returncode, 0, "--does follows an --option")
+        self.assertNotEqual(bad("ask", "x", "--option", "A", "--why", "y").returncode, 0, "--why goes with --recommend")
+        self.assertNotEqual(bad("ask", "x", "--image", str(self.root / "nope.txt")).returncode, 0)
+        self.assertNotEqual(bad("note", "x", "--link", "https://x").returncode, 0, "only an ask takes links")
+        # Approvals, Desk cards and asks can be recommended afterwards.
+        self.ok("recommend", "a-123456", "approve", "--why", "only adds a section")
+        self.ok("recommend", "c-abcdef", "done")
+        self.ok("recommend", x["id"], "Leave as is")
+        h = home(self.data)
+        self.assertEqual(h["recs"]["a-123456"]["option"], "approve")
+        self.assertEqual(h["recs"]["a-123456"]["by"], "Worker#general")
+        self.assertEqual(h["items"][0]["recommend"], "Leave as is")
+        self.assertNotIn("why", h["items"][0], "a new pick without a why drops the old why")
+        self.assertNotEqual(bad("recommend", "a-123456", "maybe").returncode, 0)
+        self.assertNotEqual(bad("recommend", "x-123456", "approve").returncode, 0)
+        self.assertNotEqual(bad("recommend", x["id"], "Nope").returncode, 0)
+
     def test_refusals(self):
         bad = lambda *a: pal(self.env, "home", *a, term="tW")
         self.assertNotEqual(bad("ask", "x", *sum((["--option", str(i)] for i in range(5)), [])).returncode, 0, "at most 4 options")

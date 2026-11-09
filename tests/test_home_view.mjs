@@ -63,7 +63,7 @@ try {
     };
     const nop = () => {};
     export const theme = () => ({ background: "#0B0B0C" }), home = () => "/h", appHome = () => "/h/.config/herdr-app", layout = () => fx.layout, keys = () => [], settings = () => ({});
-    export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = nop, closeOverlay = () => { fx.closed++; };
+    export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = (o) => { (fx.overlays ??= []).push(o); return "ov1"; }, nextCommand = () => new Promise(() => {}), closeOverlay = () => { fx.closed++; };
     export const hc = exec, readTextFile = async (p) => (fx.files ?? {})[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
@@ -78,9 +78,11 @@ try {
   const now = Date.now(), min = 60000;
   const iso = (m) => new Date(now - m * min).toISOString().replace(/\.\d+Z$/, "Z");
   fx.shared["crew.settings"] = { owner: "DeNon", head: "Orca" };
-  fx.shared.crew = { bots: [{ id: "b0", name: "Orca", space: "s0", god: true, awake: true }, { id: "b1", name: "Herdr Mod", space: "s1", awake: true }] };
+  fx.shared.crew = { bots: [{ id: "b0", name: "Orca", space: "s0", god: true, awake: true }, { id: "b1", name: "Herdr Mod", space: "s1", awake: true },
+    { id: "bm", name: "MUSE", space: "sm", awake: true, partner: true }] };
   fx.spaces = [
     { id: "s0", name: "Orca", tabs: [{ id: "tg", name: "general", status: "working", changed_at: now - 3 * min }] },
+    { id: "sm", name: "MUSE", tabs: [{ id: "tm", name: "ideas", status: "idle", changed_at: now - 60 * min }] },
     { id: "s1", name: "Herdr Mod", active: true, tabs: [{ id: "tb1", name: "desk", status: "working", changed_at: now - 16 * min },
       { id: "tb2", name: "landing", status: "blocked", changed_at: now - 12 * min }, { id: "tb3", name: "site", status: "idle", changed_at: now - 50 * min }] },
   ];
@@ -88,6 +90,7 @@ try {
     { address: "t1", space: "s1", tab: "tb1", status: "working", title: "Reporting stage 2", seq: 3 },
     { address: "tg", space: "s0", tab: "tg", status: "working", title: "Relaying the brief", seq: 2 },
     { address: "t2", space: "s1", tab: "tb2", status: "blocked", title: "", seq: 1 },
+    { address: "tm", space: "sm", tab: "tm", status: "idle", title: "", seq: 0 },
   ];
   fx.shared["crew.needs"] = { count: 1, items: [{ why: "question", tab: "tb2", label: "Herdr Mod #landing" }] };
   fx.approvals = JSON.stringify({ id: "a-111111", status: "pending", at: now - 129 * min, bot: "Herdr Mod", channel: "site", rule: "deploy", why: "deploys a site", command: "vercel deploy --prod" });
@@ -100,7 +103,8 @@ try {
   ];
   fx.feed = feed.map((x) => JSON.stringify(x)).join("\n") + "\nnot json\n";
   const home = { version: 1, seen: now - 134 * min, items: [
-    { id: "h-aaaaaa", kind: "ask", status: "open", title: "Blur the journal entries?", options: ["Blur them", "Leave as is"], by: "Orca#general", at: now - 112 * min },
+    { id: "h-aaaaaa", kind: "ask", status: "open", title: "Blur the journal entries?", options: ["Blur them", "Leave as is"], does: ["Re-renders the clip", ""],
+      recommend: "Blur them", why: "unreleased work", links: ["https://x.test/a", "~/b.html"], images: ["crew-attachments/a.png"], by: "Orca#general", at: now - 112 * min },
     { id: "h-bbbbbb", kind: "ask", status: "open", title: "Pick a palette", by: "Orca#general", at: now - 48 * min },
     { id: "h-cccccc", kind: "login", status: "open", title: "Log in to continue", command: "! npx vercel login", topic: "Herdr Mod#site", by: "Orca#general", at: now - 31 * min },
     { id: "h-dddddd", kind: "link", status: "done", title: "Orca home board", url: "~/.config/herdr-app/data/crew-boards/orca-home/index.html", by: "Herdr Mod#orca-home", at: now - 5 * min },
@@ -108,7 +112,8 @@ try {
     { id: "h-ffffff", kind: "deploy", status: "open", title: "The site to Vercel", topic: "Herdr Mod#site", by: "Orca#general", at: now - 31 * min },
     { id: "h-111111", kind: "later", status: "parked", title: "Mac support", by: "Orca#general", at: now - 3000 * min, parked_at: now - 3000 * min },
     { id: "h-222222", kind: "ask", status: "answered", title: "Ship it?", answer: "Yes", answered_at: now - 2 * min, closed_at: now - 2 * min, by: "Orca#general", at: now - 90 * min },
-  ], release: { next: "0.3.1", note: "held for your OK", queued: [{ id: "r-1", text: "Desk cards", at: now - 60 * min }] } };
+  ], release: { next: "0.3.1", note: "held for your OK", queued: [{ id: "r-1", text: "Desk cards", at: now - 60 * min }] },
+  recs: { "a-111111": { option: "approve", why: "only adds a section", by: "Herdr Mod#site", at: now } } };
   fx.files = {
     "data/crew-home/home.json": JSON.stringify(home),
     "data/crew-installs.jsonl": JSON.stringify({ at: now - 15 * min, version: "0.2.3", source: "local", build: { hash: "052716e", branch: "crew/next", subject: "Desk stage 2", dirty: false } }) + "\n",
@@ -124,7 +129,8 @@ try {
   ] };
 
   const run = async (f) => { const tasks = []; const cx = { notify() {}, spawn: (g) => tasks.push(g(cx)), timer: { every() {}, after() {} }, focus_handle: () => ({ focus() {} }), stop_propagation() {} };
-    f(cx); for (let i = 0; i < 6 && tasks.length; i++) await Promise.all(tasks.splice(0)); return cx; };
+    // A task that never ends (the nextCommand loop) doesn't hold the test: each round waits 50 ms at most.
+    f(cx); for (let i = 0; i < 6 && tasks.length; i++) await Promise.race([Promise.all(tasks.splice(0)), new Promise((r) => setTimeout(r, 50))]); return cx; };
 
   // Pure helpers.
   assert.equal(crewjs.homeAge(now - 129 * min, now), "2h 9m");
@@ -154,6 +160,53 @@ try {
   assert.equal(prog.rows[0].held, "draft");
   assert.deepEqual(prog.desk.map((c) => c.id), ["c-orca01"], "what's open on the head pal's desk");
   await run((cx) => v.render(cx));
+  const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
+  // The review: one item at a time, the oldest first (the approval), with its recommendation.
+  assert.equal(v.mode, "review");
+  for (const id of ["rv-o-0", "rv-o-1", "rv-chat", "rv-back", "rv-skip", "rv-later", "rv-list"]) assert.ok(clicks.has(id), `review: has ${id}`);
+  assert.equal(v.current(needs).kind, "approval");
+  const sp0 = v.spec(v.current(needs));
+  assert.deepEqual(sp0.options.map((o) => o.label), ["Decline", "Approve"], "Decline first, Approve last");
+  assert.equal(sp0.rec.option, "Approve");
+  const key = async (k) => run((cx) => v.key({ keystroke: k, key: k }, v.needs(), cx));
+  fx.calls.length = 0;
+  await key("enter");
+  assert.ok(last((c) => c[1] === "approve" && c[2] === "a-111111")?.includes("--click"), "Enter takes the recommended: Approve, by click");
+  v.busy = {};
+  await key("j");
+  assert.equal(v.current(v.needs()).key, "h-h-aaaaaa", "J: the next one");
+  const sp1 = v.spec(v.current(v.needs()));
+  assert.deepEqual(sp1.options.map((o) => o.label), ["Blur them", "Leave as is", "Park"]);
+  assert.equal(sp1.options[0].does, "Re-renders the clip");
+  assert.deepEqual(sp1.links, ["https://x.test/a", "~/b.html"]);
+  await run((cx) => v.render(cx));
+  assert.ok(clicks.has("rv-l-0") && clicks.has("rv-i-0"), "links and images are clickable");
+  fx.calls.length = 0;
+  await key("2");
+  assert.deepEqual(last((c) => c[1] === "home" && c[2] === "answer").slice(0, 5), ["pal", "home", "answer", "h-aaaaaa", "Leave as is"], "2 picks the second option");
+  v.busy = {};
+  await key("l");
+  assert.deepEqual(last((c) => c[1] === "home" && c[2] === "park").slice(0, 4), ["pal", "home", "park", "h-aaaaaa"], "L parks it");
+  v.busy = {};
+  await key("k");
+  assert.equal(v.current(v.needs()).kind, "approval", "K: back");
+  // Chat: the asking topic's live terminal in a window; Muse when that topic is asleep.
+  fx.overlays = [];
+  await key("j");
+  await key("c");
+  const win = fx.overlays.at(-1);
+  assert.equal(win.kind, "window");
+  assert.equal(win.layout.children[1].content.terminal, "tg", "chat opens Orca #general's terminal");
+  assert.equal(win.layout.children[0].content.mod, "crew-home-chat");
+  v.chat({ topic: "Ghost#x", who: "Ghost#x", title: "x" });
+  assert.equal(fx.overlays.at(-1).layout.children[1].content.terminal, "tm", "an asleep asker: the idea partner");
+  assert.equal(fx.overlays.at(-1).layout.children[0].content.props.muse, true);
+  // Esc: the list.
+  await key("escape");
+  assert.equal(v.mode, "list");
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  assert.ok(clicks.has("review-all"), "the list offers the review again");
   for (const id of ["ap-a-111111-ok", "ap-a-111111-no", "h-h-aaaaaa-o0", "h-h-aaaaaa-o1", "h-h-aaaaaa-park", "h-h-bbbbbb-go", "h-h-cccccc-copy", "h-h-cccccc-go",
     "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "what-happened"])
     assert.ok(clicks.has(id), `has a ${id} button`);
@@ -184,7 +237,6 @@ try {
   await run((cx) => v.render(cx));
 
   // Actions: the owner's are clicks (pal … --click), the rest plain.
-  const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
   fx.calls.length = 0;
   await run((cx) => v.act("x1", ["home", "answer", "h-aaaaaa", "Blur them"], null, cx));
   assert.ok(last((c) => c[1] === "home" && c[2] === "answer").includes("--click"), "an answer is the owner's click");
