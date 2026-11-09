@@ -24,7 +24,7 @@ full spec (what you see, how it behaves, watch-outs, done-when): read it before 
 
 Internal names still say `crew` (mods, Python modules, `crewd`, `herdr-crew.service`, data files
 like `crew-settings.json`). That's deliberate: renaming them breaks existing installs and the
-updater. User-facing text says "pal". Tabs were "channels" until 0.3.1 and are "topics" now: code and data
+updater. User-facing text says "pal". Tabs were "channels" until 0.4.0 and are "topics" now: code and data
 keep `channel` (JSON fields, function names, `crew-roster.channel`), and `pal channel` / `--channel`
 stay as aliases of `pal topic` / `--topic`. User-facing text says "topic".
 

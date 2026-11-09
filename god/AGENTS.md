@@ -30,7 +30,7 @@ Run these in your shell. `pal --help` and `pal-room --help` print the details.
   - It starts with permissions bypassed, like the rest of the team.
   - `--machine` puts it on another computer (`hc machine ls`).
 - `pal topic "<Pal>" "<topic>" --brief "what this clone is for"` gives a pal another
-  topic. (Topics were called channels before 0.3.1: `pal channel` and `--channel` still work.)
+  topic. (Topics were called channels before 0.4.0: `pal channel` and `--channel` still work.)
 - `pal-room new "<room>" --with "BotA#ch" "BotB#ch" --goal "…"` opens a room where pals work
   together. You can join it too.
 - `pal-room invite <room> "<Pal>[#topic]"` brings a pal into a room. If the pal is asleep
