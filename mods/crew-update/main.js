@@ -106,7 +106,7 @@ export default class CrewUpdate extends View {
           .child(div().mt(6).size(4).flex_none().rounded(2).bg(d.fg3))
           .child(div().flex_1().min_w(0).text_size(12).line_height("18px").text_color(d.fg2)
             .child(div().text_color(d.fg1).font_weight(500).child(h.head))
-            .when(Boolean(h.detail), (el) => el.child(div().truncate().child(h.detail))))))).max_h(260));
+            .when(Boolean(h.detail), (el) => el.child(div().child(h.detail))))))).max_h(260));
       else body.child(text("This release has no notes."));
       if (u.url) body.child(div().id("up-notes").cursor_pointer().hover((s) => s.opacity(0.75)).text_size(12).text_color(d.infoText)
         .on_click(() => exec("xdg-open", [u.url]).catch(() => {})).child("Full release notes →"));
