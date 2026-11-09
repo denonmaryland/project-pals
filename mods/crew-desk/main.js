@@ -267,7 +267,7 @@ export default class CrewDesk extends View {
     const owner = this.owner();
     if (c.from_kind === "owner") {
       return c.verified
-        ? div().text_size(12).text_color(d.body).child(`from ${owner} (clicked in Project Pals)${c.drafted_by ? ` · drafted by ${String(c.drafted_by).split("#")[0]}` : ""}`)
+        ? div().text_size(12).text_color(d.body).child(`from ${owner} (clicked in Project Pals)${c.drafted_by ? ` · drafted by ${String(c.drafted_by).split("#")[0]}` : ""}${c.passed_note ? ` · ${c.passed_note}` : ""}`)
         : div().px(8).py(4).rounded(d.r.sm).bg(AMBER_FILL).border_1().border_color(AMBER_EDGE).text_size(12).text_color(d.warnText)
           .child(`claims to be from ${owner} · edited after sending · unverified`);
     }

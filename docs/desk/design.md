@@ -489,6 +489,14 @@ user. Within that model:
   The frame (§6.6) says "from DeNon" only when the card's current hash is in the ledger. A card that
   claims to be the owner's without a matching entry is framed "claims to be from DeNon — unverified",
   shown in amber, and logged as a dream event.
+- **Passed on (0.4.1, T52).** `to` is in the hash, so a pal's `pal desk pass` used to make the
+  owner's card unverified for the pal it went to. Now, when the card verifies at the moment of the
+  pass, the pass appends `{card, hash (new), passed_from (the hash before), by, from_to, to, at}`.
+  A pass entry counts only when it chains, pass by pass, back to the owner's own entry for that card,
+  so only `to` can have changed. The frame keeps `[from DeNon]` exactly and adds "passed on by Orca
+  (DeNon sent it to Orca#general)" to its header line, where a body can't write it. The Desk view
+  says the same. An edit after the pass, a hand-moved card, or a pass of a card that was already
+  unverified stays unverified.
 - **Hand edits.** If DeNon edits one of their own cards in an editor, the hash stops matching, so it
   shows as "edited after sending · unverified". One click on **Confirm as mine** in the Desk view adds
   a fresh ledger entry. Edits never quietly carry owner authority.
