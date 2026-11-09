@@ -61,7 +61,7 @@ export default class CrewReview extends View {
 
   load(cx) {
     const tg = this.target();
-    if (!tg) { this.error = "That channel is gone."; return; }
+    if (!tg) { this.error = "That topic is gone."; return; }
     cx.spawn(async (cx) => {
       try {
         this.data = JSON.parse(await crewCli(["diff", tg.spec, "--json"]));
@@ -142,7 +142,7 @@ export default class CrewReview extends View {
       .size_full().bg(t.popover).text_color(t.foreground);
     if (this.error || !tg) {
       return root.p(28).gap(8).child(div().text_size(22).font_weight(200).child("Review"))
-        .child(div().text_size(13).text_color(t.dim).child(this.error ?? "That channel is gone."));
+        .child(div().text_size(13).text_color(t.dim).child(this.error ?? "That topic is gone."));
     }
     const d = this.data;
     const bot = botOf(tg.space);

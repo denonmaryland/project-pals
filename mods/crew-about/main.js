@@ -180,13 +180,13 @@ export default class CrewAbout extends View {
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.head).w_full().text_size(13).text_color(t.foreground))))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
-      .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new channels skip their harness's permission prompts",
+      .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new topics skip their harness's permission prompts",
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
           .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
         (_e, cx) => this.setBypass(!bypass, cx)))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // The mark beside a working channel: its own dialog, a grid of live previews (crew-indicator).
-      .child(row("set-indicator", "Working indicator", "Beside a channel while its agent works",
+      .child(row("set-indicator", "Working indicator", "Beside a topic while its agent works",
         h_flex().items_center().gap(8)
           .child(div().size(18).flex().items_center().justify_center().child(workingMark(ds(t))))
           .child(div().text_size(12.5).text_color(t.muted).child(workingStyle().name))

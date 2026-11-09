@@ -156,7 +156,7 @@ function facts(space, bot, d, full) {
   const cells = [
     ["Brain", (bot.harnessName ?? bot.harness ?? "no agent") + (model ? ` · ${model}` : ""), false],
     ["Project", home(bot.folder ?? space.folder) || "—", true],
-    ["Channels", `${space.tabs.length}${working ? ` · ${working} working` : ""}`, false],
+    ["Topics", `${space.tabs.length}${working ? ` · ${working} working` : ""}`, false],
     ["Owner", owner, false],
   ];
   const cols = full ? 4 : 2;
@@ -166,7 +166,7 @@ function facts(space, bot, d, full) {
     cells.slice(r * cols, r * cols + cols).forEach(([k, v, mono], i) => row.child(v_flex().flex_1().min_w(0).px(12).py(9).gap(3)
       .when(i > 0, (el) => el.border_l_1().border_color(d.line))
       .child(div().text_size(11).text_color(d.fg3).child(k))
-      .child(div().truncate().text_size(mono ? 12 : 13).when(mono, (el) => el.font_family(d.mono)).text_color(k === "Channels" && working ? d.infoText : d.fg1).child(v))));
+      .child(div().truncate().text_size(mono ? 12 : 13).when(mono, (el) => el.font_family(d.mono)).text_color(k === "Topics" && working ? d.infoText : d.fg1).child(v))));
     grid.child(row);
   }
   return grid;
@@ -195,7 +195,7 @@ function rightNow(view, space, bot, d, full) {
   const live = channelOrder(space, bot).filter((tab) => tabHasAgent(tab, ps) && (tab.status === "working" || tab.status === "blocked"))
     .sort((a, b) => (a.status === "blocked" ? 0 : 1) - (b.status === "blocked" ? 0 : 1));
   const sec = v_flex().gap(8).child(heading(d, "vh-now", "Right now"));
-  if (!live.length) return sec.child(div().text_size(12).text_color(d.fg3).child("No channel is working."));
+  if (!live.length) return sec.child(div().text_size(12).text_color(d.fg3).child("No topic is working."));
   const card = (tab) => {
     const ask = tab.status === "blocked";
     const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];

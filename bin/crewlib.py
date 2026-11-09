@@ -213,7 +213,7 @@ def find(spec, spaces):
     if ch:
         tab = next((t for t in space["tabs"] if chan(t).lower() == ch.lower().lstrip("#")), None)
         if not tab:
-            raise CrewError(f"{space['name']} has no #{ch}. Channels: " + ", ".join("#" + chan(t) for t in space["tabs"]))
+            raise CrewError(f"{space['name']} has no #{ch}. Topics: " + ", ".join("#" + chan(t) for t in space["tabs"]))
     else:
         tab = next((t for t in space["tabs"] if t.get("active")), space["tabs"][0])
     return space, tab
@@ -699,9 +699,9 @@ def memory_report(bot_name, pinned=""):
 
 # ── what every pal should know ────────────────────────────────────────────────────────────────
 
-PRIMER = f"""You're a pal in {OWNER}'s Project Pals crew: each Herdr space is a pal (a project with a brain) and its tabs are channels (clones of it). {HEAD} is the head pal over everyone.
+PRIMER = f"""You're a pal in {OWNER}'s Project Pals crew: each Herdr space is a pal (a project with a brain) and its tabs are its topics (each a clone of it, working on one thing). {HEAD} is the head pal over everyone.
 Commands you have (each has --help):
-- pal overview / pal team: the team. pal tell "Pal#channel" "...": message a pal (handed over between its steps, or when its turn ends); pal ask: message and wait for the answer.
+- pal overview / pal team: the team. pal tell "Pal#topic" "...": message a pal (handed over between its steps, or when its turn ends); pal ask: message and wait for the answer.
 - pal task ls / ready / claim / note / block / done: the shared task board. Claim before you work on a task; mark it done (with a result) or blocked (with why).
 - pal remember "fact" (--user for something about {OWNER}): save what future sessions should know. pal memory: what's remembered.
 - pal skill ls / show / save: shared how-to skills. When you work out a reusable procedure, save it as a skill.

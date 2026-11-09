@@ -172,7 +172,7 @@ export default class CrewRoutines extends View {
         .hover((s) => s.bg(a(t.foreground, "10")))
         .on_click((_e, cx) => { this.when.set_value(x); cx.notify(); })
         .child(div().text_size(11.5).font_family("JetBrains Mono").text_color(t.dim).child(x))));
-    const channelRow = k.row("rf-ch", "Channel", h_flex().items_center().gap(4)
+    const channelRow = k.row("rf-ch", "Topic", h_flex().items_center().gap(4)
       .child(div().text_size(13).text_color(t.dim).child("#")).child(k.inline(this.channel, 150)));
 
     const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))

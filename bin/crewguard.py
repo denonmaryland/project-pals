@@ -30,7 +30,7 @@ DEFAULT = {
         {"name": "message", "why": "messages people", "pattern": r"(sendmail|mutt|msmtp|mail\s+-s)\b"},
         {"name": "message-api", "why": "messages people", "anywhere": True,
          "pattern": r"api\.telegram\.org|hooks\.slack\.com|discord(app)?\.com/api/webhooks"},
-        {"name": "land", "why": "merges a channel's branch into the project", "pattern": r"(crew|botz|buddy|pal)\s+land\b"},
+        {"name": "land", "why": "merges a topic's branch into the project", "pattern": r"(crew|botz|buddy|pal)\s+land\b"},
         # A repo's own release script pushes and publishes inside itself, out of the gate's sight,
         # so the script itself needs the click: ./release 0.2.3, bash scripts/release.sh v1.0.0, make release.
         {"name": "release-script", "why": "runs a release script (push and publish)",

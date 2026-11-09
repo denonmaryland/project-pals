@@ -4,36 +4,36 @@ A [Herdr](https://herdr.dev) layout that turns your coding agents into a crew of
 spirit of Grok's bots but for any harness: Claude Code, Antigravity CLI (`agy`), Codex, Grok CLI,
 Gemini CLI, opencode, Hermes and more.
 
-![Project Pals in Herdr: the pals sidebar with pocket pets, a pal's channels and its terminal](preview.png)
+![Project Pals in Herdr: the pals sidebar with pocket pets, a pal's topics and its terminal](preview.png)
 
 **Linux only for now.** The helpers run as a systemd user service, so macOS (and WSL or containers
 without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
 
-Each Herdr space is a pal (a project with a brain), and each of its tabs is a channel. Pals can
+Each Herdr space is a pal (a project with a brain), and each of its tabs is a topic. Pals can
 work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. On top of that you get:
 
 - **Pocket pets:** every pal is a little LED critter whose pose shows what it's doing (working,
   needs you, done, PR open, merged, stuck, asleep). Pick its species, colour, what it wears and its
   eyes.
-- **Terminal-first:** a channel is its agent's own terminal. Split it right or down, and answer the
+- **Terminal-first:** a topic is its agent's own terminal. Split it right or down, and answer the
   agent's questions right there.
-- **A sidebar built for scanning:** the shown pal up top with its channels and quick actions, then
+- **A sidebar built for scanning:** the shown pal up top with its topics and quick actions, then
   every pal with its state in colour. Group pals into folders ("Personal", "Business"), pin them,
-  and drag them into any order. Pin and reorder channels too.
-- **Profiles:** a panel per pal with its mission, brain, memory, channels and tasks.
+  and drag them into any order. Pin and reorder topics too.
+- **Profiles:** a panel per pal with its mission, brain, memory, topics and tasks.
 - **The Vault:** each pal's notes, with a live Home note: mission, focus, what's running, tasks,
   today's journal and the week, updating as work lands.
 - **Tasks:** give a pal a task (with screenshots attached); it picks it up when its current turn
   ends. Routines run on a schedule.
-- Hire pals and add channels on any harness, with a model per pal (cheap helpers on Haiku).
-- Memory and shared skills, branch-per-channel review, and an approval gate.
+- Hire pals and add topics on any harness, with a model per pal (cheap helpers on Haiku).
+- Memory and shared skills, branch-per-topic review, and an approval gate.
 
 ## Harnesses
 
 | Harness | Status |
 |---|---|
-| Claude Code | Tested daily: hiring, channels, model picker, hooks (messages handed over between steps), the approval gate and status line |
-| Antigravity CLI (`agy`) | Native (goodboimax's PR #1): hiring, channels, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate, shared skills |
+| Claude Code | Tested daily: hiring, topics, model picker, hooks (messages handed over between steps), the approval gate and status line |
+| Antigravity CLI (`agy`) | Native (goodboimax's PR #1): hiring, topics, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate, shared skills |
 | Codex | Tested as a pal. Shared skills work; the approval gate and hooks are Claude Code and Antigravity CLI only, so messages are typed in when it's idle |
 | Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code as terminal pals. Hooks and the approval gate are Claude Code and Antigravity CLI only |
 
@@ -72,17 +72,17 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
   - `herdr-crew.service`, the background helper.
   - Claude Code hooks and a status-line wrapper in `~/.claude/settings.json`, backed up first.
   - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
-- **Memory reviews:** these send channel screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; configurable with `pal settings llm auto|claude|agy`).
+- **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; configurable with `pal settings llm auto|claude|agy`).
 
 ## Hiring a pal into a new folder
 
 The first time Claude Code runs in a folder, it asks **"Quick safety check: Is this a project you
 created or one you trust?"** and waits for you. A pal hired into a folder Claude Code hasn't seen
-(or a channel on a new worktree) stops on that question, and its first task starts only after
+(or a topic on a new worktree) stops on that question, and its first task starts only after
 you answer it.
 
 Project Pals never answers it for you: trusting a folder is your call. It tells you instead:
-`pal hire` and `pal channel` print a notice, Herdr shows a toast (click it to jump to the tab), and
+`pal hire` and `pal topic` print a notice, Herdr shows a toast (click it to jump to the tab), and
 `pal overview` lists it under "Waiting on" until you answer. Open the tab and pick
 **Yes, I trust this folder** (or **No, exit**).
 

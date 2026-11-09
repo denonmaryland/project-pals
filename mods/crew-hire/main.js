@@ -137,7 +137,7 @@ export default class CrewHire extends View {
         .child(sheetField(d, Input.new(this.folder).w_full().text_size(13).text_color(d.fg1), { trailing: browse }))
         .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
         .when(Boolean(trustNote), (el) => el.child(div().text_size(11).line_height("15px").text_color(d.fg3)
-          .child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its channel."))))
+          .child("If Claude Code hasn't opened this folder before, it first asks whether you trust it. The new pal shows \"starting\" until you answer in its topic."))))
       .child(sheetFooter(d, { id: "hire", hint: "Enter hires · Esc cancels", onCancel: close, ready, primary: name ? `Hire ${name}` : "Hire", onPrimary: () => this.hire() }));
   }
 }

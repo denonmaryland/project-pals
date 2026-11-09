@@ -71,7 +71,7 @@ export default class CrewCommand extends View {
         rows.push({ group: g ? `${bot.name} · ${g}` : "", id: `pm-${id}`, icon, label, hint, go });
       }
     }
-    if (space) rows.push({ group: "Project Pals", id: "new-channel", icon: "ds-plus", label: "New channel", hint: bot ? `for ${bot.name}` : null,
+    if (space) rows.push({ group: "Project Pals", id: "new-channel", icon: "ds-plus", label: "New topic", hint: bot ? `for ${bot.name}` : null,
       go: () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }) });
     for (const it of appMenuItems().filter((x) => x.quick)) {
       rows.push({ group: "Project Pals", id: `am-${it.id}`, icon: it.icon, label: it.label, keyHint: it.key, go: it.go });
@@ -92,7 +92,7 @@ export default class CrewCommand extends View {
       for (const t of channelOrder(s, b)) {
         const ag = ags.filter((x) => x.tab === t.id).sort((x, y) => y.seq - x.seq)[0];
         const what = taskTitle(ag?.title, s.name, b?.name, channelName(t));
-        items.push({ group: "Channels", id: `ch-${t.id}`, label: `#${channelName(t)}`, sub: s.name, status: t.status,
+        items.push({ group: "Topics", id: `ch-${t.id}`, label: `#${channelName(t)}`, sub: s.name, status: t.status,
           hint: t.status === "working" || t.status === "blocked" || t.status === "done" ? statusWord(t.status) : null,
           words: what ? [what] : [], go: () => CrewCommand.go(s, t) });
       }
@@ -119,7 +119,7 @@ export default class CrewCommand extends View {
       for (const [, id, icon, label, hint, go] of palMenuItems(space, bot)) {
         items.push({ group: "Commands", id: `cmd-${id}`, icon, label, sub: bot.name, keyHint: id === "profile" ? hint : null, hint: id === "review" ? hint : null, go });
       }
-      items.push({ group: "Commands", id: "cmd-new-channel", icon: "ds-plus", label: "New channel", sub: bot.name, words: ["add channel", "tab"],
+      items.push({ group: "Commands", id: "cmd-new-channel", icon: "ds-plus", label: "New topic", sub: bot.name, words: ["add topic", "new channel", "tab"],
         go: () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }) });
     }
     for (const it of appMenuItems().filter((x) => !x.sep)) {
@@ -150,7 +150,7 @@ export default class CrewCommand extends View {
   lead(row, d, on) {
     if (row.pet) return div().w(20).flex_none().flex().justify_center().when(Boolean(row.asleep), (el) => el.opacity(0.55))
       .child(mascotEl(row.pet, mood(row.status, !row.asleep), 20));
-    if (row.group === "Channels") {
+    if (row.group === "Topics") {
       const c = row.status === "working" ? d.info : row.status === "blocked" ? d.warn : row.status === "done" ? d.ok : null;
       return div().w(20).flex_none().flex().justify_center().child(c ? div().size(6).rounded(3).bg(c)
         : div().text_size(12).font_family(d.mono).text_color(d.fg4).child("#"));
@@ -217,7 +217,7 @@ export default class CrewCommand extends View {
       .text_size(10.5).font_family(d.mono).text_color(d.fg4)
       .child(k("↑↓", "move")).child(k("↵", "open")).child(k("esc", "close"))
       .child(div().flex_1())
-      .child(div().child(q ? "pals · channels · tasks · vault · commands" : "type to search everything")));
+      .child(div().child(q ? "pals · topics · tasks · vault · commands" : "type to search everything")));
     return root;
   }
 }
