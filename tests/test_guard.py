@@ -71,6 +71,68 @@ class ShellWrites(unittest.TestCase):
         self.assertEqual(rule("cat <<'EOF' > notes.md\nhi\nEOF\ngit push"), "push")
 
 
+class EditorWrites(unittest.TestCase):
+    """The H3 leftover (docs/v1/readiness.md B1): editors that write in place, from a command line.
+    Matched on the command as run (its words), never on text that only mentions one (T26)."""
+    HELD = [
+        "ed AGENTS.md <<< $'a\\nnew\\n.\\nw\\nq'",             # the review's own two examples
+        "vim -c wq AGENTS.md",
+        "ed -s AGENTS.md <<'EOF'\na\nx\n.\nw\nq\nEOF",         # a heredoc of ed commands
+        "ed -s notes.txt <<'EOF'\nw AGENTS.md\nq\nEOF",        # ... that writes another file
+        "ed -s notes.txt <<< 'w CLAUDE.md'",
+        "printf 'w AGENTS.md\\nq\\n' | ed -s notes.txt",      # commands piped in
+        "ex -sc wq CLAUDE.md",
+        "nvim -es +wq docs/CLAUDE.md",
+        "vim -c 'w AGENTS.md' -c q notes.txt",                 # the write is in -c's text
+        "vim '+w AGENTS.md|q' notes.txt",
+        "vim -es notes.txt <<'X'\nsav AGENTS.md\nX",
+        "nano AGENTS.md",
+        "emacs --batch notes.md --eval '(write-file \"AGENTS.md\")'",
+        "nice -n 5 vim -c wq AGENTS.md",                       # behind wrappers and paths
+        "sudo -u me vim -c wq AGENTS.md",
+        "/usr/bin/vim -c wq AGENTS.md",
+        "cd x && vim -c wq AGENTS.md",
+        "bash -c 'ex -sc wq AGENTS.md'",
+        "sed -n 'w AGENTS.md' notes.txt",                      # sed's own w command
+        "sed 's/a/b/w CLAUDE.md' notes.txt",
+    ]
+    ALLOWED = [
+        "grep -n 'vim -c wq AGENTS.md' notes.md",              # text that names an editor isn't one
+        'echo "ed AGENTS.md" > notes.txt',
+        "git commit -m 'vim -c wq AGENTS.md'",
+        "cat <<'EOF' > notes.md\nvim -c wq AGENTS.md\nEOF",
+        "printf 'w AGENTS.md' > notes.txt",
+        "vim -c wq notes.txt",                                 # editing other files
+        "ed -s notes.txt <<< 'w'",
+        "ed -s notes.txt <<'EOF'\n,s/a/b/\nw\nq\nEOF",
+        "nvim --headless '+Lazy! sync' +qa",
+        "vim --version",
+        "command -v vim",
+        "man ed",
+        "EDITOR=vim git commit",
+        "cat AGENTS.md | less",
+        "sed 's/wiki/w/' AGENTS.md > /tmp/out",
+    ]
+
+    def test_held(self):
+        for c in self.HELD:
+            with self.subTest(c=c):
+                self.assertEqual(rule(c), "agents-file-shell")
+
+    def test_allowed(self):
+        for c in self.ALLOWED:
+            with self.subTest(c=c):
+                self.assertIsNone(rule(c))
+
+    def test_sourced_script(self):
+        script = Path(TMP) / "edit.vim"
+        script.write_text("w AGENTS.md\nq\n")
+        self.assertEqual(rule(f"vim -S {script} notes.txt"), "agents-file-shell")
+        self.assertEqual(rule(f"ed -s notes.txt < {script}"), "agents-file-shell")
+        script.write_text("w\nq\n")
+        self.assertIsNone(rule(f"vim -S {script} notes.txt"))
+
+
 class InterpreterWrites(unittest.TestCase):
     """Writes to AGENTS.md / CLAUDE.md from an interpreter (2026-11-08: two such edits got past the shell
     parse). Held: -c / -e code, a heredoc fed to it, a script written and run in one line, a script

@@ -222,15 +222,61 @@ AGENT_FILE = re.compile(r"(^|/)(AGENTS|CLAUDE)\.md$")
 REDIRECT = {">", ">>", ">|", "&>", "&>>", ">&"}
 SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "|&", ";;"}
 COPIERS = {"cp", "mv", "install", "ln", "rsync"}
+# Terminal editors (review H3 leftover): anything they open may be written, and so may any file their
+# own commands name (vim -c 'w AGENTS.md', +cmd, emacs --eval, ed's commands from a heredoc).
+EDITORS = {"ed", "red", "ex", "vi", "vim", "nvim", "sudoedit", "view", "rview", "rvim", "vimdiff", "nvi", "elvis", "gvim",
+           "nano", "rnano", "pico", "micro", "emacs", "emacsclient", "mg", "jed", "joe", "jmacs", "jstar",
+           "kak", "hx", "helix", "mcedit", "ne", "zile", "amp"}
+# Editors that also take their commands from stdin (a heredoc, a here-string, printf … | ed).
+STDIN_EDITORS = {"ed", "red", "ex"}
+# vim options whose value is a script it runs (-S session, -u vimrc, -s scriptin outside Ex mode).
+EDITOR_SCRIPTS = {"-S", "-u", "-s"}
+_PIECES = re.compile(r"[\s|;()\"'`]+")
+SEP = re.compile(r";|&&|\|\||\|&?|(?<![<>&])&(?![&>])")
+
+
+def _pieces(text):
+    """Words of an editor command or script: `w AGENTS.md|q` → w, AGENTS.md, q."""
+    return [p.lstrip("+!") for p in _PIECES.split(text or "") if p.strip("+!")]
+
+
+def _ex_mode(name, args):
+    """Is this editor reading its commands from stdin? ed / ex always; vim in Ex mode (-e, -es, -E)."""
+    return name in STDIN_EDITORS or any(re.fullmatch(r"-[a-zA-Z]*[eE][a-zA-Z]*", a) for a in args)
+
+
+def _script_words(path):
+    try:
+        with open(os.path.expanduser(path), errors="replace") as f:
+            return _pieces(f.read(400000))
+    except OSError:
+        return []
+
+
+def _editor_heredocs(cmd):
+    """Heredoc bodies fed to an editor that reads commands from stdin (ed x <<EOF … w AGENTS.md …)."""
+    out = []
+    for m in HEREDOC.finditer(cmd):
+        # The command the heredoc is fed to: the one around its << marker.
+        before, after = cmd[cmd.rfind("\n", 0, m.start()) + 1:m.start()], m.group(3)
+        start = max([s.end() for s in SEP.finditer(mask_quotes(before))], default=0)
+        cut = next((s.start() for s in SEP.finditer(mask_quotes(after))), len(after))
+        words = [w for w in normal_words(before[start:] + " " + after[:cut]) if not w.startswith(("<", ">"))]
+        if words and words[0] in EDITORS and _ex_mode(words[0], words[1:]):
+            body = m.group(0)[len(m.group(1)) + len(m.group(3)):]
+            out += _pieces(body)
+    return out
 
 
 def write_targets(cmd):
     """The files a shell line writes to, as far as a plain parse can tell: redirect targets, tee's
-    files, sed / perl -i files, cp / mv / install / ln / rsync destinations, dd of=. Inside sh -c '…'
-    too. Heredoc bodies are dropped but their header lines are kept."""
+    files, sed / perl -i files, sed's own w commands, cp / mv / install / ln / rsync destinations,
+    dd of=, and every file a terminal editor opens or its commands name (ed, ex, vim -c / +cmd / -es,
+    nano, emacs …). Inside sh -c '…' too. Heredoc bodies are dropped but their header lines are
+    kept, except a body fed to ed / ex, which is that editor's commands."""
     import shlex
     text = heredoc_free(cmd)
-    out = []
+    out = _editor_heredocs(cmd)
     for inner in INNER.findall(text):
         out += write_targets(inner[1])
     for line in text.splitlines():
@@ -240,18 +286,20 @@ def write_targets(cmd):
             toks = list(lex)
         except ValueError:          # an unbalanced quote: fall back to plain words
             toks = line.split()
-        cmds, cur = [], []
+        cmds, cur, sep = [], [], None
         for tk in toks:
             if tk in SEPARATORS:
                 if cur:
-                    cmds.append(cur)
-                cur = []
+                    cmds.append((cur, sep))
+                cur, sep = [], tk
             else:
                 cur.append(tk)
         if cur:
-            cmds.append(cur)
-        for words in cmds:
-            i = 0
+            cmds.append((cur, sep))
+        piped = []                          # what printf / echo just piped on (ed's commands, maybe)
+        for words, sep in cmds:
+            feeding, piped = (piped if sep in ("|", "|&") else []), []
+            i, plain, stdin = 0, [], []
             while i < len(words):           # redirections, anywhere in the command
                 w = words[i]
                 if w in REDIRECT or re.fullmatch(r"\d+>>?|\d*>\|", w):
@@ -262,14 +310,32 @@ def write_targets(cmd):
                 if w == "<<" or w == "<<-":  # a heredoc marker isn't a file
                     i += 2
                     continue
+                if w in ("<", "<<<") or re.fullmatch(r"\d+<|<>", w):   # input: a file, or a here-string's text
+                    if i + 1 < len(words):
+                        stdin.append((w, words[i + 1]))
+                    i += 2
+                    continue
+                plain.append(w)
                 i += 1
-            plain = [w for w in words if w not in REDIRECT and not re.fullmatch(r"\d+>>?|\d*>\|", w)]
-            while plain and (re.fullmatch(r"\w+=\S*", plain[0]) or plain[0] in ("sudo", "env", "command", "exec", "nohup", "time")):
-                plain = plain[1:]
+            # The command as run: env assignments, wrappers (nice, sudo -u x, timeout 5 …) and the path dropped (T26).
+            plain = normal_words(shlex.join(plain)) if plain else []
             if not plain:
                 continue
-            name, args = os.path.basename(plain[0]), plain[1:]
+            name, args = plain[0], plain[1:]
             files = [a for a in args if not a.startswith("-")]
+            if name in ("printf", "echo"):
+                piped = [p for a in args for p in _pieces(a.replace("\\n", " ").replace("\\t", " "))]
+            if name in EDITORS:
+                # Every file it opens, and every word of its own commands (-c 'w X', +cmd, --eval …).
+                out += [p for a in args if not re.fullmatch(r"--?[\w-]+", a) for p in _pieces(a)]
+                if _ex_mode(name, args):    # commands from stdin: a here-string, printf … |
+                    out += feeding + [p for how, s in stdin if how == "<<<" for p in _pieces(s)]
+                    out += [p for how, s in stdin if how != "<<<" for p in _script_words(s)]
+                ex = _ex_mode(name, args)   # in Ex mode, -s means silent, not a script
+                out += [p for k, a in enumerate(args[:-1]) if a in EDITOR_SCRIPTS and (a != "-s" or not ex)
+                        for p in _script_words(args[k + 1])]
+            elif name == "sed":             # sed's own w / W commands write a file: sed -n 'w AGENTS.md' x
+                out += [m.group(1) for a in args for m in re.finditer(r"(?:^|[;\n{}/]|\s)[wW]\s+(\S+)", a)]
             if name == "tee":
                 out += files
             elif name in ("sed", "perl") and any(a.startswith("-i") or a == "--in-place" or (name == "perl" and re.fullmatch(r"-\w*i\w*", a)) for a in args):
