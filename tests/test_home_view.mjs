@@ -11,6 +11,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const root = new URL("..", import.meta.url).pathname;
+// Herdr gives each mod copy a localStorage; here, a small in-memory one.
+const store = new Map();
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) } });
 const dir = mkdtempSync(join(tmpdir(), "homeview-"));
 try {
   const mod = (name, src) => {
@@ -69,6 +72,9 @@ try {
   const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
   const crewjs = await import(pathToFileURL(join(dir, "crew.js")).href);
 
+  // A fixed clock at noon, so "today" (since midnight) holds every fixture whenever this runs.
+  const NOON = new Date(); NOON.setHours(12, 0, 0, 0);
+  const realNow = Date.now; Date.now = () => NOON.getTime();
   const now = Date.now(), min = 60000;
   const iso = (m) => new Date(now - m * min).toISOString().replace(/\.\d+Z$/, "Z");
   fx.shared["crew.settings"] = { owner: "DeNon", head: "Orca" };
@@ -149,8 +155,33 @@ try {
   assert.deepEqual(prog.desk.map((c) => c.id), ["c-orca01"], "what's open on the head pal's desk");
   await run((cx) => v.render(cx));
   for (const id of ["ap-a-111111-ok", "ap-a-111111-no", "h-h-aaaaaa-o0", "h-h-aaaaaa-o1", "h-h-aaaaaa-park", "h-h-bbbbbb-go", "h-h-cccccc-copy", "h-h-cccccc-go",
-    "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "mark-seen", "park-up-h-111111", "park-drop-h-111111", "needs-more", "prog-w-t1"])
+    "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "what-happened"])
     assert.ok(clicks.has(id), `has a ${id} button`);
+  // Inbox zero: the page is the list; the rest is in the drawer, closed until asked for.
+  assert.equal(v.drawer, null, "the drawer starts closed");
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  assert.ok(!clicks.has("mark-seen") && !clicks.has("drawer-x"), "no drawer controls while it's closed");
+  clicks.get("what-happened")(null, { notify() {} });
+  assert.equal(v.drawer, "today", "What happened today opens the drawer on Today");
+  const tabIds = { today: ["mark-seen", "drawer-x", "drawer-tab-working"], working: ["prog-w-t1"], releases: ["rel-h-ffffff"], parked: ["park-up-h-111111", "park-drop-h-111111"] };
+  for (const [tab, ids] of Object.entries(tabIds)) {
+    v.openDrawer(tab); clicks.clear();
+    await run((cx) => v.render(cx));
+    for (const id of ids) assert.ok(clicks.has(id), `${tab}: has ${id}`);
+  }
+  clicks.get("drawer-x")(null, { notify() {} });
+  assert.equal(v.drawer, null, "× closes it");
+  clicks.clear();
+  await run((cx) => v.render(cx));
+  clicks.get("what-happened")(null, { notify() {} });
+  assert.equal(v.drawer, "parked", "it opens on the tab you used last");
+  // Leaving Home closes it.
+  fx.layout.children[0].active = "tab-view";
+  await run((cx) => v.render(cx));
+  assert.equal(v.drawer, null, "leaving Home closes the drawer");
+  fx.layout.children[0].active = "home-view";
+  await run((cx) => v.render(cx));
 
   // Actions: the owner's are clicks (pal … --click), the rest plain.
   const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
@@ -200,6 +231,7 @@ try {
   await run((cx) => h.init({}, cx));
   await run((cx) => h.render(cx));
   assert.ok(!fx.calls.some((c) => c[0] === "tail"), "hidden, it reads nothing");
+  Date.now = realNow;
   console.log("home view: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

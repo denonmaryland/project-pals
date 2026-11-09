@@ -689,29 +689,37 @@ too), "<Head> home" in the command bar and gear menu, and
 head pal, so the hero is its. Picking any topic, room or the Desk leaves it (`showTabs`). While it
 shows, the header hides the split buttons.
 
-- **Head** (48 px): "Welcome back, <owner>", "You last looked 2h 14m ago · crewd running" (amber
-  when crewd isn't), and four 112×44 tiles: need you (amber), since you looked (mint), in
-  progress (blue), next release.
-- **Needs you**, oldest first, each a 76 px card: pet with its aura (44 px), a rectangular tag,
-  the title, one line of context, the actions, and the age in a 52 px right-aligned slot (amber
-  past an hour). Kinds: **Approval** (Decline · Approve, 10 px apart, Approve last), **Decision**
-  (`pal home ask`: one button per option, the first primary, then Park; without options "Answer
-  in #topic"), **Login** (the command in a mono box, Copy via wl-copy, Open #topic), **Question**
-  (a topic asking you, from `crew.needs`, with what it said; Open), **Desk** (a card waiting on
-  you; Open in Desk, Done), **Proposal** (Decline, View), **Stuck** (Open). Four show; more
-  scroll, with a "+N more · …" footer. Nothing: one 52 px "All clear" line.
-- **Since you last looked** (36 px rows, newest first; a blue time while it's new): installs
-  (violet dot, build hash, + if dirty, the commit's subject, its branch), tasks done, topics
-  finished (one row per topic with its turns, 24 h at most), your answers, links (click opens),
-  notes, things closed on Home, cards the head pal closed. **Mark all seen** is your click
-  (`pal home seen`).
-- **In progress** (48 px rows, longest first): each working topic (its pet, the working
-  indicator, pal, #topic, its terminal title, how long), held topics (amber tag "held · draft"),
-  stuck ones; then "On <head>'s desk · N" and its open cards (Home is its Desk).
-- **Releases & shipping:** three 64 px cells (Public · GitHub from `crew-update.json`; Installed
-  here with the build from `crew-install.json`; Next from home.json, else commits past the last
-  tag), then queued items and pending deploys.
-- **Parked:** title, Unpark · Drop, when.
+"Inbox zero" (DeNon's pick, 2026-11-08, of five simpler directions on
+`crew-boards/orca-home/simple.html`): the page is one list.
+
+- **Head** (28 px): "Needs you" at 20/600 and its count in a 40 px slot (amber, grey at 0), and on
+  the right "What happened today ›" (blue; "Close ×" while the drawer is open).
+- **One status line** (20 px, truncates), built from the data, never written by a model: the
+  working indicator and "N working", who on what ("Herdr Mod on #orca-home and #pal-looks"; more
+  than two topics: "N topics"), then "· ● 0.3.0 shipped 18:35" (mint, a release published today)
+  or "· ● Installed 477580b 18:23" (violet, today's last install), then "N held · N stuck" and
+  "crewd isn't running: messages wait" in amber when they apply.
+- **Needs you**, oldest first, each a 76 px card in one box that takes the rest of the page and
+  scrolls: pet with its aura (44 px), a rectangular tag, the title, one line of context, the
+  actions, and the age in a 52 px right-aligned slot (amber past an hour). Kinds: **Approval**
+  (Decline · Approve, 10 px apart, Approve last), **Decision** (`pal home ask`: one button per
+  option, the first primary, then Park; without options "Answer in #topic"), **Login** (the command
+  in a mono box, Copy via wl-copy, Open #topic), **Question** (a topic asking you, from
+  `crew.needs`, with what it said; Open), **Desk** (a card waiting on you; Open in Desk, Done),
+  **Proposal** (Decline, View), **Stuck** (Open). Answering removes a card.
+- **All caught up** when nothing waits: the head pal's pet (120 px) with its aura, "All caught up"
+  18/600, and "N decisions answered today. <Head> puts new ones here first."
+- **The drawer** (420 px, over the page on the right, a strong left hairline and a shadow; ×, the
+  link again, or leaving Home closes it; it reopens on the tab you used last), tabs with counts:
+  **Today** (since midnight, newest first, 36 px rows, a blue time while newer than Mark all
+  seen: installs with the violet dot, hash (+ if dirty), subject and branch; tasks done; topics
+  finished, one row each with its turns; your answers; links (click opens); notes; things closed on
+  Home; cards the head pal closed. "N new since you last looked" and **Mark all seen**, your click),
+  **Working** (48 px rows, longest first: pet, the working indicator, pal, #topic, its terminal
+  title, how long; held and stuck in amber; then "On <head>'s desk · N" and its open cards),
+  **Releases** (three 64 px cells, Public · GitHub / Installed here with the build / Next, then
+  queued items and pending deploys, and when GitHub was checked), **Parked** (title, Unpark ·
+  Drop, when).
 
 Data: `data/crew-home/home.json`, written only by `pal home` (bin/crewhome.py, locked, atomic):
 `{seen, items: [{id h-6hex, kind ask|login|link|note|deploy|later, status
@@ -967,7 +975,8 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
 
 - Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
   `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
-  closes it and the asker gets "Re h-…: A" as a card from the owner.
+  closes it and the asker gets "Re h-…: A" as a card from the owner. With nothing waiting, Home
+  says "All caught up"; "What happened today ›" opens the drawer on Today.
 
 - `./install.sh` ends with "all Project Pals mods pass herdr-app check", and switching to the
   `pals` layout shows the sidebar with the head pal on top (once one is hired:
