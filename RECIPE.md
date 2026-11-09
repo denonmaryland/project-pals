@@ -624,10 +624,55 @@ still travels through crewd's queue, carrying the card's id.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
+### Home (0.4)
+
+The head pal's page, so coming back after working in parallel isn't a terminal scroll (mock:
+`data/crew-boards/orca-home/index.html`). It's `crew-home`, the `center` stack's fourth child
+(`home-view`). **Clicking the head pal** (its row, rail face or hero art) opens it; so do the
+hero's **Home** pebble (icon-only, first in the row; while Home shows it's a terminal icon,
+primary, that goes back to the topic), "<Head> home" in the command bar and gear menu, and
+**Ctrl+Shift+H** (`crew-roster.home`, bound by install.sh only when free). Showing it selects the
+head pal, so the hero is its. Picking any topic, room or the Desk leaves it (`showTabs`). While it
+shows, the header hides the split buttons.
+
+- **Head** (48 px): "Welcome back, <owner>", "You last looked 2h 14m ago · crewd running" (amber
+  when crewd isn't), and four 112×44 tiles: need you (amber), since you looked (mint), in
+  progress (blue), next release.
+- **Needs you**, oldest first, each a 76 px card: pet with its aura (44 px), a rectangular tag,
+  the title, one line of context, the actions, and the age in a 52 px right-aligned slot (amber
+  past an hour). Kinds: **Approval** (Decline · Approve, 10 px apart, Approve last), **Decision**
+  (`pal home ask`: one button per option, the first primary, then Park; without options "Answer
+  in #topic"), **Login** (the command in a mono box, Copy via wl-copy, Open #topic), **Question**
+  (a topic asking you, from `crew.needs`, with what it said; Open), **Desk** (a card waiting on
+  you; Open in Desk, Done), **Proposal** (Decline, View), **Stuck** (Open). Four show; more
+  scroll, with a "+N more · …" footer. Nothing: one 52 px "All clear" line.
+- **Since you last looked** (36 px rows, newest first; a blue time while it's new): installs
+  (violet dot, build hash, + if dirty, the commit's subject, its branch), tasks done, topics
+  finished (one row per topic with its turns, 24 h at most), your answers, links (click opens),
+  notes, things closed on Home, cards the head pal closed. **Mark all seen** is your click
+  (`pal home seen`).
+- **In progress** (48 px rows, longest first): each working topic (its pet, the working
+  indicator, pal, #topic, its terminal title, how long), held topics (amber tag "held · draft"),
+  stuck ones; then "On <head>'s desk · N" and its open cards (Home is its Desk).
+- **Releases & shipping:** three 64 px cells (Public · GitHub from `crew-update.json`; Installed
+  here with the build from `crew-install.json`; Next from home.json, else commits past the last
+  tag), then queued items and pending deploys.
+- **Parked:** title, Unpark · Drop, when.
+
+Data: `data/crew-home/home.json`, written only by `pal home` (bin/crewhome.py, locked, atomic):
+`{seen, items: [{id h-6hex, kind ask|login|link|note|deploy|later, status
+open|answered|done|parked|dropped, title ≤160, body ≤2 KB, options ≤4 (ask), command (login), url
+(link), topic, by (stamped), at, answer, answered_at, result, closed_at, parked_at}], release:
+{next, note, queued: [{id r-6hex, text, at, by}]}}`. Closed items go after 14 days. `pal home
+answer ID "option"` and `pal home seen` are the owner's (a click); an answer is told to whoever
+asked as a card from the owner. install.sh adds `build` (`hash`, `branch`, `subject`, `dirty`,
+`tag`, `ahead`) to `crew-install.json` and a line to `data/crew-installs.jsonl` (the last 200).
+Home reads only while it shows: files every 4 s, `pal desk ls --all --json --done` every 10 s.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
-  - Stack `center` has the children `tab-view` and `room-view`. `showRoom` / `showTabs` switch it
+  - Stack `center` has the children `tab-view`, `room-view`, `desk-view` and `home-view`. `showRoom` / `showTabs` switch it
     and show or hide `crew-composer`.
   - The `profile` column (after `work` in `body`, hidden, `min` 360) holds `profile-main`
     (`crew-profile`, props `part: "main"`) and the hidden `profile-dash` column: `dash-head`
@@ -844,6 +889,10 @@ still travels through crewd's queue, carrying the card's id.
   is written beside it as `SKILL.md.new`.
 
 ## Done when
+
+- Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
+  `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
+  closes it and the asker gets "Re h-…: A" as a card from the owner.
 
 - `./install.sh` ends with "all Project Pals mods pass herdr-app check", and switching to the
   `pals` layout shows the sidebar with the head pal on top (once one is hired:
