@@ -60,6 +60,8 @@ class TopicNames(unittest.TestCase):
         self.assertIn("pal topic <Pal> <name>", out)
         self.assertIn("pal channel is the same command", out)
         self.assertNotIn("a new channel", out)
+        self.assertIn('note <subject> "…"', out)   # a brain note's subject, not a tab (Orca, 2026-11-08)
+        self.assertNotIn("note <topic>", out)
         primer = self.run_cli("primer")
         self.assertIn('pal tell "Pal#topic"', primer)
         self.assertNotIn("channel", primer.lower())
