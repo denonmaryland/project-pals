@@ -20,6 +20,7 @@ const home = (p) => String(p ?? "").replace(/^\/home\/[^/]+/, "~");
 function show(view, key) {
   view.edit = null; view.review = null;
   if (key === "brain") view.brainFile = null;
+  view.brainSeq = (view.brainSeq ?? 0) + 1;   // a file still on its way is no longer wanted
   openPanel(key);
 }
 

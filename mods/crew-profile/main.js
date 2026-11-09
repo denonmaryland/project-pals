@@ -83,7 +83,7 @@ export default class CrewProfile extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "focus") this.h.focus();
-        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; openPanel(c); }
+        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; this.brainSeq = (this.brainSeq ?? 0) + 1; openPanel(c); }
         cx.notify();
       }
     });

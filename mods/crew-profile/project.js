@@ -56,7 +56,7 @@ export function loadBrain(view, cx, quiet = false) {
     try {
       const b = JSON.parse(await crewCli(["brain", "ls", name, "--json"]));
       if (view.shown()?.bot.name === name) {
-        if (view.brainFor !== name) { view.brainFile = null; view.edit = null; view.review = null; }
+        if (view.brainFor !== name) { view.brainFile = null; view.brainSeq = (view.brainSeq ?? 0) + 1; view.edit = null; view.review = null; }
         view.brain = b; view.brainFor = name;
       }
     } catch (e) { if (!quiet) notify({ title: "Couldn't read the brain", body: String(e.message ?? e).slice(0, 200), level: "warning" }); view.brainFor = name; }
@@ -386,8 +386,10 @@ function acceptMission(view, cx, p) {
 
 // Open one brain file in the Brain note (the Vault's tree links here too).
 export function openBrainFile(view, cx, bot, file, project = false) {
-  // Still wanted when it arrives? Another pal, or another note, since the click: drop it.
-  const wanted = () => view.shown()?.bot?.name === bot.name && (project || panelNote() === "brain");
+  // Still wanted when it arrives? Another pal, another note, another file or the list since the
+  // click (each bumps brainSeq): drop it.
+  const seq = view.brainSeq = (view.brainSeq ?? 0) + 1;
+  const wanted = () => view.brainSeq === seq && view.shown()?.bot?.name === bot.name && (project || panelNote() === "brain");
   cx.spawn(async (cx) => {
     try {
       if (project) {
@@ -426,7 +428,7 @@ export function brainTab(view, space, bot, d, full) {
       .child(f.text ? div().p(10).rounded(d.r.md).border_1().border_color(d.line).text_size(12).text_color(d.body).child(TextView.markdown(`pp-bf-${slugOf(f.file)}`, f.text.slice(0, 20000)))
         : div().text_size(12).text_color(d.fg3).child("Empty.")),
       h_flex().gap(12)
-        .child(link(d, "pp-bback", "← Files", () => { view.brainFile = null; }))
+        .child(link(d, "pp-bback", "← Files", () => { view.brainFile = null; view.brainSeq = (view.brainSeq ?? 0) + 1; }))
         .child(link(d, "pp-bedit", "Edit", () => {
           view.editor.set_value(f.text ?? "");
           view.edit = { kind: f.project ? "brain-project" : "brain", file: f.file, sha: f.sha, target: targetOf(view.shown()), gen: view.gen };
