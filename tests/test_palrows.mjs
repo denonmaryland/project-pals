@@ -213,14 +213,18 @@ try {
     assert.equal(wide.args.w?.[0], 96, `${id} is 96 px with room`);
     assert.ok(/Inbox|Tasks|Desk/.test(text(wide)), `${id} shows its name with room`);
   }
-  // Home (the head pal's page, when the layout has home-view): an icon pebble first, and the names
-  // show only from 424 px, so the row still fits.
+  // Home (the head pal's page, when the layout has home-view): the head pal never sleeps, so its
+  // last pebble is Home instead of the moon; other pals keep the moon. Same widths either way.
   assert.ok(!pebbleOf(calm, "hero-home"), "no Home pebble without a home-view");
   fixtures.layout = { id: "root", children: [{ id: "center", type: "stack", active: "tab-view", children: [{ id: "tab-view" }, { id: "home-view" }] }] };
-  const withHome = (w) => roster.heroCard({ space: one, bot: crew.botOf(one) }, t, d, w);
-  assert.ok(pebbleOf(withHome(304), "hero-home"), "a Home pebble with home-view");
-  assert.equal(pebbleOf(withHome(420), "hero-inbox").args.w?.[0], 54, "with Home, no labels at 420");
-  assert.equal(pebbleOf(withHome(424), "hero-inbox").args.w?.[0], 96, "with Home, labels from 424");
+  const heroAt = (sp, w) => roster.heroCard({ space: sp, bot: crew.botOf(sp) }, t, d, w);
+  const head = fixtures.spaces.find((sp) => crew.botOf(sp).god);
+  const other = fixtures.spaces.find((sp) => !crew.botOf(sp).god);
+  assert.ok(head && other, "the fixtures have a head pal and another");
+  assert.ok(pebbleOf(heroAt(head, 281), "hero-home") && !pebbleOf(heroAt(head, 281), "hero-sleep"), "the head pal's hero: Home in the moon's place");
+  assert.ok(!pebbleOf(heroAt(other, 281), "hero-home") && pebbleOf(heroAt(other, 281), "hero-sleep"), "other pals keep the moon");
+  assert.equal(outline(heroAt(head, 281)).split("|").filter((x) => /flex_grow|w\[(18|28|54)\]/.test(x)).length,
+    outline(heroAt(other, 281)).split("|").filter((x) => /flex_grow|w\[(18|28|54)\]/.test(x)).length, "same pebble row for the head pal and the rest");
   fixtures.layout = null;
   assert.ok(text(calm).includes("New topic"), "New topic is still the list's last row");
   fixtures.shared["crew.needs"] = { count: 3 };
