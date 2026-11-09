@@ -729,12 +729,16 @@ def _tell_app(mode, lines, refused):
     (REQS / f"{rid}.req.json").unlink(missing_ok=True)
 
 
-def _stop_tab(space, tab, terms, dry=False, quiet=False, out=None):
+def _stop_tab(space, tab, terms, dry=False, quiet=False, out=None, head=False):
     """Put one topic's agent to sleep and keep its shell. Returns 'slept', 'asleep' or 'refused'."""
     import crewsleep, crewchat
     loud = lambda m: (print(m), out is not None and out.append(m))
     say = (lambda m: None) if quiet else loud   # --idle says nothing about the topics it leaves alone
     label = f"{space['name']} #{chan(tab)}"
+    if head and not owner_proven():
+        # The head pal oversees the rest: only the owner's click (its menu) puts it to sleep (Grok T50).
+        say(f"not putting {label} to sleep: it's the head pal; only {OWNER}'s click in Project Pals does that")
+        return "refused"
     addr = (lead(tab) or {}).get("terminal")
     info = term_info(addr) if crewsleep.is_local(space, addr) and addr != ME else {}
     try:
@@ -794,7 +798,7 @@ def cmd_sleep(spaces, rest):
         if addr in seen:
             continue
         seen.add(addr)
-        r = _stop_tab(s, t, terms, dry, quiet=not loud, out=out)
+        r = _stop_tab(s, t, terms, dry, quiet=not loud, out=out, head=bool(record_of(s, recs).get("god")))
         n += r == "slept"
         refused |= r == "refused"
     if o.get("idle") and not n:
@@ -2234,7 +2238,7 @@ def main(argv):
     cmd, rest = argv[0], argv[1:]
     # The app speaks as the owner only with a click token for exactly this command line (tell, ask and
     # task: the Tasks dialog, Review's notes). A bad or used token is refused, never downgraded.
-    if click_of() and cmd in ("tell", "ask", "task", "desk", "home"):
+    if click_of() and cmd in ("tell", "ask", "task", "desk", "home", "sleep", "wake"):
         prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return

@@ -106,23 +106,21 @@ def _descendants(pid, proc_dir=None):
 
 
 def own_work(agent, proc_dir=None):
-    """What the agent itself still runs: its live descendants, apart from the helpers it started with
-    the session (MCP servers start within HELPER_GRACE seconds of it). [(pid, 'comm: cmdline')]."""
+    """What the agent itself still runs: each live descendant, at any depth, started more than
+    HELPER_GRACE seconds after the agent. What started with the session (its MCP servers, and what
+    they started then) isn't work; anything started later is, a helper's own later children too
+    (Grok T50: a whole helper subtree used to be skipped). [(pid, 'comm: cmdline')]."""
     me = _stat(agent, proc_dir)
+    if not me:
+        return []
     hz = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
     out = []
     for c in _descendants(agent, proc_dir):
         st = _stat(c, proc_dir)
-        if not st or st[1] in ("Z", "X"):
+        if not st or st[1] in ("Z", "X") or (st[2] - me[2]) / hz < HELPER_GRACE:
             continue
-        if me and (st[2] - me[2]) / hz < HELPER_GRACE and st[0] == agent:
-            continue   # a helper it started with (an MCP server), and anything under it
         out.append((c, f"{proc_comm(c, proc_dir) or '?'}: {_cmdline(c, proc_dir)[:80]}".rstrip(": ")))
-    helpers = {c for c in child_pids(agent, proc_dir) if (st := _stat(c, proc_dir)) and me and (st[2] - me[2]) / hz < HELPER_GRACE}
-    under = set()
-    for h in helpers:
-        under |= set(_descendants(h, proc_dir))
-    return [x for x in out if x[0] not in under]
+    return out
 
 
 def check_screen(lines):

@@ -248,7 +248,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - It refuses, saying why, and has no `--force`: working (or "esc to interrupt" on screen), blocked
     or a folder-trust prompt, unsent text in its box, an input box it can't read, a message being
     handed over, or work the agent still runs itself (a descendant started more than 20s after it,
-    seen twice 1.5s apart; Claude Code's "N shells still running"). `--idle` skips the head pal.
+    seen twice 1.5s apart, at any depth, a helper's later children too; Claude Code's "N shells still
+    running"). `--idle` skips the head pal, and naming it needs the owner's click (the menus send
+    one, a one-time token for exactly those arguments).
   - Only this machine's pals, and only the one known agent (`claude`, `agy`, `codex`, …) directly
     under the topic's shell, with `HC_TERMINAL_ID` naming that terminal in both the shell's and the
     agent's environment. It's pinned with a pidfd and checked again before any signal. TERM, a 5s

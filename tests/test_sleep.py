@@ -276,9 +276,20 @@ class SleepChecks(unittest.TestCase):
         make_fake_proc(self.proc, 500, comm="bash", children=[600], address="t1")
         make_fake_proc(self.proc, 600, comm="claude", children=[700, 720], ppid=500, address="t1", start=1000)
         make_fake_proc(self.proc, 700, comm="node", children=[701], ppid=600, start=1200)   # helper
-        make_fake_proc(self.proc, 701, comm="python3", ppid=700, start=9000)               # the helper's own child
+        make_fake_proc(self.proc, 701, comm="python3", ppid=700, start=1300)               # what it started with it
         make_fake_proc(self.proc, 720, comm="bash", ppid=600, start=9000, state="Z")       # finished, not reaped yet
         self.assertEqual(crewsleep.check_sleep(self.space, "t1", "t9", self.info, IDLE), (500, 600))
+
+    def test_a_helpers_later_child_is_work(self):
+        # Grok T50: a tool shell under an MCP server, minutes after the session started, is work.
+        make_fake_proc(self.proc, 500, comm="bash", children=[600], address="t1")
+        make_fake_proc(self.proc, 600, comm="claude", children=[700], ppid=500, address="t1", start=1000)
+        make_fake_proc(self.proc, 700, comm="node", children=[701], ppid=600, start=1200, cmdline=["node", "mcp-server.js"])
+        make_fake_proc(self.proc, 701, comm="bash", ppid=700, start=40000, cmdline=["bash", "-c", "cargo build"])
+        with mock.patch.object(crewsleep, "SETTLE", 0.01):
+            why = self.refused()
+        self.assertIn("cargo build", why)
+        self.assertNotIn("mcp-server", why)
 
     def test_a_transient_child_seen_once_is_not_work(self):
         self.agent(start=1000)
@@ -526,6 +537,30 @@ class SleepCli(unittest.TestCase):
         self.assertIn("put Alpha-2 #general to sleep", r.stdout)
         self.assertIsNone(ps[0].poll())   # the head pal stays up
         self.assertNotIn("Orca", r.stdout)
+
+    def test_naming_the_head_pal_needs_the_owners_click(self):
+        sb = make_sandbox()
+        p = spawn()
+        self.addCleanup(reap, p)
+        (sb["app"] / "shared.json").write_text(json.dumps({"crew": {"bots": [{"id": "g", "space": "orca", "name": "Orca", "god": True}]}}))
+        write_state(sb, [pal(sb, "orca", [("general", "t1")])], {"t1": agent_tab(sb, "t1", 8301, p)})
+        r = run_crew(sb, "sleep", "Orca", me="t42")
+        self.assertIn("it's the head pal", r.stdout)
+        self.assertIsNone(p.poll())
+        # A forged or reused token is refused outright, never downgraded.
+        r = run_crew(sb, "sleep", "Orca", "--click", "ab" * 16)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIsNone(p.poll())
+        # The menu's click: a one-time token for exactly these arguments.
+        clicks = sb["data"] / "crew-clicks"
+        clicks.mkdir(parents=True, exist_ok=True)
+        nonce = "cd" * 16
+        (clicks / f"{nonce}.json").write_text(json.dumps({"args": ["sleep", "Orca"], "at": int(time.time() * 1000)}))
+        r = run_crew(sb, "sleep", "Orca", "--click", nonce)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("put Orca #general to sleep", r.stdout)
+        self.assertEqual(p.wait(timeout=5), -signal.SIGTERM)
+        self.assertFalse((clicks / f"{nonce}.json").exists(), "single use")
 
     def test_sleep_leaves_non_agents_and_remote_pals_alone_and_bad_names_dont_stop_the_rest(self):
         sb = make_sandbox()
