@@ -3,13 +3,13 @@
 
   crew-room                         rooms you're in (or all rooms)
   pal-room read <room> [-n 30]     the room's recent transcript
-  pal-room say <room> <text>       post to the room; @Name (or @Name#channel, @all) also delivers it
+  pal-room say <room> <text>       post to the room; @Name (or @Name#topic, @all) also delivers it
   pal-room handoff <room> @Name <text> [--file PATH]
                                     hand work to one member (delivered to them, shown as a handoff)
   pal-room members <room>          who's in the room
-  pal-room invite <room> <Pal[#channel]> ...
+  pal-room invite <room> <Pal[#topic]> ...
                                     bring other pals in (they're briefed); `pal team` lists the team
-  pal-room new <name> --with "Pal#channel" "Pal#channel" ... [--goal TEXT]
+  pal-room new <name> --with "Pal#topic" "Pal#topic" ... [--goal TEXT]
                                     open a room (Project Pals shows it) and brief every member
 
 Rooms live in ~/.config/herdr-app/data/crew-rooms/<room>.json (members, written by the Project Pals
@@ -82,7 +82,12 @@ def who(meta):
                         return sp["name"], t["name"].lstrip("#"), ME
         except SystemExit:
             pass
-    return (os.environ.get("CREW_NAME") or (f"terminal {ME}" if ME else f"{OWNER}")), None, ME or None
+    # Not a pal: a name given in CREW_NAME, else the terminal, else a plain shell. Never the owner's
+    # name: from the app, the owner posts to rooms directly; from a shell, nobody can prove it's them.
+    given = (os.environ.get("CREW_NAME") or "").strip()
+    if given.lower() == f"{OWNER}".lower():
+        given = ""
+    return (given or (f"terminal {ME}" if ME else crewlib.SHELL_NAME)), None, ME or None
 
 
 def targets(meta, text, only=None):
@@ -171,7 +176,7 @@ def resolve(spec, spaces):
     c = ch.strip().lower().lstrip("#")
     tab = next((t for t in space["tabs"] if t["name"].lower().lstrip("#") == c), None) if c else next((t for t in space["tabs"] if t.get("active")), space["tabs"][0])
     if not tab:
-        die(f"{space['name']} has no channel '{ch}'. Channels: " + ", ".join(t["name"] for t in space["tabs"]))
+        die(f"{space['name']} has no topic '{ch}'. Topics: " + ", ".join(t["name"] for t in space["tabs"]))
     term = next((x["terminal"] for x in tab.get("terminals", []) if x and x.get("app")), None) or next((x["terminal"] for x in tab.get("terminals", []) if x), None)
     return {"bot": space["name"], "channel": tab["name"].lstrip("#"), "terminal": term, "space": space["id"], "tab": tab["id"]}
 
@@ -181,8 +186,8 @@ def briefing(meta, slug, me):
     goal = f" — goal: {meta['goal']}" if meta.get("goal") else ""
     return (f"You've joined the room #{meta['name']}{goal}. Also here: {others}. "
             f"Talk to the room with: pal-room say {slug} \"your update\" — put @Name in it to hand that pal work (it's delivered to them). "
-            f"Catch up any time with: pal-room read {slug}. Keep room updates short; do the work in your own channel. "
-            f"See the whole team with: pal team. Bring another pal in with: pal-room invite {slug} \"Pal\" (or \"Pal#channel\"). "
+            f"Catch up any time with: pal-room read {slug}. Keep room updates short; do the work in your own topic. "
+            f"See the whole team with: pal team. Bring another pal in with: pal-room invite {slug} \"Pal\" (or \"Pal#topic\"). "
             f"When {OWNER} posts to the whole room, answer only if it concerns your project or you can genuinely add something; "
             f"otherwise stay silent (no 'nothing to add' replies). When you're @mentioned, always answer. " + STYLE)
 
@@ -290,7 +295,7 @@ def main(argv):
             else:
                 specs.append(rest[i]); i += 1
         if len(specs) < 2:
-            die("a room needs at least two channels: --with \"Pal#channel\" \"Pal#channel\"")
+            die("a room needs at least two topics: --with \"Pal#topic\" \"Pal#topic\"")
         cmd_new(name, specs, goal)
     elif cmd == "invite" and len(rest) >= 2:
         os.execvp("pal", ["pal", "invite", *rest])

@@ -11,6 +11,13 @@ TMP = tempfile.mkdtemp(prefix="pals-test-")
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)
+# A fake hc first on PATH (N1): deciding an approval types a note into the pal's terminal, and that
+# must never reach a live Herdr session, nor fail where there's no hc. It logs what it was asked.
+SHIMS = Path(TMP) / "shims"
+SHIMS.mkdir()
+(SHIMS / "hc").write_text(f'#!/bin/sh\necho "$@" >> "{TMP}/hc.log"\nexit 0\n')
+(SHIMS / "hc").chmod(0o755)
+os.environ["PATH"] = f"{SHIMS}:{os.environ.get('PATH', '/usr/bin:/bin')}"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
 
 import crewguard  # noqa: E402
@@ -71,6 +78,157 @@ class ShellWrites(unittest.TestCase):
         self.assertEqual(rule("cat <<'EOF' > notes.md\nhi\nEOF\ngit push"), "push")
 
 
+class EditorWrites(unittest.TestCase):
+    """The H3 leftover (docs/v1/readiness.md B1): editors that write in place, from a command line.
+    Matched on the command as run (its words), never on text that only mentions one (T26)."""
+    HELD = [
+        "ed AGENTS.md <<< $'a\\nnew\\n.\\nw\\nq'",             # the review's own two examples
+        "vim -c wq AGENTS.md",
+        "ed -s AGENTS.md <<'EOF'\na\nx\n.\nw\nq\nEOF",         # a heredoc of ed commands
+        "ed -s notes.txt <<'EOF'\nw AGENTS.md\nq\nEOF",        # ... that writes another file
+        "ed -s notes.txt <<< 'w CLAUDE.md'",
+        "printf 'w AGENTS.md\\nq\\n' | ed -s notes.txt",      # commands piped in
+        "ex -sc wq CLAUDE.md",
+        "nvim -es +wq docs/CLAUDE.md",
+        "vim -c 'w AGENTS.md' -c q notes.txt",                 # the write is in -c's text
+        "vim '+w AGENTS.md|q' notes.txt",
+        "vim -es notes.txt <<'X'\nsav AGENTS.md\nX",
+        "nano AGENTS.md",
+        "emacs --batch notes.md --eval '(write-file \"AGENTS.md\")'",
+        "nice -n 5 vim -c wq AGENTS.md",                       # behind wrappers and paths
+        "sudo -u me vim -c wq AGENTS.md",
+        "/usr/bin/vim -c wq AGENTS.md",
+        "cd x && vim -c wq AGENTS.md",
+        "bash -c 'ex -sc wq AGENTS.md'",
+        "sed -n 'w AGENTS.md' notes.txt",                      # sed's own w command
+        "sed 's/a/b/w CLAUDE.md' notes.txt",
+    ]
+    ALLOWED = [
+        "grep -n 'vim -c wq AGENTS.md' notes.md",              # text that names an editor isn't one
+        'echo "ed AGENTS.md" > notes.txt',
+        "git commit -m 'vim -c wq AGENTS.md'",
+        "cat <<'EOF' > notes.md\nvim -c wq AGENTS.md\nEOF",
+        "printf 'w AGENTS.md' > notes.txt",
+        "vim -c wq notes.txt",                                 # editing other files
+        "ed -s notes.txt <<< 'w'",
+        "ed -s notes.txt <<'EOF'\n,s/a/b/\nw\nq\nEOF",
+        "nvim --headless '+Lazy! sync' +qa",
+        "vim --version",
+        "command -v vim",
+        "man ed",
+        "EDITOR=vim git commit",
+        "cat AGENTS.md | less",
+        "sed 's/wiki/w/' AGENTS.md > /tmp/out",
+    ]
+
+    def test_held(self):
+        for c in self.HELD:
+            with self.subTest(c=c):
+                self.assertEqual(rule(c), "agents-file-shell")
+
+    def test_allowed(self):
+        for c in self.ALLOWED:
+            with self.subTest(c=c):
+                self.assertIsNone(rule(c))
+
+    def test_sourced_script(self):
+        script = Path(TMP) / "edit.vim"
+        script.write_text("w AGENTS.md\nq\n")
+        self.assertEqual(rule(f"vim -S {script} notes.txt"), "agents-file-shell")
+        self.assertEqual(rule(f"ed -s notes.txt < {script}"), "agents-file-shell")
+        script.write_text("w\nq\n")
+        self.assertIsNone(rule(f"vim -S {script} notes.txt"))
+
+
+class InterpreterWrites(unittest.TestCase):
+    """Writes to AGENTS.md / CLAUDE.md from an interpreter (2026-11-08: two such edits got past the shell
+    parse). Held: -c / -e code, a heredoc fed to it, a script written and run in one line, a script
+    handed an agent file, and a script file that writes one."""
+    HELD = [
+        # python -c
+        """python3 -c "open('AGENTS.md','w').write('x')" """,
+        """python -c 'from pathlib import Path; Path("docs/CLAUDE.md").write_text("x")'""",
+        # a heredoc fed to the interpreter
+        "python3 - <<'EOF'\np='AGENTS.md'; s=open(p).read()\nopen(p,'w').write(s+'x')\nEOF",
+        "python3 <<EOF\nimport shutil\nshutil.copy('new.md', 'CLAUDE.md')\nEOF",
+        "cd /repo && python3 - <<'PY'\nimport os\nos.replace('tmp.md', \"AGENTS.md\")\nPY",
+        # node, perl, ruby, php
+        """node -e "require('fs').writeFileSync('AGENTS.md', 'x')" """,
+        """node <<'EOF'\nconst fs = require('fs'); fs.appendFileSync("CLAUDE.md", "x")\nEOF""",
+        """perl -e 'open(my $f, ">", "AGENTS.md"); print $f "x"'""",
+        """ruby -e 'File.write("AGENTS.md", "x")'""",
+        """php -r 'file_put_contents("CLAUDE.md", "x");'""",
+        # through a runner, and in sh -c
+        """uv run python -c "open('AGENTS.md','w').write('x')" """,
+        """bash -c "python3 -c \\"open('AGENTS.md','w').write('x')\\"" """,
+        # a script written and run in one line
+        "cat > /tmp/fix.py <<'EOF'\nopen('AGENTS.md','w').write('x')\nEOF\npython3 /tmp/fix.py",
+        # a script handed an agent file (it can't be seen what it does there)
+        "python3 tools/fix.py AGENTS.md",
+        "node scripts/edit.mjs ./docs/CLAUDE.md",
+        "ruby rewrite.rb 'My Project/AGENTS.md'",
+    ]
+    ALLOWED = [
+        "python3 -c \"print(open('AGENTS.md').read())\"",                      # reading it
+        "cat AGENTS.md | python3 -c 'import sys; print(len(sys.stdin.read()))'",
+        "python3 - <<'EOF'\np='RECIPE.md'; s=open(p).read()\ns=s.replace('x', 'see AGENTS.md for the layout')\nopen(p,'w').write(s)\nEOF",  # prose
+        "python3 -c \"print(open('AGENTS.md').read().replace('a', 'b'))\"",    # str.replace isn't a write
+        "python3 - <<'EOF'\np='RECIPE.md'; s=open(p).read()\ns+='- read `AGENTS.md` first'\nopen(p,'w').write(s)\nEOF",  # Markdown code quotes
+        "python3 -m unittest discover -s tests",
+        "node tests/test_needs.mjs",
+        "echo 'AGENTS.md' > notes.txt",                                       # no interpreter (the shell rule's job)
+        "grep -n AGENTS.md README.md",
+    ]
+
+    def test_held(self):
+        for cmd in self.HELD:
+            self.assertEqual(rule(cmd), "agents-file-interpreter", cmd)
+
+    def test_allowed(self):
+        for cmd in self.ALLOWED:
+            self.assertIsNone(rule(cmd), cmd)
+
+    # Quoted text inside the code isn't code: N4 (a-2bb994, a probe whose test cases quote writes),
+    # a-27dc50 (Markdown in triple quotes quoting `vim -c 'w AGENTS.md'`) and a-247eb6 (an edit script
+    # whose replacement strings quote this file's own code). Each one, as it was run.
+    QUOTED_TEXT = [
+        "cd next/bin; env -i HOME=/tmp/h PATH=/usr/bin:/bin python3 - <<'PY'\nimport crewguard as g\n"
+        "cases = [\"cat <<'EOF' > AGENTS.md\\nnew rules\\nEOF\", 'printf x > \"My Project/AGENTS.md\"', "
+        "\"python3 -c \\\"open('AGENTS.md','w').write('x')\\\"\", \"cat AGENTS.md\", \"vim -c wq AGENTS.md\"]\n"
+        "for c in cases:\n    m = g.matches(c)\n    print(repr(c)[:60].ljust(62), (m or {}).get(\"name\") if isinstance(m, dict) else m)\nPY",
+        "python3 - <<'PY'\nfrom pathlib import Path\np = Path(\"RECIPE.md\"); s = p.read_text()\nreps = [\n"
+        "(\"\"\"  version 7. Anything cleverer (a script, python) isn't caught.\"\"\",\n"
+        "\"\"\"  version 7. Terminal editors too: every file their own commands name (`vim -c 'w AGENTS.md'`, `+cmd`,\n"
+        "  sed's `w`). Interpreters have their own rule; anything cleverer isn't caught.\"\"\"),\n]\n"
+        "for a, b in reps:\n    assert a in s, a[:40]; s = s.replace(a, b)\np.write_text(s)\nPY\ngit diff --stat",
+        "python3 - <<'PY'\nfrom pathlib import Path\np = Path(\"bin/crewguard.py\"); s = p.read_text()\n"
+        "s = s.replace('''HELD = [''', '''HELD = [\n    \"\"\"python3 -c \"open('AGENTS.md','w').write('x')\" \"\"\",\n"
+        "    \"subprocess.run(['python3', '-c', \\\"open('CLAUDE.md','w')\\\"])\",''')\np.write_text(s)\nPY",
+    ]
+    STILL_HELD = [
+        # a string that is code: the script runs it
+        "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['python3', '-c', \"open('AGENTS.md','w').write('x')\"])\nPY",
+        # a triple-quoted text written to the agent file itself
+        "python3 - <<'PY'\nfrom pathlib import Path\nPath('AGENTS.md').write_text('''# Rules\n- don't 'w AGENTS.md'\n''')\nPY",
+        "python3 - <<'PY'\np = \"\"\"CLAUDE.md\"\"\"\nopen(p, 'w').write('x')\nPY",
+        # a script written and run in one go: the shell line around the code, judged as before
+        "cat > /tmp/fix.py <<'EOF'\nopen('AGENTS.md','w').write('x')\nEOF\npython3 /tmp/fix.py",
+    ]
+
+    def test_quoted_text_is_not_code(self):
+        for cmd in self.QUOTED_TEXT:
+            self.assertIsNone(rule(cmd), cmd)
+        for cmd in self.STILL_HELD:
+            self.assertEqual(rule(cmd), "agents-file-interpreter", cmd)
+
+    def test_a_script_file_that_writes_one(self):
+        d = Path(tempfile.mkdtemp(prefix="pals-guard-"))
+        (d / "fix.py").write_text("from pathlib import Path\nPath('AGENTS.md').write_text('new rules')\n")
+        (d / "lint.py").write_text("print(open('AGENTS.md').read().count('#'))\n")
+        self.assertEqual(rule(f"python3 {d}/fix.py"), "agents-file-interpreter")
+        self.assertIsNone(rule(f"python3 {d}/lint.py"))
+
+
 class EditApprovals(unittest.TestCase):
     """Review H2: an approval is for one exact edit of one file version."""
 
@@ -95,6 +253,7 @@ class EditApprovals(unittest.TestCase):
         self.assertEqual(rule(cmd), "agents-file")
         self.assertIn("+- safe", extra["diff"])
         self.approve(cmd, extra)
+        self.assertIn("send t1 [pal]", (Path(TMP) / "hc.log").read_text())   # the note went to the fake hc
         other, _ = self.hook.edit_request("Write", {"file_path": str(self.path), "content": "# Rules\n- something else\n"}, str(self.path))
         self.assertNotEqual(cmd, other)
         self.assertIsNotNone(crewguard.check("t1", "Pal", "ch", other, {}))   # held: not covered by the approval
@@ -190,6 +349,76 @@ class OwnerGate(unittest.TestCase):
         self.assertIsNone(rule('pal remember "owner decisions need click tokens (data/crew-clicks)"'))
         self.assertIsNone(rule("grep -r crew-clicks bin/"))
         self.assertIsNone(rule("ls ~/.config/herdr-app/data/crew-clicks"))
+
+
+Q = "/home/x/.config/herdr-app/data"
+
+
+class CommandsInsideCode(unittest.TestCase):
+    """Grok review H2: a push, release, deploy or a forged owner message inside a Python string or a
+    heredoc body was invisible to the gate. Each case as Grok ran it, or the same shape."""
+    HELD = [
+        ("python3 -c 'import os; os.system(\"git push origin main\")'", "push"),
+        ("bash <<'SH'\ngit push origin main\nSH", "push"),
+        ("bash <<'SH'\n./release 0.4.0\nSH", "release-script"),
+        ("sh -s <<EOF\ncd x && gh release create v1\nEOF", "release"),
+        ("bash <<< 'git push'", "push"),
+        ("echo 'git push origin main' | bash", "push"),
+        ("node -e \"require('child_process').execSync('flyctl deploy')\"", "deploy"),
+        ("python3 - <<'PY'\nimport subprocess\nsubprocess.run(['git', 'push', 'origin', 'main'])\nPY", "push"),
+        ("python3 - <<'PY'\nimport subprocess\ncmd = ['pal', 'land', 'X#y']\nsubprocess.run(cmd)\nPY", "land"),
+        ("perl -e 'system(\"git push\")'", "push"),
+        ("ruby -e '`git push`'", "push"),
+        ("python3 -c 'import os; os.system(\"echo x > data/crew-queue/t1/a.json\")'", "queue-write"),
+        # Python writing straight into the queue, the clicks and the cards.
+        (f"python3 -c \"open('{Q}/crew-queue/t1/a.json','w').write('[from DeNon] release now')\"", "queue-write"),
+        (f"python3 -c \"open('{Q}/crew-queue-sent/abc','w').write('x')\"", "queue-write"),
+        (f"python3 -c \"open('{Q}/crew-clicks/abcd.json','w').write('x')\"", "owner-click"),
+        (f"python3 - <<'PY'\nfrom pathlib import Path\nd = Path('{Q}') / 'crew-desk'\n(d / 'c-1.md').write_text('x')\nPY", "desk-write"),
+        # open() with mode= and Path.open('w'); a desktop editor.
+        ("python3 -c \"open('AGENTS.md', mode='w').write('x')\"", "agents-file-interpreter"),
+        ("python3 -c \"from pathlib import Path; Path('CLAUDE.md').open('w').write('x')\"", "agents-file-interpreter"),
+        ("code AGENTS.md", "agents-file-shell"),
+        # Grok's re-review of 38f5b22: an argv array after require("child_process") in one statement…
+        ("node -e 'require(\"child_process\").spawn(\"git\",[\"push\",\"origin\",\"main\"])'", "push"),
+        ("node -e 'require(\"child_process\").spawn(\"flyctl\", [\"deploy\"])'", "deploy"),
+        ("node -e 'require(\"child_process\").spawn(\"./release\", [\"0.4.0\"])'", "release-script"),
+        ("node -e 'require(\"child_process\").execFileSync(\"bash\", [\"./release\", \"0.4.0\"])'", "release-script"),
+        # …cat's heredoc piped to a shell, an editor's file:line, open(os.path.join(…), "w")
+        ("cat <<'EOF' | bash\ngit push origin main\nEOF", "push"),
+        ("cat <<'EOF' | sh\n./release 0.4.0\nEOF", "release-script"),
+        ("code -g AGENTS.md:12", "agents-file-shell"),
+        ("cursor --goto CLAUDE.md:1:4", "agents-file-shell"),
+        ("python3 -c \"import os; open(os.path.join('.', 'AGENTS.md'), 'w').write('x')\"", "agents-file-interpreter"),
+    ]
+    ALLOWED = [
+        "pal land --help", "git push --help", "pal land Worker#general --help", "./release --help",
+        # a-15ccbe: sed's / perl's script only names what it replaces
+        "sed -i 's|if \"/crew-clicks/\" in path or \"/crew-queue/\" in path:|x|' bin/crew-hook",
+        "perl -pi -e 's|crew-clicks|x|' notes.txt",
+        "python3 -c 'print(\"git push\")'",                                        # printed, not run
+        f"python3 - <<'PY'\nimport json\nprint(open('{Q}/crew-queue/t1/a.json').read())\nPY",   # read
+        "bash <<'SH'\ngit status\nSH",
+        "echo 'git push' > notes.txt",
+        "cat <<'EOF' > notes.md\ngit push origin main\nEOF",                      # written, not run
+        "python3 -m unittest discover -s tests",
+        "grep -rn crew-desk-settings mods/",
+        "code .",
+        "cat <<'EOF' | grep push\ngit push origin main\nEOF",                  # piped to grep, not a shell
+        "node -e 'require(\"child_process\").spawn(\"git\", [\"status\"])'",
+        "python3 -c \"import os; print(open(os.path.join('.', 'AGENTS.md')).read())\"",
+    ]
+
+    def test_held(self):
+        for cmd, name in self.HELD:
+            self.assertEqual(rule(cmd), name, cmd)
+
+    def test_allowed(self):
+        for cmd in self.ALLOWED:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_still_held_with_help_elsewhere(self):
+        self.assertEqual(rule("git push --help; git push"), "push")
 
 
 if __name__ == "__main__":

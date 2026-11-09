@@ -1,5 +1,157 @@
 # Changelog
 
+## 0.4.0: the Desk
+
+Everything sent to a pal is now a card you can follow, Home is one page to come back to, and
+messages reach busy pals without typing into their input box. 0.3.1 was never released: what it
+held (topics, the new profile page, machines, the command bar, pal list looks) ships here too.
+
+### The Desk
+- **Every pal has a desk.** Everything sent to a pal (a tell, a question, a task, how something
+  you asked went) is now a card with a status: queued, seen, working, done, held or needs you.
+  You see when a pal actually got it, and its result, instead of guessing from its screen.
+- **The Desk view.** The header's Desk button opens every desk at once: what waits on you, what
+  has no pal yet, what's held and why, then each pal and its topics. Move, raise, lower, close or
+  cancel any card with a click.
+- **Drop a card from anywhere** with Ctrl+Shift+D: type it, pick a pal or topic (or leave it in
+  To route), set how urgent it is, add images. Multi-line cards go on the task board too.
+- **Auto finds the pal for you.** Drop a card with Auto and a quick, cheap model (Claude Haiku,
+  else Antigravity CLI) picks the pal and topic it belongs to. If it isn't sure, the card waits in
+  To route for you to place it, with the reason. It runs in the background helper, at most 100
+  times a day; turn it off in Settings → Desk (or `pal settings desk.triage off`) to always place
+  cards yourself.
+- **Claude Code pals get cards without typing.** A Claude Code mod in each pal hands a card over
+  mid-step while the pal works, or starts a turn when it's idle. Whatever you've half-typed in its
+  box stays put, and a band above its prompt shows the topic's open cards (`/desk` lists them).
+  It's loaded only in pals (with `--plugin-dir`), never in your other Claude Code sessions.
+- **Codex pals can check their desk** with a `desk_check` tool (and close cards with
+  `desk_done`), given to them on their own command line. They don't get cards mid-step: they're
+  typed in when the pal is idle.
+- **`pal desk`** for pals (and you, in a shell): their cards, `take`, `done "result"`, `reply`,
+  `block`, `pass`, `send`, `sent`. The shipped `pal-desk` skill teaches every pal how to use it.
+- **Tasks and their cards stay in step.** Finishing a task's card finishes the task, and the Tasks
+  dialog shows whether each new task has reached its pal yet ("not seen yet", "seen", or why it's
+  held).
+- **Settings → Desk** shows today's numbers and lets you turn triage off, change its daily cap,
+  when the head pal hears about held or quiet cards, and when closed cards are archived.
+- **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title
+  or text by hand; its status and who sent it can't be changed that way.
+
+### Home
+- **One page to come back to.** Click your head pal (or press Ctrl+Shift+H): one list of
+  everything that needs you, oldest first, with one-click Approve, Decline and answers, under one
+  line saying who's working and what shipped today; "All caught up" when there's nothing.
+  "What happened today" opens a drawer with what finished, got installed or was linked, who's
+  working, releases, and what you parked. Your head pal keeps its decisions, logins and links
+  there with `pal home`.
+- **Decide one thing at a time.** While anything needs you, Home shows one item full screen: who's
+  asking, the context (links, images, the command or diff), what each option does, and the asker's
+  recommendation with its why. Pick with a click or 1-9, Enter takes the recommendation, C opens a
+  chat with the asking pal's terminal, J/K move, L puts it off, Esc shows the list.
+- **Your head pal is one key away.** T (or "Talk to <head pal>") opens its terminal from Home, and
+  "Message <head pal>" sits under All caught up.
+
+### MUSE, your idea partner
+- Hire it from the hire dialog (Idea partner) or with `pal hire --partner`, and riff with it in its
+  #ideas topic: half-formed ideas, screenshots. It asks sharp questions and turns them into clean
+  card drafts with the right pal suggested. Nothing goes out until you click Send (or Edit, or
+  Discard) in the Desk view's Drafts; then it's your own card. MUSE is a Claude Code pal on Sonnet.
+
+### Messages reach busy pals
+- **Messages between steps.** A Claude Code or Antigravity CLI pal gets messages from other pals
+  while it works, between its tool calls, and as its turn ends, so a draft in its input box no
+  longer holds them up. Idle pals and other brains are still typed to, carefully. A pal with
+  nothing waiting pays nothing per step: the hooks start only when something is queued.
+- **`pal ask` reaches busy pals** mid-turn, and replies are read from the pal's session file
+  instead of its screen.
+- **No grey suggestions in pals' input boxes.** Claude Code pals start with prompt suggestions
+  off (on their own command line; your other Claude Code sessions keep them), so a suggestion
+  can't pass for unsent typing and hold messages.
+- **Antigravity CLI (`agy`) is a native brain:** hire it, pick its model, its hooks, the approval
+  gate and shared skills.
+
+### Safer
+- **Only you speak as you.** A message headed "[from you]" now needs your click in Project Pals
+  (Tasks, Review, Home). From a plain shell it says "not verified as you", and text inside a
+  message can't fake a header. A message file Project Pals didn't write itself (one a script put in
+  the queue) reaches the pal labelled "unverified", its header quoted, never as yours.
+- **Your settings, updates and landings need your click too.** Changing settings (owner, head pal,
+  bypass, Settings → Desk), installing or rolling back an update, landing a branch, renaming pals
+  and pruning the Desk's archive go through Project Pals' buttons. A pal, or a terminal Herdr doesn't
+  know, is refused. Reading settings still works from any shell.
+- **What the approval gate holds** in Claude Code and Antigravity CLI pals, for your click in the
+  Inbox: `git push`, package publishes, GitHub releases, PR merges and posts, deploys (fly, vercel
+  --prod, netlify --prod, wrangler, kubectl apply/delete), mail and chat webhooks, `pal land`, a
+  repo's release script, edits of a project's AGENTS.md or CLAUDE.md, and writes into Project Pals'
+  message queue, your click tokens and the Desk's cards. It matches the command as it runs, not as
+  it's spelled: behind `npx`, a full path, `env` or `git -C`; inside `sh -c`, a heredoc,
+  here-string or `echo` piped to a shell, or a string Python, Node, Perl, Ruby or PHP runs (`os.system`,
+  `subprocess`, `child_process`, `system`, backticks); and file writes from those languages
+  (`open(…, "w")`, `mode="w"`, `write_text`, `writeFileSync` …) or an editor (`ed`, `vim -es`,
+  `code` …). Text that only mentions a command (a grep pattern, a quoted string, `--help`) isn't
+  held. If the gate itself fails, the command is stopped, not let through.
+- **The gate catches mistakes, not a pal set on getting around it.** A pal runs as you: one
+  determined to could build a command from pieces, write a script first and run it later, or edit
+  these files directly. Antigravity CLI pals are gated on `run_command` only: their own file-edit
+  tools aren't checked yet, so an agy pal's edit of AGENTS.md isn't held.
+- **Notebook paths stay in the pal's own project** (and Project Pals' own config), not anywhere
+  under your projects folder, however the path is spelled (`~`, `$HOME`, `${HOME}`).
+- **Roll back puts the previous version back cleanly:** library files the newer version added go,
+  and so do its hooks (Antigravity CLI's too), with no empty hook lists left behind. Your own hooks
+  stay. A first install has nothing to roll back to.
+
+### Topics, profiles and the sidebar
+- **Channels are now topics.** A pal's tabs are the topics it's working on, and everything you
+  see says so: the hero's Topics list and "+ New topic", the picker, the right-click menu, the
+  command bar, dialogs, the profile and Vault panels, the pal list ("3 topics"), help text and
+  the docs. The `#` stays, and so does `Pal#topic`. `pal topic` is the new command;
+  `pal channel` and `--channel` still work, so older scripts and pals don't break.
+- **A new profile page.** The pal's pet on a stage lit in its state's colour, its state line,
+  name and mission, a "Give <pal> a task…" box, and four cards for the week: Shipped, In motion,
+  Needs you, Hiccups. In Full, the shown topic's live terminal sits beside it as a resizable
+  column.
+- **Which computer a pal works on.** The profile shows the pal's machine (laptop, desktop or
+  server, how Herdr reaches it, connected or not), and **Change machine…** moves it: pick or add a
+  machine, and the project folder is checked there (or cloned there).
+- **The command bar.** The header's search field (or Ctrl+Shift+Space) searches pals, topics,
+  open tasks, Vault notes and every command.
+- **Inbox in the hero.** The hero's first quick action is Inbox: it opens the sidebar's Inbox and
+  shows how many things need you, in amber. New topic is the last row of the hero's list, in the
+  command bar and in the right-click menu.
+- **New topics on a sleeping pal start its brain.** `pal topic` on a pal with no agent running
+  used to open a plain shell. Now pals remember their brain while awake, and a topic (or waking a
+  pal) always starts one: its own, else the asking pal's, else Claude Code, and it says
+  which when it had to guess. `pal topic` tells you if the
+  agent didn't come up.
+- **Pick your working indicator.** Project Pals settings → Working indicator: the classic dot or
+  one of 30 small animations (pixel spinners, shaded spheres, ASCII globes), with live previews.
+- **Pick how your pals are listed.** Project Pals settings → Pal list style: keep the big pets, or
+  pick one of nine compact looks with smaller pets, so the full name, the project folder, the
+  branch, the brain and topic and task counts fit. The dialog previews each one with your own
+  pals; a click applies it.
+- **Trees.** In any look, a pal that's working or needs you shows its live topics underneath (at
+  most four), each one a click away. On by default; fold or unfold them all from the tree button
+  in the Pals header, or in Pal list style.
+- **Working wins.** A pal shows Working while any of its topics works; Done only when nothing runs
+  (Needs you still comes first).
+- **Topic colours show** as a small bar before each #topic in the hero's list, the Trees rows and
+  the topic picker.
+- **Fold the hero's topics** with the chevron on its Topics header ("Topics 18 · 3 working").
+- **Round scrollbars.** Everything Project Pals scrolls has a slim pill-shaped thumb, quiet until
+  you hover or drag it.
+- Pal rows no longer show last-activity times, so the name and state line get the width.
+
+### Fixed
+- A message waiting for a topic whose terminal closed used to be dropped with it. Its card now
+  waits as held and goes out once that topic has an agent running again.
+- A room seat follows its pal when the pal is renamed.
+- Home's Installed line shows the build even when Project Pals was installed from an export
+  without `.git`.
+
+### Thanks
+**goodboimax** for native Antigravity CLI support and the hook delivery the Desk builds on
+(PR #1, #2 and #3), landed here with his commits as he wrote them.
+
 ## 0.3.0
 
 A new look and a simpler shape: pocket pets, terminal-first channels, and a profile panel with a

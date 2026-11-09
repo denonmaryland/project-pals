@@ -1,0 +1,32 @@
+{
+  "id": "c-0b1c2d",
+  "kind": "ask",
+  "status": "done",
+  "from": "a shell on this computer",
+  "from_kind": "shell",
+  "proof": "none",
+  "to": "Docs#updates",
+  "urgency": "normal",
+  "created": "2026-11-08T10:00:00Z",
+  "updated": "2026-11-08T10:05:00Z",
+  "note": "  leading spaces kept  ",
+  "title": "Which branch has the fix?",
+  "body": "",
+  "reply": "crew/next, since 306df52.\n\\## Receipts is quoted in the reply",
+  "receipts": [
+    {
+      "at": "2026-11-08T10:00:00Z",
+      "status": "queued",
+      "by": "a shell on this computer",
+      "via": "pal desk send",
+      "note": ""
+    },
+    {
+      "at": "2026-11-08T10:05:00Z",
+      "status": "done",
+      "by": "Docs#updates",
+      "via": "pal desk reply",
+      "note": ""
+    }
+  ]
+}

@@ -2,43 +2,70 @@
 """pal (also crew): how a Project Pals pal (or you) works with the rest of the team.
 
 The team
-  pal overview [--deep]             everything at once: pals, channels (what each is on), projects
+  pal overview [--deep]             everything at once: pals, topics (what each is on), projects
                                      (git), memory, tasks, rooms, routines, approvals, what's stuck
   pal team                          the short roster
   pal feed [--all] [-n 40]          what happened since you last looked (finished, blocked, stuck…)
-  pal peek <Pal[#ch]> [-n 60]       read a pal's screen and recent history, and what it's waiting on if blocked
+  pal peek <Pal[#topic]> [-n 60]    read a pal's screen and recent history, and what it's waiting on if blocked
                                      (a prompt and its options: only the owner answers those, in its tab)
 
 Talking
-  pal tell <Pal[#ch]> <text> [--now]
+  pal tell <Pal[#topic]> <text> [--now]
                                      message a pal; delivered when its turn ends (--now: right away,
                                      for a pal that's stuck mid-turn). You hear back when it finishes.
-  pal ask <Pal[#ch]> <text> [--timeout 600]
+  pal ask <Pal[#topic]> <text> [--timeout 600]
                                      message a pal, wait for its answer, print it
-  pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#ch]>...
+  pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#topic]>...
+
+The Desk (everything sent to you is a card with a status and receipts)
+  pal desk [ls] [--all|--route|--owner|--held] [--done] [--json]
+                                     your open cards (this topic + your pal tray); --all: everyone's
+  pal desk open ID                  the whole card (marks it seen · opened)
+  pal desk take ID [--sub] | later ID | done ID ["result"] | reply ID "answer"
+  pal desk block ID "why" [--owner] | pass ID <Pal[#topic]> "why"
+  pal desk send <Pal[#topic]|owner|route|auto> "text" [--soon|--low] [--ask] [--task] [--attach F]... [-F file]
+            [--relaying] [--re ID]   a new card (pal tell / ask / task add --for send cards too)
+  pal desk sent [--json] | cancel ID | attach FILE | stats | check
+  pal desk draft --to <Pal#topic|auto|route> [--urgency U] [--task] [--attach F]... -F draft.md
+                                     the idea partner's draft: it waits for the owner's Send (ls --drafts)
+  (the owner, from Project Pals: urgency ID LEVEL, confirm ID, send-draft ID [--to …], discard ID, prune --older 180d)
+
+Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
+  pal home [--json]                 what's on Home
+  pal home ask "question" [--option A [--does "what A does"]]... [--recommend A --why "…"] [--topic P#t]
+            [--body …] [--link URL]... [--image FILE]...   a decision for the owner (options: one click each)
+  pal home recommend <a-…|c-…|h-…> <option> --why "…"   your pick for an approval (approve|decline),
+                                     a Desk card (done|open) or an ask (one of its options)
+  pal home login "! npx vercel login" --topic P#t [--title …]       a login the owner runs in that topic
+  pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
+  pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
+  pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  (the owner, from Project Pals: answer ID "option", seen)
 
 Hiring
-  pal hire <Name> [--harness claude] [--model haiku|sonnet|opus] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
-  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--worktree [--base BRANCH]]
-                                     a new channel; --worktree gives it its own git branch and folder
+  pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--topic general] [--folder DIR] [--machine M] [--task T]
+  pal hire --partner [Name]         the idea partner (MUSE by default): you riff, it drafts cards you Send
+  pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
+                                     a new topic (a tab); --worktree gives it its own git branch and folder.
+                                     pal channel is the same command (topics were called channels before 0.4.0)
 
 Work
-  pal task add "<title>" [--for Pal[#ch]] [--after T1,T2] [--body T] [--check "cmd"]
+  pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
   pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
             | assign T Pal | cancel T | reopen T
-  pal routine add <Pal> "<when>" "<prompt>" [--name N] [--channel routines]
+  pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
-  pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--channel C]
-  pal diff <Pal#ch> [--stat|--json] what a worktree channel changed
-  pal land <Pal#ch> [--check "cmd"] merge a worktree channel's branch into its project (needs the owner)
+  pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--topic C]
+  pal diff <Pal#topic> [--stat|--json] what a worktree topic changed
+  pal land <Pal#topic> [--check "cmd"] merge a worktree topic's branch into its project (needs the owner)
 
 Mission, brain and agent files (the profile panel shows them all)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
   pal mission focus "…" | tick "goal" [--undo]          keep your focus current, tick a goal
   pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to the Inbox
   pal brain [ls] [Pal] [--json] | show [Pal] [file]     the pal's brain (mission, decisions, change log, map, notes)
-  pal brain log "what changed" | decide "what" --why "why" | note <topic> "…"
+  pal brain log "what changed" | decide "what" --why "why" | note <subject> "…"
   pal agents show|lint [Pal] [--json] [--deep]          the project's AGENTS.md / CLAUDE.md: what loads, what to fix
   pal agents propose <file> -F new.md [--note "why"]    a change to AGENTS.md / CLAUDE.md, for the owner to apply
   pal proposals | pal proposal show|accept|decline ID   proposals waiting on the owner (accept/decline: the owner)
@@ -63,8 +90,9 @@ Memory and skills
   pal skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
 
 Settings
-  pal settings                      who the pals work for, and whether new pals bypass permissions
-  pal settings owner "Name" | bypass on|off
+  pal settings                      who the pals work for, head pal, bypass, and background LLM
+  pal settings owner "Name" | head "Name" | bypass on|off | llm auto|claude|agy
+  pal settings desk | desk.<key> <value>   the Desk's settings (triage, caps, flags, archive, MUSE)
 
 Updates
   pal version                       what's installed
@@ -76,7 +104,8 @@ Approvals (the owner)
   pal approve ID | pal deny ID ["note"]
 
 "Pal" matches a pal's name or the start of it ("docs" finds "Docs Site"); without
-#channel you get the one it's showing. hire, channel and invite are carried out by the Project Pals layout,
+#topic you get the one it's showing (Pal#topic: a pal's tabs are its topics; --channel and
+pal channel still work, as before 0.4.0). hire, topic and invite are carried out by the Project Pals layout,
 so Herdr has to be open on it. crewd (herdr-crew.service) delivers messages between turns, runs
 routines and reports back; without it, messages are typed in right away.
 """
@@ -88,8 +117,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (owner_gate, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
+from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, ME, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, screen, meaningful, enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
@@ -99,12 +129,16 @@ import crewroutines
 import crewskills
 import crewguard
 import crewupdate
+import crewdesk
+import crewhome
 
 
 def opts(rest, flags, bools=()):
     pos, out, i = [], {}, 0
     while i < len(rest):
         a = rest[i]
+        if a == "--topic" and "channel" in flags:   # --topic is --channel's new name (0.4.0); both work
+            a = "--channel"
         if a.startswith("--") and a[2:] in bools:
             out[a[2:]] = True; i += 1
         elif a.startswith("--") and a[2:] in flags:
@@ -159,6 +193,32 @@ def watch_for_trust(bot, channel, wait=15):
             info = hc_terminals().get(addr) or {}
             if info.get("status") == "working":
                 return   # it got going: no question in the way
+
+
+def watch_start(bot, channel, brain="its brain", wait=20):
+    """After pal topic: wait for the new topic's agent to show up (T24: on an asleep pal it used to
+    open a bare shell and say nothing). Claude Code's folder-trust question counts as started (it is,
+    and the notice says what it waits for). Returns True when the agent is there."""
+    want = channel.lstrip("#").lower()
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            space = next((s for s in herdr_spaces() if s["name"] == bot), None)
+        except CrewError:
+            return True   # can't see Herdr from here: nothing to report either way
+        tab = next((t for t in (space or {}).get("tabs", []) if chan(t).lower() == want), None)
+        addrs = [x["terminal"] for x in (tab or {}).get("terminals", []) if x and x.get("terminal")]
+        live = hc_terminals()
+        for addr in addrs:
+            if trust_prompt(screen(addr)):
+                print(trust_notice(bot, want))
+                return True
+            if is_agent(live.get(addr)) or (live.get(addr) or {}).get("status") == "working":
+                return True
+    print(f"{bot} #{want} opened, but no agent is running in it after {wait}s ({brain} didn't start), so its "
+          f"brief hasn't been given. Look at that tab, or close it and try again with --harness.")
+    return False
 
 
 def cmd_bots(spaces):
@@ -338,54 +398,118 @@ def target(spaces, spec):
         die("that's you")
     if x["terminal"] not in live_agents():
         die(f"{space['name']} #{chan(tab)} is asleep (no agent running there). Wake it by inviting it to a room, "
-            f"or give it a fresh channel: pal channel \"{space['name']}\" <name> --brief \"...\"")
+            f"or give it a fresh topic: pal topic \"{space['name']}\" <name> --brief \"...\"")
     return space, tab, x["terminal"]
 
 
 def cmd_tell(spaces, spec, text, now=False):
     space, tab, t = target(spaces, spec)
-    me, name = whoami(spaces)
-    head = from_bot(name) if me else f"[from {OWNER}]"
-    reply = f'\n(Answer {name} with: pal tell "{me}" "..." if it needs one.)' if me else ""
-    meta = {}
+    who = crewdesk.sender(spaces)
+    me, name = who["me"], who["name"]
+    title, body = crewdesk.split_text(text)
+    card = crewdesk.create("tell", f"{space['name']}#{chan(tab)}", title, body, frm=who["from"], from_kind=who["from_kind"],
+                           proof=who["proof"], urgency="soon" if now else "normal", via="pal tell")
+    did = None
     if me:
         did = new_id("d-")
         with locked("delegations"):
             dels = load_json(DATA / "crew-delegations.json", [])
-            dels.append({"id": did, "from": ME, "from_name": name, "to": t, "text": text, "at": now_ms(),
+            dels.append({"id": did, "from": ME, "from_name": name, "to": t, "text": text, "at": now_ms(), "card": card["id"],
                          "delivered_at": None if daemon_alive() else now_ms()})
             save_json(DATA / "crew-delegations.json", dels)
-        meta["delegation"] = did
-    enqueue(t, f"{head} {text}{reply}", sender=name, kind="tell", urgent=now, meta=meta)
+    card, _, what = crewdesk.deliver(card, spaces, urgent=now, delegation=did)
+    if what.startswith("held"):
+        print(f"{what} · card {card['id']} waits on its desk (pal desk sent)")
+        return
     status = (term_info(t).get("status") or {}).get("state")
-    when = "now" if now or status != "working" or not daemon_alive() else "when its turn ends"
-    print(f"told {space['name']} #{chan(tab)} ({when})" + ("; you'll hear back when it finishes" if me and daemon_alive() else ""))
+    when = "now" if now or status != "working" or not daemon_alive() else "between its steps, or when its turn ends"
+    print(f"told {space['name']} #{chan(tab)} ({when}) · card {card['id']}" + ("; you'll hear back when it finishes" if me and daemon_alive() else ""))
 
 
 def cmd_ask(spaces, spec, text, timeout):
     space, tab, t = target(spaces, spec)
     deadline = time.time() + timeout
-    while (term_info(t).get("status") or {}).get("state") == "working" and time.time() < deadline:
-        time.sleep(2)
-    if (term_info(t).get("status") or {}).get("state") == "blocked":
-        die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
-    before = term_info(t).get("turn", 0)
-    me, name = whoami(spaces)
-    head = from_bot(name) if me else f"[from {OWNER}]"
-    send_now(t, f"{head} asks: {text}\n(Answer right here in your reply; {name} is reading your screen.)")
+    who = crewdesk.sender(spaces)
+    me, name = who["me"], who["name"]
+    head = crewdesk.who({"from": who["from"], "from_kind": who["from_kind"]}) if who["from_kind"] != "owner" else header(me, name)
+    title, body = crewdesk.split_text(text)
+    card = crewdesk.create("ask", f"{space['name']}#{chan(tab)}", title, body, frm=who["from"], from_kind=who["from_kind"],
+                           proof=who["proof"], via="pal ask")
+    text = crewdesk.escape_body(text)
+    import crewchat
+    from crewlib import QUEUE, hooked
+    status = lambda: (term_info(t).get("status") or {}).get("state")
     started = False
+    midturn = status() == "working" and hooked(t) and daemon_alive()
+    if midturn:
+        # Busy, with delivery hooks: they hand it the question mid-turn, so ask now instead of
+        # waiting the whole turn out; its answer starts once the hook has taken the message.
+        before = term_info(t).get("turn", 0)
+        item = enqueue(t, crewdesk.frame(card), sender=name, kind="ask", meta={"card": card["id"]})
+        f = QUEUE / t / f"{item['at']}-{item['id']}.json"
+        sent_at = now_ms()
+        while (f.exists() or f.with_name(f.name + ".taken").exists()) and time.time() < deadline:
+            sent_at = now_ms()   # last moment it was still waiting: its answer comes after this
+            time.sleep(0.1)
+        if f.exists():   # never handed over (a draft in the way, or it's blocked): don't leave it behind
+            from crewlib import claim_queue, finish_claimed
+            finish_claimed(claim_queue(t, only=[f]))
+            crewdesk.mark(card["id"], "expired", "pal ask", "pal ask", f"not taken within {timeout}s")
+            die(f"{space['name']} #{chan(tab)} didn't take the question within {timeout}s; nothing was sent")
+    else:
+        while status() == "working" and time.time() < deadline:
+            time.sleep(2)
+        if status() == "blocked":
+            die(f"{space['name']} #{chan(tab)} is waiting on {OWNER}'s answer to a question; don't type into it")
+        before = term_info(t).get("turn", 0)
+        linked = t in crewchat.links()
+        sent_at = now_ms()
+        try:
+            send_now(t, f"{head} asks ({card['id']}): {text}" + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
+        except CrewError:
+            crewdesk.mark(card["id"], "cancelled", "pal ask", "pal ask", "couldn't type it in")
+            raise
+        crewdesk.delivered(card["id"], t, "typed")
+    last, still, idle = None, 0, 0
+    def card_reply():
+        try:
+            c = crewdesk.read(crewdesk.need(card["id"]))
+            return c.get("reply") if c.get("status") == "done" else None
+        except (CrewError, OSError):
+            return None
     while time.time() < deadline:
+        if card_reply():
+            break
         info = term_info(t)
         state = (info.get("status") or {}).get("state")
         if state == "working" or info.get("turn", 0) > before:
             started = True
-        if started and state != "working":
+        if midturn:
+            # It answers and carries on with its own work: return once the answer stops growing
+            # (or its turn ends), not when the whole turn does.
+            reply = crewchat.replies_since(t, sent_at)
+            still = still + 1 if reply and reply == last else 0
+            last = reply
+            idle = idle + 1 if state != "working" else 0
+            if still >= 4 or (idle >= 2 and reply) or idle >= 4:
+                break
+        elif started and state != "working":
             break
         time.sleep(1.5)
     else:
         print(f"(still working after {timeout}s; its screen so far:)")
+    reply = card_reply() or crewchat.replies_since(t, sent_at)   # the hooks may have linked it during this turn
+    if reply:
+        try:
+            if not card_reply():
+                crewdesk.mark(card["id"], "done", "Project Pals", "session file", "answered (auto)", reply=reply[:8000])
+        except CrewError:
+            pass
+        print(f"── {space['name']} #{chan(tab)} ──")
+        print(reply)
+        return
     out = screen(t, 200)
-    at = max((i for i, l in enumerate(out) if f"{head} asks:" in l), default=-1)
+    at = max((i for i, l in enumerate(out) if f"{head} asks" in l or f"Desk card {card['id']}" in l), default=-1)
     answer = [l for l in meaningful(out[at + 1:]) if "Answer right here" not in l and "Worked for" not in l and "Crunched for" not in l]
     print(f"── {space['name']} #{chan(tab)} ──")
     print("\n".join(answer[-60:]) or "(no answer on its screen)")
@@ -437,7 +561,7 @@ def git(folder, *args, check=True):
 def make_worktree(space, name, base=None):
     folder = space.get("folder")
     if space.get("machine"):
-        raise CrewError("worktree channels are for pals on this computer for now")
+        raise CrewError("worktree topics are for pals on this computer for now")
     if not folder:
         raise CrewError(f"{space['name']} has no project folder")
     repo = git(folder, "rev-parse", "--show-toplevel")
@@ -460,7 +584,7 @@ def worktree_of(space, tab):
     wts = r.get("worktrees") or {}
     wt = wts.get(tab["name"]) or wts.get("#" + chan(tab))
     if not wt:
-        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with pal channel … --worktree)")
+        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with pal topic … --worktree)")
     return wt
 
 
@@ -495,13 +619,18 @@ def cmd_diff(spaces, spec, mode):
 
 def cmd_land(spaces, spec, check=None):
     space, tab = find(spec, spaces)
-    wt = worktree_of(space, tab)
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
-    if ME and is_bot_terminal(ME) and not crewguard.recently_used(ME, "land"):
-        s, t = where_of(ME, spaces)
-        held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
-        if held:
-            die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+    # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
+    # terminal ID isn't the owner (Grok review H1).
+    if ME and is_bot_terminal(ME):
+        if not crewguard.recently_used(ME, "land"):
+            s, t = where_of(ME, spaces)
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
+            if held:
+                die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+    else:
+        require_owner("landing a branch")
+    wt = worktree_of(space, tab)
     if git(wt["path"], "status", "--porcelain"):
         die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
     repo = wt["repo"]
@@ -528,7 +657,7 @@ def cmd_land(spaces, spec, check=None):
                 except CrewError:
                     pass
             die(f"couldn't land {wt['branch']}: it conflicts with {wt['base']} (merge aborted, nothing changed). "
-                f"The channel was asked to rebase.\n{conflicts[-800:]}")
+                f"The topic was asked to rebase.\n{conflicts[-800:]}")
     x = lead(tab)
     if x:
         try:
@@ -606,13 +735,357 @@ def cmd_task(spaces, rest):
         die("pal task add|ls|ready|show|claim|note|block|done|assign|cancel|reopen (see crew --help)")
 
 
+# ── the Desk (docs/desk/design.md) ────────────────────────────────────────────────────────────
+
+def desk_print(rows, as_json, empty):
+    if as_json:
+        print(json.dumps({"cards": [crewdesk.summary(c, p) for p, c in rows], "counts": crewdesk.counts(), "pals": crewdesk.by_pal(),
+                          "triage": crewdesk.conf().get("triage")}, ensure_ascii=False))
+    else:
+        print("\n".join(crewdesk.line(c) for _, c in rows) or empty)
+
+
+def desk_card(cid):
+    p = crewdesk.need(cid)
+    return p, crewdesk.read(p)
+
+
+def desk_mine(card, who):
+    """Is this card on my desk (any topic of my pal)?"""
+    return bool(who["me"]) and crewdesk.pal_of(card.get("to")).lower() == who["name"].lower()
+
+
+def desk_may(card, who, what, sender_ok=False):
+    """Only the card's pal, the owner (a click) and, for cancel, its sender move a card (§10.3)."""
+    if who["from_kind"] == "owner" or desk_mine(card, who):
+        return
+    if sender_ok and (card.get("from") or "").lower() == (who["from"] or "").lower():
+        return
+    die(f"{card['id']} is on {crewdesk.pal_of(card.get('to')) or 'no'} desk: only that pal or {OWNER} can {what} it")
+
+
+def desk_to(spaces, spec, who=None):
+    """'auto' | 'route' | the owner | 'Pal[#topic]' → (to, auto)."""
+    low = (spec or "").lower()
+    if low in ("route", "to route", "auto", ""):
+        return "", low == "auto"
+    if low in (OWNER.lower(), "owner"):
+        return OWNER, False
+    space, tab = find(spec, spaces)
+    to = f"{space['name']}#{chan(tab)}" if "#" in spec else space["name"]
+    if who and who.get("me") and to.lower() == who["me"].lower():
+        die("that's you")
+    return to, False
+
+
+def desk_text(pos, o):
+    text = " ".join(pos)
+    if o.get("file"):
+        text = (text + "\n" if text else "") + Path(o["file"]).read_text()
+    if not text.strip():
+        die("what should it say? give the text, or -F file")
+    return text
+
+
+def desk_attachments():
+    out = []
+    for a in [ARGV[i + 1] for i, x in enumerate(ARGV[:-1]) if x == "--attach"]:
+        src = Path(a).expanduser()
+        out.append(str(src.resolve()) if (DATA / "crew-attachments").resolve() in src.resolve().parents else desk_attach(src))
+    return out
+
+
+def cmd_desk(spaces, rest):
+    sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
+    args = rest[1:] if rest and not rest[0].startswith("--") else rest
+    who = crewdesk.sender(spaces)
+    owner = who["from_kind"] == "owner"
+    via = f"pal desk {sub}"
+    by = who["from"]
+    if sub in ("ls", "list"):
+        pos, o = opts(args, (), ("all", "route", "owner", "held", "done", "drafts", "json"))
+        where = ("open", "done") if o.get("done") else ("open",)
+        rows = crewdesk.cards(where=where)
+        if o.get("done"):
+            since = time.time() - 7 * 86400
+            rows = [(p, c) for p, c in rows if p.parent.name == "open" or crewdesk.parse_iso(c.get("updated")) >= since]
+        if o.get("drafts"):
+            rows = [(p, c) for p, c in rows if p.parent.parent.name == crewdesk.DRAFTS
+                    and (owner or not who["me"] or (c.get("from") or "").lower() == who["me"].lower())]
+        elif o.get("route"):
+            rows = [(p, c) for p, c in rows if p.parent.parent.name == crewdesk.ROUTE]
+        elif o.get("owner"):
+            rows = [(p, c) for p, c in rows if p.parent.parent.name == crewdesk.OWNER_TRAY or c.get("status") == "needs you"]
+        elif o.get("held"):
+            rows = [(p, c) for p, c in rows if c.get("status") == "held"]
+        elif not o.get("all") and who["me"]:
+            topic = who["me"].partition("#")[2]
+            mine = {str(p) for p, _ in crewdesk.mine(who["name"], topic)}
+            rows = [(p, c) for p, c in rows if str(p) in mine]
+        desk_print(rows, o.get("json"), "(your desk is empty)" if who["me"] and not o.get("all") else "(no open cards)")
+    elif sub in ("open", "show") and args:
+        pos, o = opts(args, (), ("json",))
+        p, card = desk_card(pos[0])
+        if desk_mine(card, who) and card.get("status") in ("queued", "held"):
+            card = crewdesk.delivered(card["id"], ME, "opened") or card
+        if o.get("json"):
+            print(json.dumps(crewdesk.summary(card, p), ensure_ascii=False))
+            return
+        print(crewdesk.frame(card) if desk_mine(card, who) else crewdesk.line(card))
+        for a in card.get("attachments") or []:
+            print(f"attachment: {DATA / a}")
+        if card.get("reply") is not None:
+            print("── reply ──\n" + card["reply"])
+        print("── receipts ──")
+        for r in card.get("receipts", []):
+            print(f"  {r['at']} {r['status']} · {r['by']} · {r['via']}" + (f" · {r['note']}" if r.get("note") else ""))
+    elif sub == "take" and args:
+        pos, o = opts(args, (), ("sub",))
+        _, card = desk_card(pos[0])
+        desk_may(card, who, "take")
+        if card.get("task"):   # the board follows: taking a task's card claims the task
+            crewtasks.update(card["task"], spaces, who["me"], who["name"], claim=True, from_card=True)
+        card = crewdesk.mark(card["id"], "working", by, via, "handed to a sub-agent" if o.get("sub") else "")
+        print(crewdesk.line(card))
+        if o.get("sub"):
+            print("Give the sub-agent the goal, which files it may change, and that it can't push, release or message people. "
+                  f"Close the card yourself when it reports: pal desk done {card['id']} \"result\"")
+    elif sub == "later" and args:
+        _, card = desk_card(args[0])
+        desk_may(card, who, "move")
+        print(crewdesk.line(crewdesk.mark(card["id"], "later", by, via, "after the current step")))
+    elif sub == "done" and args:
+        _, card = desk_card(args[0])
+        desk_may(card, who, "close")
+        result = " ".join(args[1:]).strip() or None
+        if result:
+            result = crewdesk.check_text("x", result)[1]
+        if card.get("task"):   # the task is done too (its check, if it has one, must pass first)
+            crewtasks.update(card["task"], spaces, who["me"], who["name"], status="done", result=result,
+                             note=f"done: {result}" if result else None, from_card=True)
+        print(crewdesk.line(crewdesk.mark(card["id"], "done", by, via, (result or "")[:200], result=result)))
+    elif sub == "reply" and len(args) >= 2:
+        _, card = desk_card(args[0])
+        desk_may(card, who, "answer")
+        answer = crewdesk.check_text("x", " ".join(args[1:]))[1]
+        print(crewdesk.line(crewdesk.mark(card["id"], "done", by, via, "answered", reply=answer)))
+    elif sub == "block" and len(args) >= 2:
+        pos, o = opts(args, (), ("owner",))
+        _, card = desk_card(pos[0])
+        desk_may(card, who, "block")
+        why = " ".join(pos[1:])
+        if card.get("task"):
+            crewtasks.update(card["task"], spaces, who["me"], who["name"], status="blocked", note=why, from_card=True)
+        card = crewdesk.mark(card["id"], "needs you" if o.get("owner") else "blocked", by, via, why[:300])
+        print(crewdesk.line(card) + (f"\n{OWNER} sees it in the Inbox." if o.get("owner") else ""))
+    elif sub == "pass" and len(args) >= 2:
+        _, card = desk_card(args[0])
+        desk_may(card, who, "pass")
+        to = args[1]
+        if to.lower() not in ("route", "to route"):
+            space, tab = find(to, spaces)
+            to = f"{space['name']}#{chan(tab)}" if "#" in to else space["name"]
+        else:
+            to = ""
+        card = crewdesk.move(card["id"], to, by, via, " ".join(args[2:]) or "")
+        card, t, what = crewdesk.deliver(card, spaces)
+        print(f"passed {card['id']} to {card['to']}: {what}")
+    elif sub == "cancel" and args:
+        _, card = desk_card(args[0])
+        desk_may(card, who, "cancel", sender_ok=True)
+        if not owner and card.get("status") not in ("queued", "held", "draft"):
+            die(f"{card['id']} is {card['status']} already: only {OWNER} can cancel it now")
+        print(crewdesk.line(crewdesk.mark(card["id"], "cancelled", by, via)))
+    elif sub == "urgency" and len(args) >= 2:
+        if not owner:
+            require_owner("change a card's urgency")
+        if args[1] not in crewdesk.URGENCY:
+            die("urgency is low, normal, soon or now")
+        _, card = desk_card(args[0])
+        print(crewdesk.line(crewdesk.mark(card["id"], f"urgency {args[1]}", by, via, "", urgency=args[1])))
+    elif sub == "confirm" and args:
+        if not owner:
+            require_owner("confirm a card as yours")
+        _, card = desk_card(args[0])
+        if card.get("from_kind") != "owner":
+            die(f"{card['id']} isn't {OWNER}'s card")
+        crewdesk.ledger_add(card)
+        print(crewdesk.line(crewdesk.mark(card["id"], "confirmed", by, via, f"{OWNER} confirmed the edited card")))
+    elif sub == "send" and len(args) >= 1:
+        pos, o = opts(args, ("attach", "re", "urgency", "file", "from-draft"), ("soon", "low", "now", "ask", "task", "relaying", "json"))
+        if o.get("from-draft") and not owner:
+            die(f"only {OWNER} sends an edited draft (from Project Pals)")
+        attach = [ARGV[i + 1] for i, a in enumerate(ARGV[:-1]) if a == "--attach"]
+        if not pos:
+            die('pal desk send <Pal[#topic]|owner|route> "text"')
+        text = " ".join(pos[1:])
+        if o.get("file"):
+            text = (text + "\n" if text else "") + Path(o["file"]).read_text()
+        if not text.strip():
+            die("send what? pal desk send <to> \"text\" (or -F file)")
+        urgency = o.get("urgency") or ("now" if o.get("now") else "soon" if o.get("soon") else "low" if o.get("low") else "normal")
+        to = pos[0]
+        auto = to.lower() == "auto"
+        if to.lower() in ("route", "to route", "auto"):
+            to = ""
+        elif to.lower() in (OWNER.lower(), "owner"):
+            to = OWNER
+        else:
+            space, tab = find(to, spaces)
+            to = f"{space['name']}#{chan(tab)}" if "#" in to else space["name"]
+            if who["me"] and to.lower() == who["me"].lower():
+                die("that's you")
+        if to == OWNER and owner:
+            die(f"that's you, {OWNER}")
+        if urgency == "soon" and who["from_kind"] == "pal" and to and to != OWNER:
+            cap = int(crewdesk.conf().get("pal_soon_per_hour") or 6)
+            if crewdesk.soon_count(to) >= cap:
+                urgency = "normal"
+                print(f"(sent as normal: {to} already had {cap} soon cards from pals this hour)")
+        depth, thread = 0, None
+        if o.get("re"):
+            _, parent = desk_card(o["re"])
+            depth, thread = int(parent.get("depth") or 0) + 1, parent.get("thread") or parent["id"]
+        kind = "ask" if o.get("ask") else "task" if o.get("task") else "tell"
+        title, body = crewdesk.split_text(text)
+        task = None
+        if o.get("task") and to and to != OWNER:
+            t = crewtasks.add(title, spaces, who["me"], who["name"], body or None, to, notify_assignee=False)
+            task = t["id"]
+        atts = []
+        for a in attach:
+            src = Path(a).expanduser()
+            store = DATA / "crew-attachments"
+            if store.resolve() in src.resolve().parents:
+                atts.append(str(src.resolve()))
+            else:
+                atts.append(desk_attach(src))
+        card = crewdesk.create(kind, to, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
+                               relaying=OWNER if o.get("relaying") and who["from_kind"] == "pal" else None,
+                               urgency=urgency, status="needs you" if to == OWNER else "queued", via=via, task=task,
+                               thread=thread, depth=depth, reply_to=o.get("re"), attachments=atts,
+                               extra={"route": "auto"} if auto else None)
+        did = None
+        if who["me"] and to and to != OWNER:
+            did = new_id("d-")
+            with locked("delegations"):
+                dels = load_json(DATA / "crew-delegations.json", [])
+                dels.append({"id": did, "from": ME, "from_name": who["name"], "to": None, "text": text, "at": now_ms(),
+                             "card": card["id"], "delivered_at": None if daemon_alive() else now_ms()})
+                save_json(DATA / "crew-delegations.json", dels)
+        card, t, what = crewdesk.deliver(card, spaces, urgent=urgency == "now", delegation=did)
+        if did:
+            with locked("delegations"):
+                dels = load_json(DATA / "crew-delegations.json", [])
+                for d in dels:
+                    if d["id"] == did:
+                        d["to"] = t
+                save_json(DATA / "crew-delegations.json", [d for d in dels if d.get("to")])
+        if o.get("from-draft"):
+            try:
+                crewdesk.mark(o["from-draft"], "cancelled", by, via, f"edited and sent as {card['id']}")
+            except CrewError:
+                pass
+        if o.get("json"):
+            print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
+        else:
+            print(f"{card['id']} → {card['to']}: {what}")
+    elif sub == "sent":
+        pos, o = opts(args, ("days",), ("json",))
+        desk_print(crewdesk.sent_by(who["from"], int(o.get("days") or 7)), o.get("json"), "(nothing sent in the last week)")
+    elif sub == "attach" and args:
+        print(desk_attach(Path(args[0]).expanduser()))
+    elif sub == "stats":
+        pos, o = opts(args, (), ("json",))
+        st = crewdesk.stats()
+        if o.get("json"):
+            print(json.dumps(st))
+        else:
+            print(", ".join(f"{st[k]} {k}" for k in ("open", "held", "needs you", "to route", "drafts"))
+                  + f"; triage {st['triage']}: {st['triage_today']}/{st['triage_cap']} calls today")
+    elif sub == "check":
+        crewdesk.ensure()
+        out = crewdesk.reconcile()
+        crewdesk.tidy()
+        print("\n".join(f"{k}: {v}" for k, v in out.items()) or "every card is as Project Pals wrote it")
+    elif sub == "prune":
+        require_owner("pruning the Desk's archive")   # a click, not "hc didn't say pal" (Grok review H1)
+        pos, o = opts(args, ("older",))
+        m = re.fullmatch(r"(\d+)d", o.get("older") or "")
+        if not m:
+            die("pal desk prune --older 180d")
+        print(f"deleted {crewdesk.prune(int(m.group(1)))} archived cards")
+    elif sub == "draft":
+        # The idea partner's draft (§13): nothing goes out until the owner clicks Send.
+        pos, o = opts(args, ("to", "urgency", "attach", "file"), ("task", "json"))
+        rec = record_of(where_of(ME, spaces)[0], records()) if who["me"] else {}
+        from crewlib import is_partner
+        if not is_partner(rec):
+            die(f"only the idea partner writes drafts; send a card with pal desk send (or {OWNER} drops one with Ctrl+Shift+D)")
+        text = desk_text(pos, o)
+        to, auto = desk_to(spaces, o.get("to") or "auto")
+        urgency = o.get("urgency") or "normal"
+        if urgency not in ("low", "normal", "soon"):
+            die("a draft's urgency is low, normal or soon")
+        title, body = crewdesk.split_text(text)
+        atts = desk_attachments()
+        if crewdesk.conf().get("partner_sends_as_itself"):
+            # The owner's setting: the partner's cards go out at once, as a pal's (no owner authority).
+            card = crewdesk.create("idea", to, title, body, frm=who["from"], from_kind="pal", proof=who["proof"], urgency=urgency,
+                                   via="pal desk draft", attachments=atts, extra={"route": "auto"} if auto else None)
+            card, t, what = crewdesk.deliver(card, spaces)
+            print(f"{card['id']} → {card['to']}: {what} (sent as you: partner_sends_as_itself is on)")
+            return
+        card = crewdesk.draft(who["from"], who["proof"], "auto" if auto else to, title, body, urgency, bool(o.get("task")), atts)
+        if o.get("json"):
+            print(json.dumps(crewdesk.summary(card, crewdesk.need(card["id"])), ensure_ascii=False))
+        else:
+            print(f"{card['id']} drafted for {card['to']}: it waits for {OWNER}'s Send (the toast, or the Desk view's Drafts). "
+                  f"Show {OWNER} the draft in your reply; \"send it\" typed here isn't the click.")
+    elif sub == "send-draft" and args:
+        if not owner:
+            require_owner("send a draft")
+        pos, o = opts(args, ("to", "urgency"), ("json",))
+        _, card = desk_card(pos[0])
+        if card.get("status") != "draft":
+            die(f"{card['id']} isn't a draft")
+        to, auto = desk_to(spaces, o.get("to") or card.get("to") or "auto")
+        task = None
+        if card.get("track") == "yes" and to and to != OWNER:
+            task = crewtasks.add(card["title"], spaces, None, OWNER, card.get("body") or None, to, notify_assignee=False)["id"]
+        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task)
+        card, t, what = crewdesk.deliver(card, spaces) if not auto else (card, None, "sorting it to a pal")
+        if o.get("json"):
+            print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
+        else:
+            print(f"{card['id']} → {card['to']}: {what}")
+    elif sub == "discard" and args:
+        _, card = desk_card(args[0])
+        if card.get("status") != "draft":
+            die(f"{card['id']} isn't a draft")
+        desk_may(card, who, "discard", sender_ok=True)
+        print(crewdesk.line(crewdesk.mark(card["id"], "cancelled", by, via, "draft discarded")))
+    else:
+        die("pal desk ls|open|take|later|done|reply|block|pass|send|sent|cancel|draft|attach|stats|check (see pal --help)")
+
+
+def desk_attach(src):
+    """Copy an image into data/crew-attachments (crewattach.py: images only, 10 MB, no symlinks)."""
+    import crewattach
+    try:
+        out = crewattach.copy(str(src), str(DATA / "crew-attachments"))
+    except crewattach.Refused as e:
+        die(f"can't attach {src}: {e}")
+    return out["path"] if isinstance(out, dict) else str(out)
+
+
 def cmd_routine(spaces, rest):
     me, name = whoami(spaces)
     sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
     if sub == "add":
         pos, o = opts(args, ("name", "channel"))
         if len(pos) < 3:
-            die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--channel routines]')
+            die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]')
         space, _ = find(pos[0], spaces)
         r = crewroutines.add(space["name"], pos[1], " ".join(pos[2:]), o.get("name"), o.get("channel", "routines"), by=name)
         print(f"added {r['id']} {r['name']}: {space['name']} #{r['channel']}, {crewroutines.describe(r['rule'])}"
@@ -669,7 +1142,7 @@ def cmd_remember(spaces, args):
     s, t = my_bot(spaces)
     bot = o.get("bot") or (s["name"] if s else None)
     if not bot and not o.get("user"):
-        die("run this from a pal's channel, or say which: --pal Name")
+        die("run this from a pal's topic, or say which: --pal Name")
     path = remember(bot or f"{OWNER}", " ".join(pos), channel=chan(t) if t else None, user=o.get("user", False))
     print(f"remembered ({path.relative_to(DATA)})")
 
@@ -744,7 +1217,7 @@ def pal_of(spaces, spec=None):
     else:
         space, _ = my_bot(spaces)
         if not space:
-            die("run this from a pal's channel, or say which: --pal Name")
+            die("run this from a pal's topic, or say which: --pal Name")
     return space, record_of(space), space["name"]
 
 
@@ -873,7 +1346,7 @@ def cmd_brain(spaces, rest):
         print(crewbrain.decide(d, " ".join(pos), o.get("why"), o.get("by") or (name if t else OWNER)))
     elif sub == "note":
         if len(pos) < 2:
-            die('pal brain note <topic> "text"')
+            die('pal brain note <subject> "text"')
         print("added to " + crewbrain.note(d, pos[0], " ".join(pos[1:])))
     elif sub == "where":
         require_owner("Move a brain")
@@ -895,7 +1368,7 @@ def cmd_brain(spaces, rest):
         crewbrain.write(d, f, text)
         print(f"wrote {d / f}")
     else:
-        die("pal brain ls | show [Pal] [file] | log \"…\" | decide \"…\" --why \"…\" | note <topic> \"…\" | where <Pal> pal|project")
+        die("pal brain ls | show [Pal] [file] | log \"…\" | decide \"…\" --why \"…\" | note <subject> \"…\" | where <Pal> pal|project")
 
 
 def set_record(spaces, space, **fields):
@@ -1086,7 +1559,7 @@ def cmd_notebook(spaces, rest):
     if sub == "rm":
         require_owner("Remove a notebook entry")
         if len(pos) < 3:
-            die("pal notebook rm <Pal> <YYYY-MM-DD> <entry id | \"HH:MM #channel\">")
+            die("pal notebook rm <Pal> <YYYY-MM-DD> <entry id | \"HH:MM #topic\">")
         space, rec, name = pal_of(spaces, pos[0])
         crewnotebook.remove(name, pos[1], " ".join(pos[2:]), DATA / "crew-backups" / "notebook" / slug(name))
         print(f"removed entry {' '.join(pos[2:])} from {name}'s {pos[1]} (a copy of the day is in crew-backups/notebook/)")
@@ -1266,19 +1739,33 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
 
 
 def cmd_settings(rest):
-    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off"""
+    """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off | pal settings llm auto|claude|agy"""
     from crewlib import save_settings
+    if rest and rest[0] == "desk":
+        c = crewdesk.conf()
+        for k, (vals, what) in crewdesk.SETTING_HELP.items():
+            v = c.get(k)
+            print(f"desk.{k} = {('on' if v else 'off') if isinstance(v, bool) else v}    ({vals}: {what})")
+        return
     if not rest:
         st = settings()
-        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}")
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
         return
-    if ME and is_bot_terminal(ME):
-        die("settings are the owner's to change, not a pal's")
+    # Changing one is the owner's: a click in Project Pals (About, Settings → Desk). A missing or
+    # unknown terminal ID isn't the owner (Grok review H1).
+    require_owner("changing settings")
     key, val = rest[0], " ".join(rest[1:]).strip()
+    if key.startswith("desk."):
+        # The Desk's settings apply at once (crewd reads them each time), so no restart.
+        v = crewdesk.set_setting(key[5:], val)
+        print(f"{key} = {('on' if v else 'off') if isinstance(v, bool) else v}")
+        return
     if key == "owner" and val:
         st = save_settings(owner=val)
     elif key == "bypass" and val in ("on", "off"):
         st = save_settings(bypass=val == "on")
+    elif key == "llm" and val in ("auto", "claude", "agy"):
+        st = save_settings(llm=val)
     elif key == "head" and val:
         if "#" in val or val.startswith("@"):
             die("a pal's name can't have # in it or start with @")
@@ -1295,10 +1782,10 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings llm auto|claude|agy | pal settings desk.<key> <value> (pal settings desk lists them)')
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
-    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'}")
+    print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'} · llm: {st.get('llm', 'auto')}")
 
 
 UPDATE_LOG = DATA / "crew-update.log"
@@ -1321,10 +1808,12 @@ def cmd_update(rest):
     if sub in ("apply", "rollback"):
         who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
         update_log(f"{sub} started by {who}, installed {crewupdate.installed().get('version', '?')}")
-    # Installing or rolling back code is the owner's call, never a pal's.
-    if sub in ("apply", "rollback") and ME and is_bot_terminal(ME):
-        update_log(f"{sub} refused: {ME} is a pal's terminal")
-        die(f"updates are {OWNER}'s to install (About → Update), not a pal's")
+    # Installing or rolling back code is the owner's call: a click in Project Pals (About, Update now),
+    # never a pal's, and not anyone hc doesn't call a pal (Grok review H1).
+    if sub in ("apply", "rollback"):
+        if not click_of():
+            update_log(f"{sub} refused: no click from Project Pals")
+        require_owner(f"updates are {OWNER}'s to install (About → Update)")
     if sub in ("apply", "rollback"):
         crewupdate.run_state(fresh=True, action=sub, state="running", step="starting", started=time.time(), pid=os.getpid(),
                              **{"from": crewupdate.installed().get("version")})
@@ -1371,6 +1860,153 @@ def cmd_update(rest):
         print(f"put back {out['restored']}")
 
 
+# ── Home (bin/crewhome.py) ───────────────────────────────────────────────────────────────────
+
+def home_topic(spaces, spec):
+    """'Pal#topic' as Project Pals names it, when it's open; else as given (a pal asleep)."""
+    if not spec:
+        return None
+    try:
+        space, tab = find(spec, spaces)
+        return f"{space['name']}#{chan(tab)}" if "#" in spec else space["name"]
+    except SystemExit:
+        raise
+    except Exception:
+        return spec.strip()
+
+
+def home_answer_to(spaces, x, answer):
+    """The owner's answer, as a card from them to whoever asked (held on its desk if it's asleep)."""
+    to = x.get("by") or ""
+    if not to or "#" not in to and not to.strip():
+        return "nobody to tell (it wasn't asked from a topic)"
+    try:
+        space, tab = find(to, spaces)
+        dest = f"{space['name']}#{chan(tab)}"
+    except SystemExit:
+        return f"{to} isn't open; the answer is on Home"
+    except Exception:
+        return f"{to} isn't open; the answer is on Home"
+    who = crewdesk.sender(spaces)
+    title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
+    body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
+    card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
+                           via="pal home answer")
+    card, _, what = crewdesk.deliver(card, spaces)
+    return f"told {dest} ({what}) · card {card['id']}"
+
+
+def cmd_home(spaces, rest):
+    sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
+    args = rest[1:] if rest and not rest[0].startswith("--") else rest
+    me, name = whoami(spaces)
+    by = me or name
+    # Repeatable: --option (each may be followed by --does "what it does"), --link, --image.
+    options, does, links, images, clean, i = [], [], [], [], [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--option", "--does", "--link", "--image") and i + 1 < len(args):
+            v = args[i + 1]
+            if a == "--option":
+                options.append(v)
+            elif a == "--does":
+                if not options:
+                    die("--does goes right after the --option it explains")
+                does.extend([""] * (len(options) - 1 - len(does)))
+                if len(does) >= len(options):
+                    die("one --does per --option")
+                does.append(v)
+            elif a == "--link":
+                links.append(v)
+            else:
+                images.append(v)
+            i += 2
+        else:
+            clean.append(a); i += 1
+    args = clean
+    if (options or does or links or images) and sub != "ask":
+        die("only pal home ask takes --option, --does, --link and --image")
+    try:
+        if sub in ("ls", "list", "show"):
+            pos, o = opts(args, (), ("json", "all"))
+            h = crewhome.load()
+            if o.get("json"):
+                print(json.dumps({**h, "installs": crewhome.installs(10)}, ensure_ascii=False))
+                return
+            items = h["items"] if o.get("all") else [x for x in h["items"] if x.get("status") in ("open", "parked")]
+            print("\n".join(crewhome.line(x) for x in items) or "(nothing on Home)")
+            rel = h["release"]
+            if rel.get("next") or rel.get("queued"):
+                print(f"next release: {rel.get('next') or '?'}" + (f" · {rel['note']}" if rel.get("note") else ""))
+                for q in rel["queued"]:
+                    print(f"  {q['id']}  {q['text']}")
+        elif sub == "ask" and args:
+            pos, o = opts(args, ("topic", "body", "recommend", "why"))
+            if len(images) > crewhome.IMAGES_MAX:
+                die(f"at most {crewhome.IMAGES_MAX} images")
+            imgs = [str(Path(desk_attach(f)).resolve().relative_to(DATA)) for f in images]
+            x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")),
+                             does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs)
+            print(crewhome.line(x))
+        elif sub == "recommend" and len(args) >= 2:
+            pos, o = opts(args, ("why",))
+            rec = crewhome.recommend(pos[0], " ".join(pos[1:]), by=by, why=o.get("why"))
+            print(f"recommended {rec['option']} for {pos[0]}" + (f": {rec['why']}" if rec.get("why") else ""))
+        elif sub == "login" and args:
+            pos, o = opts(args, ("topic", "title"))
+            if not o.get("topic"):
+                die('pal home login "! command" --topic "Pal#topic" (where the owner types it)')
+            topic = home_topic(spaces, o["topic"])
+            x = crewhome.add("login", o.get("title") or "Log in to continue", by=by, command=" ".join(pos), topic=topic)
+            print(crewhome.line(x))
+        elif sub == "link" and args:
+            pos, o = opts(args, ("topic", "title"))
+            x = crewhome.add("link", o.get("title") or pos[0], by=by, url=pos[0], topic=home_topic(spaces, o.get("topic")), status="done")
+            print(crewhome.line(x))
+        elif sub == "note" and args:
+            x = crewhome.add("note", " ".join(args), by=by, status="done")
+            print(crewhome.line(x))
+        elif sub == "deploy" and args:
+            pos, o = opts(args, ("topic",))
+            x = crewhome.add("deploy", " ".join(pos), by=by, topic=home_topic(spaces, o.get("topic")))
+            print(crewhome.line(x))
+        elif sub == "queue":
+            pos, o = opts(args, ("release", "note"))
+            q, rel = crewhome.queue(" ".join(pos), by=by, release=o.get("release"), note=o.get("note"))
+            print(f"queued for {rel.get('next') or 'the next release'}: {q['id']} {q['text']}" if q else f"next release: {rel.get('next') or '?'}")
+        elif sub == "unqueue" and args:
+            q = crewhome.unqueue(args[0])
+            print(f"unqueued {q['id']} {q['text']}")
+        elif sub == "done" and args:
+            print(crewhome.line(crewhome.close(args[0], "done", by=by, result=" ".join(args[1:]) or None)))
+        elif sub == "drop" and args:
+            print(crewhome.line(crewhome.close(args[0], "dropped", by=by)))
+        elif sub == "park" and args:
+            text = " ".join(args)
+            if re.fullmatch(r"h-[0-9a-f]{2,6}", text):
+                print(crewhome.line(crewhome.park(text, by=by)))
+            else:
+                print(crewhome.line(crewhome.add("later", text, by=by, status="parked")))
+        elif sub == "unpark" and args:
+            print(crewhome.line(crewhome.unpark(args[0], by=by)))
+        elif sub == "answer" and len(args) >= 2:
+            # The owner's pick, from a click in Project Pals (main proved it); never a pal's, never typed.
+            if not owner_proven():
+                require_owner("answer a question on Home")
+            x = crewhome.answer(args[0], " ".join(args[1:]), by=OWNER)
+            print(crewhome.line(x))
+            print(home_answer_to(spaces, x, x["answer"]))
+        elif sub == "seen":
+            if not owner_proven():
+                require_owner("mark Home seen")
+            crewhome.mark_seen()
+            print("Home: all seen")
+        else:
+            die(__doc__)
+    except crewhome.HomeError as e:
+        die(str(e))
+
+
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
 def main(argv):
@@ -1382,6 +2018,10 @@ def main(argv):
     ARGV = list(argv)
     argv = owner_args()   # the click token is checked by require_owner, not parsed as an option
     cmd, rest = argv[0], argv[1:]
+    # The app speaks as the owner only with a click token for exactly this command line (tell, ask and
+    # task: the Tasks dialog, Review's notes). A bad or used token is refused, never downgraded.
+    if click_of() and cmd in ("tell", "ask", "task", "desk", "home"):
+        prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
     if cmd == "room":
@@ -1405,9 +2045,8 @@ def main(argv):
         return cmd_settings(rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
-        # routines aimed at it follow. Not from a pal's terminal: that's the owner's to do.
-        if ME and is_bot_terminal(ME):
-            die("renaming pals is the owner's to do, not a pal's")
+        # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).
+        require_owner("renaming pals")
         if len(rest) != 2 or not rest[1].strip():
             die('pal renamed "Old name" "New name"')
         renamed(rest[0], rest[1].strip())
@@ -1431,9 +2070,22 @@ def main(argv):
         pos, o = opts(rest, ("lines", "n"))
         cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
     elif cmd == "hire" and rest:
-        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show"))
+        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner"))
         if not pos and o.get("god"):
             pos = [settings()["head"]]
+        if o.get("partner"):
+            # The idea partner, MUSE (Desk §13): its own home with its brief, the Idea partner role, and
+            # Sonnet unless a model is given.
+            from crewlib import render_partner
+            pos = pos or ["MUSE"]
+            home = render_partner()
+            if not home:
+                die("the idea partner's brief isn't installed (run ./install.sh)")
+            o.setdefault("folder", str(home))
+            o.setdefault("role", "Idea partner")
+            o.setdefault("channel", "ideas")
+            if (o.get("harness") or "claude") == "claude":
+                o.setdefault("model", "sonnet")
         if not pos:
             die("hire who? pal hire <Name> [--harness claude] ...")
         if o.get("folder"):
@@ -1442,8 +2094,8 @@ def main(argv):
         print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
-    elif cmd == "channel" and len(rest) >= 2:
-        pos, o = opts(rest, ("brief", "category", "harness", "base"), ("worktree",))
+    elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.4.0
+        pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
         extra = {}
         if o.pop("worktree", False):
             space, _ = find(pos[0], spaces)
@@ -1451,18 +2103,27 @@ def main(argv):
             extra["folder"] = extra["worktree"]["path"]
         o.pop("base", None)
         out = request("channel", spaces, bot=pos[0], name=" ".join(pos[1:]), **o, **extra)
-        print(f"{out['bot']} now has {out['channel']}" + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
-        watch_for_trust(out["bot"], out["channel"])
+        brain = out.get("harness") or "its brain"
+        print(f"{out['bot']} now has {out['channel']}, running {brain}"
+              + (f" on its own branch {extra['worktree']['branch']} ({extra['folder']})" if extra else ""))
+        if out.get("guessed"):
+            print(f"({out['bot']}'s own brain isn't on record, so this uses {'yours' if out.get('why') == 'yours' else 'the default'}; "
+                  f"pick another with --harness)")
+        watch_start(out["bot"], out["channel"], brain)
     elif cmd == "invite" and len(rest) >= 2:
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):
             print(f"added {', '.join(out['added'])} to #{rest[0].lstrip('#')} (briefed)")
             if out.get("woke"):
-                print(f"woke {', '.join(out['woke'])} in a new channel for the room (it was asleep)")
+                print(f"woke {', '.join(out['woke'])} in a new topic for the room (it was asleep)")
         if out.get("skipped"):
             print(f"already in it: {', '.join(out['skipped'])}")
     elif cmd == "task":
         cmd_task(spaces, rest)
+    elif cmd == "desk":
+        cmd_desk(spaces, rest)
+    elif cmd == "home":
+        cmd_home(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":

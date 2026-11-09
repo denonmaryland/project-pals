@@ -5,10 +5,12 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, a, tone, ds, sheetFace, headPet } from "./crew.js";
+import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
+import { crewCli, ownerCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+const LLM_ORDER = ["auto", "claude", "agy"];
+const LLM_NAMES = { auto: "Auto", claude: "Claude", agy: "Antigravity CLI" };
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
 const newer = (x, y) => { const p = vt(x), q = vt(y); for (let i = 0; i < 3; i++) if (p[i] !== q[i]) return p[i] > q[i]; return false; };
 const ago = (s) => { const d = Date.now() / 1000 - s; return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)}h ago` : `${Math.round(d / 86400)}d ago`; };
@@ -62,7 +64,8 @@ export default class CrewAbout extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const out = JSON.parse(await crewCli([...args, "--json"]));
+        // Installing and rolling back are the owner's: with the click's token (Grok review H1).
+        const out = JSON.parse(await (kind === "check" ? crewCli : ownerCli)([...args, "--json"]));
         if (kind === "update") notify({ title: out.updated ? `Updated to ${out.version}` : "Already up to date", level: "success", timeout: 4000 });
         if (kind === "rollback") notify({ title: "Put the previous version back", level: "success", timeout: 4000 });
       } catch (e) {
@@ -81,7 +84,7 @@ export default class CrewAbout extends View {
     if (!name || this.savingOwner || name === (shared("crew.settings")?.owner ?? "") || name === this.savedOwner) return;
     this.savingOwner = true;
     cx.spawn(async () => {
-      try { await crewCli(["settings", "owner", name]); this.savedOwner = name; notify({ title: `Pals now work for ${name}`, level: "success", timeout: 2500 }); }
+      try { await ownerCli(["settings", "owner", name]); this.savedOwner = name; notify({ title: `Pals now work for ${name}`, level: "success", timeout: 2500 }); }
       catch (e) { notify({ title: "Couldn't save your name", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.savingOwner = false;
     });
@@ -92,15 +95,24 @@ export default class CrewAbout extends View {
     if (!name || this.savingHead || name === (shared("crew.settings")?.head ?? "") || name === this.savedHead) return;
     this.savingHead = true;
     cx.spawn(async () => {
-      try { await crewCli(["settings", "head", name]); this.savedHead = name; notify({ title: `Your head pal is now ${name}`, body: "It picks up the new name in its next session.", level: "success", timeout: 3500 }); }
+      try { await ownerCli(["settings", "head", name]); this.savedHead = name; notify({ title: `Your head pal is now ${name}`, body: "It picks up the new name in its next session.", level: "success", timeout: 3500 }); }
       catch (e) { notify({ title: "Couldn't rename the head pal", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.savingHead = false;
     });
   }
 
+  setLlm(value, cx) {
+    this.llm = value;   // shown at once; the saved one comes back through crew.settings
+    cx.notify();
+    cx.spawn(async () => {
+      try { await ownerCli(["settings", "llm", value]); }
+      catch (e) { this.llm = null; notify({ title: "Couldn't change it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+    });
+  }
+
   setBypass(on, cx) {
     cx.spawn(async () => {
-      try { await crewCli(["settings", "bypass", on ? "on" : "off"]); }
+      try { await ownerCli(["settings", "bypass", on ? "on" : "off"]); }
       catch (e) { notify({ title: "Couldn't change it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
     });
   }
@@ -140,9 +152,9 @@ export default class CrewAbout extends View {
     else if (st.checked) { title = "You're up to date"; sub = `checked ${ago(st.checked)}`; }
     else { title = "Not checked yet"; sub = "Project Pals checks every few hours by itself"; }
 
-    const notes = available && st.notes ? v_flex().id("about-notes").max_h(220).overflow_y_scrollbar().gap(3).pt(4)
+    const notes = available && st.notes ? scrollArea(ds(t), "about-notes", v_flex().gap(3).pt(4).pr(10)
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>
-        div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1")))) : null;
+        div().text_size(12.5).text_color(t.muted).child(l.replace(/^#+\s*/, "").replace(/^\s*[-*]\s+/, "• ").replace(/\*\*(.+?)\*\*/g, "$1"))))).max_h(220) : null;
 
     const status = v_flex().gap(4).px(16).py(14).rounded(8).bg(a(t.foreground, available ? "0c" : "07"))
       .child(div().text_size(14.5).font_medium().text_color(color).child(title))
@@ -163,6 +175,7 @@ export default class CrewAbout extends View {
 
     // Settings, one row each.
     const bypass = Boolean(shared("crew.settings")?.bypass);
+    const llm = this.llm ?? shared("crew.settings")?.llm ?? "auto";
     // Settings can arrive after the dialog opened: fill the name in if it's still empty.
     if (!this.ownerFocused && !this.owner.value() && shared("crew.settings")?.owner) this.fillOwner = shared("crew.settings").owner;
     if (!this.headFocused && !this.head.value() && shared("crew.settings")?.head) this.fillHead = shared("crew.settings").head;
@@ -180,10 +193,37 @@ export default class CrewAbout extends View {
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.head).w_full().text_size(13).text_color(t.foreground))))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
-      .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new channels skip their harness's permission prompts",
+      .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new topics skip their harness's permission prompts",
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
           .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
-        (_e, cx) => this.setBypass(!bypass, cx)));
+        (_e, cx) => this.setBypass(!bypass, cx)))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // Which model reviews topics for memory (pal settings llm: the owner's click since 0.4.0).
+      .child(row("set-llm", "Background model", "Reviews topics to save memory notes · click to change",
+        div().text_size(12.5).text_color(t.muted).child(LLM_NAMES[llm] ?? llm),
+        (_e, cx) => this.setLlm(LLM_ORDER[(LLM_ORDER.indexOf(llm) + 1) % LLM_ORDER.length], cx)))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // The mark beside a working channel: its own dialog, a grid of live previews (crew-indicator).
+      .child(row("set-indicator", "Working indicator", "Beside a topic while its agent works",
+        h_flex().items_center().gap(8)
+          .child(div().size(18).flex().items_center().justify_center().child(workingMark(ds(t))))
+          .child(div().text_size(12.5).text_color(t.muted).child(workingStyle().name))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // The Desk: triage, its cap, the check-in's flags, archiving, MUSE (its own dialog, crew-desk-settings).
+      .child(row("set-desk", "Desk", "How cards are placed, flagged and kept",
+        h_flex().items_center().gap(8)
+          .child(div().text_size(12.5).text_color(t.muted).child(shared("crew.desk")?.triage === "off" ? "Triage off" : "Triage on"))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-desk-settings", kind: "dialog", width: 520 }); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // How the sidebar lists the pals: its own dialog, the looks beside a live preview (crew-palstyle).
+      .child(row("set-pallist", "Pal list style", "How the sidebar lists your pals",
+        h_flex().items_center().gap(8)
+          .child(div().text_size(12.5).text_color(t.muted).child(palListStyle().name))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openPalStyle(); }));
 
     return v_flex().id("crew-about").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().bg(t.popover).text_color(t.foreground)

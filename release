@@ -18,10 +18,12 @@ if [[ "${1:-}" == "-F" ]]; then notes="$(cat "$2")"; else notes="${1:-}"; fi
 
 repo="$(python3 -c 'import json; print(json.load(open("pals.json"))["repo"])')"
 current="$(cat VERSION)"
-python3 - "$current" "$version" <<'PY' || { echo "$version isn't newer than $current" >&2; exit 2; }
+# Newer than VERSION, or VERSION already says it (set ahead of the release, so a local install
+# reports what it'll ship as) and it isn't tagged yet.
+python3 - "$current" "$version" "$(git tag -l "v$version")" <<'PY' || { echo "$version isn't newer than $current (or v$version is already tagged)" >&2; exit 2; }
 import sys
 t = lambda v: tuple(int(x) for x in v.split("."))
-sys.exit(0 if t(sys.argv[2]) > t(sys.argv[1]) else 1)
+sys.exit(0 if t(sys.argv[2]) > t(sys.argv[1]) or (sys.argv[2] == sys.argv[1] and not sys.argv[3]) else 1)
 PY
 [[ "$(git branch --show-current)" == "main" ]] || { echo "release from main" >&2; exit 2; }
 [[ -z "$(git status --porcelain)" ]] || { echo "commit or stash your changes first" >&2; exit 2; }
@@ -34,8 +36,9 @@ git fetch -q origin main 2>/dev/null || true
 if git rev-parse -q --verify origin/main >/dev/null && [[ "$(git rev-parse origin/main)" != "$(git merge-base HEAD origin/main)" ]]; then
   echo "origin/main has commits you don't; pull first" >&2; exit 2
 fi
-bash -n install.sh release || exit 2
-for f in bin/crew bin/crew-room bin/crewd bin/crew-hook bin/*.py install-hooks.py; do python3 -m py_compile "$f" || { echo "python error in $f" >&2; exit 2; }; done
+bash -n install.sh release && sh -n bin/crew-hook-fast || exit 2
+for f in bin/crew bin/crew-room bin/crewd bin/crew-hook bin/crew-mcp bin/*.py install-hooks.py; do python3 -m py_compile "$f" || { echo "python error in $f" >&2; exit 2; }; done
+python3 -m unittest discover -s tests -q || { echo "tests failed" >&2; exit 2; }
 for f in layouts/*.json mods/*/mod.json pals.json; do python3 -m json.tool "$f" >/dev/null || { echo "bad JSON in $f" >&2; exit 2; }; done
 if command -v node >/dev/null; then
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -43,12 +46,17 @@ if command -v node >/dev/null; then
 fi
 # The regression tests (tests/): throwaway CREW_DATA and homes, nothing real is touched.
 python3 -m unittest discover -s tests -q || { echo "tests failed" >&2; exit 2; }
+# The Desk's Claude Code mod: validated and tested by Claude Code itself, where it's installed.
+if command -v claude >/dev/null; then
+  claude plugin validate claude-mod/pals >/dev/null || { echo "claude-mod/pals doesn't validate" >&2; exit 2; }
+  claude plugin test claude-mod/pals >/dev/null || { echo "claude-mod/pals tests failed" >&2; exit 2; }
+fi
 if command -v node >/dev/null; then for t in tests/*.mjs; do [ -f "$t" ] && { node "$t" || { echo "test failed: $t" >&2; exit 2; }; }; done; fi
 find . -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 
 printf '%s\n' "$version" > VERSION
 git add VERSION
-git commit -qm "Release v$version"
+git commit -q --allow-empty -m "Release v$version"   # empty when VERSION already said it; undo() relies on a commit
 git tag -a "v$version" -m "Project Pals $version"
 # If publishing fails from here, take the local commit and tag back so a rerun works.
 undo() { echo "release failed; undoing the local commit and tag" >&2; git tag -d "v$version" >/dev/null 2>&1; git reset -q --hard HEAD~1; }

@@ -34,10 +34,14 @@ LOGLINE = re.compile(r"^\s*(\$ |❯|> |>>> |\[\d\d:\d\d|\d{4}-\d\d-\d\dT|Traceba
 HEAD = re.compile(r"^### (\d\d:\d\d)(?: · (#[^·]+?))?(?: · (T\d+))?(?: · ([\dhm ]+))?(?: · (e[0-9a-f]{6,}))?\s*$")
 # A private key (PEM, OpenSSH, PGP), whole or flattened onto one line: refused outright (review H6).
 PRIVATE_KEY = re.compile(r"-----\s*BEGIN[A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|PRIVATE KEY-----|\bb3BlbnNzaC1rZXktdjE\w*", re.I)
-# Paths in your home a note may name (review M1): the pal's project, code under ~/Projects, and these
-# config trees. Anything else in a home folder (documents, downloads, other people's) is private.
+# Paths a note may name in personal places (review M1): the pal's own project, and these config trees
+# in your home. Anything else there (documents, downloads, another project of yours, other people's)
+# is private.
 SAFE_CONFIG = (".config/herdr-app", ".claude/skills", ".claude/settings.json", ".claude/CLAUDE.md", ".codex/skills",
                ".local/bin", ".local/lib/herdr-crew", ".config/hypr", ".config/omarchy", ".config/systemd/user")
+# Where personal files live: home folders (wherever $HOME is, too), root's, and mounted or served
+# disks. System paths (/usr, /etc, /tmp, /opt …) aren't checked; a bare root ("under /mnt") is fine.
+PRIVATE_ROOTS = ("/home", "/Users", "/var/home", "/root", "/mnt", "/media", "/run/media", "/Volumes", "/srv")
 
 
 def folder(bot):
@@ -63,15 +67,33 @@ def inside(path, root):
         return False
 
 
+HOME_VAR = re.compile(r"^\$(?:HOME\b|\{HOME\})")
+
+
 def allowed_path(path, project=None):
+    """Only the pal's own project, the SAFE_CONFIG trees, and home or a private root by itself. Not a
+    sibling project: ~/Projects/demo-private while working on ~/Projects/demo is refused (review M1)."""
     home = str(Path.home())
+    path = HOME_VAR.sub(lambda _m: home, path, count=1)   # $HOME/… and ${HOME}/… are home (Grok review M2)
+    if path.startswith("~") and not re.match(r"~(/|$)", path):
+        return False                        # ~someone/…: another person's home
     if project and inside(path, project):
-        return True
-    if inside(path, os.path.join(home, "Projects")):
         return True
     if any(inside(path, os.path.join(home, c)) for c in SAFE_CONFIG):
         return True
-    return os.path.realpath(os.path.expanduser(path)) == os.path.realpath(home)
+    real = os.path.realpath(os.path.expanduser(path))
+    return real == os.path.realpath(home) or real.rstrip("/") in PRIVATE_ROOTS
+
+
+def private_paths(text):
+    """The paths in text that point into personal places: ~…, home folders (and $HOME wherever it is),
+    /root, /mnt, /media, /srv …, by whole path components (/rootfs and /srvx aren't)."""
+    home = str(Path.home())
+    roots = sorted({*PRIVATE_ROOTS, home.rstrip("/"), os.path.realpath(home).rstrip("/")} - {""}, key=len, reverse=True)
+    # ~name/… is someone's home; a lone ~ is yours ("~25m" is a cost, not a path).
+    pat = (r"(?<![\w.~/-])(?:\$HOME\b|\$\{HOME\}|~[A-Za-z_][\w.-]*(?=/)|~|" + "|".join(re.escape(r) for r in roots) + r")"
+           r"(?=[/\s'\"`),:;]|$)(?:/[^\s'\"`),]*)?")
+    return [m.group(0).rstrip(".:;") for m in re.finditer(pat, text)]
 
 
 def clean(text, project=None):
@@ -83,11 +105,11 @@ def clean(text, project=None):
     if len(lines) > 3 or (len(lines) > 1 and any(LOGLINE.match(l) for l in lines)):
         raise CrewError("that looks like pasted output or a transcript; say what happened in a line instead")
     text = " ".join(" ".join(lines).split())
-    # Paths into a home folder: only the project, ~/Projects and a few config trees, resolved (.., ~,
-    # symlinks) and compared by whole path components (review M1).
-    for m in re.finditer(r"(?:/home/[^/\s]+|/Users/[^/\s]+|~)(?:/[^\s'\"`),]*)?", text):
-        if not allowed_path(m.group(0).rstrip(".:;"), project):
-            raise CrewError(f"{m.group(0)}: a path to someone's private files; name it without the private part")
+    # Paths into personal places: only the project and a few config trees, resolved (.., ~, symlinks)
+    # and compared by whole path components (review M1).
+    for p in private_paths(text):
+        if not allowed_path(p, project):
+            raise CrewError(f"{p}: a path to someone's private files; name it without the private part")
     masked = SECRET.sub("‹masked›", text)
     if len(masked) > 400:
         masked = masked[:399] + "…"

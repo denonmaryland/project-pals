@@ -105,12 +105,24 @@ def _safe_extract(tar_path, dest):
 
 
 # ─── Project Pals' own settings in files the person also edits (Codex review M6) ─────────────────
-# An install adds or changes a few entries in keys.json (ctrl-shift-i, the old ctrl-shift-m) and in
+# An install adds or changes a few entries in keys.json (ctrl-shift-i, ctrl-shift-space, the old ctrl-shift-m) and in
 # ~/.claude/settings.json (Project Pals' hook entries and its status-line wrapper). A snapshot
 # records them as they were (absence included); Roll back puts back only those, and only where the
 # current value is still Project Pals' own, so the person's later edits stay.
-MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-m")
+MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-space", "ctrl-shift-m")
+# The actions those keys are bound to by Project Pals (anything else there is the person's own).
+OUR_ACTIONS = ("crew-roster.", "crew-header.")
 CONFIG_MEMBER = ".crew-config-snapshot.json"
+# The Claude Code hook events Project Pals adds entries to. PostToolUse and Stop came with the hook
+# delivery (0.4.0, PR #2). A snapshot that doesn't list an event (one taken by an older updater) means
+# Project Pals had no entry there then, as with MANAGED_KEYS, so Roll back takes its entry out.
+MANAGED_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "Stop")
+# Antigravity CLI's hooks file: Project Pals's entries live under its own "project-pals" key.
+AGY_HOOKS_KEY = "project-pals"
+
+
+def _agy_hooks():
+    return Path.home() / ".gemini" / "config" / "hooks.json"
 
 
 def _claude_settings():
@@ -123,10 +135,12 @@ def config_state():
     st = load_json(_claude_settings(), None)
     hooks = (st or {}).get("hooks", {}) if isinstance(st, dict) else {}
     ours = {ev: [e.get("matcher") for e in hooks.get(ev, []) if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
-            for ev in ("SessionStart", "PreToolUse")}
+            for ev in MANAGED_EVENTS}
     sl = (st or {}).get("statusLine") if isinstance(st, dict) else None
+    agy = load_json(_agy_hooks(), None)
     return {"keys_file": keys is not None, "keys": {k: g.get(k) for k in MANAGED_KEYS},
             "settings_file": st is not None, "hooks": ours,
+            "agy_hooks": isinstance(agy, dict) and AGY_HOOKS_KEY in agy,
             "statusline_wrapped": bool(sl and "crew-statusline" in str(sl.get("command", "")))}
 
 
@@ -139,12 +153,15 @@ def restore_config(snap, log=print):
     if isinstance(keys, dict) and snap.get("keys_file"):
         g = keys.setdefault("global", {})
         before = json.dumps(keys, sort_keys=True)
-        for k, was in (snap.get("keys") or {}).items():
+        # Every key Project Pals manages, not only the snapshot's: a snapshot taken by an older updater
+        # doesn't list a key added since (ctrl-shift-space), and absent there means it wasn't set.
+        for k in MANAGED_KEYS:
+            was = (snap.get("keys") or {}).get(k)
             now = g.get(k)
             if now == was:
                 continue
-            # Only an entry Project Pals set: a crew-roster action, or one it removed (absent now).
-            if now is None or str(now).startswith("crew-roster."):
+            # Only an entry Project Pals set: one of its actions, or one it removed (absent now).
+            if now is None or str(now).startswith(OUR_ACTIONS):
                 if was is None:
                     g.pop(k, None)
                 else:
@@ -160,20 +177,29 @@ def restore_config(snap, log=print):
     st = load_json(sp, None)
     if isinstance(st, dict):
         before = json.dumps(st, sort_keys=True)
+        had_hooks = "hooks" in st
         hooks = st.setdefault("hooks", {})
-        for ev, was in (snap.get("hooks") or {}).items():
+        # Every event Project Pals manages, not only the snapshot's: an older snapshot doesn't list
+        # PostToolUse / Stop, and absent there means Project Pals had no entry then.
+        snap_hooks = snap.get("hooks") or {}
+        for ev in MANAGED_EVENTS:
+            was = snap_hooks.get(ev) or []
             entries = hooks.get(ev, [])
             ours = [e for e in entries if any("crew-hook" in h.get("command", "") for h in e.get("hooks", []))]
             if not was:
                 # Not there before this install: take Project Pals' entries out again.
                 if ours:
                     hooks[ev] = [e for e in entries if e not in ours]
+                    if not hooks[ev]:
+                        hooks.pop(ev)   # no empty "Stop": [] left behind (B3)
                     changed.append(f"settings.json {ev}: removed Project Pals' hook")
             else:
                 for e, m in zip(ours, was):
                     if e.get("matcher") != m:
                         changed.append(f"settings.json {ev} matcher: {e.get('matcher')!r} -> {m!r}")
                         e["matcher"] = m
+        if not hooks and (not had_hooks or json.dumps(st, sort_keys=True) != before):
+            st.pop("hooks")   # nor an empty "hooks": {} that Roll back itself emptied or made
         sl = st.get("statusLine")
         if not snap.get("statusline_wrapped") and sl and "crew-statusline" in str(sl.get("command", "")):
             orig = (DATA / "crew-statusline-original")
@@ -188,6 +214,17 @@ def restore_config(snap, log=print):
             tmp = sp.with_suffix(".crew.tmp")
             tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False) + "\n")
             tmp.replace(sp)
+    # Antigravity CLI: take Project Pals's hooks out when the version rolled back to didn't have them.
+    ap = _agy_hooks()
+    agy = load_json(ap, None)
+    if not snap.get("agy_hooks") and isinstance(agy, dict) and AGY_HOOKS_KEY in agy:
+        BACKUPS.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ap, BACKUPS / f"rollback-{stamp}-agy-hooks.json")
+        agy.pop(AGY_HOOKS_KEY)
+        tmp = ap.with_suffix(".crew.tmp")
+        tmp.write_text(json.dumps(agy, indent=2, ensure_ascii=False) + "\n")
+        tmp.replace(ap)
+        changed.append("hooks.json: removed Project Pals' Antigravity CLI hooks")
     return changed
 
 
@@ -202,8 +239,9 @@ def _snapshot(label):
     home = Path.home()
     app = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
     app += [HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
-    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-statusline")]
+    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline", "crew-mcp")]
     user += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service"]
+    user += [home / ".claude" / "project-pals"]   # the Desk's Claude Code mod (pals load it with --plugin-dir)
     # Without the generated mascots (they're redrawn on install).
     skip = lambda ti: None if "/mascots/" in ti.name and ti.name.endswith(".svg") else ti
     with tarfile.open(path, "w:gz") as tar:
@@ -259,6 +297,24 @@ def rollback(path=None, log=print):
         for d in (HOME / "mods").glob("crew-*"):
             if d.name not in kept:
                 shutil.rmtree(d, ignore_errors=True)
+        # The Claude Code mod too: a version without it takes it away (its pals stop loading it).
+        if not any(m.name == ".claude/project-pals" or m.name.startswith(".claude/project-pals/") for m in members):
+            shutil.rmtree(home / ".claude" / "project-pals", ignore_errors=True)
+        # Library files the newer version added (crewdesk.py …) go too (B3). Not through a symlink:
+        # a development install links the folder to a checkout.
+        lib, lib_name = home / ".local" / "lib" / "herdr-crew", ".local/lib/herdr-crew"
+        listed = {m.name for m in members}
+        if lib_name in listed and lib.is_dir() and not lib.is_symlink():
+            for f in sorted(lib.rglob("*"), reverse=True):
+                if f"{lib_name}/{f.relative_to(lib).as_posix()}" in listed:
+                    continue
+                if f.is_dir() and not f.is_symlink():
+                    try:
+                        f.rmdir()   # only once empty
+                    except OSError:
+                        pass
+                else:
+                    f.unlink()
         ours = [m for m in members if m.name == APP or m.name.startswith(APP + "/")]
         rest = [m for m in members if m not in ours]
         for m in ours:
@@ -321,8 +377,14 @@ def apply(log=print, version=None):
         snap = _snapshot(f"from-{installed().get('version', 'unknown')}")
         log(f"backed up the current version to {snap.name}")
         args = ["bash", str(root / "install.sh"), "--from-release"]
-        if not installed().get("helpers", True):
+        ins_now = installed()
+        if not ins_now.get("helpers", True):
             args.append("--no-helpers")
+        else:
+            if not ins_now.get("claude_hooks", True):
+                args.append("--no-claude-hooks")
+            if not ins_now.get("agy_hooks", True):
+                args.append("--no-agy-hooks")
         try:
             r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
         except BaseException as e:

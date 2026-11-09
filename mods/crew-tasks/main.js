@@ -15,7 +15,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, setShared, exec, appHome, home } from "herdr";
-import { botOf, crewCli, loadOps, taskFor, ago, ds, tone, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
+import { botOf, crewCli, ownerCli, loadOps, taskFor, ago, ds, tone, scrollArea, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
@@ -122,7 +122,8 @@ export default class CrewTasks extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        await crewCli(["task", "add", title, "--for", p.space.name, ...(body ? ["--body", body] : [])]);
+        // From you, with a click token (an app call without one is "a shell", not you: Desk §10.1).
+        await ownerCli(["task", "add", title, "--for", p.space.name, ...(body ? ["--body", body] : [])]);
         notify({ title: `Task added for ${p.bot.name}`, body: "It's on the board; it picks it up when its turn ends.", level: "success", timeout: 2500 });
       } catch (e) {
         notify({ title: "Couldn't add the task", body: String(e.message ?? e).slice(0, 200), level: "warning" });
@@ -137,7 +138,7 @@ export default class CrewTasks extends View {
 
   finish(t, cx) {
     cx.spawn(async (cx) => {
-      try { await crewCli(["task", "done", t.id]); }
+      try { await ownerCli(["task", "done", t.id]); }
       catch (e) { notify({ title: "Couldn't finish it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.reload(cx);
     });
@@ -159,7 +160,13 @@ export default class CrewTasks extends View {
 
     const row = (x) => {
       const on = this.open === x.id;
-      const tag = x.status === "claimed" ? ["working", d.infoText] : x.status === "blocked" ? ["blocked", d.warnText] : null;
+      // An open task shows its Desk card's delivery (Desk stage 6: the board reads from cards): not seen
+      // yet, seen, or held (amber, with why); claimed and blocked say so as before.
+      const c = x.card;
+      const delivery = x.status === "open" && c && !["done", "cancelled", "expired"].includes(c.status)
+        ? (c.status === "held" ? [`held · ${c.held ?? "?"}`, d.warnText] : c.status === "queued" ? ["not seen yet", d.fg3]
+          : c.status === "seen" ? ["seen", d.fg3] : null) : null;
+      const tag = x.status === "claimed" ? ["working", d.infoText] : x.status === "blocked" ? ["blocked", d.warnText] : delivery;
       return v_flex().id(`tk-${x.id}`).flex_none().rounded(d.r.sm).when(on, (el) => el.bg(d.raised))
         .child(h_flex().h(32).px(8).gap(10).items_center()
           // The tick: finishes it.
@@ -175,7 +182,8 @@ export default class CrewTasks extends View {
           .children((x.notes ?? []).slice(-2).map((n, i) => div().id(`tk-n-${x.id}-${i}`).text_size(12).line_height("17px").text_color(d.fg2)
             .child(`${n.by ?? ""}${n.by ? ": " : ""}${n.text ?? n}`)))
           .child(div().text_size(11).line_height("14px").text_color(d.fg3)
-            .child([x.by && `from ${x.by}`, x.created && ago(x.created), x.claimed_by && `claimed by ${x.claimed_by}`].filter(Boolean).join(" · ")))));
+            .child([x.by && `from ${x.by}`, x.created && ago(x.created), x.claimed_by && `claimed by ${x.claimed_by}`,
+              c && `card ${c.id} ${c.status}${c.held ? ` (${c.held})` : ""}${c.via ? ` via ${c.via}` : ""}`].filter(Boolean).join(" · ")))));
     };
 
     return sheet(d, "crew-tasks", this.handle, (e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })
@@ -201,10 +209,10 @@ export default class CrewTasks extends View {
               .child(svg(`${ICON}/paperclip.svg`).size(13).text_color(d.fg2)))
             .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4)
               .child(this.files.length ? `${this.files.length} image${this.files.length > 1 ? "s" : ""} · ${MAX_FILES} at most` : "Paste or drop an image, or use the paperclip"))))
-        .child(v_flex().id("tk-list").gap(2).max_h(320).overflow_y_scrollbar()
+        .child(scrollArea(d, "tk-list", v_flex().gap(2).pr(10)
           .children(mine.map(row))
           .when(!mine.length, (el) => el.child(div().py(8).px(8).text_size(12).line_height("16px").text_color(d.fg3)
-            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`))))
+            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`)))).max_h(320))
         .child(div().id("tk-board").cursor_pointer().hover((s) => s.opacity(0.75)).on_click(() => { setShared("crew.view", "tasks"); close(); })
           .child(div().text_size(12).line_height("16px").text_color(d.fg2).child("All tasks on the board →"))))
       .child(sheetFooter(d, { id: "tk", hint: "Enter adds · Shift+Enter new line · Esc closes", onCancel: close, cancelLabel: "Close", ready: (!empty || this.files.length > 0) && !this.busy,

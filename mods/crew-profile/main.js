@@ -6,7 +6,10 @@
 //
 // Tabs, in two groups: the agent (Profile, Vault) ‖ its project (AGENTS.md: project.js). The Vault (vault.js)
 // replaced Notebook, Mission and Brain (DeNon 2026-11-08); those are notes inside it now.
-// Profile: identity, facts, stats, channels (Review on worktree channels), memory, routines, actions.
+// Profile (DeNon 2026-11-08: Hero stage + Mission control, stage.js): the hero (the pet on its lit
+// stage, the state line, the name, the mission, a task composer) and four week cards; then, in Side,
+// facts (with the role), channels (Review on worktree channels), memory, routines, actions. In Full it
+// is the dashboard (dash.js: the header, the stage part with the panels, the live terminal).
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView } from "gpui-base";
@@ -14,17 +17,18 @@ import { spaces, panes, agents, theme, run, exec, settings, notify, openOverlay,
 import {
   crew, botOf, mascotEl, mood, petOf, petReady, petEl, petState, channelName, ago, loadOps, crewCli, taskFor, updateBot, pebble,
   ds, tone, panelState, panelTab, panelFull, panelOpen, closePanel, openPanel, setPanelSize, worktreeOf, openReview, briefOf, taskTitle,
-  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, TAG_WORDS, shortDate, num, VAULT_NOTES,
+  tabHasAgent, leadPane, modelOf, rememberModel, showTabs, channelOrder, shortDate, num, VAULT_NOTES, dashShown, scrollArea,
+  palSpaces, machineTag, openMachinePicker,
 } from "./crew.js";
 import { initProject, ensureProject, loadAgents, loadBrain, agentsTab, agentsBadge, badgeTag } from "./project.js";
 import { initDash, renderDash } from "./dash.js";
 import { initNotebook } from "./notebook.js";
 import { vaultView } from "./vault.js";
+import { initStage, heroStage, statCards, stagePart, machineCard } from "./stage.js";
 
 const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
 const TABS = [["profile", "Profile"], ["vault", "Vault"], ["|"], ["agents", "AGENTS.md"]];
-const STATE_DOT = (d) => ({ work: d.info, ask: d.warn, stuck: d.warn, done: d.ok, pr: d.ok, merged: "#A78BFA", closing: d.err });
 
 // pane.go sends "focus" when it moves onto the panel. crew-profile.<tab or note> (keys.json,
 // herdr-app do) shows that tab or Vault note: profile, vault, agents, home, mission, notebook, brain.
@@ -60,12 +64,15 @@ export default class CrewProfile extends View {
     // The Full dashboard's parts (props.part: head, left, board, tbar) are copies of this mod too:
     // each loads only what it shows (dash.js).
     this.part = props()?.part ?? "main";
+    if (this.part === "stage") {
+      initStage(this, cx, "profile-stage", () => dashShown());
+      cx.timer.every(8000, (cx) => { if (dashShown()) this.loadMemory(cx, true); });
+      return;
+    }
     if (this.part !== "main") {
       listen(this, cx);   // a command can reach any shown copy, so the dashboard's parts take them too
       initDash(this, cx, this.part);
-      if (this.part === "left") this.loadMemory(cx, true);
       if (this.part === "head") {
-        loadBrain(this, cx, true);
         cx.timer.every(250, () => { const st = panelState(); if (st.at && st.at !== this.seenAt && this.isOpen()) { this.seenAt = st.at; this.h.focus(); } });
       }
       return;
@@ -85,6 +92,8 @@ export default class CrewProfile extends View {
     // Mission, Brain and AGENTS.md (project.js): their data, editors and timers.
     initProject(this, cx);
     initNotebook(this, cx);
+    // The hero and the week cards in Side (Full has its own copy: the stage part).
+    initStage(this, cx, "profile-main", () => this.isOpen() && panelTab() === "profile" && !dashShown());
     // What the shown tab needs, and the AGENTS.md tab's lint badge for the shown pal.
     cx.timer.every(400, (cx) => {
       const s = this.shown();
@@ -173,16 +182,25 @@ export default class CrewProfile extends View {
     const d = ds(t);
     const s = this.shown();
     if (this.part !== "main") {
-      // The panel's left edge: a hairline on the parts that touch it (the header and the channels).
-      return div().id(`crew-profile-${this.part}`).size_full().when(this.part === "head" || this.part === "left", (el) => el.border_l_1().border_color(d.line))
-        .track_focus(this.h).on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); closePanel(); } })
-        .child(renderDash(this, this.part, t, d));
+      // The panel's left edge: a hairline on the parts that touch it (the header and the stage).
+      return div().id(`crew-profile-${this.part}`).size_full().when(this.part === "head" || this.part === "stage", (el) => el.border_l_1().border_color(d.line))
+        .track_focus(this.h).on_key_down((e, cx) => {
+          if (e.key !== "escape" || this.editingRole) return;
+          // A half-written task stays put: Esc doesn't close the panel over it.
+          if (this.part === "stage" && this.draft && !this.draft.empty()) return;
+          cx.stop_propagation(); closePanel();
+        })
+        .child(this.part === "stage" ? (s ? div().size_full().bg(d.bg1).child(stagePart(this, s.space, s.bot, t, d)) : div())
+          : renderDash(this, this.part, t, d));
     }
+    const zoom = Number(settings()?.zoom) || 1;
     const root = v_flex().id("crew-profile").size_full().bg(d.bg1).border_l_1().border_color(d.line)
       .track_focus(this.h)
-      // Esc: out of an edit or a review first, else close the panel.
+      .on_size_change((size, cx) => { const w = size.width / zoom; if (Math.abs((this.sideW ?? 0) - w) > 1) { this.sideW = w; cx.notify(); } })
+      // Esc: out of an edit or a review first, else close the panel (not over a half-written task).
       .on_key_down((e, cx) => {
         if (e.key !== "escape" || this.editingRole) return;
+        if (panelTab() === "profile" && this.draft && !this.draft.empty() && !this.edit && !this.review) return;
         cx.stop_propagation();
         if (this.edit || this.review) { this.edit = null; this.review = null; cx.notify(); return; }
         closePanel();
@@ -191,7 +209,7 @@ export default class CrewProfile extends View {
     const { space, bot } = s;
     const full = panelFull();
     const tab = panelTab();
-    const scroll = (el) => div().id(`pf-scroll-${tab}`).flex_1().min_h(0).overflow_y_scrollbar().child(full ? div().max_w(980).child(el) : el);
+    const scroll = (el) => scrollArea(d, `pf-scroll-${tab}`, full ? div().max_w(980).child(el) : el).flex_1().min_h(0);
     return root
       .child(this.header(space, bot, d, full))
       .child(this.tabs(d, bot))
@@ -236,10 +254,14 @@ export default class CrewProfile extends View {
         .child(div().flex_1())
         .when(Boolean(act), (el) => el.child(act)))
       .child(body);
-    const identity = this.identity(space, bot, t, d);
-    const facts = sec("facts", "Facts", this.facts(space, bot, d), this.link("pf-look", "Customize look", d, () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })));
-    const stats = v_flex().flex_none().py(14).border_t_1().border_color(d.line).child(this.stats(space, bot, d, full));
-    const channels = sec("channels", "Channels", this.channels(space, bot, d));
+    const W = Math.max(280, (this.sideW || 420) - 1);
+    const hero = heroStage(this, space, bot, t, d, { compact: true, w: W });
+    const cards = div().px(16).pt(4).pb(14).child(statCards(this, space, bot, d, { cols: 2, w: W - 32 }));
+    const facts = sec("facts", "Facts", v_flex().gap(6).child(this.roleRow(bot, d)).child(this.facts(space, bot, d)),
+      this.link("pf-look", "Customize look", d, () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })));
+    const channels = sec("channels", "Topics", this.channels(space, bot, d));
+    // Which computer it works on, and Change machine… (DeNon 2026-11-08).
+    const machine = sec("machine", "Machine", machineCard(this, space, bot, d), this.link("pf-machine", "Change…", d, () => openMachinePicker(space.id)));
     const memory = sec("memory", "Memory", this.memory(bot, d), h_flex().gap(10)
       .child(this.link("pf-remember", "Remember…", d, () => { this.showRemember = !this.showRemember; if (this.showRemember) this.remember.focus(); }))
       .when(Boolean(this.mem?.folder), (el) => el.child(this.link("pf-memfolder", "Open folder", d, () => exec("xdg-open", [this.mem.folder]).catch(() => {})))));
@@ -247,18 +269,13 @@ export default class CrewProfile extends View {
     const actions = v_flex().flex_none().py(14).border_t_1().border_color(d.line).child(this.actions(space, bot, d));
     // The chip menu's Memory opens the tab with Memory first.
     const memFirst = panelState().section === "memory";
-    if (full) {
-      const left = v_flex().w(380).flex_none().child(identity).child(facts).child(stats).child(routines).child(actions);
-      const right = v_flex().flex_1().min_w(0).child(memFirst ? memory : channels).child(memFirst ? channels : memory);
-      return div().id("pf-body").flex_1().min_h(0).overflow_y_scrollbar()
-        .child(h_flex().items_start().gap(32).px(24).pb(24).child(left).child(right));
-    }
-    const body = v_flex().px(16).pb(24).child(identity);
+    // (Full on Profile is the dashboard, so this is Side; without the dashboard layout, Full gets it too.)
+    const body = v_flex().px(16).pb(24);
     if (memFirst) body.child(memory);
-    body.child(facts).child(stats).child(channels);
+    body.child(machine).child(facts).child(channels);
     if (!memFirst) body.child(memory);
     body.child(routines).child(actions);
-    return div().id("pf-body").flex_1().min_h(0).overflow_y_scrollbar().child(body);
+    return scrollArea(d, "pf-body", v_flex().child(hero).child(cards).child(body)).flex_1().min_h(0);
   }
 
   link(id, text, d, act) {
@@ -266,36 +283,18 @@ export default class CrewProfile extends View {
       .hover((s) => s.text_color(d.fg1)).on_click((_e, cx) => { act(cx); cx.notify(); }).child(text);
   }
 
-  // The pet (96 px, on the soft aura) and the name, role (click to edit) and state.
-  identity(space, bot, t, d) {
-    const tab = space.tabs.find((x) => x.active);
-    const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
-    const p = petOf(bot);
-    const state = petState(bot, m);
-    const W = 96, H = 75;
-    const pet = div().relative().w(W).h(H).flex_none()
-      .child(div().absolute().left(-16).top(-12).w(W + 32).h(H + 25).child(image(`${ICON}/pet-aura.svg`).w(W + 32).h(H + 25)))
-      .child(div().absolute().left(0).top(0).child(p && petReady(p) ? petEl(p, state, W, H, { open: true })
-        : div().w(W).h(H).flex().items_center().justify_center().child(mascotEl(bot, m, 56, t))));
-    const word = !bot.awake ? (bot.starting ? "Starting" : "Asleep") : TAG_WORDS[state] ?? "Resting";
-    const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
-    const dot = STATE_DOT(d)[state];
-    const role = this.editingRole
-      ? div().h(26).px(8).flex().items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
+  // The role: a facts row; click to change it.
+  roleRow(bot, d) {
+    const body = this.editingRole
+      ? div().flex_1().h(26).px(8).flex().items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
         .child(Input.new(this.role).w_full().text_size(12).text_color(d.fg1))
-      : div().id("pf-role").text_size(12).line_height("16px").text_color(bot.role ? d.body : d.fg3).cursor_pointer()
+      : div().id(`pf-role-${this.part}`).flex_1().min_w(0).truncate().text_size(13).text_color(bot.role ? d.body : d.fg3).cursor_pointer()
         .hover((s) => s.text_color(d.fg1)).tooltip("Click to change")
         .on_click((_e, cx) => { if (!bot.record) return; this.role.set_value(bot.role ?? ""); this.roleFor = bot.record.id; this.editingRole = true; this.role.focus(); cx.notify(); })
         .child(bot.role || "Add a role");
-    return h_flex().flex_none().items_center().gap(14).pt(16).pb(14)
-      .child(pet)
-      .child(v_flex().flex_1().min_w(0).gap(3)
-        .child(div().text_size(16).line_height("20px").font_weight(600).text_color(d.fg1).child(bot.name))
-        .child(role)
-        .child(h_flex().items_center().gap(6).mt(2)
-          .when(Boolean(dot), (el) => el.child(div().size(7).rounded(4).bg(dot)))
-          .child(div().text_size(12).line_height("16px").font_weight(500).text_color(dot === d.info ? d.infoText : dot === d.warn ? d.warnText : dot ? d.okHi : d.fg2)
-            .child(since && since !== "now" ? `${word} · ${since}` : word))));
+    return h_flex().h(30).items_center().gap(10).border_b_1().border_color(d.lineSoft)
+      .child(div().w(72).flex_none().text_size(11).font_family(d.mono).text_color(d.fg3).child("role"))
+      .child(body);
   }
 
   facts(space, bot, d) {
@@ -307,7 +306,6 @@ export default class CrewProfile extends View {
     const rows = [
       ["brain", (bot.harnessName ?? (bot.harness ? bot.harness : "no agent running")) + (model ? ` · ${model}` : ""), false],
       ["folder", (bot.folder ?? space.folder ?? "").replace(/^\/home\/[^/]+/, "~"), true],
-      ["machine", bot.machine ?? "this computer", false],
       ["branch", lead?.branch ?? null, true],
       ["pet", p ? `${p.species} · ${p.acc.join(" + ") || "nothing"}` : "folder mascot", false],
       ["hired", hired ? `${hired}${bot.hiredBy ? ` · by ${bot.hiredBy}` : ""}` : null, false],
@@ -320,35 +318,16 @@ export default class CrewProfile extends View {
         .when(k !== "pet", (el) => el.child(v)))));
   }
 
-  stats(space, bot, d, full) {
-    const mine = this.ops.tasks.filter((x) => taskFor(x, space.name));
-    const last = Math.max(0, ...space.tabs.map((x) => x.changed_at ?? 0));
-    const cells = [
-      [String(space.tabs.length), space.tabs.length === 1 ? "Channel" : "Channels"],
-      [String(mine.filter((x) => x.status === "done").length), "Tasks done"],
-      [String(mine.filter((x) => ["open", "claimed", "blocked"].includes(x.status)).length), "Open tasks"],
-      [!bot.awake ? "asleep" : last ? ago(last) : "—", "Last active"],
-    ];
-    const cols = full ? 4 : 2;
-    const grid = v_flex().rounded(d.r.md).border_1().border_color(d.line);
-    for (let r = 0; r < cells.length / cols; r++) {
-      const row = h_flex().when(r > 0, (el) => el.border_t_1().border_color(d.line));
-      cells.slice(r * cols, r * cols + cols).forEach(([v, l], i) => row.child(v_flex().flex_1().px(12).py(9)
-        .when(i > 0, (el) => el.border_l_1().border_color(d.line))
-        .child(div().text_size(18).line_height("22px").font_weight(600).text_color(d.fg1).child(v))
-        .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(l))));
-      grid.child(row);
-    }
-    return grid;
-  }
-
   // One row per channel: its state, name and time; what it's on (else its brief); its worktree
   // branch with Review. Click: show it.
   channels(space, bot, d) {
     const all = agents();
     const ps = panes();
     const list = v_flex().rounded(d.r.md).border_1().border_color(d.line);
-    channelOrder(space, bot).forEach((tab, i) => {
+    // A pal open on two machines (it moved; old topics still run): both, each tagged with its machine.
+    const spaces2 = [space, ...palSpaces(bot).filter((x) => x.id !== space.id)];
+    const spans = spaces2.length > 1;
+    spaces2.flatMap((sp) => channelOrder(sp, botOf(sp)).map((tab) => [sp, tab])).forEach(([sp, tab], i) => {
       const ag = all.filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0];
       const awake = tabHasAgent(tab, ps);
       const status = awake ? tab.status : null;
@@ -359,12 +338,13 @@ export default class CrewProfile extends View {
       const wt = worktreeOf(bot, tab);
       list.child(v_flex().id(`pf-ch-${tab.id}`).px(10).py(7).gap(3).cursor_pointer()
         .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
-        .when(tab.active, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
-        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
+        .when(tab.active && sp.id === space.id, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
+        .on_click((_e, cx) => { this.go(sp, tab); cx.notify(); })
         .child(h_flex().items_center().gap(8)
           .child(dot ? div().size(7).flex_none().rounded(4).bg(dot) : awake ? div().size(7).flex_none().rounded(4).bg(d.fg4)
             : div().size(7).flex_none().rounded(4).border_1().border_color(d.fg4))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(d.mono).font_weight(500).text_color(d.fg1).child(`#${channelName(tab)}`))
+          .when(spans, (el) => el.child(machineTag(d, sp.machine, { dim: true })))
           .child(div().flex_none().text_size(11).text_color(status === "blocked" ? d.warnText : d.fg3).child(since && since !== "now" ? `${word} ${since}` : word)))
         .when(Boolean(on), (el) => el.child(div().pl(15).truncate().text_size(12).line_height("16px").text_color(d.body).child(on)))
         .when(Boolean(wt), (el) => el.child(h_flex().pl(15).items_center().gap(6)
@@ -373,7 +353,7 @@ export default class CrewProfile extends View {
           .child(div().flex_1())
           .child(div().id(`pf-review-${tab.id}`).h(20).px(7).flex().items_center().rounded(d.r.xs).border_1().border_color(d.lineMid)
             .cursor_pointer().hover((s) => s.border_color(d.lineStrong).bg(d.hover))
-            .on_click((_e, cx) => { cx.stop_propagation(); openReview(space, tab); })
+            .on_click((_e, cx) => { cx.stop_propagation(); openReview(sp, tab); })
             .text_size(11).font_weight(500).text_color(d.body).child("Review")))));
     });
     return list;
@@ -432,7 +412,7 @@ export default class CrewProfile extends View {
     return v_flex().gap(6)
       .child(h_flex().gap(6)
         .child(btn("pf-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })))
-        .child(btn("pf-channel", "ds-plus", "Channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
+        .child(btn("pf-channel", "ds-plus", "Topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
       .child(h_flex().gap(6)
         .child(btn("pf-look", "ds-user", "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
         .when(!bot.god, (el) => el.child(btn("pf-sleep", "ds-moon", "Put to sleep", (cx) => this.sleep(space, bot)(cx)))));

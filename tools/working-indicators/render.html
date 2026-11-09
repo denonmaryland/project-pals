@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Working indicators</title>
+<!--
+  Renders every 'working' indicator style as a looping frame sequence. build.sh opens this in headless
+  Chromium (--dump-dom), reads the frames out of #out and packs each style into an animated WebP in
+  mods/crew-roster/working/. Opened in a browser it is also a preview board.
+
+  The drawing is ported from the three design boards DeNon reviewed (crew-boards/working-ascii-globes,
+  working-spheres, working-spinners, 2026-11-08). Each style's speeds are nudged so its loop closes
+  exactly (a whole number of turns, sweeps and flickers in P seconds); the comments say where.
+-->
+<style>
+body{background:#0E0E0F;color:#C8C8C8;font:12px Inter,system-ui,sans-serif;padding:20px}
+.g{display:flex;flex-wrap:wrap;gap:10px}.c{width:96px;text-align:center}.c canvas{background:#232324;border-radius:4px;width:48px;height:48px;image-rendering:auto}
+#out{display:none}
+</style></head><body>
+<div class="g" id="g"></div>
+<pre id="out"></pre>
+<script>
+const TAU = Math.PI * 2;
+const BLUE = [76, 161, 242];
+
+// ── ASCII globes (from working-ascii-globes) ─────────────────────────────────────────────────────
+const cA = (k, a = 1) => { const m = BLUE.map((v) => Math.round(v + (255 - v) * Math.max(0, k))); return `rgba(${m},${a})`; };
+const LAND_A = [[.6,-1.8,.55],[.2,-1.2,.42],[-.45,-1,.38],[.75,.2,.5],[.25,.45,.36],[-.3,.55,.48],[.5,1.8,.62],[-.5,2.3,.32],[.1,2.95,.26],[-1.2,0,.4]];
+const landA = (la, lo) => LAND_A.some(([a, b, r]) => Math.acos(Math.max(-1, Math.min(1, Math.sin(la) * Math.sin(a) + Math.cos(la) * Math.cos(a) * Math.cos(lo - b)))) < r);
+// A rotating, tilted unit sphere at screen point (u,v). `light` (optional) moves the lamp; the board's
+// lamp is fixed at (-.45,-.5,.74).
+function sph(u, v, rot, light = [-.45, -.5, .74], tilt = .35) {
+  const r2 = u * u + v * v; if (r2 > 1) return null;
+  const z = Math.sqrt(1 - r2);
+  const Y = v * Math.cos(tilt) + z * Math.sin(tilt), Z = -v * Math.sin(tilt) + z * Math.cos(tilt);
+  const la = Math.asin(-Y), lo = Math.atan2(u, Z) - rot;
+  const L = Math.max(0, light[0] * u + light[1] * v + light[2] * z);
+  return { la, lo: ((lo + Math.PI) % TAU + TAU) % TAU - Math.PI, z, L, edge: Math.sqrt(r2), rot };
+}
+// The lamp circling the sphere (for the two styles whose shading alone can't show a turn).
+const orbitLamp = (a) => { const x = Math.cos(a) * .55, y = -.3 + Math.sin(a) * .3; return [x, y, Math.sqrt(Math.max(0, 1 - x * x - y * y))]; };
+const RAMP = " .,:;=+*#%@", BLOCK = " ░▒▓█", BRAILLE = "⠀⠁⠃⠇⡇⡏⡟⡿⣿";
+const MONO = '"JetBrains Mono","JetBrainsMono Nerd Font","JetBrainsMono NF",monospace';
+// Drawn as the board's 16 px globe (an 8 × 8 grid; its 14 px row size, 7 × 7, was too faint to read),
+// at 2x. fn(s, i24, j24, f): f = { u (0..1 of the loop), i (frame index), F (frames) }. rot(f) the globe's turn.
+// At row size (16 px) the board's colours vanish: most glyphs are drawn at 12-50 % alpha and the
+// downscale averages the thin strokes with the empty cell around them. So every colour gets a
+// contrast stretch (alpha above .1 more than doubles, capped at 1, so the faintest dots stay faint
+// and lit land goes solid; the tint moves a little toward white) and each glyph is drawn bigger and
+// outlined in its own colour, which thickens it. The order of light and dark is kept. (DeNon, 2026-11-08: "brighter, so they read".)
+const GLYPH = 1.25, STROKE = .14;
+function boost(col) {
+  const m = col.match(/rgba?\(([^)]+)\)/); if (!m) return col;
+  const [r, g, b, a = 1] = m[1].split(",").map(Number);
+  const A = a <= .1 ? a : Math.min(1, .1 + (a - .1) * 2.1);
+  const w = (v) => Math.round(v + (255 - v) * .12);
+  return `rgba(${w(r)},${w(g)},${w(b)},${A.toFixed(3)})`;
+}
+function asciiStyle(id, name, F, delay, fn, { rot = (f) => TAU * f.u, light = null } = {}) {
+  return { id, group: "ascii", name, F, delay, size: 32, draw(x, W, f) {
+    const cells = 8, cw = W / cells;
+    x.font = `800 ${cw * GLYPH}px ${MONO}`; x.textAlign = "center"; x.textBaseline = "middle";
+    x.lineWidth = cw * STROKE; x.lineJoin = "round";
+    for (let i = 0; i < cells; i++) for (let j = 0; j < cells; j++) {
+      const u = (j + .5) / cells * 2 - 1, v = (i + .5) / cells * 2 - 1;
+      const s = sph(u * 1.04, v * 1.04, rot(f), light ? light(f) : undefined);
+      const r = fn(s, Math.round(i * 24 / cells), Math.round(j * 24 / cells), f);
+      if (!r || r.ch === " ") continue;
+      const col = boost(r.col), cx = (j + .5) * cw, cy = (i + .55) * cw;
+      x.fillStyle = col; x.strokeStyle = col; x.fillText(r.ch, cx, cy); x.strokeText(r.ch, cx, cy);
+    }
+  } };
+}
+// P = F × delay. The board turns the globe at .7 rad/s (a 9 s turn); here a turn is 72 × 83 ms ≈ 6 s.
+const ASCII = [
+  // Its shading doesn't depend on the turn, so on the board it stood still: the lamp circles instead.
+  asciiStyle("ascii-ramp", "Shaded ramp", 48, 83, (s) => s && { ch: RAMP[Math.round(s.L * (RAMP.length - 1))], col: cA(s.L * .5, .35 + .65 * s.L) },
+    { rot: () => 0, light: (f) => orbitLamp(TAU * f.u) }),
+  asciiStyle("ascii-earth", "ASCII Earth", 72, 83, (s) => s && (landA(s.la, s.lo) ? { ch: s.L > .55 ? "@" : "#", col: cA(.35 * s.L, .5 + .5 * s.L) } : { ch: s.L > .4 ? ":" : ".", col: cA(0, .18 + .3 * s.L) })),
+  // Meridians every 30°: the picture repeats after a 30° turn, so 12 frames make the loop (.7 rad/s kept).
+  asciiStyle("ascii-wire", "Wireframe chars", 12, 62, (s) => {
+    if (!s) return null;
+    const m = (s.lo * 6 / Math.PI) % 1, p = (s.la * 6 / Math.PI) % 1, nm = Math.abs(m) < .14 || Math.abs(m) > .86, np = Math.abs(p) < .14 || Math.abs(p) > .86;
+    if (!nm && !np) return s.edge > .93 ? { ch: "·", col: cA(0, .4) } : null;
+    return { ch: nm && np ? "+" : nm ? "|" : "-", col: cA(.4 * s.z, .4 + .6 * s.z) };
+  }, { rot: (f) => (Math.PI / 6) * f.u }),
+  // The flicker steps 6 times a second (every second frame): 36 steps a loop.
+  asciiStyle("ascii-binary", "Binary", 72, 83, (s, i, j, f) => s && { ch: landA(s.la, s.lo) ? "1" : ((i * 7 + j * 13 + Math.floor(f.i / 2)) % 3 ? "0" : "1"), col: landA(s.la, s.lo) ? cA(.3, .55 + .45 * s.L) : cA(0, .15 + .25 * s.L) }),
+  // Like the ramp: shading only, so the lamp circles.
+  asciiStyle("ascii-block", "Block shading", 48, 83, (s) => s && { ch: BLOCK[Math.max(1, Math.round(s.L * (BLOCK.length - 1)))], col: cA(s.L * .3, .5 + .5 * s.L) },
+    { rot: () => 0, light: (f) => orbitLamp(TAU * f.u) }),
+  asciiStyle("ascii-braille", "Braille globe", 72, 83, (s) => s && { ch: BRAILLE[Math.round((landA(s.la, s.lo) ? .6 + .4 * s.L : .25 * s.L + .1) * (BRAILLE.length - 1))], col: cA(.3 * s.L, .45 + .55 * s.L) }),
+  // The board's terminator drifts .1 rad/s against the screen; here it holds still while the world turns under it.
+  asciiStyle("ascii-night", "Night side", 72, 83, (s, i, j) => {
+    if (!s) return null;
+    const sun = Math.cos(s.lo + s.rot + .4) * Math.cos(s.la);
+    if (sun > 0) return { ch: landA(s.la, s.lo) ? "#" : "=", col: cA(.3 * sun, .4 + .6 * sun) };
+    return landA(s.la, s.lo) && ((i * 31 + j * 17) % 5 == 0) ? { ch: "*", col: "rgba(255,214,140,.9)" } : { ch: ".", col: cA(0, .12) };
+  }),
+  // Rain falls 2 × 28 rows a loop (9.4 rows/s, the board's 9); the glyphs change 48 times (8/s).
+  asciiStyle("ascii-matrix", "Matrix rain", 72, 83, (s, i, j, f) => {
+    if (!s) return null;
+    const head = (f.u * 56 + j * 3.7) % 28, d = (head - i + 28) % 28;
+    if (d > 7) return { ch: "·", col: cA(0, .1) };
+    const ch = "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘ0123456789"[(i * 5 + j * 3 + Math.floor(f.i * 2 / 3)) % 24];
+    return { ch, col: d == 0 ? "rgba(235,245,255,.95)" : cA(landA(s.la, s.lo) ? .3 : 0, (1 - d / 8) * (landA(s.la, s.lo) ? .9 : .45)) };
+  }),
+  // Two scans a loop (3 s each, the board's 3.5); the digits change 16 times a loop.
+  asciiStyle("ascii-hex", "Hex scan", 72, 83, (s, i, j, f) => {
+    if (!s) return null;
+    const y = (Math.sin(TAU * 2 * f.u) * .5 + .5) * 24, d = Math.abs(i - y);
+    return { ch: "0123456789ABCDEF"[(i * 11 + j * 7 + Math.floor(f.i * 2 / 9)) % 16], col: d < 1.5 ? "rgba(220,240,255,.95)" : cA(.2 * s.L, (landA(s.la, s.lo) ? .5 : .18) + .3 * s.L * (d < 4 ? 1 : .4)) };
+  }),
+  asciiStyle("ascii-pals", "Pals globe", 72, 83, (s) => {
+    if (!s) return null;
+    if (Math.abs(s.la) < .18) { const k = Math.floor(((s.lo + Math.PI) / TAU) * 12) % 4; return { ch: "PALS"[k], col: cA(.45, .5 + .5 * s.z) }; }
+    return { ch: landA(s.la, s.lo) ? "+" : ".", col: cA(0, (landA(s.la, s.lo) ? .35 : .15) + .35 * s.L) };
+  }),
+];
+
+// ── Spheres (from working-spheres) ───────────────────────────────────────────────────────────────
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const lighten = (c, k) => c.map((v) => Math.round(v + (255 - v) * k));
+const darken = (c, k) => c.map((v) => Math.round(v * (1 - k)));
+function ball(x, R, lx = -.35, ly = -.4, c = BLUE, alpha = 1) { const g = x.createRadialGradient(R * (1 + lx), R * (1 + ly), R * .05, R, R, R); g.addColorStop(0, rgba(lighten(c, .65), alpha)); g.addColorStop(.45, rgba(c, alpha)); g.addColorStop(1, rgba(darken(c, .6), alpha)); x.fillStyle = g; x.beginPath(); x.arc(R, R, R * .96, 0, 7); x.fill(); }
+function rim(x, R, a = .35) { const g = x.createRadialGradient(R, R, R * .7, R, R, R); g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, `rgba(170,215,255,${a})`); x.fillStyle = g; x.beginPath(); x.arc(R, R, R * .96, 0, 7); x.fill(); }
+function spec(x, R, px = .68, py = .62, s = .18) { const g = x.createRadialGradient(R * px, R * py, 0, R * px, R * py, R * s * 2); g.addColorStop(0, "rgba(255,255,255,.9)"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.beginPath(); x.arc(R * px, R * py, R * s * 2, 0, 7); x.fill(); }
+const proj = (R, lat, lon, rot, tilt = .35) => { const X = Math.cos(lat) * Math.sin(lon + rot), Y = Math.sin(lat), Z = Math.cos(lat) * Math.cos(lon + rot); const y2 = Y * Math.cos(tilt) - Z * Math.sin(tilt), z2 = Y * Math.sin(tilt) + Z * Math.cos(tilt); return [R + X * R * .9, R - y2 * R * .9, z2]; };
+const LAND_S = [[.6,-1.8,.55],[.2,-1.2,.4],[-.4,-1,.35],[.7,.2,.5],[.2,.4,.35],[-.3,.5,.45],[.5,1.8,.6],[-.5,2.3,.3],[.1,2.9,.25]];
+const isLand = (la, lo) => LAND_S.some(([a, b, r]) => Math.acos(Math.sin(la) * Math.sin(a) + Math.cos(la) * Math.cos(a) * Math.cos(lo - b)) < r);
+const DOTS = (() => { const p = []; for (let la = -1.4; la <= 1.4; la += .17) { const n = Math.max(4, Math.round(Math.cos(la) * 36)); for (let i = 0; i < n; i++) { const lo = i / n * TAU - Math.PI; p.push([la, lo, isLand(la, lo)]); } } return p; })();
+const FIB = (() => { const p = [], n = 90; for (let i = 0; i < n; i++) { const y = 1 - 2 * (i + .5) / n; p.push([Math.asin(y), i * 2.39996]); } return p; })();
+const sphereStyle = (id, name, F, delay, fn) => ({ id, group: "sphere", name, F, delay, size: 24, draw(x, W, f) { fn(x, W / 2, f.u); } });
+const SPHERES = [
+  // The lamp's lap: 4 s (the board's 3.9).
+  sphereStyle("sphere-orb", "Glossy orb", 60, 66, (x, R, u) => { const a = TAU * u; ball(x, R, Math.cos(a) * .45, -.25 + Math.sin(a) * .25); rim(x, R, .25); }),
+  // One turn: 5.3 s (the board's 5.2). Only six half-meridians are drawn (as on the board), so a full turn is the loop.
+  sphereStyle("sphere-wire", "Wireframe globe", 80, 66, (x, R, u) => {
+    const rot = TAU * u;
+    ball(x, R, -.3, -.4, darken(BLUE, .55)); x.lineWidth = Math.max(.6, R * .07);
+    for (let m = 0; m < 6; m++) { x.beginPath(); let first = 1; for (let la = -1.57; la <= 1.58; la += .08) { const [px, py, z] = proj(R, la, m * Math.PI / 6, rot); if (z < 0) { first = 1; continue; } first ? x.moveTo(px, py) : x.lineTo(px, py); first = 0; } x.strokeStyle = rgba(lighten(BLUE, .3), .9); x.stroke(); }
+    for (let la = -1.05; la <= 1.06; la += .52) { x.beginPath(); let f = 1; for (let lo = 0; lo <= 6.3; lo += .08) { const [px, py, z] = proj(R, la, lo, rot); if (z < 0) { f = 1; continue; } f ? x.moveTo(px, py) : x.lineTo(px, py); f = 0; } x.strokeStyle = rgba(BLUE, .7); x.stroke(); }
+    rim(x, R, .3);
+  }),
+  // One turn: 5.9 s (the board's 7).
+  sphereStyle("sphere-dots", "Dot-matrix Earth", 90, 66, (x, R, u) => {
+    ball(x, R, -.3, -.4, darken(BLUE, .75));
+    DOTS.forEach(([la, lo, l]) => { const [px, py, z] = proj(R, la, lo, TAU * u); if (z <= 0) return; x.fillStyle = l ? rgba(lighten(BLUE, .35), .5 + .5 * z) : rgba(BLUE, .18 * z); x.beginPath(); x.arc(px, py, R * (l ? .055 : .035), 0, 7); x.fill(); });
+    rim(x, R, .28);
+  }),
+  // One precession: 5.3 s (the board's 5.2).
+  sphereStyle("sphere-ring", "Ringed planet", 80, 66, (x, R, u) => {
+    const tilt = .35 + Math.sin(TAU * u) * .25;
+    const ring = (front) => { x.save(); x.translate(R, R); x.rotate(-.35); x.scale(1, Math.sin(tilt)); x.beginPath(); x.arc(0, 0, R * .98, front ? 0 : Math.PI, front ? Math.PI : TAU); x.lineWidth = R * .12; x.strokeStyle = rgba(lighten(BLUE, .45), .9); x.stroke(); x.restore(); };
+    x.save(); x.translate(R * .18, R * .18); x.scale(.82, .82); ring(0); ball(x, R); ring(1); x.restore();
+  }),
+  // One turn: 4.5 s (as on the board).
+  sphereStyle("sphere-cloud", "Point cloud", 68, 66, (x, R, u) => {
+    FIB.map(([la, lo]) => proj(R, la, lo, TAU * u, .4)).sort((a, b) => a[2] - b[2]).forEach(([px, py, z]) => { x.fillStyle = rgba(lighten(BLUE, z > 0 ? .4 : 0), .25 + .75 * (z + 1) / 2); x.beginPath(); x.arc(px, py, R * (.03 + .05 * (z + 1) / 2), 0, 7); x.fill(); });
+  }),
+  // One sweep down and back: 2.85 s (as on the board).
+  sphereStyle("sphere-scan", "Scanning band", 57, 50, (x, R, u) => {
+    ball(x, R, -.3, -.4, darken(BLUE, .35));
+    const y = R + Math.sin(TAU * u) * R * .85, g = x.createLinearGradient(0, y - R * .35, 0, y + R * .35);
+    g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(.5, "rgba(200,232,255,.85)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    x.save(); x.beginPath(); x.arc(R, R, R * .96, 0, 7); x.clip(); x.fillStyle = g; x.fillRect(0, y - R * .35, 2 * R, R * .7); x.restore(); rim(x, R, .3);
+  }),
+  // The swirl's blobs: two laps across and three up and down in 9.6 s (the board's 1 : 1.3 never repeats).
+  sphereStyle("sphere-glass", "Glass orb", 120, 80, (x, R, u) => {
+    x.fillStyle = rgba(darken(BLUE, .7), .9); x.beginPath(); x.arc(R, R, R * .96, 0, 7); x.fill();
+    x.save(); x.beginPath(); x.arc(R, R, R * .9, 0, 7); x.clip();
+    for (let i = 0; i < 3; i++) { const a = TAU * 2 * u + i * 2.1, b = TAU * 3 * u + i * 2.1 * 1.5, cx = R + Math.cos(a) * R * .35, cy = R + Math.sin(b) * R * .3, g = x.createRadialGradient(cx, cy, 0, cx, cy, R * .75); g.addColorStop(0, rgba(lighten(BLUE, .2), .75)); g.addColorStop(1, rgba(BLUE, 0)); x.fillStyle = g; x.fillRect(0, 0, 2 * R, 2 * R); }
+    x.restore(); rim(x, R, .45); spec(x, R, .62, .4, .14);
+  }),
+  // One orbit: 2.6 s (as on the board).
+  sphereStyle("sphere-moon", "Orbiting moon", 52, 50, (x, R, u) => {
+    const a = TAU * u, mx = R + Math.cos(a) * R * .78, my = R + Math.sin(a) * R * .32, front = Math.sin(a) > 0;
+    const moon = () => { const g = x.createRadialGradient(mx - R * .04, my - R * .04, 0, mx, my, R * .2); g.addColorStop(0, "#fff"); g.addColorStop(1, rgba(lighten(BLUE, .5), 1)); x.fillStyle = g; x.beginPath(); x.arc(mx, my, R * .17, 0, 7); x.fill(); };
+    if (!front) moon(); x.save(); x.translate(R * .2, R * .2); x.scale(.8, .8); ball(x, R); rim(x, R, .25); x.restore(); if (front) moon();
+  }),
+  // The rings flip 4 and 3 times a loop (5.7 s; the board's 2.2 and 1.7 rad/s become 2.2 and 1.66).
+  sphereStyle("sphere-gyro", "Gyroscope", 86, 66, (x, R, u) => {
+    x.save(); x.translate(R * .45, R * .45); x.scale(.55, .55); ball(x, R); x.restore(); x.lineWidth = R * .09;
+    [[TAU * 2 * u, 0], [-Math.PI * 3 * u, 1.2]].forEach(([a, o]) => { x.save(); x.translate(R, R); x.rotate(o); x.scale(1, Math.abs(Math.cos(a)) * .9 + .1); x.beginPath(); x.arc(0, 0, R * .86, 0, 7); x.strokeStyle = rgba(lighten(BLUE, .35), .85); x.stroke(); x.restore(); });
+  }),
+  // One beat: .9 s (as on the board).
+  sphereStyle("sphere-pulse", "Pulse", 27, 33, (x, R, u) => {
+    const p = u; x.beginPath(); x.arc(R, R, R * (.62 + .36 * p), 0, 7); x.strokeStyle = rgba(BLUE, .55 * (1 - p)); x.lineWidth = R * .08; x.stroke();
+    x.save(); x.translate(R * .36, R * .36); x.scale(.64, .64); ball(x, R); spec(x, R, .62, .42, .13); x.restore();
+  }),
+];
+
+// ── Dithered pixel spinners (from working-spinners) ──────────────────────────────────────────────
+const N = 12, B4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+const dith = (x, y, v) => v * 16 > B4[y & 3][x & 3] + 0.5;
+const inRS = (x, y, r = 3) => { const a = Math.min(x, N - 1 - x), b = Math.min(y, N - 1 - y); return !(a < r && b < r && (r - a - .5) ** 2 + (r - b - .5) ** 2 > r * r); };
+const perim = (() => { const p = []; for (let x = 2; x < N - 2; x++) p.push([x, 1]); p.push([N - 2, 2]); for (let y = 2; y < N - 2; y++) p.push([N - 2, y]); p.push([N - 3, N - 2]); for (let x = N - 3; x > 1; x--) p.push([x, N - 2]); p.push([1, N - 3]); for (let y = N - 3; y > 1; y--) p.push([1, y]); p.push([2, 1]); return p; })();
+const PL = perim.length; // 36
+// Drawn on the 12 × 12 grid, then scaled ×4 without smoothing (48 px) so the pixels stay square.
+const pixelStyle = (id, name, F, delay, fn) => ({ id, group: "pixel", name, F, delay, size: 48, draw(x, W, f) {
+  const img = x.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let xx = 0; xx < N; xx++) {
+    const v = Math.max(0, Math.min(1, fn(xx, y, f))), on = v > 0 && dith(xx, y, v), i = (y * N + xx) * 4;
+    if (on) { img.data[i] = BLUE[0]; img.data[i + 1] = BLUE[1]; img.data[i + 2] = BLUE[2]; img.data[i + 3] = 255; }
+  }
+  const tmp = document.createElement("canvas"); tmp.width = tmp.height = N; tmp.getContext("2d").putImageData(img, 0, 0);
+  x.imageSmoothingEnabled = false; x.drawImage(tmp, 0, 0, W, W);
+} });
+const PIXEL = [
+  // A lap: 2.56 s (the board's 2.57).
+  pixelStyle("pixel-comet", "Comet lap", 64, 40, (x, y, f) => { const h = PL * f.u; let v = 0; perim.forEach(([px, py], i) => { if (px == x && py == y) { const d = (h - i + PL) % PL; v = Math.max(v, d < 14 ? 1 - d / 16 : .14); } }); return v; }),
+  // A breath: 1.96 s (as on the board).
+  pixelStyle("pixel-breathe", "Breathing tile", 49, 40, (x, y, f) => inRS(x, y) ? .25 + .75 * (.5 + .5 * Math.sin(TAU * f.u)) * (1 - Math.hypot(x - 5.5, y - 5.5) / 9) : 0),
+  // A sweep: 1.56 s (as on the board).
+  pixelStyle("pixel-radar", "Radar sweep", 39, 40, (x, y, f) => { if (!inRS(x, y)) return 0; const a = (Math.atan2(y - 5.5, x - 5.5) - TAU * f.u) % TAU; const d = ((a % TAU) + TAU) % TAU; return .15 + .85 * Math.max(0, 1 - d / 2.4); }),
+  // A fill: 1.68 s (as on the board).
+  pixelStyle("pixel-fill", "Rising fill", 42, 40, (x, y, f) => { if (!inRS(x, y)) return 0; const lvl = f.u * 13, d = (N - y) - lvl; return d < 0 ? 1 : d < 2.5 ? .6 - d * .22 : .12; }),
+  // One step a frame, 12 a second, 36 to the lap (as on the board).
+  pixelStyle("pixel-snake", "Snake", 36, 83, (x, y, f) => { const p = perim.map(([a, b]) => [a < 6 ? a + 1 : a - 1, b < 6 ? b + 1 : b - 1]); const h = f.i % PL; let v = 0; p.forEach(([a, b], i) => { if (a == x && b == y) { const d = (h - i + PL) % PL; v = Math.max(v, d == 0 ? 1 : d < 3 ? .85 : d < 6 ? .5 : .12); } }); return v; }),
+  // Four steps of a quarter second (as on the board).
+  pixelStyle("pixel-corners", "Corner chase", 4, 250, (x, y, f) => { const q = (x < 6 ? 0 : 1) + (y < 6 ? 0 : 2), order = [0, 1, 3, 2], k = f.i % 4, on = order[k] == q, prev = order[(k + 3) % 4] == q; const inner = Math.min(x, N - 1 - x) > 0 && Math.min(y, N - 1 - y) > 0 && !(x == 5 || x == 6 || y == 5 || y == 6); return inner && inRS(x, y) ? (on ? 1 : prev ? .45 : .12) : 0; }),
+  // A ripple: 1.04 s (as on the board).
+  pixelStyle("pixel-ripple", "Halftone ripple", 26, 40, (x, y, f) => { if (!inRS(x, y)) return 0; const r = Math.hypot(x - 5.5, y - 5.5), w = .5 + .5 * Math.sin(r * 1.4 - TAU * f.u); return (x + y) % 2 ? w * .9 : w * .5; }),
+  // The bars bounce 3, 4 and 5 times in 3.76 s (the board's 5, 6.7 and 8.4 rad/s become 5, 6.7 and 8.4).
+  pixelStyle("pixel-eq", "Equaliser", 94, 40, (x, y, f) => { const cols = [[2, 4], [5, 7], [8, 10]]; for (let i = 0; i < 3; i++) { const [a, b] = cols[i]; if (x >= a && x < b) { const h = 3 + Math.floor((.5 + .5 * Math.sin(TAU * (3 + i) * f.u + i * 2)) * 7); return y >= N - 1 - h && y < N - 1 ? (y == N - 1 - h ? .6 : 1) : 0; } } return 0; }),
+  // A turn: 2.08 s (as on the board).
+  pixelStyle("pixel-square", "Spinning pixel square", 52, 40, (x, y, f) => { const a = TAU * f.u, dx = x - 5.5, dy = y - 5.5, u = dx * Math.cos(a) + dy * Math.sin(a), v = -dx * Math.sin(a) + dy * Math.cos(a); return Math.max(Math.abs(u), Math.abs(v)) < 3.6 ? .45 + .55 * (1 - (u + 3.6) / 7.2) : 0; }),
+  // Ten noise frames a second; the swell: 3.2 s (the board's 3.14).
+  pixelStyle("pixel-noise", "Static noise", 32, 100, (x, y, f) => { if (!inRS(x, y)) return 0; const s = Math.sin(x * 12.9898 + y * 78.233 + f.i * 37.719) * 43758.5453; return .2 + .8 * (s - Math.floor(s)) * (.6 + .4 * Math.sin(TAU * f.u)); }),
+];
+
+const ALL = [...PIXEL, ...SPHERES, ...ASCII];
+const out = {};
+const g = document.getElementById("g");
+for (const st of ALL) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = st.size;
+  const x = cv.getContext("2d");
+  const frames = [];
+  for (let i = 0; i < st.F; i++) {
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, st.size, st.size);
+    st.draw(x, st.size, { u: i / st.F, i, F: st.F });
+    frames.push(cv.toDataURL("image/png"));
+  }
+  out[st.id] = { group: st.group, name: st.name, delay: st.delay, size: st.size, frames };
+  // The preview board: each style looping at its own speed (not when build.sh renders: #build).
+  if (location.hash === "#build") continue;
+  const card = document.createElement("div"); card.className = "c";
+  const pv = document.createElement("canvas"); pv.width = pv.height = st.size;
+  card.append(pv, document.createElement("br"), st.name); g.append(card);
+  const imgs = frames.map((u) => { const im = new Image(); im.src = u; return im; });
+  let k = 0; setInterval(() => { const c = pv.getContext("2d"); c.clearRect(0, 0, st.size, st.size); c.drawImage(imgs[k = (k + 1) % imgs.length], 0, 0); }, st.delay);
+}
+document.getElementById("out").textContent = JSON.stringify(out);
+</script></body></html>

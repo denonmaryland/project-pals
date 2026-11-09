@@ -22,7 +22,7 @@ plus a tool for the project's `AGENTS.md` / `CLAUDE.md`.
   Section 5 designs it.
 - **The ways in** are those four. Which shortcut key is still a pick (P2).
 - **The pal's profile is a dashboard** (DeNon, relayed by Orca, after the panel decision). It has:
-  the pal's live channels; a task board of what its channels are on and heading for; and a
+  the pal's live topics; a task board of what its topics are on and heading for; and a
   **mini terminal on the pal's real, live session**, so DeNon can prompt the pal from there.
   Identity, mission and brain, the AGENTS.md tool and Memory stay. Section 1b designs it.
 - **Three more (DeNon, relayed by Orca):** the header's pal chip becomes the way into everything
@@ -43,18 +43,18 @@ recommendations of Orca's that DeNon hasn't approved; they're options here, not 
 | P7 | The deep lint (conflicting rules) | off · a button that asks first (sends the files to Claude) | a button |
 | P8 | What "N need you" counts (if P12 is a yes) | the Inbox count · only what needs a decision (asks, approvals, stuck, trust) | needs a decision |
 | P9 | The panel pushes or covers | **push**: the terminal narrows while it's open · **cover**: it slides over the terminal's right side | **push** |
-| P10 | **Review changes** in a worktree channel's right-click | yes · no | yes |
+| P10 | **Review changes** in a worktree topic's right-click | yes · no | yes |
 | P11 | **The pal's memory** in its profile (pinned note, MEMORY.md, recent notes, Remember) | yes · no | yes |
 | P12 | **"N need you"** in the status bar | yes · no | yes |
 | P13 | How the dashboard gets its room | **A** the panel's two sizes: Side (420, beside the terminal) and **Full** (it takes over the work area until closed) · **B** one wide panel (720) beside the terminal · **C** everything inside the 420 panel | **A**, the dashboard opening Full |
-| P14 | Which channel the mini terminal shows first | the channel you were looking at · the lead channel · the most recently active | the one you were looking at |
-| P16 | Channels in the pal chip menu | none (the `# channel ▾` picker and the hero list cover them) · one compact line ("4 channels · 1 asks you") | none |
-| P17 | How the notebook gets written | **A** the pal writes it, prompted by its primer and by a few nudges (task done, blocked, after being stuck) · **B** A, plus a cheap model drafting entries from channel screens at session end | **A** |
+| P14 | Which topic the mini terminal shows first | the topic you were looking at · the lead topic · the most recently active | the one you were looking at |
+| P16 | Topics in the pal chip menu | none (the `# topic ▾` picker and the hero list cover them) · one compact line ("4 topics · 1 asks you") | none |
+| P17 | How the notebook gets written | **A** the pal writes it, prompted by its primer and by a few nudges (task done, blocked, after being stuck) · **B** A, plus a cheap model drafting entries from topic screens at session end | **A** |
 | P18 | Lessons in the SessionStart primer | the pal's last 7 days of lessons (at most 400 characters) · none | the last 7 days |
-| P19 | Who dreams | **A** Orca, as a routine in its channel · **B** a headless "dreamer" (`claude -p`) run by crewd · **C** crewd does the cheap summary, then hands a short digest to Orca, which drafts the proposals | **C** |
+| P19 | Who dreams | **A** Orca, as a routine in its topic · **B** a headless "dreamer" (`claude -p`) run by crewd · **C** crewd does the cheap summary, then hands a short digest to Orca, which drafts the proposals | **C** |
 | P20 | Dream cadence and cap | nightly at 03:30 + on demand, at most 3 proposals a night · weekly | nightly, 3 a night |
 | P21 | How long a fix is watched for the hiccup coming back | 14 days · 30 days | 14 days |
-| P15 | The task board's columns | **Now · Next · Blocked · Done** (tasks plus each channel's live activity) · the board's own statuses (Open · Claimed · Blocked · Done) | Now · Next · Blocked · Done |
+| P15 | The task board's columns | **Now · Next · Blocked · Done** (tasks plus each topic's live activity) · the board's own statuses (Open · Claimed · Blocked · Done) | Now · Next · Blocked · Done |
 
 ## 0. What's already there
 
@@ -68,7 +68,7 @@ These all exist and the design builds on them; nothing here replaces them.
 | SessionStart primer | `bin/crew-hook` `session_start`: `PRIMER` + "You are X, in #ch" + `memory_text()` (USER.md, pinned, MEMORY.md, the last 2 days of notes, capped at 6,000 characters) + open tasks | how a session starts |
 | Tasks | `data/crew-tasks.json` (`status, assignee, claimed_by, result, updated`) | stats, "done" |
 | Routines | `data/crew-routines.json` | the profile's routines |
-| Hero quick actions | `crew-roster` `heroCard`: + Channel, Tell, Tasks (count), moon | entry points |
+| Hero quick actions | `crew-roster` `heroCard`: + Topic, Tell, Tasks (count), moon | entry points |
 | Review | `crew-review` dialog (props `space`, `tab`): a worktree branch's diff, line comments, Land | Review changes |
 | Status bar | `crew-status`: "N working", 5h/week usage, version | "N need you" |
 | Rename | `pal renamed` moves `crew-memory/<old>` to `<new>` | the brain moves with it |
@@ -113,20 +113,20 @@ column (section 1b); in Side (420 px) it's the compact Profile tab, one column, 
    - Brain: `Claude Code · opus` (harness, plus the `--model` from its command line when there is one)
    - Folder: `~/Projects/project-pals` (mono; click copies it)
    - Machine: `this computer`, or the machine's name
-   - Branch: the lead channel's branch
+   - Branch: the lead topic's branch
    - Pet: `kit · headphones`, and a colour swatch; both open `crew-look`
    - Hired: `Nov 5 · by Orca`
 3. **Stats**, four cells in a hairline-split 2 × 2 grid (value 18/600, label 11 px #808082):
-   **Channels** (count), **Tasks done** (last 30 days, from `crew-tasks.json` where
+   **Topics** (count), **Tasks done** (last 30 days, from `crew-tasks.json` where
    `claimed_by`/`assignee` is this pal and `status` is done), **Open** (its open tasks),
    **Last active** (the newest `changed_at` across its tabs: "2m ago", "asleep 3d").
-4. **Channels.** One 44 px row each, on two lines: its status dot, `#name` and (on worktree
-   channels) a **Review** button on the first line; the first line of its brief (the record's
-   `briefs`) and a `worktree · <branch>` tag under it. Click a row to show that channel; the
+4. **Topics.** One 44 px row each, on two lines: its status dot, `#name` and (on worktree
+   topics) a **Review** button on the first line; the first line of its brief (the record's
+   `briefs`) and a `worktree · <branch>` tag under it. Click a row to show that topic; the
    panel stays open.
 5. **Memory** (P11, awaiting DeNon): see below.
 6. **Routines**: this pal's routines, one row each (`weekdays 09:00 · daily standup`, next run).
-7. **Footer actions**: Tell, + Channel, Customize look, Put to sleep. The same actions as the
+7. **Footer actions**: Tell, + Topic, Customize look, Put to sleep. The same actions as the
    hero, so the profile never strands you.
 
 ### Memory, inside the profile (P11: Orca's recommendation, not yet approved)
@@ -134,7 +134,7 @@ column (section 1b); in Side (420 px) it's the compact Profile tab, one column, 
 - **Pinned note**: the record's `memory` field, an editable 3-line box ("Pinned by DeNon").
   It already rides along in every SessionStart, so this just makes it visible and editable.
 - **What it remembers**: `MEMORY.md` (the curated part) as markdown, then the last 2 days of
-  `notes/`, newest first, each line with its time and `#channel`. These are the same files
+  `notes/`, newest first, each line with its time and `#topic`. These are the same files
   `memory_text()` feeds the primer, so what you see here is what the pal starts with.
 - A size line: "4,200 of 6,000 characters it starts with". At the cap, the oldest notes are the
   ones being cut, and the line turns amber. (This pal is there today: `memory_text()` returns
@@ -151,7 +151,7 @@ DeNon's four ways in. Opening and closing are section 5.
 
 ## 1b. The profile as a dashboard
 
-DeNon's ask: each pal's profile is a **dashboard** of its channels, what they're doing and
+DeNon's ask: each pal's profile is a **dashboard** of its topics, what they're doing and
 heading for, and a live terminal to prompt the pal. The Profile tab becomes that dashboard.
 The identity, facts and Memory above are its left column.
 
@@ -159,26 +159,26 @@ The identity, facts and Memory above are its left column.
 
 A board of four columns and a terminal you can actually use (Claude Code wants 60+ columns)
 need about 1,100 px. The 420 px panel can't hold that, and a fixed 720 px panel would leave the
-channel's terminal 416 px wide at 1440, which is too narrow to use.
+topic's terminal 416 px wide at 1440, which is too narrow to use.
 
 | | **A · Two sizes, dashboard Full** ★ | **B · One wide panel** | **C · All in 420** |
 |---|---|---|---|
 | Shape | the panel has **Side** (420, beside the terminal) and **Full** (it takes the whole work area; the sidebar stays) | the panel is 720 px, pushing the terminal | the dashboard stacked in the 420 panel |
 | At 1440 wide | Full: 1,136 px for the dashboard; Side: 716 px left for the terminal | 416 px left for the terminal | 716 px for the terminal |
-| The mini terminal | 780 × 300 px, about 90 columns | 720 px, but the channel terminal is squeezed beside it | 420 px, about 48 columns: Claude Code wraps badly |
+| The mini terminal | 780 × 300 px, about 90 columns | 720 px, but the topic terminal is squeezed beside it | 420 px, about 48 columns: Claude Code wraps badly |
 | The task board | four columns side by side | four narrow columns | four stacked lists |
 
 **Why A.** It keeps DeNon's panel: one place, the same triggers, the same close, and the terminal
 at full width when it's closed. It also gives the dashboard the room it needs only while it's
 open. **Full** hides the `work` column (`layout.hide {id: "work"}`) and lets the panel fill the row;
 **Side** shows it again at the remembered width. So it's a takeover of the work area, but owned by
-the panel, and closing it brings back exactly the channel you were on.
+the panel, and closing it brings back exactly the topic you were on.
 
 - **The Profile tab opens Full.** Mission, Brain and AGENTS.md open in Side, beside the terminal,
   which is how you'd read a mission or fix a CLAUDE.md while watching the pal work.
 - **A ⤢ / ⤡ button** in the panel's header switches any tab between Side and Full, and each tab
   remembers its own size. (This replaces the AGENTS.md tab's Wider button.)
-- **The Profile tab in Side** is a compact dashboard: identity, the channel list, the Now column as
+- **The Profile tab in Side** is a compact dashboard: identity, the topic list, the Now column as
   a list, and **Open dashboard ⤢**. No mini terminal: at 420 px it's not worth it (C's problem).
 
 ### The dashboard, in Full
@@ -193,7 +193,7 @@ the panel, and closing it brings back exactly the channel you were on.
 │             │   crew/profiles  [Rev]│ │#profiles │  │T15 Write │    │#integrate│       │T13 Inbox │       │
 │             │ ● #integrate  asks 2m │ │activity  │  │release … │    │asks you: │       │spacing …  │       │
 │             │ ○ #cli-mods   idle 4h │ └──────────┘  └──────────┘    └──────────┘       └──────────┘       │
-│             │ ◌ #general    no agent│ ── TERMINAL · #profiles ▾ · live · Claude Code ─── Open channel ↗ ──  │
+│             │ ◌ #general    no agent│ ── TERMINAL · #profiles ▾ · live · Claude Code ─── Open topic ↗ ──  │
 │             │ MEMORY (P11)          │ the pal's real terminal (Herdr terminal block), 300 px, type here      │
 │             │ pinned · 3 notes · …  │                                                                        │
 └─────────────┴───────────────────────┴────────────────────────────────────────────────────────────────────────┘
@@ -202,42 +202,42 @@ the panel, and closing it brings back exactly the channel you were on.
 - **Header strip (72 px):** the pet (60 × 47), the name, role and state; then the facts on one
   line (brain · folder · machine · hired); then the mission's statement with "Done when 0 of 2".
   Clicking that opens the Mission tab.
-- **Channels (left, 340 px):** every channel of the pal, one 52 px row each. A row shows:
+- **Topics (left, 340 px):** every topic of the pal, one 52 px row each. A row shows:
   - the live state: a blue dot for working, amber for asks you, mint for done, grey for idle, and
     a hollow dot (#56565A) for no agent;
   - `#name`, and the time in that state ("4m");
   - what it's on: the agent's terminal title, as in the pal rows today;
-  - its branch, or `worktree · <branch>`, with Review on worktree channels (P10).
+  - its branch, or `worktree · <branch>`, with Review on worktree topics (P10).
 
-  Clicking a row points the mini terminal at that channel. **Open channel ↗**, on hover, closes
-  the dashboard and shows the channel in the main area.
-- **Memory (left, under Channels, P11):** the pinned note and the latest 3 notes, with
+  Clicking a row points the mini terminal at that topic. **Open topic ↗**, on hover, closes
+  the dashboard and shows the topic in the main area.
+- **Memory (left, under Topics, P11):** the pinned note and the latest 3 notes, with
   Remember… and "All memory", which opens it in Side.
 - **Task board (right, top, P15):** four columns. The header says what the board is heading
   for, the mission's **Focus**, so the board reads relative to this project.
-  - **Now:** tasks this pal has claimed, plus a card for each **working channel** that has no
+  - **Now:** tasks this pal has claimed, plus a card for each **working topic** that has no
     claimed task, showing its live activity (the terminal title). Most work never reaches the task
     board: today the board has 13 done, 1 cancelled and none open, while this pal has 4
-    channels. So without activity cards, Now would usually be empty.
+    topics. So without activity cards, Now would usually be empty.
   - **Next:** open tasks assigned to this pal. Ready ones come first; ones waiting on others show
     "after T3".
-  - **Blocked:** blocked tasks with their reason, plus channels that ask you or look stuck
+  - **Blocked:** blocked tasks with their reason, plus topics that ask you or look stuck
     (crewd's 15-minute check). Each card says what it needs from DeNon.
   - **Done · 7 days:** done tasks with their result line, newest first.
-  - Every card carries its channel chip: tasks claimed as `Pal#channel` (all of this pal's do,
-    e.g. `Project Pals - Herdr Mod#release-prep`) link to that channel, and an activity card *is* a
-    channel. Clicking a chip points the mini terminal there; clicking a task expands it (details,
+  - Every card carries its topic chip: tasks claimed as `Pal#topic` (all of this pal's do,
+    e.g. `Project Pals - Herdr Mod#release-prep`) link to that topic, and an activity card *is* a
+    topic. Clicking a chip points the mini terminal there; clicking a task expands it (details,
     notes, Mark done, Reopen), as the sidebar's Tasks list does.
   - Cards are 64 px, r6, #161617 with a #1E1E20 hairline; a column scrolls past 4 cards.
 - **The mini terminal (right, bottom, 300 px, its top edge draggable, P14):**
-  - It's the **real session**: a Herdr terminal block showing the channel's own agent terminal
+  - It's the **real session**: a Herdr terminal block showing the topic's own agent terminal
     (the one `lead()` picks), not a copy or a log. Click it and type, and the keys go to that
     session exactly as they would in the main area; its scrollback is the terminal's own.
-  - A 32 px bar over it: `TERMINAL · #profiles ▾` (a picker of the pal's channels), a live dot,
-    the program (Claude Code), what it's doing ("working 4m"), and **Open channel ↗**.
-  - It starts on the channel you were looking at when you opened the dashboard (P14), else the
-    lead channel.
-  - A channel with no agent shows "#general has no agent running", with a **Wake** button (the
+  - A 32 px bar over it: `TERMINAL · #profiles ▾` (a picker of the pal's topics), a live dot,
+    the program (Claude Code), what it's doing ("working 4m"), and **Open topic ↗**.
+  - It starts on the topic you were looking at when you opened the dashboard (P14), else the
+    lead topic.
+  - A topic with no agent shows "#general has no agent running", with a **Wake** button (the
     sidebar's wake), instead of an empty terminal.
 
 ### How the mini terminal is built (to verify in the build)
@@ -253,7 +253,7 @@ profile (column)                      ← the panel; Side = 420 px, Full = fills
   ├ profile-dash  column                               the dashboard (Full)
   │ ├ dash-top    mod crew-profile {part: "top"}       72 px
   │ └ dash-main   row
-  │   ├ dash-left mod crew-profile {part: "left"}      340 px: channels, memory
+  │   ├ dash-left mod crew-profile {part: "left"}      340 px: topics, memory
   │   └ dash-right column
   │     ├ dash-board mod crew-profile {part: "board"}  the task board
   │     ├ dash-tbar  mod crew-profile {part: "tbar"}   32 px: the terminal's bar
@@ -261,7 +261,7 @@ profile (column)                      ← the panel; Side = 420 px, Full = fills
   └ profile-doc   mod crew-profile {part: "doc"}       Side, and the other tabs
 ```
 
-- **Pointing it at a channel:** ★ `{ "agent": "focused" }` plus `agent.focus {terminal}`. Herdr
+- **Pointing it at a topic:** ★ `{ "agent": "focused" }` plus `agent.focus {terminal}`. Herdr
   documents that this block shows "the one chosen with `agent.focus`". The pals layout has no
   other agent block, so nothing else moves. To verify: that `agent.focus` doesn't also
   switch the shown tab. Fallback: `layout.set` rewriting only `dash-term`'s
@@ -280,8 +280,8 @@ profile (column)                      ← the panel; Side = 420 px, Full = fills
 ## 1c. The pal chip menu
 
 The header's pal chip (centred, the pet and the pal's name) opens `crew-pick` today: the pal's
-channels. The `# channel ▾` picker on the left opens the same list, and the hero lists the channels
-too. So the chip becomes the menu for **the agent and its project**, and channels stay out (P16).
+topics. The `# topic ▾` picker on the left opens the same list, and the hero lists the topics
+too. So the chip becomes the menu for **the agent and its project**, and topics stay out (P16).
 
 A popup under the chip: 300 px, the `crew-menu` look (r6, #141415, a #2C2C2F hairline,
 28 px rows, a 12 px icon and a mono key hint on the right):
@@ -295,7 +295,7 @@ A popup under the chip: 300 px, the `crew-menu` look (r6, #141415, a #2C2C2F hai
 | The project | **Mission** | the Mission tab |
 | | **Brain** | the Brain tab |
 | | **AGENTS.md** | the AGENTS.md tab (with its lint badge on the row) |
-| | **Review changes** | `crew-review`, only on a worktree channel (P10) |
+| | **Review changes** | `crew-review`, only on a worktree topic (P10) |
 | | **Open folder** | the pal's folder in the file manager (`xdg-open`) |
 | Actions | **Tell…** | the `crew-tell` dialog |
 | | **Put to sleep** / **Wake** | as the hero's moon and the pal menu |
@@ -306,7 +306,7 @@ A popup under the chip: 300 px, the `crew-menu` look (r6, #141415, a #2C2C2F hai
 - When the panel is already open on a tab, that row is marked, and choosing it closes the panel
   (the "same trigger closes" rule).
 - The chip gets a small ▾ after the name, so it reads as a menu.
-- The right-click pal menu keeps its own items (pin, rename, look, channel, sleep) and gains
+- The right-click pal menu keeps its own items (pin, rename, look, topic, sleep) and gains
   Profile / Mission at the top, as in section 5. The chip menu is the fuller one.
 
 ## 2. The mission
@@ -339,8 +339,8 @@ Profiles proposal (#profiles), then the release notes.
 - At most 60 lines. Anything longer belongs in a brain note.
 
 How it relates to what's there: the record's **role** is the pal's job title ("Maintainer of the
-Project Pals Herdr mod"); the **mission** is why it exists and when it's done; a channel's
-**brief** is that one channel's job. The profile shows all three, and none of them is copied
+Project Pals Herdr mod"); the **mission** is why it exists and when it's done; a topic's
+**brief** is that one topic's job. The profile shows all three, and none of them is copied
 into the others.
 
 ### Where it's stored (P3)
@@ -349,12 +349,12 @@ into the others.
 |---|---|---|---|
 | Path | `data/crew-memory/<pal>/brain/mission.md` | `<project>/.pals/mission.md` | A by default; a per-pal setting "Brain lives in: Pal data / This project" |
 | Travels with the repo | no | yes, versioned | per pal |
-| Worktree channels | one mission for all channels | each branch has its own copy, so they drift | per pal |
+| Worktree topics | one mission for all topics | each branch has its own copy, so they drift | per pal |
 | The pal updates it | freely (it's Project Pals' data) | it's a project file write | per pal |
 | Shows up in PRs / diffs | never | every change | per pal |
 | Follows a rename | yes (`pal renamed` already moves the folder) | not affected | per pal |
 
-**Why C.** For a code repo, pal data is right: one mission across every channel and worktree, no
+**Why C.** For a code repo, pal data is right: one mission across every topic and worktree, no
 churn in commits, and the pal can keep Focus and the change log current without anyone clicking.
 For a MEG-style project, where the folder *is* the Obsidian vault, DeNon wants the brain in the
 project where Obsidian sees it. So the default is A, and "This project" is one setting away.
@@ -370,7 +370,7 @@ Focus: Profiles proposal (#profiles), then the release notes.
 Done when: (1 of 2) A fresh install on a clean machine passes … · DeNon has posted it …
 Your brain: ~/.config/herdr-app/data/crew-memory/project-pals-herdr-mod/brain/
   (pal brain show [file], pal brain log "…", pal brain decide "…", pal mission focus "…")
-Latest changes: 11-08 Hero channels scroll after 4 rows · 11-08 Pro view removed · …
+Latest changes: 11-08 Hero topics scroll after 4 rows · 11-08 Pro view removed · …
 ```
 
 - At most 1,200 characters, built from `mission.md` and the last 3 change-log lines. It's never
@@ -391,7 +391,7 @@ init-project-brain lesson):
 |---|---|---|
 | `mission.md` | statement, goals, focus, done-when | DeNon (the statement, goals and done-when); the pal (Focus, and ticking goals) |
 | `decisions.md` | dated decisions: what, why, who decided ("DeNon, 11-08: Focus is the only layout. Pro removed.") | the pal records them as they happen; DeNon edits |
-| `changelog.md` | one line per change, newest first, with the channel | the pal (`pal brain log`); crewd adds one line when a task is marked done |
+| `changelog.md` | one line per change, newest first, with the topic | the pal (`pal brain log`); crewd adds one line when a task is marked done |
 | `map.md` | a file map ("I need X → read Y"), **only if AGENTS.md has none** | the pal |
 | `notes/*.md` | topic notes (research, a design study), read on demand | the pal and DeNon |
 
@@ -402,7 +402,7 @@ Kept small: `changelog.md` holds 200 lines, and older ones roll into `changelog-
 
 - **The pal keeps it current**, with commands, never by rewriting the files wholesale:
   `pal brain log "…"`, `pal brain decide "…" --why "…"`, `pal mission focus "…"`,
-  `pal mission tick "…"`, `pal brain note <topic> "…"`. Each appends or changes one line.
+  `pal mission tick "…"`, `pal brain note <subject> "…"`. Each appends or changes one line.
 - **DeNon edits anything** from the mission profile. Saves are hash-checked (`writeTextFile`'s
   `expected`, as SOUL.md does), so a pal's append and DeNon's edit can't silently overwrite each other.
   On a clash, DeNon sees both versions.
@@ -465,7 +465,7 @@ T16, see change log").
 
 `data/crew-memory/<pal>/notebook/YYYY-MM-DD.md`: one file per day, in pal data (never the
 project). It sits inside the memory folder, so `pal renamed` already carries it. All of a pal's
-channels write to the same day file. Files are kept 90 days; older days roll into
+topics write to the same day file. Files are kept 90 days; older days roll into
 `notebook/YYYY-MM.md` as the month's lessons only.
 
 ### The entry template
@@ -478,7 +478,7 @@ channels write to the same day file. Files are kept 90 days; older days roll int
 - lesson: check `curl 127.0.0.1:29979` before planning a Paper board
 ```
 
-- **Heading:** time, `#channel`, the task id if any, and roughly how long the work took.
+- **Heading:** time, `#topic`, the task id if any, and roughly how long the work took.
 - **`did`:** one line. Required.
 - **`hiccup`:** what got in the way, with a rough cost. Zero or more lines. An entry with none is fine.
 - **`needed`:** one of `tool:` `skill:` `rule:` `context:` `access:`, then what. These tags are
@@ -497,13 +497,13 @@ shows today's.
   nothing happened."
 - **Nudges, one line each, at the moments that matter:**
   - `pal task done` and `pal task block` print a reminder: "Anything slow? pal notebook …".
-  - When crewd's stuck check clears (the channel was stuck 15+ minutes and is moving again), it
-    queues a one-line note to that channel ("You were stuck 22m in #x. If something was missing,
-    note it: pal notebook hiccup …"). It does this at most once an hour per channel, and it's
+  - When crewd's stuck check clears (the topic was stuck 15+ minutes and is moving again), it
+    queues a one-line note to that topic ("You were stuck 22m in #x. If something was missing,
+    note it: pal notebook hiccup …"). It does this at most once an hour per topic, and it's
     delivered when the turn ends, like any message.
-- **No flood:** at most one entry per task, plus hiccups. Entries from the same channel within
+- **No flood:** at most one entry per task, plus hiccups. Entries from the same topic within
   10 minutes merge into one. A day with no real work has no file.
-- B adds a cheap model drafting entries from channel screens. It's not recommended: it sends
+- B adds a cheap model drafting entries from topic screens. It's not recommended: it sends
   screens to the API, and the pal's own account of a hiccup is better than a guess from a screen.
 
 ### What it never holds
@@ -540,7 +540,7 @@ worked: does the same hiccup stop coming back?
 ### Who dreams (P19 ★ C) and what it costs
 
 1. **Summarise (crewd, no model, nightly at 03:30):** parse every `notebook/` day since the last
-   dream for `hiccup`, `needed` and `lesson` lines, with pal, channel, date and cost. That's
+   dream for `hiccup`, `needed` and `lesson` lines, with pal, topic, date and cost. That's
    usually a few dozen lines, a few KB. Under 3 new hiccups crew-wide, the night is skipped.
 2. **Group (one cheap call, Haiku via `claude -p`):** cluster the lines into patterns, and match
    them to patterns already open in the ledger: "3 pals, 4 times this week: Paper's MCP down at
@@ -631,7 +631,7 @@ so the CLI and the UI give the same answer):
 (Haiku) pass for conflicting or outdated rules across AGENTS.md, CLAUDE.md, the global CLAUDE.md
 and the pal's brain. Its findings come back as `conflict?` rows with both quotes. It's off until
 clicked, every time, because it sends the files to the API (the memory review already does
-this with channel screens, and RECIPE says so).
+this with topic screens, and RECIPE says so).
 
 ### Writing: diff, backup, DeNon's click
 
@@ -680,14 +680,14 @@ on another machine, the tool views and lints; Edit says "Edit on this computer o
 ## 5. Where it lives: the right-side panel (P1, DeNon's decision)
 
 Closed, nothing changes: the terminal has the full width, and there's no rail. Opening a profile
-slides a panel out on the right, beside the channel's terminal. Closing it gives the width back.
+slides a panel out on the right, beside the topic's terminal. Closing it gives the width back.
 
 ```
 closed                                          open (push, P9 ★)
 ┌ sidebar 304 ┬ header 52 ───────────────────┐ ┌ sidebar 304 ┬ header 52 ─────────┬ panel 420 ─────────────────┐
 │ hero        │                              │ │ hero        │                    │ [pet] Project Pals - Her… ×│ 52
 │  name ──────┼── click: open / close        │ │  name       │                    ├────────────────────────────┤
-│  channels   │  terminal, full width        │ │  channels   │  terminal          │ Profile ║ Mission Brain AG…│ 36
+│  topics   │  terminal, full width        │ │  topics   │  terminal          │ Profile ║ Mission Brain AG…│ 36
 │  + Ch Tell  │                              │ │  + Ch Tell  │  (narrower, never  ├────────────────────────────┤
 │  Profile ───┼── click: open / close        │ │  [Profile]  │   under 480 px)    │ the shown tab's sections,  │
 │ pal list    │                              │ │ pal list    │                    │ stacked, scrolling         │
@@ -705,7 +705,7 @@ closed                                          open (push, P9 ★)
   `crew-settings.json` (`focus.panelPx`, beside the sidebar's `focus.sidebarPx`).
   At 1440 px wide, that leaves the terminal 716 px (about 85 columns of JetBrains Mono 14).
 - **Height:** from the top of the window to the status bar, so its 52 px header lines up with
-  the channel header, and the status bar stays full width under both.
+  the topic header, and the status bar stays full width under both.
 - **Layout:** a new block in `pals.json`'s `body` row, after `work`:
   `{ "id": "profile", "type": "block", "size": { "px": 420 }, "min": 360, "max": 640,
   "hidden": true, "content": { "mod": "crew-profile" } }`, with the row's 1 px hairline divider.
@@ -732,7 +732,7 @@ closed                                          open (push, P9 ★)
   editor and the diff need the panel's full height. Inside each tab the sections are stacked,
   16 px in, split by hairlines, with 10 px uppercase mono labels (#6A6A6C).
   - **Profile:** the dashboard (section 1b). In Side it's the compact version: identity, facts,
-    stats (2 × 2), the channels, Now as a list, memory (P11), routines, and Open dashboard ⤢.
+    stats (2 × 2), the topics, Now as a list, memory (P11), routines, and Open dashboard ⤢.
   - **Notebook:** the pal's journal, days newest first, today live (section 3b).
   - **Mission:** the mission card (statement, goals, done-when, focus), then the last 3 change-log
     lines and the last 2 decisions, with "All in Brain →" (section 2).
@@ -753,7 +753,7 @@ closed                                          open (push, P9 ★)
 | × in the panel's header | n/a | closes | closes |
 | **Esc**, while the panel has the keyboard | n/a | closes | closes |
 
-- **The panel follows the shown pal.** Open it, then pick another pal or channel, and it shows that
+- **The panel follows the shown pal.** Open it, then pick another pal or topic, and it shows that
   pal's profile on the same tab. So the hero's pal and the panel's pal are always the same.
 - **Esc never comes from the terminal.** Claude Code uses Esc to interrupt, so Esc closes
   the panel only while the panel holds the keyboard (`"focusable": true`; opening it gives it the
@@ -771,7 +771,7 @@ closed                                          open (push, P9 ★)
 
 Near-black and flat (#0B0B0C content, #0E0E0F panels, #161617 raised); 1 px hairlines (#1E1E20,
 #2C2C2F on controls); radius 3/4/6/8, nothing larger; rectangular segments and tags; Inter for
-UI, JetBrains Mono for paths, labels, counts and `#channels`; the text ladder (#EDEDED names,
+UI, JetBrains Mono for paths, labels, counts and `#topics`; the text ladder (#EDEDED names,
 #C8C8C8 body, #808082 secondary, #6A6A6C meta); state colours only as 7 px dots, pools and tags
 (#4CA1F2 working, #34D098 done, #E8AA0A asks/stuck, #F06C6C error). Pets sit on the soft radial
 aura (`pet-aura.svg`), with no box and no outline.
@@ -781,18 +781,18 @@ aura (`pet-aura.svg`), with no box and no outline.
 Orca recommended these. DeNon hasn't approved them, so each is a yes/no pick, and none of the
 other picks depends on them (except P8, which only matters if P12 is a yes).
 
-1. **P10 · Review changes in a worktree channel's right-click.** `crew-menu` (`what: "tab"`,
-   opened from the hero's channel rows) gets **Review changes** second, under Pin, when the record
+1. **P10 · Review changes in a worktree topic's right-click.** `crew-menu` (`what: "tab"`,
+   opened from the hero's topic rows) gets **Review changes** second, under Pin, when the record
    has `worktrees["#name"]`. It opens `crew-review` with `{space, tab}` at 86% × 88%, the same as
-   the profile's Review button. Channels without a worktree don't show it.
+   the profile's Review button. Topics without a worktree don't show it.
 2. **P11 · The pal's memory inside its profile:** section 1, "Memory, inside the profile". If
-   it's a no, the Profile tab ends at Channels and Routines, and memory stays in `pal memory`.
+   it's a no, the Profile tab ends at Topics and Routines, and memory stays in `pal memory`.
 3. **P12 · "N need you" in the status bar.** After "N working", a separator, then a 6 px dot and
    "2 need you": amber for asks and stuck, red when an approval waits. Click opens the Inbox
    (`setShared("crew.view", "you")`). It's hidden at zero.
-   - P8, what it counts: ★ only what needs a decision: blocked channels (asks you),
-     approvals held, stuck channels, and folders waiting on the trust question. Finished
-     channels are in the Inbox but don't need you, so they don't count.
+   - P8, what it counts: ★ only what needs a decision: blocked topics (asks you),
+     approvals held, stuck topics, and folders waiting on the trust question. Finished
+     topics are in the Inbox but don't need you, so they don't count.
    - One source: the roster publishes shared `crew.needs` `{count, asks, approvals, stuck, trust}`
      and the status bar reads it, so the two can't disagree.
 
@@ -806,11 +806,11 @@ Internal names stay `crew` (AGENTS.md): new data sits beside the old.
 | Data | per-pal brain setting | the record's `brainIn: "pal" \| "project"` |
 | Data | AGENTS-file backups | `data/crew-backups/agents-files/<slug>/` |
 | Data | proposals (mission, agents files) | `data/crew-proposals/<id>.json` + the staged text |
-| Shared | the panel | `crew.panel` `{open, tab: "profile" \| "mission" \| "brain" \| "agents", size: {tab: "side" \| "full"}, term, file}` (the pal is the shown one; `term` is the mini terminal's channel) |
+| Shared | the panel | `crew.panel` `{open, tab: "profile" \| "mission" \| "brain" \| "agents", size: {tab: "side" \| "full"}, term, file}` (the pal is the shown one; `term` is the mini terminal's topic) |
 | Settings | the panel's width | `crew-settings.json` `focus.panelPx` |
 | Shared | the need-you count (P12) | `crew.needs` |
 | CLI | mission | `pal mission [show] [<pal>]`, `focus "…"`, `tick "…"`, `propose -F f` |
-| CLI | brain | `pal brain ls / show [file] / log "…" / decide "…" --why "…" / note <topic> "…"` |
+| CLI | brain | `pal brain ls / show [file] / log "…" / decide "…" --why "…" / note <subject> "…"` |
 | CLI | agents files | `pal agents show / lint [--deep] [--json] / propose <file> -F f / apply` (gated) |
 | Gate | rules | `agents-apply` (`pal agents apply`), `agents-file` (Edit/Write on AGENTS.md / CLAUDE.md, P6) |
 | Data | notebook | `data/crew-memory/<slug>/notebook/YYYY-MM-DD.md` |
@@ -832,8 +832,8 @@ Each step works by itself and gets installed and checked before the next.
 1. **The panel and the Profile tab:** the `profile` block, `crew-profile` (header, tabs, the
    Profile tab), the four ways in, open/close/toggle, Esc and focus, the remembered width, and
    Memory if P11 is a yes. About 2 days.
-2. **The dashboard:** Full / Side, the layout tree with `dash-term`, the channels column, the
-   task board with activity cards and channel chips, the mini terminal and its picker. Verify
+2. **The dashboard:** Full / Side, the layout tree with `dash-term`, the topics column, the
+   task board with activity cards and topic chips, the mini terminal and its picker. Verify
    `agent.focus` and the one-size question first, on a sandbox window (the
    `herdr-sandbox-live-test` skill), never DeNon's. About 3 days.
 3. **The pal chip menu** (`crew-palmenu`) and **the small ones, if DeNon says yes**: Review
@@ -864,9 +864,9 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
   are made in `init`.
 - **The primer budget is shared:** a long mission must never push out `USER.md`. The mission
   block is capped at 1,200 characters, and what gets cut is memory notes first.
-- **Worktree channels read the pal's brain, not their branch's:** in project mode (P3 B), a
+- **Worktree topics read the pal's brain, not their branch's:** in project mode (P3 B), a
   worktree's `.pals/` can differ from the main checkout's. The hub always shows the pal's main folder
-  and says so when the shown channel's copy differs.
+  and says so when the shown topic's copy differs.
 - **`writeTextFile` and paths outside `~/.config/herdr-app`:** to be confirmed during the build. The
   one-writer design (`pal agents apply`) doesn't depend on it.
 - **`stale-path` needs care, or it cries wolf.** A naive pass over project-pals' AGENTS.md
@@ -896,20 +896,20 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
 - Esc pressed in the terminal while the panel is open goes to the program, and the panel stays.
 - Switching pals with the panel open shows the new pal's profile on the same tab.
 - The Profile tab opens Full: the sidebar stays, the work area is the dashboard, and closing it
-  brings back the same channel at full width.
-- The dashboard's channels show each channel's live state within a second of it changing, and
-  a task claimed as `Pal#channel` shows that channel's chip.
-- A working channel with no task shows as a Now card with its terminal title.
-- Typing "hi" + Enter into the mini terminal sends it to that channel's real Claude Code session:
+  brings back the same topic at full width.
+- The dashboard's topics show each topic's live state within a second of it changing, and
+  a task claimed as `Pal#topic` shows that topic's chip.
+- A working topic with no task shows as a Now card with its terminal title.
+- Typing "hi" + Enter into the mini terminal sends it to that topic's real Claude Code session:
   the same message shows in the main area after closing the dashboard, and `hc read` on that
   terminal shows it.
-- Picking another channel in the mini terminal's bar (or clicking its row or chip) shows that
-  channel's live session, and Esc inside it reaches the program, not the panel.
+- Picking another topic in the mini terminal's bar (or clicking its row or chip) shows that
+  topic's live session, and Esc inside it reaches the program, not the panel.
 - A dragged width (say 500) is still 500 after closing and reopening, and after a restart, where
   the panel starts hidden.
 - The Profile tab shows the record's brain, folder, machine, branch, pet and hire facts, and the
   four stats match `pal team` and `pal task ls`.
-- `pal remember "x"` from a channel shows up under Memory without a reload, and the pinned
+- `pal remember "x"` from a topic shows up under Memory without a reload, and the pinned
   note edited there is in the next session's primer.
 - A new session's primer starts with the mission block, at most 1,200 characters.
 - `pal brain log "x"` appends one line, and DeNon's edit made at the same moment isn't lost
@@ -919,10 +919,10 @@ install into a throwaway HOME, `CREW_DATA` for the CLI, then a live install only
   change-log line, and nothing else in the repo changes.
 - For hello-lock, it shows `long` (514) and `prose-pointer`; for softly-promo, `duplicate`.
 - A pal's `Edit` on its AGENTS.md is held in the Inbox (if P6 is on).
-- If P10 is a yes: a worktree channel's right-click shows Review changes; a plain channel's doesn't.
-- If P12 is a yes: the status bar shows "1 need you" while one channel asks, and nothing at zero.
+- If P10 is a yes: a worktree topic's right-click shows Review changes; a plain topic's doesn't.
+- If P12 is a yes: the status bar shows "1 need you" while one topic asks, and nothing at zero.
 - The header chip opens the pal menu (Profile, Notebook, Memory, Tasks, Mission, Brain, AGENTS.md,
-  Review changes on worktree channels only, Open folder, Tell, Sleep/Wake), with no channels, and each
+  Review changes on worktree topics only, Open folder, Tell, Sleep/Wake), with no topics, and each
   item opens its panel tab.
 - `pal notebook "did: x" --hiccup "y (cost: 10m)"` adds one entry to today's file, shown live in
   the Notebook tab. A line holding `sk-ant-…` is masked, and a pasted 20-line log is refused.
@@ -942,7 +942,7 @@ failed at startup, so the board is drawn here as `docs/profiles/board.html`, wit
 
 1. **Closed → open (Side):** the Focus window with the panel closed, then open beside the
    terminal, with the four triggers marked.
-2. **The dashboard (Full):** the Profile tab taking over the work area: the header strip, channels
+2. **The dashboard (Full):** the Profile tab taking over the work area: the header strip, topics
    and memory, the task board and the live mini terminal.
 3. **The tabs in Side (420 px):** Profile (compact), Notebook, Mission, Brain, and AGENTS.md with
    the CLAUDE.md pointer fix in review.

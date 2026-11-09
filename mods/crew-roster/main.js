@@ -4,23 +4,29 @@
 // blocked). Inbox tab: every channel that needs you, across all pals and machines.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, Scrollbar, VirtualListScrollHandle, v_virtual_list } from "gpui-base";
+import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import {
   crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
-  migrateChannelKeys, linkRecords, updateBot,
+  migrateChannelKeys, linkRecords, updateBot, refreshMachines,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
-  togglePanel, panelOpen, panelTab, needsOf, openProposalPanel, APP_MENU } from "./crew.js";
+  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+// The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
+// with their names (about 32 px more each) from this sidebar width up: 16 of padding, three labeled
+// pebbles, four 6 px gaps and the two 28 px icon pebbles need 384.
+const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
-// Focus pal rows: the pet 75 wide, bare (no box), in a 64 px row (two lines of text since 'status first') (DeNon 2026-11-08: twice the old
-// 46, then 15% back down).
-const ROW_PET = 75, ROW_H = 64;
+// Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
+// style. Large pets (the default): the pet 75 wide, bare, in a 64 px row (DeNon 2026-11-08); the ten
+// compact looks use 22-34 px pets (lib/palstyles.js).
 const RAIL = 64;
 
 function find(node, id) {
@@ -36,6 +42,10 @@ function toggleRail() {
   run("layout.resize", { id: "sidebar", px: narrow() ? (shared("crew.sidebar.width") ?? sidebarPref()) : RAIL });
 }
 
+// A blocked channel whose question is for you, not one asking another pal (T19: the roster's
+// published "crew.needs" lists those apart, so the count, the rail and the Inbox agree).
+const askingYou = (tab) => tab.status === "blocked" && !(shared("crew.needs")?.toPalItems ?? []).some((x) => x.tab === tab.id);
+
 export default class CrewRoster extends View {
   init(_props, cx) {
     // Relative times ("4m") stay true.
@@ -43,6 +53,9 @@ export default class CrewRoster extends View {
     // Channel data follows tab ids, so renames keep categories and briefs.
     migrateChannelKeys();
     cx.timer.every(5000, () => { migrateChannelKeys(); linkRecords(); });
+    // The machines (hc machine ls) and this computer, for every mod: shared "crew.machines".
+    cx.spawn(async () => { await refreshMachines(); });
+    cx.timer.every(20000, (cx) => cx.spawn(async () => { await refreshMachines(); }));
     // New channels get a color from the theme's palette right away.
     autoColor();
     // A pal renamed (from its menu or in Herdr): its memory and routines follow the new name.
@@ -80,9 +93,12 @@ export default class CrewRoster extends View {
     this.ops = { approvals: [], proposals: [], tasks: [], routines: [], stalled: {}, daemon: true };
     const ops = (cx) => cx.spawn(async (cx) => {
       try { this.ops = await loadOps(); } catch {}
-      // What needs DeNon, for the status bar's "N need you" (published only when it changes).
-      const n = needsOf(spaces(), this.ops), was = shared("crew.needs");
-      if (!was || was.count !== n.count || was.approvals !== n.approvals || was.proposals !== n.proposals) setShared("crew.needs", n);
+      // What blocked agents said (only they're asked), so a pal asking another pal isn't counted (T19).
+      try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
+      // What needs DeNon, for the status bar's "N need you", with why each counts (published only
+      // when it changes, reasons included).
+      const n = needsOf(spaces(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
+      if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
       cx.notify();
     });
     ops(cx);
@@ -98,10 +114,9 @@ export default class CrewRoster extends View {
     this.taskInput = InputState.new({ placeholder: "Add a task, @Pal to assign it" });
     this.taskInput.on("submit", (_e, cx) => this.addTask(cx));
     // The hero's channel search (its header's magnifier): filters as you type, Esc clears.
-    this.chSearch = InputState.new({ placeholder: "Search channels" });
+    this.chSearch = InputState.new({ placeholder: "Search topics" });
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
-    this.chScroll = VirtualListScrollHandle.new();
     this.chShownKey = null;
     // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals,
     // crew-roster.profile (the profile panel; Ctrl+Shift+I).
@@ -111,10 +126,12 @@ export default class CrewRoster extends View {
         if (c === "hire") this.hire();
         else if (c === "routines") this.routines();
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
-        else if (c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
+        else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
         else if (c === "profile") togglePanel(panelTab());
+        // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
+        else if (c === "home") toggleHome();
         cx.notify();
       }
     });
@@ -144,17 +161,43 @@ export default class CrewRoster extends View {
     });
   }
 
+  // One Desk card waiting on the owner, in the Inbox.
+  cardWaiting(c, t) {
+    const from = (c.from || "?").split("#")[0];
+    const f = c.from_kind === "pal" ? this.locate(from) : null;
+    const bot = f ? botOf(f.space) : { name: from, harness: null };
+    const why = c.tray === "_owner" ? `${from} sent you this` : `waits on you${c.note ? `: ${c.note}` : ""}`;
+    return v_flex().id(`dc-${c.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.blocked, "10")).border_1().border_color(a(t.blocked, "28"))
+      .child(h_flex().items_center().gap(11)
+        .child(mascotEl(bot, "blocked", 32, t))
+        .child(v_flex().flex_1().min_w(0).gap(2)
+          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(c.title || "(no title)"))
+          .child(div().truncate().text_size(12).text_color(t.dim).child(`${why} · ${c.id}`))))
+      .child(h_flex().gap(8).justify_between()
+        .child(div().id(`dc-open-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
+          .on_click((_e, cx) => { showDesk("needs"); cx.notify(); }).child(div().text_size(12.5).text_color(t.foreground).child("Open in Desk")))
+        .child(div().id(`dc-done-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
+          .on_click((_e, cx) => this.cardDone(c, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Done"))));
+  }
+
+  cardDone(c, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        await ownerCli(["desk", "done", c.id, "done from the Inbox"]);
+        notify({ title: "Card done", body: c.title.slice(0, 120), level: "success", timeout: 2500 });
+      } catch (e) { notify({ title: "Couldn't close the card", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+      this.refreshOps(cx);
+    });
+  }
+
   // A pal by name (as tasks and approvals name them) → its space and a channel to show.
   locate(spec) {
     const f = findChannel(spec ?? "");
     return f.error ? null : f;
   }
 
-  go(space, tab) {
-    showTabs();
-    run("space.select", { id: space.id });
-    if (tab) run("tab.select", { id: tab.id });
-  }
+  // A topic: its terminal, with the keyboard (from Home, a room or the Desk too).
+  go(space, tab) { openTerminal(space, tab); }
 
   // A hired pal whose space was closed: open it again with its first channel.
   wake(rec) { wakePal(rec); }
@@ -175,8 +218,8 @@ export default class CrewRoster extends View {
     cx.spawn(async (cx) => {
       try {
         // The head pal's name is a setting; that path also renames its record.
-        if (rec?.god) await crewCli(["settings", "head", name]);
-        else { await crewCli(["renamed", old, name]); if (rec) updateBot(rec, (b) => ({ ...b, name })); }
+        if (rec?.god) await ownerCli(["settings", "head", name]);   // the owner renamed it in Herdr: the app's token (Grok review H1)
+        else { await ownerCli(["renamed", old, name]); if (rec) updateBot(rec, (b) => ({ ...b, name })); }
         this.seen[moved.id] = name;
         save();
         notify({ title: `${old.split(" - ")[0]} is now ${name.split(" - ")[0]}`, body: "Its memory and routines moved with it.", level: "success", timeout: 3000 });
@@ -210,7 +253,8 @@ export default class CrewRoster extends View {
     // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
-    const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0);
+    const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0)
+      + (shared("crew.desk")?.needs?.length ?? 0);
     if (narrow()) return this.rail(rows, waiting, t, extra);
     return this.focusColumn(rows, asleep, waiting, t, extra);
   }
@@ -219,7 +263,7 @@ export default class CrewRoster extends View {
   rail(rows, waiting, t, extra = 0) {
     // What waits on you, as the Inbox counts it: finished and blocked channels, approvals, stuck ones.
     const total = waiting.length + extra;
-    const urgent = waiting.some((w) => w.tab.status === "blocked") || this.ops.approvals.length > 0;
+    const urgent = waiting.some((w) => askingYou(w.tab)) || this.ops.approvals.length > 0;
     // Pinned pals first here too (after the head pal).
     const pins = marks().pals ?? {};
     const rank = (r) => (r.bot.god ? 0 : pins[r.bot.id]?.pin ? 1 : 2);
@@ -232,14 +276,14 @@ export default class CrewRoster extends View {
         .child(div().size(36).flex().items_center().justify_center().rounded(6).hover((s) => s.bg(a(t.foreground, "10")))
           .child(div().text_size(15).font_weight(300).text_color(urgent ? t.blocked : t.done).child(String(total))))))
       .child(div().w(28).h(1).bg(a(t.foreground, "14")))
-      .child(v_flex().id("rail-list").flex_1().min_h(0).overflow_y_scrollbar().items_center().gap(6)
+      .child(scrollArea(ds(t), "rail-list", v_flex().items_center().gap(6)
         // Faces only here, so each one names its pal on hover.
         .children(rows.map(({ space, bot }) => div().id(`rail-${space.id}`).tooltip(bot.name).relative().size(44).flex().items_center().justify_center().rounded(6).cursor_pointer()
           .when(space.active, (el) => el.bg(a(t.accent, "26")))
           .when(!space.active, (el) => el.hover((s) => s.bg(a(t.foreground, "0c"))))
           .on_click(() => this.open(space))
-          .child(mascotEl(bot, mood(space.status, bot.awake), 32, t))
-          .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked))))))
+          .child(mascotEl(bot, mood(palStatus(space), bot.awake), 32, t))
+          .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked)))))).flex_1().min_h(0).w_full())
       .child(icon("rail-hire", "plus", () => this.hire()))
       .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU })));
   }
@@ -273,11 +317,11 @@ export default class CrewRoster extends View {
     return div().flex_none().px(7).py(2).rounded(4).text_size(11.5)
       .bg(blocked ? a(t.blocked, "22") : a(t.foreground, "0c"))
       .text_color(blocked ? t.blocked : t.dim)
-      .child(blocked ? `${blocked} blocked` : `${n} ch`);
+      .child(blocked ? `${blocked} blocked` : `${n} topic${n === 1 ? "" : "s"}`);
   }
 
   segments(t, bots, waiting, extra = 0, first = "Pals") {
-    const asked = waiting.some((w) => w.tab.status === "blocked") || this.ops.approvals.length > 0;
+    const asked = waiting.some((w) => askingYou(w.tab)) || this.ops.approvals.length > 0;
     const seg = (id, label, count, dot) => {
       const on = this.view() === id;
       return h_flex().id(`seg-${id}`).flex_1().justify_center().items_center().gap(5).py(5).rounded(3).cursor_pointer()
@@ -298,7 +342,8 @@ export default class CrewRoster extends View {
     const list = v_flex().gap(4);
     const { approvals, stalled } = this.ops;
     const proposals = this.ops.proposals ?? [];
-    const total = waiting.length + approvals.length + Object.keys(stalled).length + proposals.length;
+    const cardsWaiting = shared("crew.desk")?.needs ?? [];
+    const total = waiting.length + approvals.length + Object.keys(stalled).length + proposals.length + cardsWaiting.length;
     list.child(h_flex().items_baseline().gap(8).px(8).pb(10)
       .child(div().text_size(44).font_weight(200).text_color(t.foreground).child(String(total)))
       .child(div().text_size(14).text_color(t.muted).child("ready for you")));
@@ -320,10 +365,10 @@ export default class CrewRoster extends View {
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
         // An AGENTS.md / CLAUDE.md edit: the exact change it would make, in full (review H2). Approving
         // lets exactly this edit, to this version of the file, through once.
-        .when(Boolean(ap.diff), (el) => el.child(v_flex().id(`ap-diff-${ap.id}`).max_h(280).overflow_y_scrollbar().px(10).py(6).rounded(6).bg(a(t.canvas, "aa"))
+        .when(Boolean(ap.diff), (el) => el.child(scrollArea(ds(t), `ap-diff-${ap.id}`, v_flex().px(10).py(6)
           .children(ap.diff.split("\n").map((line, i) => div().id(`ap-dl-${ap.id}-${i}`).text_size(11.5).font_family("JetBrains Mono")
             .text_color(line.startsWith("+") && !line.startsWith("+++") ? t.working ?? t.ansi2 : line.startsWith("-") && !line.startsWith("---") ? t.blocked : t.muted)
-            .child(line || " ")))))
+            .child(line || " ")))).max_h(280).rounded(6).bg(a(t.canvas, "aa"))))
         // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
         .child(h_flex().gap(8).justify_between()
           .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
@@ -331,6 +376,9 @@ export default class CrewRoster extends View {
           .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
             .on_click((_e, cx) => this.decide(ap, true, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve")))));
     }
+    // Desk cards waiting on you (needs you, or sent to you): the same ones Home and the status bar count.
+    // Open in Desk shows them there; Done closes the card (a click), and its sender sees the receipt.
+    for (const c of cardsWaiting) list.child(this.cardWaiting(c, t));
     // Proposals: a change a pal wants made to its mission or its project's AGENTS.md / CLAUDE.md.
     // View opens the profile panel on it (the diff, then Write / Accept); Decline tells the pal.
     for (const pr of proposals) {
@@ -371,8 +419,8 @@ export default class CrewRoster extends View {
       list.child(div().px(8).text_size(13).text_color(t.dim).child("All caught up. Finished work, questions and approvals land here."));
       return list;
     }
-    // Questions first, then finished work, oldest first.
-    waiting.sort((x, y) => (x.tab.status === "blocked" ? 0 : 1) - (y.tab.status === "blocked" ? 0 : 1) || (x.tab.changed_at ?? 0) - (y.tab.changed_at ?? 0));
+    // Questions for you first, then finished work and pals asking pals, oldest first.
+    waiting.sort((x, y) => (askingYou(x.tab) ? 0 : 1) - (askingYou(y.tab) ? 0 : 1) || (x.tab.changed_at ?? 0) - (y.tab.changed_at ?? 0));
     for (const w of waiting) {
       const on = w.space.active && w.tab.active;
       list.child(h_flex().id(`wait-${w.tab.id}`).items_center().gap(12).px(12).py(10).rounded(8).cursor_pointer()
@@ -381,7 +429,7 @@ export default class CrewRoster extends View {
         .on_click(() => this.go(w.space, w.tab))
         .child(mascotEl(w.bot, w.tab.status === "blocked" ? "blocked" : "done", 36, t))
         .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(w.tab.status === "blocked" ? `${w.bot.name} has a question` : `${w.bot.name} finished`))
+          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(askingYou(w.tab) ? `${w.bot.name} has a question` : w.tab.status === "blocked" ? `${w.bot.name} asked another pal` : `${w.bot.name} finished`))
           .child(div().truncate().text_size(12).text_color(t.dim).child(`#${channelName(w.tab)} · ${w.space.machine ?? "this computer"}`)))
         .child(div().flex_none().text_size(12).text_color(statusColor(w.tab.status, t)).child(ago(w.tab.changed_at))));
     }
@@ -406,8 +454,9 @@ export default class CrewRoster extends View {
       .child(div().text_size(12).text_color(t.muted).child(`${m.summary} · ${m.count}x, ${m.pals?.length ?? 0} pal(s), ~${m.minutes}m lost`))
       .children((m.quotes ?? []).map((q, i) => div().id(`dr-q-${pr.id}-${i}`).pl(8).border_l_2().border_color(a(t.foreground, "22")).text_size(12).text_color(t.dim).child(`“${q}”`)))
       .child(shown
-        ? v_flex().id(`dr-text-${pr.id}`).max_h(320).overflow_y_scrollbar().px(10).py(7).rounded(6).bg(a(t.canvas, "aa"))
-          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " ")))
+        ? scrollArea(ds(t), `dr-text-${pr.id}`, v_flex().px(10).py(7)
+          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " "))))
+          .max_h(320).rounded(6).bg(a(t.canvas, "aa"))
         : div().id(`dr-show-${pr.id}`).px(10).py(7).rounded(6).border_1().border_color(a(t.foreground, "22")).cursor_pointer().hover((s) => s.bg(a(t.foreground, "08")))
           .on_click((_e, cx) => cx.spawn(async (cx) => {
             try { const p = JSON.parse(await crewCli(["proposal", "show", pr.id])); this.shownProposals[pr.id] = { text: p.text ?? "", sha: p.text_sha }; }
@@ -470,7 +519,7 @@ export default class CrewRoster extends View {
         .when(Boolean(task.result), (el) => el.child(div().text_size(12).text_color(t.muted).child(`Result: ${task.result}`)))
         .when(Boolean(last) && !task.result, (el) => el.child(div().text_size(12).text_color(t.dim).child(`${last.by}: ${last.text}`)))
         .child(h_flex().gap(14)
-          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open channel", () => this.go(f.space, f.tab))))
+          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open topic", () => this.go(f.space, f.tab))))
           .when(task.status !== "done", (el) => el.child(link(`tk-done-${task.id}`, "Mark done", act(["task", "done", task.id], `${task.id} done`), t.muted)))
           .when(task.status === "done" || task.status === "cancelled", (el) => el.child(link(`tk-re-${task.id}`, "Reopen", act(["task", "reopen", task.id]), t.muted)))
           .when(task.status !== "done" && task.status !== "cancelled", (el) => el.child(link(`tk-x-${task.id}`, "Cancel", act(["task", "cancel", task.id]), t.dim)))) : null;
@@ -518,10 +567,10 @@ export default class CrewRoster extends View {
           .when(busy, (el) => el.child(svg(WAVE).w(26).h(8).text_color(t.working))))
         .child(h_flex().items_center().gap(8)
           .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 18, t))))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} channels`)))
+          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} topic${members.length === 1 ? "" : "s"}`)))
         .when(Boolean(room.goal), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(room.goal))));
     }
-    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put channels from different pals together, so they can hand each other work."));
+    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put topics from different pals together, so they can hand each other work."));
     list.child(h_flex().id("room-new").items_center().gap(8).px(12).py(10).cursor_pointer().hover((s) => s.opacity(0.8))
       .on_click(() => openOverlay({ mod: "crew-room-new", kind: "dialog", width: 520, modal: true }))
       .child(svg(`${ICON}/plus.svg`).size(12).text_color(t.accent))
@@ -531,28 +580,15 @@ export default class CrewRoster extends View {
 
   // ── Drawn to the Paper board "MODE · Focus (default)", then reworked with DeNon ─────────────
 
-  // What a pal is on, split for the rows: [channel tag, words]. The most recently active channel's
-  // terminal title (agents set it to the task), else its state.
-  // The channel a pal's row stands for, and opens: one that needs you, else one that finished,
-  // else one working, else the most recently active; a pal with no agent anywhere, its shown tab.
-  leadTab(space) {
-    const rank = { blocked: 3, done: 2, working: 1 };
-    const best = agents().filter((x) => x.space === space.id)
-      .sort((x, y) => (rank[y.status] ?? 0) - (rank[x.status] ?? 0) || y.seq - x.seq)[0];
-    return (best && space.tabs.find((x) => x.id === best.tab)) ?? space.tabs.find((x) => x.active) ?? space.tabs[0] ?? null;
+  // The channel a pal's row stands for, and opens (crew.js palLeadTab): one that needs you, else
+  // one that finished, else one working, else the most recently active.
+  leadTab(space) { return palLeadTab(space); }
+  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
+  // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
+  open(space) {
+    if (botOf(space).god && hasHome()) { showHome(); return; }
+    this.go(space, this.leadTab(space));
   }
-  open(space) { this.go(space, this.leadTab(space)); }
-
-  doing(space, bot) {
-    const tab = this.leadTab(space);
-    const ag = tab ? agents().filter((x) => x.tab === tab.id).sort((x, y) => y.seq - x.seq)[0] : null;
-    const tag = tab ? channelName(tab) : "";
-    if (bot.starting) return [tag, "starting · it may be asking you something"];
-    if (!bot.awake) return [tag, "asleep"];
-    return [tag, taskTitle(ag?.title, bot.name, space.name, tag) ?? statusWord(ag?.status ?? "idle")];
-  }
-  lastChange(space) { return Math.max(0, ...space.tabs.map((x) => x.changed_at ?? 0)) || null; }
-  liveDot(status, d) { return status === "working" ? d.info : status === "blocked" ? d.warn : status === "done" ? d.ok : null; }
 
   // Focus: the shown pal as the hero card, then the pals.
   focusColumn(rows, asleep, waiting, t, extra) {
@@ -564,17 +600,25 @@ export default class CrewRoster extends View {
     const dozing = ordered.filter((r) => !(r.bot.awake || r.space.active || r.bot.starting));
     const nHidden = dozing.length + asleep.length;
     const showHidden = localStorage.getItem("asleep-open") === "1";
+    // The pal list's look (Project Pals settings → Pal list style; Large pets by default).
+    const look = palListStyle();
     const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     if (shown) root.child(this.heroCard(shown, t, d, w));
-    const list = v_flex().id("crew-list").flex_1().min_h(0).overflow_y_scrollbar().px(8).pt(8).pb(24).gap(2)
+    // The list scrolls in our own area (scrollArea: the pill thumb sits in its 8 px right padding).
+    const list = v_flex().px(8).pt(8).pb(24).gap(2)
       // A pal drag ends on release anywhere in the list, and is dropped if the pointer leaves it.
       .on_mouse_up("left", (_e, cx) => this.drop(cx))
       .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
-    if (this.view() !== "bots") return root.child(this.otherView(list, rows, waiting, t, d));
+    const scroller = (inner) => scrollArea(d, "crew-list", inner).flex_1().min_h(0);
+    if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      // Trees: fold or unfold every pal's topics at once (DeNon, 2026-11-08). It's the same "palTrees"
+      // as the switch in Pal list style, so it's remembered and both always agree. Fixed 20 px, like
+      // the search button beside it, so nothing moves when it flips.
+      .child(this.treesToggle(d))
       .child(div().id("pals-search").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("Search")
         .hover((s) => s.bg(d.hover)).on_click(() => run("app.palette"))
         .child(svg(`${ICON}/ds-search.svg`).size(13).text_color(d.iconDim))));
@@ -591,16 +635,20 @@ export default class CrewRoster extends View {
       if (grouped && sec.group && !sec.rows.length) list.child(this.groupDrop(sec.group.id, d));
     }
     if (nHidden) {
-      list.child(h_flex().id("asleep-toggle").h(40).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
+      // In the compact looks it's a quieter, shorter line (the board's "⊘ Hidden pals 5"), its
+      // icon centred over the pets' column.
+      const big = look.id === "large";
+      list.child(h_flex().id("asleep-toggle").h(big ? 40 : 30).flex_none().items_center().gap(big ? 12 : 10).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
+        .when(!big, (el) => el.mt(4))
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { localStorage.setItem("asleep-open", showHidden ? "0" : "1"); cx.notify(); })
-        .child(div().w(ROW_PET).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(15).text_color(d.icon)))
-        .child(div().flex_1().text_size(13).text_color(d.fg2).child("Hidden pals"))
-        .child(div().text_size(12).text_color(d.fg2).child(String(nHidden))));
+        .child(div().w(look.pet).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(big ? 15 : 13).text_color(d.icon)))
+        .child(div().flex_1().text_size(big ? 13 : 12).text_color(d.fg2).child("Hidden pals"))
+        .child(div().text_size(big ? 12 : 11).text_color(d.fg2).child(String(nHidden))));
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
     }
     this.extras(list, waiting, extra, d);
-    return root.child(list);
+    return root.child(scroller(list));
   }
 
   // Not on the boards, and only there while they have something: the Inbox (approvals wait for
@@ -610,7 +658,7 @@ export default class CrewRoster extends View {
       list.child(h_flex().id("inbox-row").h(40).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { setShared("crew.view", "you"); cx.notify(); })
-        .child(div().w(ROW_PET).flex_none().flex().justify_center().child(div().size(6).rounded(3).bg(d.warn)))
+        .child(div().w(palListStyle().pet).flex_none().flex().justify_center().child(div().size(6).rounded(3).bg(d.warn)))
         .child(div().flex_1().text_size(13).text_color(d.body).child(this.ops.approvals.length ? "Inbox · waiting for your OK" : "Inbox"))
         .child(div().text_size(12).text_color(d.warnText).child(String(waiting.length + extra))));
     }
@@ -649,9 +697,9 @@ export default class CrewRoster extends View {
   // rest; no saber here: DeNon found one moving along the floor annoying). The name sits in a
   // 36 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it; no state word). Under the floor: the pal's channels, full width,
-  // up to four rows then scrolling, with a search in their header; then the quick actions as
-  // pebbles: + Channel, Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
-  // name opens the profile panel too. Its pal row below shows the state word and channel.
+  // up to six rows then scrolling, with a search in their header; then the quick actions as
+  // pebbles: Inbox (the needs-you count), Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
+  // name opens the profile panel too. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
     const m = mood(tab?.status ?? space.status, bot.awake || bot.starting);
@@ -693,21 +741,49 @@ export default class CrewRoster extends View {
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
     // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    const btn = (id, icon, text, action, extra) => pebble(d, { id, icon, label: text, extra, onClick: action, grow: Boolean(text) });
+    // Inbox, Tasks and Desk are icon + count pebbles of one fixed width (DeNon via Orca, 2026-11-08:
+    // five pebbles at the 304 px sidebar truncated the labels to "In…" / "Ta…"); their names are in
+    // the tooltips, and show on the pebbles only once the sidebar is wide enough for all three
+    // (HERO_LABELS_AT). Each keeps a fixed count slot, a spacer takes what's left, and profile and the
+    // moon stay icon-only on the right: a count appearing or a pal switch never moves anything.
+    const labels = (w ?? 0) >= HERO_LABELS_AT;
+    const quick = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, slot: 18,
+      w: labels ? HERO_PEBBLE_LABELED : HERO_PEBBLE, extra: count ? (count > 99 ? "99+" : count) : null, onClick: action,
+      tooltip: tip, ...more });
+    // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
+    // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
+    // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
+    const needs = shared("crew.needs")?.count ?? 0;
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
+    const desk = deskOf(space.name);
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
+        .child(quick("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
+          needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
-        .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine || null))
-        // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
-        // Channel and Tasks keep their full labels at 304 px; the name above opens it too.
+        .child(quick("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
+          mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
+        // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
+        // the Desk view on this pal.
+        // The head pal's Desk is its Home (Orca's call, 2026-11-08): there the pebble opens Home.
+        .child(quick("hero-desk", "ds-tell", "Desk", () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)), desk?.open ?? 0,
+          desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting",
+          { extraColor: desk?.held ? d.warnText : null }))
+        .child(div().flex_1().min_w(0))
+        // Profile: the right-side profile panel (again: closes it); the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
-        .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
+        // The last pebble: Put to sleep, except on the head pal, which never sleeps (its menu has no
+        // Sleep either). There it's Home (a terminal icon, primary, while Home shows: back to the
+        // topic), in the same slot, so the row is the same width for every pal and fits a narrow
+        // sidebar (a sixth pebble pushed the moon off at 281 px). Ctrl+Shift+H does the same.
+        .child(bot.god && hasHome()
+          ? pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(), onClick: () => toggleHome(),
+            tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })
+          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
@@ -722,15 +798,16 @@ export default class CrewRoster extends View {
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
-    // Past four rows, how many are below the box (DeNon: say the list scrolls). The list's renderer
-    // records the last row it drew (this.chEnd, keyed by what's listed); a scroll re-renders shortly
-    // after, so the count follows it, and it's gone at the end.
-    const ROWS = 4, ROW = 30;
-    const listKey = `${space.id}|${q}|${list.length}`;
-    // The renderer's range runs a row past what's on screen, so count from its first row: four full
-    // rows are seen (five once the end is in view, where the peek row is the last one).
-    const [start, end] = this.chEndKey === listKey ? this.chRange : [0, ROWS + 2];
-    const below = list.length > ROWS ? Math.max(0, list.length - (start + (end >= list.length ? ROWS + 1 : ROWS))) : 0;
+    // No "+N more" in the header (DeNon, 2026-11-08: "Topics 18" says it; the cut fifth row, the
+    // pill and the fixed box show there's more).
+    const ROWS = 4, ROW = 30, SID = "hero-ch-list";
+    const BOX = ROWS * ROW + 12;
+    const sc = scrollState(SID);
+    // Folded (the chevron, DeNon 2026-11-08): just this header, with what's working or asks you in
+    // words. One remembered state for every pal ("heroTopicsFolded" in crew-settings.json), so the
+    // hero is still the same height whichever pal you switch to. Searching unfolds it.
+    const folded = topicsFolded() && !this.chSearchOpen;
+    const setFolded = (f, cx) => { saveUiSettings({ heroTopicsFolded: f }); cx.notify(); };
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -740,66 +817,75 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
-      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Channels"))
-        .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
-        .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
-          .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
-          .on_click((_e, cx) => { this.chScroll.scroll_to_item(list.length - 1); cx.timer.after(80, (cx) => cx.notify()); })
-          .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
+      const live = bot.awake ? ordered.filter((x) => tabHasAgent(x)) : [];
+      const working = live.filter((x) => x.status === "working").length, asks = live.filter((x) => x.status === "blocked").length;
+      const summary = [String(ordered.length), working && `${working} working`, asks && `${asks} need${asks === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
+      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
+        .child(div().flex_1().min_w(0).truncate().text_size(11).line_height("14px").text_color(d.fg4).child(folded ? summary : String(ordered.length)))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
-          .hover((s) => s.bg(d.hover)).tooltip("Search channels")
-          .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
-          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
+          .hover((s) => s.bg(d.hover)).tooltip("Search topics")
+          .on_click((_e, cx) => { if (topicsFolded()) saveUiSettings({ heroTopicsFolded: false }); this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
+          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)))
+        // Fixed 22 px, like the magnifier, so nothing moves when it flips.
+        .child(div().id("hero-ch-fold").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+          .hover((s) => s.bg(d.hover)).tooltip(folded ? "Show topics" : "Fold topics")
+          .on_click((_e, cx) => setFolded(!folded, cx))
+          .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
     }
-    // Up to four rows show (DeNon: "at most 4"); more scroll. A virtual list with a scroll handle, so
-    // the shown channel is scrolled into view when it changes (not on every render, so a scroll you
-    // made stays put). With four or fewer the box hugs its rows. Its rows can't carry handlers (Herdr
-    // refuses them inside a virtual list's renderer): clicks are the list's on_item_click /
-    // on_item_secondary_click, by the channel's tab id.
-    // ROW: a 28 px row and its 2 px gap.
-    // The scroll area runs to the sidebar's edge and Herdr draws its thumb about 8-16 px in from that
-    // edge whatever box the Scrollbar is given (seen on DeNon's screen), so the rows end 11 px in (a
-    // short list: the same right edge as everything else) or 18 px in while the list overflows (a
-    // gutter: the thumb never covers a time, pin or dot).
-    const over = list.length > ROWS;
+    if (folded) return v_flex().pt(4).child(head);
+    // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
+    // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
+    // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
+    // made stays put). The box is always four rows + the peek (BOX). Plain rows, so each takes its
+    // own click (open) and right-click (the topic menu).
     const row = (tab) => {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
-      return div().h(ROW).pb(2).pr(over ? 18 : 11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      const lane = deskLane(space.name, channelName(tab));
+      return div().h(ROW).flex_none().pb(2).pr(11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+        .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
+        .child(topicMark(tab))
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
         .when(tabPinned(tab), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
+        // The Desk: "N waiting" or "held 12m" when cards wait for this topic (crew.desk, from the header).
+        .when(Boolean(lane?.open), (el) => el.child(deskLaneMark(d, lane)))
         .child(!tabHasAgent(tab) ? noAgentTag(d)
+          : st === "working" ? workingMark(d)
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
           : div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(stamp(tab.changed_at))));
     };
-    const box = v_flex();
+    // The box is always four rows plus the peek (BOX), whatever the pal has, so switching pals never
+    // moves the quick actions or the Pals list under it (DeNon, 2026-11-08). Fewer rows leave the
+    // rest blank, with a faint "+ New channel" row after the last when there's room (not while
+    // searching).
+    const box = v_flex().h(BOX).flex_none().overflow_hidden();
+    const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+      .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
+      .child(svg(`${ICON}/ds-plus.svg`).size(11).flex_none().text_color(d.fg4))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New topic")));
     if (!list.length) {
-      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No topic matches "${this.chSearch.value().trim()}"`));
+      else box.child(newRow());
       return v_flex().pt(4).child(head).child(box);
     }
+    const n = list.length, h = n > ROWS ? BOX : n * ROW;
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
-    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) this.chScroll.scroll_to_item(act); }
+    // A new pal or search starts at the top; then the shown topic is brought into view.
+    const listKey = `${space.id}|${q}`;
+    if (this.chListKey !== listKey) { this.chListKey = listKey; scrollTo(SID, 0); }
+    sc.view = h;
+    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act * ROW, ROW); }
     // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
-    // there's more. The scrollbar stays drawn while the list overflows, in the rows' gutter.
-    const n = list.length, h = n > ROWS ? ROWS * ROW + 12 : n * ROW;
-    box.child(div().relative().h(h).w_full()
-      .on_scroll_wheel((_e, cx) => cx.timer.after(80, (cx) => cx.notify()))
-      .child(div().pl(8).h(h).w_full().child(v_virtual_list("hero-ch-list", n, ROW, (i) => list[i].id, (range) => {
-        this.chRange = [range.start, range.end]; this.chEndKey = listKey;
-        const out = [];
-        for (let i = range.start; i < range.end; i++) out.push(row(list[i]));
-        return out;
-      }).track_scroll(this.chScroll)
-        .on_item_click((id, cx) => { const tab = space.tabs.find((x) => x.id === id); if (tab) { this.go(space, tab); cx.notify(); } })
-        .on_item_secondary_click((id, _e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: id } }); })
-        .h(h).w_full()))
-      .when(n > ROWS, (el) => el.child(Scrollbar.vertical("hero-ch-list").mode("always").absolute().top(0).right(0).w(16).h(h))));
+    // there's more, and the pill thumb shows where you are.
+    box.child(scrollArea(d, SID, v_flex().pl(8).children(list.map(row))).h(h).flex_none().w_full());
+    if (n < ROWS && !q) box.child(newRow());
     return v_flex().pt(4).child(head).child(box);
   }
 
@@ -872,88 +958,51 @@ export default class CrewRoster extends View {
       .child(div().text_size(12).line_height("16px").text_color(d.fg4).child("Drag a pal here, or right-click one → Group"));
   }
 
-  // A pal row's pet: bare on the sidebar (its open tiles, no box or hairline) over a soft aura, with a small still
-  // pool of the state's colour under it, as the hero's floor has (asks you breathes). No edge loader:
-  // the paw taps and the bits rise while it works, and the row's dot says so too.
-  rowPet(bot, m, t) {
-    const p = petOf(bot);
-    if (!p || !petReady(p)) return mascotEl(bot, m, ROW_PET, t);
-    const state = petState(bot, m);
-    const h = Math.round(ROW_PET * 108 / 138);
-    const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
-    return div().relative().w(ROW_PET).h(h).flex_none()
-      // Depth without an edge (DeNon: the old box's depth, not its line): a soft radial aura behind
-      // the pet that fades out to nothing. An image, so it stays behind (svg() would draw over).
-      .child(div().absolute().left(-12).top(-9).w(ROW_PET + 24).h(h + 18).child(image(`${ICON}/pet-aura-row.svg`).w(ROW_PET + 24).h(h + 18)))
-      .when(lit, (el) => el.child(div().absolute().left(-6).top(h - 17).w(ROW_PET + 12).h(24)
-        .when(state === "ask", (x) => x.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
-        .child(image(`${ICON}/pet-floor-${state}.svg`).w(ROW_PET + 12).h(24))))
-      .child(div().absolute().left(0).top(0).child(petEl(p, state, ROW_PET, h, { open: true })));
+  // A pal row in the chosen look (crew.js palLookRow; the dialog's preview draws the same). This
+  // element carries what the row does: a click opens its lead channel, right-click its menu, and
+  // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
+  // shows where it will land (above or below the row under the pointer); release drops it. The
+  // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
+  // The Pals header's fold-all / unfold-all button: unfolded shows the tree, folded a plain list.
+  treesToggle(d) {
+    const on = palTreesOn();
+    return div().id("pals-trees").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+      .tooltip(on ? "Fold all topics" : "Unfold all topics")
+      .hover((s) => s.bg(d.hover))
+      .on_click((_e, cx) => { saveUiSettings({ palTrees: !on }); cx.notify(); })
+      .child(svg(`${ICON}/${on ? "ds-tree" : "ds-tree-folded"}.svg`).size(13).text_color(d.iconDim));
   }
-
-  // A Focus pal row: 68 px, r6, the pet bare at 75x59 (DeNon 2026-11-08; dimmed while it's closed), name + time + dot, "[channel] what it's on".
   palRow({ space, bot }, t, d, gid = undefined) {
-    const st = space.status;
-    const on = space.active;
+    const look = palListStyle();
     const awake = bot.awake || bot.starting;
-    const [tag] = this.doing(space, bot);
-    // "Status first" (DeNon's pick from the pal-rows board, variant 3): the name (#EDEDED 600) and the
-    // time; then the state word in its colour and " · #channel" in 11 px mono #808082. A closed pal's
-    // text never drops below #808082 (its pet dims instead).
-    const nameColor = awake ? d.fg1 : d.fg2;
-    const [word, wordColor] = this.stateWord(space, bot, d);
-    // Dragging (pals in the groups, not the head pal or hidden ones): press, move 5 px, and a 2 px
-    // line shows where it will land (above or below the row under the pointer); release drops it.
+    const f = palFacts(space, bot, d, this.ops.tasks);
     const draggable = gid !== undefined && !bot.god;
     const dg = this.drag?.active ? this.drag : null;
     const over = dg?.over && dg.over.id === bot.id ? dg.over : null;
-    return h_flex().id(`bot-${space.id}`).relative().h(ROW_H).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
-      .when(on, (el) => el.bg(d.sel))
-      .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-      .when(Boolean(dg) && dg.id === bot.id, (el) => el.opacity(0.45))
-      .when(draggable, (el) => el
+    const el = div().id(`bot-${space.id}`)
+      .when(Boolean(dg) && dg.id === bot.id, (x) => x.opacity(0.45))
+      .when(draggable, (x) => x
         .on_mouse_down("left", (e) => { this.drag = { id: bot.id, gid, y0: e.position.y, active: false, over: null }; })
         .on_mouse_move((e, cx) => this.dragOver(e, cx, { id: bot.id, gid, after: e.local_position.y > e.bounds.height / 2 })))
-      .when(!draggable && gid === undefined && bot.god, (el) => el.on_mouse_move((e, cx) => this.dragOver(e, cx, null)))
-      .when(Boolean(over), (el) => el.child(div().absolute().left(6).right(6).h(2).rounded(1).bg(d.info).when(over.after, (x) => x.bottom(0)).when(!over.after, (x) => x.top(0))))
+      .when(!draggable && gid === undefined && bot.god, (x) => x.on_mouse_move((e, cx) => this.dragOver(e, cx, null)))
+      .when(Boolean(over), (x) => x.child(div().absolute().left(6).right(6).h(2).rounded(1).bg(d.info).when(over.after, (y) => y.bottom(0)).when(!over.after, (y) => y.top(0))))
       .on_click((_e, cx) => { if (this.drag?.active) return; this.open(space); cx.notify(); })
-      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
-      .child(div().flex_none().when(!awake, (el) => el.opacity(0.5)).child(this.rowPet(bot, mood(st, awake), t)))
-      .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(h_flex().items_center().gap(6)
-          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("18px").font_weight(600).text_color(nameColor).child(bot.name))
-          .when(palPinned(bot), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
-          .child(div().flex_none().text_size(11).line_height("18px").text_color(d.fg3).child(stamp(this.lastChange(space)))))
-        .child(h_flex().min_w(0).items_center().overflow_hidden()
-          .child(div().flex_none().text_size(12).line_height("16px").font_weight(500).text_color(wordColor).child(word))
-          .when(Boolean(tag), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("16px").font_family(d.mono).text_color(d.fg2).child(` · #${tag}`)))));
+      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); });
+    const row = palLookRow(d, look, f, palPet(bot, mood(palStatus(space), awake), look.pet, t), el);
+    // Trees (on unless turned off): its live topics under it; a click opens that topic, right-click its menu.
+    const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); },
+      (tab) => openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }));
+    return tree ? v_flex().flex_none().child(row).child(tree) : row;
   }
 
-  // A pal's state as a word in its colour (the pal rows' second line): its pet's state (petState, so
-  // PR, merged, closing and stuck show too), "Working · 4m" with how long its lead channel has.
-  stateWord(space, bot, d) {
-    if (bot.starting) return ["Starting", d.infoText];
-    if (!bot.awake) return ["Asleep", d.fg2];
-    const st = petState(bot, mood(space.status, true));
-    const lead = this.leadTab(space);
-    const since = lead?.changed_at ? ago(lead.changed_at) : "";
-    return ({
-      work: [since && since !== "now" ? `Working · ${since}` : "Working", d.info],
-      ask: ["Needs you", d.warn], done: ["Done", d.ok], stuck: ["Stuck", d.warn],
-      pr: ["PR open", "#3FBF78"], merged: ["Merged", "#9466F0"], closing: ["Closing", d.err],
-    })[st] ?? ["Resting", d.body];
-  }
-
+  // A pal whose space is closed: the same look, dimmed; a click wakes it.
   sleeperRow(rec, t, d) {
+    const look = palListStyle();
     const bot = { ...rec, awake: false };
-    return h_flex().id(`sleep-${rec.id}`).h(ROW_H).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
-      .hover((s) => s.bg(d.hover))
+    const el = div().id(`sleep-${rec.id}`)
       .on_click(() => this.wake(rec))
-      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); })
-      .child(div().flex_none().opacity(0.5).child(this.rowPet(bot, "asleep", t)))
-      .child(v_flex().flex_1().min_w(0).gap(3)
-        .child(div().truncate().text_size(14).line_height("18px").font_weight(600).text_color(d.fg2).child(rec.name))
-        .child(div().truncate().text_size(12).line_height("16px").font_weight(500).text_color(d.fg2).child("Asleep · click to wake")));
+      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: rec.id } }); });
+    return palLookRow(d, look, sleeperFacts(rec, d, this.ops.tasks), palPet(bot, "asleep", look.pet, t), el);
   }
 
   empty(t) {

@@ -7,7 +7,7 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui
 import { theme, props, closeOverlay, notify, spaces, panes } from "herdr";
 import { enqueue, crew, botOf, rooms, roomSlug, newId, saveRoom, showRoom, roomMembers, writeRoomFile, briefing,
   mascotEl, mood, channelName, leadPane, crewCli, a, tone, ds,
-  sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
+  sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetPanel, sheetPanelBox, sheetOption, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -77,7 +77,7 @@ export default class CrewRoomNew extends View {
 
     // Awake pals first (they can join now); asleep ones after.
     const order = [...all].sort((x, y) => Number(botOf(y, c, ps).awake) - Number(botOf(x, c, ps).awake));
-    const list = sheetPanel(d, "rn-bots").max_h(300);
+    const list = sheetPanel(d, "rn-bots");
     for (const space of order) {
       const bot = botOf(space, c, ps);
       const on = this.picked.has(space.id);
@@ -112,7 +112,7 @@ export default class CrewRoomNew extends View {
         .child(sheetField(d, Input.new(this.name).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
         .child(sheetArea(d, Textarea.new(this.goal).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
         .child(div().pt(2).text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Who's in it"))
-        .child(list))
+        .child(sheetPanelBox(d, "rn-bots", list, 300)))
       .child(sheetFooter(d, { id: "rn", hint: this.picked.size < 2 ? "Pick at least two pals" : `${this.picked.size} pals · Esc cancels`, onCancel: close, ready,
         primary: "Open room", onPrimary: () => this.create() }));
   }

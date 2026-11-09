@@ -8,9 +8,9 @@
 // overflowing), which makes every row's height known before it's drawn.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
-import { spaces, panes, run, theme, watchFolder, appHome, shared } from "herdr";
-import { crew, botOf, rooms, roomMembers, readRoomLog, mascotEl, mood, statusWord, showTabs, roomMode, ROOM_DIR, a, WAVE, tone } from "./crew.js";
+import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
+import { spaces, panes, run, theme, watchFolder, appHome, shared, settings } from "herdr";
+import { crew, botOf, rooms, roomMembers, readRoomLog, mascotEl, mood, statusWord, showTabs, roomMode, ROOM_DIR, a, WAVE, tone, ds, thumbFor } from "./crew.js";
 
 const LINE = 21;      // px per text line
 const PAD_Y = 8;      // bubble padding, top and bottom
@@ -207,9 +207,13 @@ export default class CrewRoom extends View {
     const chat = rows.length
       ? h_flex().flex_1().min_h(0).w_full().justify_center()
           .child(div().relative().h_full().w_full().max_w(COLUMN)
+            .on_size_change((size, cx) => { const h = size.height / (Number(settings()?.zoom) || 1); if (Math.abs((this.chatView ?? 0) - h) > 1) { this.chatView = h; cx.notify(); } })
+            .on_scroll_wheel((_e, cx) => cx.timer.after(60, (cx) => cx.notify()))
             .child(v_virtual_list("room-chat", rows.length, rows.map((r) => r.h), (i) => rows[i].key,
-              (range) => rows.slice(range.start, range.end).map((r) => this.row(r, byName, t))).track_scroll(this.scroll).size_full())
-            .child(Scrollbar.vertical("room-chat").absolute().inset_0()))
+              (range) => { this.chatRange = [range.start, range.end]; return rows.slice(range.start, range.end).map((r) => this.row(r, byName, t)); })
+              .track_scroll(this.scroll).size_full())
+            // Our pill thumb, from the rows the list drew (Herdr's bar is a hard-cut rectangle).
+            .map((el) => { const th = thumbFor(ds(t), "room-chat", { range: this.chatRange, count: rows.length, heights: rows.map((r) => r.h), view: this.chatView ?? 0, handle: this.scroll }); return th ? el.child(th) : el; }))
       : v_flex().flex_1().pt(40).gap(8).items_center()
           .child(div().text_size(18).font_weight(200).text_color(t.foreground).child("Nothing said yet"))
           .child(div().max_w(460).text_center().text_size(13).text_color(t.dim)

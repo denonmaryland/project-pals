@@ -1,0 +1,22 @@
+#!/bin/sh
+# crew-hook-fast EVENT: the installed command for the hooks that fire on every tool call or model call
+# (Claude Code PostToolUse / Stop, agy PreInvocation / Stop). It starts crew-hook (Python) only when
+# this pal has messages queued, or its hooks haven't run in this terminal yet (to link its session
+# file); otherwise it exits at once with no output, so a pal with nothing waiting pays a few
+# shell builtins per tool call instead of a Python start. Outside a pal (no HC_TERMINAL_ID) it does
+# nothing. Fails open: any problem here means "nothing to say".
+t="${HC_TERMINAL_ID:-}"
+if [ -z "$t" ]; then cat >/dev/null 2>&1; exit 0; fi
+data="${CREW_DATA:-${HERDR_APP_HOME:-$HOME/.config/herdr-app}/data}"
+hook="${0%/*}/crew-hook"
+[ -x "$hook" ] || hook=crew-hook
+# Never run in this terminal: let crew-hook link the session file and mark it hooked.
+[ -e "$data/crew-hooked/$t" ] || exec "$hook" "$@"
+# Keep the "this pal has hooks" heartbeat fresh (crewd leaves busy hooked pals to their hooks).
+: > "$data/crew-hooked/$t" 2>/dev/null
+for f in "$data/crew-queue/$t"/*.json; do
+  [ -e "$f" ] && exec "$hook" "$@"
+  break
+done
+cat >/dev/null 2>&1
+exit 0

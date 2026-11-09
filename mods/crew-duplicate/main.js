@@ -5,8 +5,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
-import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, MODELS, modelOf, withModel, tone, ds,
-  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
+import { botOf, updateBot, openTopic, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
+  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetPanelBox, sheetOption, sheetFooter, categoryName } from "./crew.js";
 
 export default class CrewDuplicate extends View {
   init(_props, cx) {
@@ -33,14 +33,14 @@ export default class CrewDuplicate extends View {
     this.handle = cx.focus_handle();
     this.channel.focus();
     cx.spawn(async (cx) => {
-      try { this.agents = (await knownAgents({ on: this.bot?.machine ?? null })).filter((x) => x.installed); } catch { this.agents = []; }
+      try { this.agents = (await knownAgents({ on: this.bot?.target ?? this.bot?.machine ?? null })).filter((x) => x.installed); } catch { this.agents = []; }
       this.same = this.agents.find((x) => x.key === this.bot?.harness) ?? null;
       cx.notify();
     });
   }
 
   categories() {
-    return [...new Set(Object.values(this.bot?.categories ?? {}).concat("General"))];
+    return [...new Set(Object.values(this.bot?.categories ?? {}).map(categoryName).concat("General"))];
   }
 
   go(cx) {
@@ -48,7 +48,7 @@ export default class CrewDuplicate extends View {
     const space = bot && spaces().find((x) => x.id === bot.space);
     if (!space) return notify({ title: "That pal is gone", level: "warning" });
     const name = "#" + (this.channel.value().trim().replace(/^#/, "").replace(/\s+/g, "-"));
-    if (name === "#") return notify({ title: "Name the channel", level: "warning", timeout: 2500 });
+    if (name === "#") return notify({ title: "Name the topic", level: "warning", timeout: 2500 });
     if (space.tabs.some((x) => x.name === name || x.name === name.slice(1))) return notify({ title: `${bot.name} already has ${name}`, level: "warning", timeout: 2500 });
     const category = this.category === "+new" ? (this.newCategory.value().trim() || "General") : this.category;
     const brief = this.brief.value().trim();
@@ -69,9 +69,10 @@ export default class CrewDuplicate extends View {
       return;
     }
     // The pal's brain: as it was hired, else what runs in it now; none: a shell.
+    const brainKey = this.harness?.key ?? bot.harness;
     let argv = this.harness ? withBypass(this.harness.key, this.harness.run) : (bot.record?.argv ?? (this.same ? withBypass(this.same.key, this.same.run) : undefined));
     // A model picked here goes on this channel's own command line ("Your default" drops the pal's).
-    if (this.model !== undefined && argv && (this.harness?.key ?? bot.harness) === "claude") argv = withModel(argv, "claude", this.model);
+    if (this.model !== undefined && argv && modelsFor(brainKey, argv)) argv = withModel(argv, brainKey, this.model);
     updateBot(bot.record ?? bot, (b) => ({
       ...b,
       categories: { ...(b.categories ?? {}), [name]: category },
@@ -79,9 +80,12 @@ export default class CrewDuplicate extends View {
       brains: this.harness ? { ...(b.brains ?? {}), [name]: this.harness.key } : (b.brains ?? {}),
     }));
     const memory = (bot.memory ?? "").trim();
-    const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
+    // A brain without Project Pals hooks is asked to read its primer; agy takes its task as `-i` (PR #1).
+    const task = [brief && `You are ${bot.name} in ${name}. ${brief}`, primerHint(argv, brainKey), memory && `Things to remember: ${memory}`].filter(Boolean).join("\n\n");
+    const spec = launchSpec(brainKey, argv, argv ? task : "");
     closeOverlay(props().overlay);
-    run("tab.new", { space: space.id, name, argv: argv || undefined, folder: bot.folder || undefined, task: argv ? (task || undefined) : undefined });
+    // On the machine the pal works on (Change machine…): its space there, else a new one there.
+    openTopic(bot, { name, argv: spec.argv, task: spec.task });
   }
 
   key(e, cx) {
@@ -103,15 +107,17 @@ export default class CrewDuplicate extends View {
     const current = this.harness ?? this.same;
     const brainName = this.harness ? this.harness.name : `${bot.harnessName ?? "Shell"} (same)`;
     const brainKey = this.harness?.key ?? bot.harness;
-    const palModel = modelOf(bot.record?.argv);
-    const modelName = (k) => MODELS.find((m) => m.key === k)?.name ?? k;
+    // Claude Code and Antigravity CLI channels can run on another model than the pal.
+    const models = modelsFor(brainKey, this.harness ? this.harness.run : (bot.record?.argv ?? this.same?.run));
+    const palModel = !this.harness ? modelOf(bot.record?.argv) : null;
+    const modelName = (k) => (models ?? []).find((m) => m.key === k)?.name ?? k;
     const modelLabel = this.model === undefined ? (palModel ? `${modelName(palModel)} (same)` : "Same") : modelName(this.model);
     const cats = this.categories();
 
     const row = sheetRow()
       .child(sheetSelect(d, "dup-brain", { label: "Brain", value: brainName, open: this.picking === "brain", onClick: toggle("brain"),
         face: brainLogo(current?.key ?? bot.harness, 13, d, this.agents) }))
-      .when(brainKey === "claude", (el) => el.child(sheetSelect(d, "dup-model", { label: "Model", value: modelLabel, open: this.picking === "model", onClick: toggle("model") })))
+      .when(Boolean(models), (el) => el.child(sheetSelect(d, "dup-model", { label: "Model", value: modelLabel, open: this.picking === "model", onClick: toggle("model") })))
       .when(this.isRepo, (el) => el.child(sheetToggle(d, "dup-branch", { label: "Own branch", on: this.ownBranch, onClick: () => { this.ownBranch = !this.ownBranch; } })))
       .child(sheetSelect(d, "dup-more", { label: "Category", value: this.category === "+new" ? "New…" : this.category, open: this.picking === "cat", onClick: toggle("cat") }));
 
@@ -120,11 +126,11 @@ export default class CrewDuplicate extends View {
       panel = sheetPanel(d, "dup-brains")
         .child(sheetOption(d, "brain-same", { on: !this.harness, left: brainLogo(bot.harness, 14, d, this.agents), label: `Same as ${short}`, sub: bot.harnessName ?? "", onClick: () => { this.harness = null; this.picking = null; } }))
         .children(this.agents.filter((x) => x.key !== bot.harness).map((ag, i) => sheetOption(d, `brain-${i}`, { on: this.harness?.key === ag.key,
-          left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, onClick: () => { this.harness = ag; this.picking = null; } })));
+          left: brainLogo(ag.key, 14, d, this.agents), label: ag.name, onClick: () => { this.harness = ag; this.model = undefined; this.picking = null; } })));
     } else if (this.picking === "model") {
       panel = sheetPanel(d, "dup-models")
         .child(sheetOption(d, "model-same", { on: this.model === undefined, label: `Same as ${short}`, sub: palModel ? modelName(palModel) : "", onClick: () => { this.model = undefined; this.picking = null; } }))
-        .children(MODELS.map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
+        .children((models ?? []).map((m, i) => sheetOption(d, `model-${i}`, { on: this.model === m.key, label: m.name, sub: m.sub, onClick: () => { this.model = m.key; this.picking = null; } })));
     } else if (this.picking === "cat") {
       panel = sheetPanel(d, "dup-cats")
         .children(cats.map((c, i) => sheetOption(d, `cat-${i}`, { on: this.category === c, label: c, onClick: () => { this.category = c; this.picking = null; } })))
@@ -136,14 +142,14 @@ export default class CrewDuplicate extends View {
 
     const ready = Boolean(this.channel.value().trim()) && !this.busy;
     return sheet(d, "crew-duplicate", this.handle, (e, cx) => this.key(e, cx))
-      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New channel", onClose: close,
+      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New topic", onClose: close,
         sub: `in ${bot.name} · ${bot.machine ?? "this computer"} · ${bot.memory?.trim() ? "starts with its memory" : "shares its project"}` }))
       .child(sheetBody()
         .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
         .child(sheetArea(d, Textarea.new(this.brief).w_full().px(6).py(4).text_size(13).text_color(d.fg1)))
         .child(row)
-        .when(Boolean(panel), (el) => el.child(panel)))
+        .when(Boolean(panel), (el) => el.child(sheetPanelBox(d, `dup-panel-${this.picking}`, panel))))
       .child(sheetFooter(d, { id: "dup", hint: "Enter adds · Esc cancels", onCancel: close, ready,
-        primary: this.busy ? "Making its branch…" : "Add channel", onPrimary: (cx) => this.go(cx) }));
+        primary: this.busy ? "Making its branch…" : "Add topic", onPrimary: (cx) => this.go(cx) }));
   }
 }
