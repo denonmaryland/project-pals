@@ -15,13 +15,15 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
 // with their names (about 32 px more each) from this sidebar width up: 16 of padding, three labeled
 // pebbles, four 6 px gaps and the two 28 px icon pebbles need 384.
-const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390;
+// Labels need 3 × 96, the 28 px icon pebbles (Profile, Sleep, and Home when the layout has it), the
+// 6 px gaps and 16 px padding: 390 px, 424 with Home.
+const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390, HERO_LABELS_AT_HOME = 424;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
 // Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
@@ -130,6 +132,8 @@ export default class CrewRoster extends View {
         else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
         else if (c === "profile") togglePanel(panelTab());
+        // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
+        else if (c === "home") toggleHome();
         cx.notify();
       }
     });
@@ -550,7 +554,12 @@ export default class CrewRoster extends View {
   // The channel a pal's row stands for, and opens (crew.js palLeadTab): one that needs you, else
   // one that finished, else one working, else the most recently active.
   leadTab(space) { return palLeadTab(space); }
-  open(space) { this.go(space, this.leadTab(space)); }
+  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
+  // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
+  open(space) {
+    if (botOf(space).god && hasHome()) { showHome(); return; }
+    this.go(space, this.leadTab(space));
+  }
 
   // Focus: the shown pal as the hero card, then the pals.
   focusColumn(rows, asleep, waiting, t, extra) {
@@ -708,7 +717,7 @@ export default class CrewRoster extends View {
     // the tooltips, and show on the pebbles only once the sidebar is wide enough for all three
     // (HERO_LABELS_AT). Each keeps a fixed count slot, a spacer takes what's left, and profile and the
     // moon stay icon-only on the right: a count appearing or a pal switch never moves anything.
-    const labels = (w ?? 0) >= HERO_LABELS_AT;
+    const labels = (w ?? 0) >= (hasHome() ? HERO_LABELS_AT_HOME : HERO_LABELS_AT);
     const quick = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, slot: 18,
       w: labels ? HERO_PEBBLE_LABELED : HERO_PEBBLE, extra: count ? (count > 99 ? "99+" : count) : null, onClick: action,
       tooltip: tip, ...more });
@@ -723,6 +732,10 @@ export default class CrewRoster extends View {
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
+        // Home (icon-only, first): the head pal's page; while it shows, a terminal icon (primary) that
+        // goes back to the topic. Ctrl+Shift+H does the same.
+        .when(hasHome(), (el) => el.child(pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(),
+          onClick: () => toggleHome(), tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })))
         .child(quick("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
           needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
@@ -731,7 +744,8 @@ export default class CrewRoster extends View {
           mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
         // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
         // the Desk view on this pal.
-        .child(quick("hero-desk", "ds-tell", "Desk", () => showDesk(`pal:${deskSlug(space.name)}`), desk?.open ?? 0,
+        // The head pal's Desk is its Home (Orca's call, 2026-11-08): there the pebble opens Home.
+        .child(quick("hero-desk", "ds-tell", "Desk", () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)), desk?.open ?? 0,
           desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting",
           { extraColor: desk?.held ? d.warnText : null }))
         .child(div().flex_1().min_w(0))

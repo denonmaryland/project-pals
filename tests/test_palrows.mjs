@@ -89,7 +89,7 @@ try {
     export const shared = (k) => fixtures.shared[k], setShared = (k, v) => { fixtures.shared[k] = v; };
     export const theme = () => ({ background: "#0E0E0F", foreground: "#EDEDED" });
     export const home = () => "/home/denon", appHome = () => "/home/denon/.config/herdr-app";
-    export const settings = () => ({ zoom: 1 }), layout = () => null, props = () => ({}), keys = () => ({});
+    export const settings = () => ({ zoom: 1 }), layout = () => fixtures.layout ?? null, props = () => ({}), keys = () => ({});
     export const machines = () => [], terminals = () => [];
     const nop = () => {}, later = async () => ({ stdout: "", stderr: "", code: 0 });
     export const run = nop, notify = nop, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
@@ -213,6 +213,15 @@ try {
     assert.equal(wide.args.w?.[0], 96, `${id} is 96 px with room`);
     assert.ok(/Inbox|Tasks|Desk/.test(text(wide)), `${id} shows its name with room`);
   }
+  // Home (the head pal's page, when the layout has home-view): an icon pebble first, and the names
+  // show only from 424 px, so the row still fits.
+  assert.ok(!pebbleOf(calm, "hero-home"), "no Home pebble without a home-view");
+  fixtures.layout = { id: "root", children: [{ id: "center", type: "stack", active: "tab-view", children: [{ id: "tab-view" }, { id: "home-view" }] }] };
+  const withHome = (w) => roster.heroCard({ space: one, bot: crew.botOf(one) }, t, d, w);
+  assert.ok(pebbleOf(withHome(304), "hero-home"), "a Home pebble with home-view");
+  assert.equal(pebbleOf(withHome(420), "hero-inbox").args.w?.[0], 54, "with Home, no labels at 420");
+  assert.equal(pebbleOf(withHome(424), "hero-inbox").args.w?.[0], 96, "with Home, labels from 424");
+  fixtures.layout = null;
   assert.ok(text(calm).includes("New topic"), "New topic is still the list's last row");
   fixtures.shared["crew.needs"] = { count: 3 };
   const busy = heroOf(one, false);

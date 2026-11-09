@@ -28,7 +28,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, shared, setShared, run, notify, openOverlay } from "herdr";
 import { ds, tone, scrollArea, pebble, channelName, loadDesk, deskMode, showTabs, ownerCli, deskSlug, cardAge,
-  CARD_OPEN, CARD_STATUS_WORD, URGENCIES, urgencyColor, cardStatusColor, openDrop, partnerOf, PARTNER_NAME } from "./crew.js";
+  CARD_OPEN, CARD_STATUS_WORD, URGENCIES, urgencyColor, cardStatusColor, openDrop, partnerOf, PARTNER_NAME, showHome, headSpace } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const LEFT = 232, RIGHT = 400;
@@ -147,11 +147,13 @@ export default class CrewDesk extends View {
   }
 
   // ── left: the desks ──
-  deskRow(d, key, label, n, { warn = false, indent = 0, mono = false } = {}) {
+  // go: instead of picking this desk (the head pal's desk is Home: Orca's decision 4, via #orca-home).
+  deskRow(d, key, label, n, { warn = false, indent = 0, mono = false, go = null, tip = null } = {}) {
     const on = this.pick === key;
     return h_flex().id(`dk-${key}`).h(28).flex_none().items_center().gap(8).pl(10 + indent).pr(10).rounded(d.r.sm).cursor_pointer()
       .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
-      .on_click((_e, cx) => { this.pick = key; this.openId = null; this.moving = false; this.draftPicking = false; cx.notify(); })
+      .when(Boolean(tip), (el) => el.tooltip(tip))
+      .on_click((_e, cx) => { if (go?.()) return; this.pick = key; this.openId = null; this.moving = false; this.draftPicking = false; cx.notify(); })
       .child(div().flex_1().min_w(0).truncate().text_size(13).when(mono, (el) => el.font_family(d.mono).text_size(12))
         .text_color(on ? d.fg1 : indent ? d.fg2 : d.body).child(label))
       .when(n > 0, (el) => el.child(div().flex_none().text_size(11).font_family(d.mono).text_color(warn ? d.warnText : d.fg3).child(String(n))));
@@ -169,9 +171,13 @@ export default class CrewDesk extends View {
       .child(this.deskRow(d, "all", "All", cs.length))
       .child(div().h(1).my(6).mx(10).bg(d.lineSoft));
     // (the "all" count leaves drafts out: they aren't on a desk yet)
+    const head = headSpace()?.name;
     for (const p of this.pals()) {
       const key = `pal:${p.slug}`;
-      list.child(this.deskRow(d, key, p.name, count(key), { warn: held(key) }));
+      // The head pal's desk is Home (its page lists its cards); every other pal keeps its desk here.
+      const isHead = Boolean(head) && p.name === head;
+      list.child(this.deskRow(d, key, p.name, count(key), { warn: held(key), go: isHead ? () => showHome() : null,
+        tip: isHead ? `${p.name}'s desk is Home` : null }));
       const lanes = new Map(p.tabs.map((t) => [channelName(t).toLowerCase(), channelName(t)]));
       for (const c of cs) if (c.tray === p.slug && c.topic && !lanes.has(c.topic.toLowerCase())) lanes.set(c.topic.toLowerCase(), c.topic);
       for (const name of lanes.values()) {
