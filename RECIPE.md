@@ -621,6 +621,10 @@ still travels through crewd's queue, carrying the card's id.
   goes there with a "routed #topic · triage · why" receipt, or stays in To route as needs you
   (`route: manual`) with the reason: unsure (below 0.6), an answer naming anything not on the
   roster, no model, triage off (`desk.triage`), no pals, or the day's 100 calls used up.
+  A card sent to a pal with no topic, whose title and task name none, also goes to triage when two
+  or more of that pal's topics are awake (`route: auto-pal`, a "sorting" receipt; only that pal's
+  topics are offered). If triage can't decide, the rules place it as before (the topic the pal
+  shows), never To route. Without crewd, the rules place it at once.
 - **MUSE, the idea partner** (optional: `pal hire --partner`, or the hire dialog's Idea partner):
   a Claude Code pal on Sonnet in `data/crew-partner` (its brief, `partner/AGENTS.md`, rendered with
   the owner's and head pal's names), topic `#ideas`. The owner riffs with it; it writes **drafts**

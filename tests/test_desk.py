@@ -485,6 +485,40 @@ class Triage(unittest.TestCase):
         got, what, prompt = triage(self.env, cid, "{}")
         self.assertEqual((what, prompt), ("triage is off", None))
 
+    def test_a_pal_tray_card_with_several_awake_topics(self):
+        cid = cid_of(pal(self.env, "desk", "send", "Helper", "Tidy the changelog", term="tW").stdout)
+        c = card(self.env, cid)
+        self.assertEqual((c["route"], c["status"], c["to"], c["tray"]), ("auto-pal", "queued", "Helper", "helper"))
+        self.assertEqual(c["last"]["status"], "sorting")
+        self.assertFalse((self.data / "crew-queue" / "tH").exists() or (self.data / "crew-queue" / "tD").exists())
+        self.assertEqual(py(self.env, "import crewdesk; print(json.dumps([c['id'] for c in crewdesk.pending_triage()]))"), [cid])
+        # crewd's minute retry leaves it to triage.
+        py(self.env, "import crewdesk, crewlib; crewdesk.redeliver(crewlib.herdr_spaces(), min_age=0); print(1)")
+        self.assertEqual(card(self.env, cid)["last"]["status"], "sorting")
+        # Only Helper's topics are offered, and the answer lands on that one.
+        got, what, prompt = triage(self.env, cid, '{"pal": "Helper", "topic": "docs", "confidence": 0.8, "why": "docs"}')
+        self.assertNotIn('pal "Worker"', prompt)
+        c = card(self.env, cid)
+        self.assertEqual((c["to"], c["route"], c["tray"]), ("Helper#docs", "triage", "helper"))
+        self.assertEqual(len(queue(self.data, "tD")), 1)
+
+    def test_an_unsure_pal_tray_triage_falls_back_to_the_rules(self):
+        cid = cid_of(pal(self.env, "desk", "send", "Helper", "Something vague", term="tW").stdout)
+        got, what, _ = triage(self.env, cid, '{"pal": "Worker", "topic": "general", "confidence": 0.9}')
+        c = card(self.env, cid)
+        self.assertEqual((c["to"], c["status"], c["route"]), ("Helper#build", "queued", "rules"), "never the other pal, never needs you")
+        self.assertIn("routing by the rules", [r["status"] for r in c["receipts"]])
+        self.assertEqual(len(queue(self.data, "tH")), 1)
+
+    def test_no_crewd_no_waiting_for_triage(self):
+        root, env, data = sandbox(crewd=False)
+        c = card(env, cid_of(pal(env, "desk", "send", "Helper", "Something", term="tW").stdout))
+        self.assertEqual((c["to"], c["status"]), ("Helper#build", "seen"))
+
+    def test_a_topic_named_in_the_title_needs_no_triage(self):
+        c = card(self.env, cid_of(pal(self.env, "desk", "send", "Helper", "Fix the #docs index", term="tW").stdout))
+        self.assertEqual((c["to"], c.get("route")), ("Helper#docs", None))
+
     def test_route_without_auto_is_left_for_the_owner(self):
         cid = cid_of(owner(self.env, self.data, "desk", "send", "route", "I'll place this").stdout)
         self.assertEqual(py(self.env, "import crewdesk; print(json.dumps([c['id'] for c in crewdesk.pending_triage()]))"), [])

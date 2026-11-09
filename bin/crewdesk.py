@@ -832,9 +832,11 @@ def sender(spaces):
     return {"from": name, "from_kind": "shell", "proof": "none", "me": None, "name": name}
 
 
-def route(card, spaces):
-    """A pal-tray card ('Pal', no topic) → a topic, by the rules (§9.2; no model): a topic named in
-    the title (#desk), else the topic on its task, else the topic the pal shows. (space, tab, why)."""
+def route(card, spaces, rules_only=False):
+    """A pal-tray card ('Pal', no topic) → a topic (§9.2): a topic named in the title (#desk), else
+    the topic on its task; then, when two or more of its topics are awake, (space, None, why) so
+    triage picks one in the background (not with rules_only); else the topic the pal shows, or its
+    first awake one. (space, tab, why)."""
     from crewlib import find, chan
     space, tab = find(pal_of(card["to"]), spaces)
     names = {chan(t).lower(): t for t in space["tabs"]}
@@ -853,13 +855,16 @@ def route(card, spaces):
     from crewlib import lead, hc_terminals, is_agent
     terms = hc_terminals()
     live = lambda t: is_agent(terms.get((lead(t) or {}).get("terminal")))
+    from crewlib import daemon_alive
+    if not rules_only and conf().get("triage") != "off" and daemon_alive() and sum(1 for t in space["tabs"] if live(t)) >= 2:
+        return space, None, "several of its topics are awake: triage picks one"
     if live(tab):
         return space, tab, "the topic it shows"
     other = next((t for t in space["tabs"] if live(t)), None)
     return (space, other, "its first topic that's awake") if other else (space, tab, "the topic it shows")
 
 
-def deliver(card, spaces, urgent=False, delegation=None):
+def deliver(card, spaces, urgent=False, delegation=None, rules_only=False):
     """Put a queued card on its way: To route and the owner's tray just wait; a pal's card is routed
     to a topic (when it names none) and queued for that topic's terminal, or held with why.
     Returns (card, terminal or None, what happened)."""
@@ -871,7 +876,10 @@ def deliver(card, spaces, urgent=False, delegation=None):
         if topic_of(card["to"]):
             space, tab = find(card["to"], spaces)
         else:
-            space, tab, why = route(card, spaces)
+            space, tab, why = route(card, spaces, rules_only)
+            if tab is None:   # crewd's triage lane picks the topic (pending_triage), then delivers
+                card = mark(card["id"], "sorting", "Project Pals", "rules", why, route="auto-pal")
+                return card, None, f"sorting it to one of {space['name']}'s topics"
             card = mark(card["id"], f"routed #{chan(tab)}", "Project Pals", "rules", why, to=f"{space['name']}#{chan(tab)}")
     except CrewError:
         from crewlib import norm
@@ -910,6 +918,7 @@ def redeliver(spaces, min_age=10):
             pass
     now = time.time()
     due = [c for p, c in cards() if not c.get("unreadable") and c.get("status") in ("queued", "held") and c["id"] not in waiting
+           and c.get("route") not in ("auto", "auto-pal")   # triage's lane has those
            and p.parent.parent.name not in (ROUTE, OWNER_TRAY) and now - parse_iso(c.get("updated")) >= min_age]
     if not due:
         return
@@ -1062,7 +1071,9 @@ def budget_take(what="triage", cap=None):
 
 
 def pending_triage():
-    return [c for _, c in cards([ROUTE]) if not c.get("unreadable") and c.get("route") == "auto" and c.get("status") == "queued"]
+    """Auto drops in To route, and pal-tray cards waiting for triage to pick one of that pal's topics."""
+    return [c for p, c in cards() if not c.get("unreadable") and c.get("status") == "queued"
+            and ((c.get("route") == "auto" and p.parent.parent.name == ROUTE) or c.get("route") == "auto-pal")]
 
 
 def unrouted(cid, why):
@@ -1074,17 +1085,27 @@ def triage(cid, spaces, runner):
     """Route one Auto card. `spaces`: Herdr's spaces (or a function returning them); `runner(prompt)`
     → a CompletedProcess (crewd's run_headless). Returns (card, what happened)."""
     card = read(need(cid))
-    if card.get("route") != "auto" or card.get("status") != "queued":
+    if card.get("route") not in ("auto", "auto-pal") or card.get("status") != "queued":
         return card, "not waiting for triage"
+    one_pal = card.get("route") == "auto-pal"
     c = conf()
-    if c.get("triage") == "off":
-        return unrouted(cid, "triage is off: pick a pal for it"), "triage is off"
     spaces = spaces() if callable(spaces) else spaces
+    fail = unrouted
+    if one_pal:
+        # Only that pal's topics; if triage can't decide, the rules place it as before (it never
+        # waits for the owner: the sender already chose the pal).
+        def fail(cid, why):
+            mark(cid, "routing by the rules", "Project Pals", "triage", why, route="rules")
+            return deliver(read(need(cid)), spaces, rules_only=True)[0]
+    if c.get("triage") == "off":
+        return fail(cid, "triage is off: pick a pal for it"), "triage is off"
     team = roster(spaces)
+    if one_pal:
+        team = [p for p in team if p["pal"].lower() == pal_of(card["to"]).lower()]
     if not team:
-        return unrouted(cid, "no pals yet: it waits here until you hire one"), "no pals"
+        return fail(cid, "no pals yet: it waits here until you hire one"), "no pals"
     if not budget_take("triage", int(c.get("triage_daily_cap") or 100)):
-        return unrouted(cid, f"today's {c.get('triage_daily_cap')} triage calls are used up"), "over the cap"
+        return fail(cid, f"today's {c.get('triage_daily_cap')} triage calls are used up"), "over the cap"
     prompt = triage_prompt(card, team)
     t0 = time.time()
     r = runner(prompt)
@@ -1095,9 +1116,12 @@ def triage(cid, spaces, runner):
                           "answer": {k: (decision or {}).get(k) for k in ("pal", "topic", "urgency", "size", "confidence")} if decision else None,
                           "refused": why_not})
     if not decision:
-        return unrouted(cid, why_not), why_not
+        return fail(cid, why_not), why_not
     to = f"{decision['pal']}#{decision['topic']}"
-    card = move(cid, to, "Project Pals", "triage", f"triage: {decision['why']} ({decision['confidence']:.1f})")
+    if one_pal:   # same desk, a topic now
+        card = mark(cid, "queued", "Project Pals", "triage", f"triage: {decision['why']} ({decision['confidence']:.1f})", to=to)
+    else:
+        card = move(cid, to, "Project Pals", "triage", f"triage: {decision['why']} ({decision['confidence']:.1f})")
     fields = {"route": "triage"}
     if decision.get("size"):
         fields["size"] = decision["size"]

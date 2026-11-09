@@ -959,8 +959,8 @@ partner is named **MUSE**. Stage 1 is built on `crew/desk` (commits 536439d, 2fe
 quick-drop and header button, is built on `crew/desk` too (2026-11-08); still to come from them: the
 Codex hook check, the styled `hc read` request, the seen-without-receipt check-in, Settings → Desk,
 and the Inbox's needs-you cards. Stage 2 was installed live as 052716e (2026-11-08). From stage 4,
-triage for Auto drops is built, with the sidebar `Desk N` and topic markers (pal-tray cards with several
-live topics still go by the rules), and MUSE: `pal hire --partner`, `partner/AGENTS.md`, `pal desk draft`,
+triage is built for Auto drops and for pal-tray cards with several live topics, with the sidebar
+`Desk N` and topic markers, and MUSE: `pal hire --partner`, `partner/AGENTS.md`, `pal desk draft`,
 `send-draft` / `discard` / Edit by click, and the draft toast. The head pal's check-in and its brief
 section come next, with #orca-home (Orca's home view); stages 5–6 are not started. The list is kept as it was asked:
 
