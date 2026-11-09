@@ -117,7 +117,9 @@ try {
     import { el } from "gpui-kit";
     export const v_flex = () => el("div"), h_flex = () => el("div");
     const state = (o = {}) => { let v = o.value ?? ""; return { placeholder: o.placeholder, on() {}, value: () => v, set_value(x) { v = x; }, focus() {}, set_auto_grow() {}, set_rows() {} }; };
-    export const InputState = { new: state }, TextareaState = { new: state }, EditorState = { new: state };
+    // Herdr refuses to make a text field while a view renders (seen live 2026-11-09, T49).
+    const area = (o) => { if (globalThis.__rendering) throw new Error("TextareaState.new(...) cannot run during render"); return state(o); };
+    export const InputState = { new: state }, TextareaState = { new: area }, EditorState = { new: state };
     export const Input = { new: () => el("div") }, Textarea = { new: (s) => el("textarea", s) }, Editor = { new: () => el("div") };
     export const TextView = { markdown: (id, md) => el("md", md) };
   `);
@@ -159,13 +161,21 @@ try {
   assert.equal(taskOf(long, [])[1], long, "a long first line keeps its whole text in the body");
 
   // Each pal has its own draft: switching pals never carries text over.
+  // A field is made only outside render (ensure); render (follow) only switches between them.
+  const rendering = (f) => { globalThis.__rendering = true; try { return f(); } finally { globalThis.__rendering = false; } };
   const dr = new TaskDraft("profile-test");
-  dr.follow({ id: "s1", name: "A" }, { name: "A" });
+  assert.equal(rendering(() => dr.follow({ id: "s1", name: "A" }, { name: "A" })), false, "no field for A yet");
+  assert.equal(dr.input, null);
+  assert.ok(dr.empty(), "no field: nothing to send");
+  assert.ok(dr.ensure({ id: "s1", name: "A" }, { name: "A" }));
+  assert.ok(!dr.ensure({ id: "s1", name: "A" }, { name: "A" }), "made once");
+  assert.ok(rendering(() => dr.follow({ id: "s1", name: "A" }, { name: "A" })));
   dr.input.set_value("for A");
-  dr.follow({ id: "s2", name: "B" }, { name: "B" });
+  dr.ensure({ id: "s2", name: "B" }, { name: "B" });
+  rendering(() => dr.follow({ id: "s2", name: "B" }, { name: "B" }));
   assert.equal(dr.input.value(), "", "B starts empty");
   assert.match(dr.input.placeholder, /Give B a task/);
-  dr.follow({ id: "s1", name: "A" }, { name: "A" });
+  rendering(() => dr.follow({ id: "s1", name: "A" }, { name: "A" }));
   assert.equal(dr.input.value(), "for A", "A's draft comes back");
   assert.equal(dr.spaceName, "A");
 
@@ -183,9 +193,17 @@ try {
   });
   const space = fixtures.spaces[0];
   const bot = crew.botOf(space);
+  // The first render of a pal draws the composer without a field (no TextareaState in render);
+  // once initStage's timer has made it, the field is there.
+  const fields = (p, out = []) => { const n = p.node; if (n.kind === "textarea") out.push(n.arg); n.kids.forEach((k) => k?.node && fields(k, out)); return out; };
+  const composer = (p) => fields(p).filter((a) => /a task…$/.test(a?.placeholder ?? "")).length;
+  const first = rendering(() => stagePart(view, space, bot, t, d));
+  assert.ok(composer(first) === 0 && text(first).includes(`Give ${PAL} a task…`), "first render: the placeholder, no field");
+  view.draft.ensure(space, bot);
+  assert.equal(composer(rendering(() => stagePart(view, space, bot, t, d))), 1, "then the field");
   for (const W of [900, 520, 1400]) {
     view.stageW = W;
-    const out = stagePart(view, space, bot, t, d);
+    const out = rendering(() => stagePart(view, space, bot, t, d));
     const words = text(out);
     for (const w of ["Working · 12m in #profiles", PAL, "Get Project Pals ready to announce", "Shipped", "In motion", "Needs you", "Hiccups",
       "TOPICS", "#profiles", "#review", "Review", "TASKS", "Next thing", "VAULT", "Mission", "Journal", "Brain", "MEMORY", "ABOUT", "Keeps the mod sleek"])
@@ -197,18 +215,18 @@ try {
     assert.ok(imgs.includes("mods/crew-roster/icons/stage-work.svg") && imgs.includes("mods/crew-roster/icons/stage-spot-work.svg"), `${W}px: the stage's light`);
   }
   // In motion 1 working channel; Needs you: the ask and the approval.
-  const cardsOut = text(stagePart(view, space, bot, t, d));
+  const cardsOut = text(rendering(() => stagePart(view, space, bot, t, d)));
   assert.ok(cardsOut.includes("1 topic") && cardsOut.includes("1 ask · 1 approval"), "the cards' real numbers");
   // At rest: no light.
   space.tabs[0].status = "idle"; space.status = "idle";
-  const rest = stagePart(view, space, bot, t, d);
+  const rest = rendering(() => stagePart(view, space, bot, t, d));
   const restImgs = []; const walk2 = (p) => { const n = p.node; if (n.kind === "image") restImgs.push(n.arg); n.kids.forEach((k) => k?.node && walk2(k)); }; walk2(rest);
   assert.ok(!restImgs.some((x) => /stage-/.test(x)), "no stage light at rest");
   space.tabs[0].status = "working";
 
   // Side: the compact hero and the 2×2 cards on top of the Profile tab.
   view.part = "main"; view.draft = new TaskDraft("profile-main"); view.sideW = 420;
-  const side = view.profileTab(space, bot, t, d, false);
+  const side = rendering(() => view.profileTab(space, bot, t, d, false));
   const sw = text(side);
   for (const w of ["Working · 12m in #profiles", "Shipped", "Hiccups", "FACTS", "role", "TOPICS", "MEMORY", "ROUTINES"]) assert.ok(sw.includes(w), `Side: "${w}"`);
   const cardW = find(side, "profile-main-card-").map((n) => n.args.w[0][0]);

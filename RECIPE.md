@@ -1023,9 +1023,10 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   `wakePal`): `--settings '{"promptSuggestionEnabled":false}'` on the pal's own command line, never
   in the stored argv or `~/.claude/settings.json`. `hc read` is plain text, so ghost text looked
   like an unsent draft and held messages for an hour (2026-11-08). An argv with its own `--settings`
-  is left alone; `"pal_prompt_suggestions": "keep"` in crew-settings.json turns this off. Whether
-  the flag outranks a user setting of `true` is unverified (Claude Code's docs put command-line
-  settings above user settings).
+  is left alone; `"pal_prompt_suggestions": "keep"` in crew-settings.json turns this off. The flag
+  outranks a setting of `true` (checked live 2026-11-09, Claude Code 2.1.321, T49): with `true` in
+  the folder's `.claude/settings.local.json`, which itself outranks `~/.claude/settings.json`,
+  3 of 3 turns left ghost text ("run it", "commit this") without the flag and 0 of 2 with it.
 
 - **What a session starts with** (`memory_text`, the SessionStart hook; DeNon 2026-11-08): the
   pinned note, the pal's MEMORY.md, USER.md, always whole; then its newest notes, newest first and
@@ -1049,8 +1050,20 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   `work` column, so it's the only visible view and sets the terminal's size; closing the dashboard
   gives the size back and Claude Code redraws. `{agent: "focused"}` shows the agent chosen with
   `agent.focus`, else the focused pane's, else the FIRST agent anywhere, so `dash-tbar` hides
-  `dash-term` while the shown topic has no agent. To verify live (2026-11-08, not yet seen): that
-  `agent.focus` doesn't move the view elsewhere, and that a hidden block doesn't keep the size.
+  `dash-term` while the shown topic has no agent. `agent.focus` DOES move the view: it selects
+  that agent's space and tab. The dashboard only ever focuses the shown topic's own agent
+  (`focusShownAgent`), so its view stays put; at most the keyboard moves from a split shell to the
+  agent's pane. After a plain `space.select` the block follows the new space's agent; an earlier
+  `agent.focus` doesn't stick. A hidden block doesn't keep the size: the agent's terminal was
+  130×36 in the work column, 49×35 with the dashboard open, 130×36 again once it closed (the
+  `profile` column hidden, `profile-dash` still "shown" inside it). With `dash-term` hidden and
+  `work` hidden, nothing shows the terminal and it keeps its last size until something does.
+  (Checked live 2026-11-09 in a sandbox window on its own core, T49.)
+- **The hero's composer field is made outside render** (`TaskDraft.ensure`, from `initStage`'s
+  200 ms timer; `follow` in render only switches between fields). Herdr refuses `TextareaState.new`
+  during render, and the dashboard's stage showed "This view could not be rendered" the first time
+  it showed a pal (found in T49's live check). For a moment a new pal's composer shows its
+  placeholder text without a field. `crew-composer` did the same.
 - **The profile panel's focus:** it takes the keyboard on every open (a 250 ms poll of
   `crew.panel.at`, not in render), so Esc closes it; a click in the terminal gives the keyboard back.
   Herdr shows and hides a layout block at once (no slide).
@@ -1157,6 +1170,11 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   shows a typing bubble, then the message.
 - A Claude Code topic blocked on a question shows "asks you" on its pet and row, and nothing
   floats over its terminal.
+- `pal peek <Pal#topic>` on a topic blocked on a permission prompt prints its screen, then
+  `── blocked on a permission prompt ──`, `asks: approve Bash: <command>` and every option, a
+  wrapped one whole ("2. Yes, and always allow access to <folder> from this project"), and leaves
+  the prompt up. On the folder-trust question it says only the owner answers it. (Checked live
+  2026-11-09 on Claude Code 2.1.321, T49; `tests/test_peek.py` holds those screens.)
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
   `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose.

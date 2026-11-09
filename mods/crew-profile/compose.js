@@ -48,25 +48,34 @@ export class TaskDraft {
     this.onSent = onSent;
   }
 
-  // Call each render with the shown pal: switches to that pal's own draft.
+  // Call each render with the shown pal: switches to that pal's own draft. Render may only switch:
+  // Herdr refuses TextareaState.new during render ("This view could not be rendered", seen live
+  // 2026-11-09, T49), so a pal without a draft yet shows no field (input null) until ensure() runs.
   follow(space, bot) {
-    if (!space) return;
+    if (!space) return false;
     this.name = bot?.name ?? space.name;
-    if (space.id === this.space && this.input) return;
+    if (space.id === this.space && this.input) return true;
     if (this.space && this.input) this.drafts[this.space] = { input: this.input, files: this.files };
-    let dr = this.drafts[space.id];
-    if (!dr) {
-      const input = TextareaState.new({ placeholder: `Give ${this.name} a task…`, rows: 1 });
-      input.set_auto_grow(1, 6);
-      input.on("change", (_e, cx) => cx.notify());
-      input.on("submit", (e, cx) => { if (!e?.shift) this.add(cx); });
-      input.on("paste_other", (_e, cx) => this.pasteImage(cx));
-      dr = this.drafts[space.id] = { input, files: [] };
-    }
+    const dr = this.drafts[space.id];
     this.space = space.id;
     this.spaceName = space.name;
-    this.input = dr.input;
-    this.files = dr.files;
+    this.input = dr?.input ?? null;
+    this.files = dr?.files ?? [];
+    return Boolean(dr);
+  }
+
+  // Make the pal's draft field. Never from render: from init, a timer or an event (initStage).
+  // True when it made one (the caller then redraws).
+  ensure(space, bot) {
+    if (!space || this.drafts[space.id]) return false;
+    const input = TextareaState.new({ placeholder: `Give ${bot?.name ?? space.name} a task…`, rows: 1 });
+    input.set_auto_grow(1, 6);
+    input.on("change", (_e, cx) => cx.notify());
+    input.on("submit", (e, cx) => { if (!e?.shift) this.add(cx); });
+    input.on("paste_other", (_e, cx) => this.pasteImage(cx));
+    // Images dropped on the hero in the moment before the field existed stay with it.
+    this.drafts[space.id] = { input, files: this.space === space.id ? this.files : [] };
+    return true;
   }
 
   empty() { return !this.input || (!this.input.value().trim() && !this.files.length); }
@@ -151,7 +160,9 @@ export class TaskDraft {
           .hover((s) => s.bg(d.hover)).tooltip("Attach an image (or paste one, or drop it on the stage)")
           .on_click(() => openOverlay({ mod: "crew-attach", kind: "popup", width: 340, props: { for: this.key } }))
           .child(svg(`${ICON}/paperclip.svg`).size(13).text_color(d.fg2)))
-        .child(div().flex_1().min_w(0).pt(1).child(Textarea.new(this.input).w_full().px(2).py(4).text_size(13).line_height("20px").text_color(d.fg1)))
+        .child(div().flex_1().min_w(0).pt(1).child(this.input
+          ? Textarea.new(this.input).w_full().px(2).py(4).text_size(13).line_height("20px").text_color(d.fg1)
+          : div().px(2).py(4).text_size(13).line_height("20px").text_color(d.fg3).child(`Give ${this.name || "this pal"} a task…`)))
         .child(div().mt(1).child(pebble(d, { id: `${id}-send`, icon: "ds-send", label: this.busy ? "Adding…" : "Add task", primary: true, disabled: !ready,
           tooltip: "Enter adds · Shift+Enter new line", onClick: (cx) => this.add(cx) }))))
       .when(this.files.length > 0, (el) => el.child(h_flex().flex_wrap().gap(6).px(10).pb(8)
