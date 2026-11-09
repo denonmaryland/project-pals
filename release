@@ -18,10 +18,12 @@ if [[ "${1:-}" == "-F" ]]; then notes="$(cat "$2")"; else notes="${1:-}"; fi
 
 repo="$(python3 -c 'import json; print(json.load(open("pals.json"))["repo"])')"
 current="$(cat VERSION)"
-python3 - "$current" "$version" <<'PY' || { echo "$version isn't newer than $current" >&2; exit 2; }
+# Newer than VERSION, or VERSION already says it (set ahead of the release, so a local install
+# reports what it'll ship as) and it isn't tagged yet.
+python3 - "$current" "$version" "$(git tag -l "v$version")" <<'PY' || { echo "$version isn't newer than $current (or v$version is already tagged)" >&2; exit 2; }
 import sys
 t = lambda v: tuple(int(x) for x in v.split("."))
-sys.exit(0 if t(sys.argv[2]) > t(sys.argv[1]) else 1)
+sys.exit(0 if t(sys.argv[2]) > t(sys.argv[1]) or (sys.argv[2] == sys.argv[1] and not sys.argv[3]) else 1)
 PY
 [[ "$(git branch --show-current)" == "main" ]] || { echo "release from main" >&2; exit 2; }
 [[ -z "$(git status --porcelain)" ]] || { echo "commit or stash your changes first" >&2; exit 2; }
@@ -54,7 +56,7 @@ find . -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 
 printf '%s\n' "$version" > VERSION
 git add VERSION
-git commit -qm "Release v$version"
+git commit -q --allow-empty -m "Release v$version"   # empty when VERSION already said it; undo() relies on a commit
 git tag -a "v$version" -m "Project Pals $version"
 # If publishing fails from here, take the local commit and tag back so a rerun works.
 undo() { echo "release failed; undoing the local commit and tag" >&2; git tag -d "v$version" >/dev/null 2>&1; git reset -q --hard HEAD~1; }

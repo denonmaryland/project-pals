@@ -266,7 +266,7 @@ class RollBack(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         h = json.loads(st.read_text())["hooks"]
         self.assertEqual(h["PostToolUse"], [{"hooks": [{"type": "command", "command": "my-own-hook"}]}])
-        self.assertEqual(h["Stop"], [])
+        self.assertNotIn("Stop", h)   # emptied: dropped, not left as "Stop": [] (B3)
         self.assertEqual(h["PreToolUse"][0]["matcher"], "Bash")
         self.assertEqual(len(h["SessionStart"]), 1)
         self.assertEqual(json.loads(agy.read_text()), {"mine": {"x": 1}})

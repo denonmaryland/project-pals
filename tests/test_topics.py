@@ -1,4 +1,4 @@
-"""Channels became topics in 0.3.1 (DeNon): `pal topic` and `--topic` are the new names, and
+"""Channels became topics in 0.4.0 (DeNon): `pal topic` and `--topic` are the new names, and
 `pal channel` / `--channel` keep working so older scripts and pals don't break.
 Run: python3 -m unittest discover -s tests   (uses a throwaway CREW_DATA; touches nothing real)."""
 import importlib.machinery

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (not released yet): the Desk
+## 0.4.0: the Desk
 
 ### New
 - **Home: one page to come back to.** Click your head pal (or press Ctrl+Shift+H): one list of
@@ -71,7 +71,7 @@ labelled as you without your click.
 Thanks to **goodboimax** for native Antigravity CLI support and the hook delivery this builds on
 (PR #1, #2 and #3), landed here with his commits as he wrote them.
 
-## 0.3.1 (not released yet)
+## Also in 0.4.0 (once planned as 0.3.1)
 
 - **New topics on a sleeping pal start its brain.** `pal topic` on a pal with no agent running
   used to open a plain shell and drop the brief when the pal's brain wasn't on record. Now pals

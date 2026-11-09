@@ -114,7 +114,7 @@ MANAGED_KEYS = ("ctrl-shift-i", "ctrl-shift-space", "ctrl-shift-m")
 OUR_ACTIONS = ("crew-roster.", "crew-header.")
 CONFIG_MEMBER = ".crew-config-snapshot.json"
 # The Claude Code hook events Project Pals adds entries to. PostToolUse and Stop came with the hook
-# delivery (0.4, PR #2). A snapshot that doesn't list an event (one taken by an older updater) means
+# delivery (0.4.0, PR #2). A snapshot that doesn't list an event (one taken by an older updater) means
 # Project Pals had no entry there then, as with MANAGED_KEYS, so Roll back takes its entry out.
 MANAGED_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "Stop")
 # Antigravity CLI's hooks file: Project Pals's entries live under its own "project-pals" key.
@@ -177,6 +177,7 @@ def restore_config(snap, log=print):
     st = load_json(sp, None)
     if isinstance(st, dict):
         before = json.dumps(st, sort_keys=True)
+        had_hooks = "hooks" in st
         hooks = st.setdefault("hooks", {})
         # Every event Project Pals manages, not only the snapshot's: an older snapshot doesn't list
         # PostToolUse / Stop, and absent there means Project Pals had no entry then.
@@ -189,12 +190,16 @@ def restore_config(snap, log=print):
                 # Not there before this install: take Project Pals' entries out again.
                 if ours:
                     hooks[ev] = [e for e in entries if e not in ours]
+                    if not hooks[ev]:
+                        hooks.pop(ev)   # no empty "Stop": [] left behind (B3)
                     changed.append(f"settings.json {ev}: removed Project Pals' hook")
             else:
                 for e, m in zip(ours, was):
                     if e.get("matcher") != m:
                         changed.append(f"settings.json {ev} matcher: {e.get('matcher')!r} -> {m!r}")
                         e["matcher"] = m
+        if not hooks and (not had_hooks or json.dumps(st, sort_keys=True) != before):
+            st.pop("hooks")   # nor an empty "hooks": {} that Roll back itself emptied or made
         sl = st.get("statusLine")
         if not snap.get("statusline_wrapped") and sl and "crew-statusline" in str(sl.get("command", "")):
             orig = (DATA / "crew-statusline-original")
@@ -295,6 +300,21 @@ def rollback(path=None, log=print):
         # The Claude Code mod too: a version without it takes it away (its pals stop loading it).
         if not any(m.name == ".claude/project-pals" or m.name.startswith(".claude/project-pals/") for m in members):
             shutil.rmtree(home / ".claude" / "project-pals", ignore_errors=True)
+        # Library files the newer version added (crewdesk.py …) go too (B3). Not through a symlink:
+        # a development install links the folder to a checkout.
+        lib, lib_name = home / ".local" / "lib" / "herdr-crew", ".local/lib/herdr-crew"
+        listed = {m.name for m in members}
+        if lib_name in listed and lib.is_dir() and not lib.is_symlink():
+            for f in sorted(lib.rglob("*"), reverse=True):
+                if f"{lib_name}/{f.relative_to(lib).as_posix()}" in listed:
+                    continue
+                if f.is_dir() and not f.is_symlink():
+                    try:
+                        f.rmdir()   # only once empty
+                    except OSError:
+                        pass
+                else:
+                    f.unlink()
         ours = [m for m in members if m.name == APP or m.name.startswith(APP + "/")]
         rest = [m for m in members if m not in ours]
         for m in ours:

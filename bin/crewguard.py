@@ -82,6 +82,7 @@ def policy():
 
 # A heredoc: keep its header line (`cat <<'EOF' > AGENTS.md` writes AGENTS.md), drop its body.
 HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n.*?\n\s*\2\s*(?=\n|$)", re.S)
+HEREDOC_BODY = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n(.*?)\n\s*\2\s*(?=\n|$)", re.S)   # HEREDOC, body kept
 heredoc_free = lambda cmd: HEREDOC.sub(lambda m: m.group(1) + m.group(3), cmd)
 SPLIT = re.compile(r"\n|;|&&|\|\||\||\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
 INNER = re.compile(r"""\b(?:sh|bash|zsh|eval)\s+(?:-\w+\s+)*-c\s+(['"])(.*?)\1""", re.S)
@@ -377,6 +378,10 @@ def _statements(code):
                 cur.append(code[i + 1]); i += 2; continue
             if c == quote or (c == "\n" and quote in "'\""):
                 quote = None
+        elif code.startswith(('"""', "'''"), i):   # Python's triple quotes run across lines (a-27dc50)
+            j = code.find(code[i:i + 3], i + 3)
+            j = len(code) if j < 0 else j + 3
+            cur.append(code[i:j]); i = j; continue
         elif c in "'\"`":
             quote = c; cur.append(c)
         elif c == "#" and (not cur or cur[-1] in " \t\n") and depth == 0:
@@ -394,6 +399,46 @@ def _statements(code):
         i += 1
     out.append("".join(cur))
     return [x.strip() for x in out if x.strip()]
+
+
+def _string_spans(text):
+    """Where the string literals in one statement are, as (start, end): quotes, backticks, Python's
+    triple quotes."""
+    spans, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2; continue
+        if text.startswith(('"""', "'''"), i):
+            j = text.find(text[i:i + 3], i + 3)
+            j = n if j < 0 else j + 3
+        elif c in "'\"`":
+            j = i + 1
+            while j < n and text[j] != c and not (c != "`" and text[j] == "\n"):
+                j += 2 if text[j] == "\\" else 1
+            j = min(j + 1, n)
+        else:
+            i += 1; continue
+        spans.append((i + (2 if j - i >= 6 and text[i] == text[i + 1] == text[i + 2] else 0), j)); i = j   # from its last opening quote
+    return spans
+
+
+def _in_string(spans, pos):
+    """Is pos inside a string literal, past its opening quote? A command quoted inside a string (a test
+    case "python3 -c \"open('AGENTS.md','w')…\"", a-2bb994) or Markdown quoting `vim -c 'w AGENTS.md'`
+    (a-27dc50) is text, not a path or a call."""
+    return any(s < pos < e for s, e in spans)
+
+
+def _write_call(text, spans=()):
+    return any(not _in_string(spans, m.start()) for m in WRITE_CALL.finditer(text))
+
+
+# Code that runs commands: there a string can itself be code (subprocess.run(["python3", "-c", "…"])),
+# so text inside strings still counts.
+RUNS_COMMANDS = re.compile(r"""\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bchild_process\b|\bexec(?:Sync|File\w*)?\s*\("""
+                           r"""|\bspawn(?:Sync)?\s*\(|\bDeno\.(?:run|Command)\b|\bBun\.spawn|\bsystem\s*\(|\bIO\.popen|\bOpen3\b|\bqx\b"""
+                           r"""|\b(?:shell_exec|passthru|proc_open|popen)\s*\(|\beval\s*\(""")
 
 
 # Around a mention of an agent file (or a name holding one), what makes it harmless: compared, tested
@@ -416,24 +461,32 @@ def _active(stmt, start, end):
     return not (_INERT_BEFORE.search(before) or _INERT_AFTER.match(after))
 
 
-def code_writes_agent_file(code):
+def code_writes_agent_file(code, quoted_text=False):
     """Does this code write an AGENTS.md / CLAUDE.md? Only when a write call's target is one: the
     quoted path itself in that statement, or a name that holds it (assigned from it, or looping
     over it). A use the parse can't follow (handed to a function, say) still holds when the code
-    writes anything at all, as the rule did before T25."""
+    writes anything at all, as the rule did before T25.
+    quoted_text: this is the code itself (a script file, a heredoc fed to the interpreter), not a
+    shell line around it, so what's quoted inside a string literal is text. Not when the code runs
+    commands: a string can be code there."""
     stmts = _statements(code)
+    spans = {st: (_string_spans(st) if quoted_text else ()) for st in stmts}
+    aware = quoted_text and not any(not _in_string(spans[st], m.start()) for st in stmts for m in RUNS_COMMANDS.finditer(st))
+    if not aware:
+        spans = {st: () for st in stmts}
     tainted, unknown = set(), False
     for _ in range(3):   # names that carry the path, to a fixed point (a = "AGENTS.md"; b = a)
         grew = False
         for st in stmts:
             hits = [m.span() for m in AGENT_PATH.finditer(st)]
             hits += [m.span() for n in tainted for m in re.finditer(r"(?<![\w$@%])" + re.escape(n) + r"\b", st)]
+            hits = [h for h in hits if not _in_string(spans[st], h[0])]
             # In `for f in FILES`, what follows `in` is what f takes, not a membership test.
             loop = _FOR.match(st)
             live = [h for h in hits if _active(st, *h) or (loop and h[0] >= loop.end())]
             if not live:
                 continue
-            if WRITE_CALL.search(st):
+            if _write_call(st, spans[st]):
                 return True
             m = _ASSIGN.match(st) or _FOR.match(st)
             if m:
@@ -444,7 +497,7 @@ def code_writes_agent_file(code):
             unknown = True
         if not grew:
             break
-    return unknown and bool(WRITE_CALL.search(code))
+    return unknown and (any(_write_call(st, spans[st]) for st in stmts) if aware else bool(WRITE_CALL.search(code)))
 
 
 # Project Pals' own commands, as they sit in bin/ next to this file (pal is crew, pal-room crew-room).
@@ -461,8 +514,22 @@ def writes_agent_file_via_interpreter(cmd):
             segs.append(words)
     if not segs:
         return False
-    # Code in the line itself: -c / -e, a heredoc fed to it, or a script written and run in one go.
-    if AGENT_PATH.search(cmd) and WRITE_CALL.search(cmd) and code_writes_agent_file(cmd):
+    # A heredoc fed to the interpreter is its code, so it's judged as code (a-2bb994, a-27dc50).
+    bodies = []
+
+    def fed(m):
+        line = commands(cmd[cmd.rfind("\n", 0, m.start()) + 1:m.start()])
+        words = normal_words(RUNNER.sub("", line[-1])) if line else []
+        if not (words and INTERP.match(words[0])):
+            return m.group(0)
+        bodies.append(m.group(4))
+        return m.group(1) + m.group(3)
+    rest = HEREDOC_BODY.sub(fed, cmd)
+    for body in bodies:
+        if AGENT_PATH.search(body) and WRITE_CALL.search(body) and code_writes_agent_file(body, quoted_text=True):
+            return True
+    # The rest of the line: -c / -e code, or a script written and run in one go (shell quoting around it).
+    if AGENT_PATH.search(rest) and WRITE_CALL.search(rest) and code_writes_agent_file(rest):
         return True
     for words in segs:
         args = words[1:]
@@ -481,7 +548,7 @@ def writes_agent_file_via_interpreter(cmd):
                 text = f.read(400000)
         except OSError:
             continue
-        if AGENT_PATH.search(text) and WRITE_CALL.search(text) and code_writes_agent_file(text):
+        if AGENT_PATH.search(text) and WRITE_CALL.search(text) and code_writes_agent_file(text, quoted_text=True):
             return True   # the script itself writes one
     return False
 

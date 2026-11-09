@@ -15,7 +15,7 @@ home.json:
               (paths under data/crew-attachments), "command" (login), "url" (link),
               "topic": "Pal#topic" (its button opens it), "by": stamped by pal home, "at": ms,
               "answer", "answered_at", "result", "closed_at", "parked_at"}],
-   "release": {"next": "0.3.1", "note": "held for your OK", "queued": [{"id": "r-6hex", "text", "at", "by"}]},
+   "release": {"next": "0.4.1", "note": "held for your OK", "queued": [{"id": "r-6hex", "text", "at", "by"}]},
    "recs": {"a-… | c-… | h-…": {"option", "why", "by", "at"}}}   a recommendation for an approval, a
                                     Desk card or an ask, from whoever asked (Home's review shows it)
 

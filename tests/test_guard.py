@@ -11,6 +11,13 @@ TMP = tempfile.mkdtemp(prefix="pals-test-")
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)
+# A fake hc first on PATH (N1): deciding an approval types a note into the pal's terminal, and that
+# must never reach a live Herdr session, nor fail where there's no hc. It logs what it was asked.
+SHIMS = Path(TMP) / "shims"
+SHIMS.mkdir()
+(SHIMS / "hc").write_text(f'#!/bin/sh\necho "$@" >> "{TMP}/hc.log"\nexit 0\n')
+(SHIMS / "hc").chmod(0o755)
+os.environ["PATH"] = f"{SHIMS}:{os.environ.get('PATH', '/usr/bin:/bin')}"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
 
 import crewguard  # noqa: E402
@@ -181,6 +188,39 @@ class InterpreterWrites(unittest.TestCase):
         for cmd in self.ALLOWED:
             self.assertIsNone(rule(cmd), cmd)
 
+    # Quoted text inside the code isn't code: N4 (a-2bb994, a probe whose test cases quote writes),
+    # a-27dc50 (Markdown in triple quotes quoting `vim -c 'w AGENTS.md'`) and a-247eb6 (an edit script
+    # whose replacement strings quote this file's own code). Each one, as it was run.
+    QUOTED_TEXT = [
+        "cd next/bin; env -i HOME=/tmp/h PATH=/usr/bin:/bin python3 - <<'PY'\nimport crewguard as g\n"
+        "cases = [\"cat <<'EOF' > AGENTS.md\\nnew rules\\nEOF\", 'printf x > \"My Project/AGENTS.md\"', "
+        "\"python3 -c \\\"open('AGENTS.md','w').write('x')\\\"\", \"cat AGENTS.md\", \"vim -c wq AGENTS.md\"]\n"
+        "for c in cases:\n    m = g.matches(c)\n    print(repr(c)[:60].ljust(62), (m or {}).get(\"name\") if isinstance(m, dict) else m)\nPY",
+        "python3 - <<'PY'\nfrom pathlib import Path\np = Path(\"RECIPE.md\"); s = p.read_text()\nreps = [\n"
+        "(\"\"\"  version 7. Anything cleverer (a script, python) isn't caught.\"\"\",\n"
+        "\"\"\"  version 7. Terminal editors too: every file their own commands name (`vim -c 'w AGENTS.md'`, `+cmd`,\n"
+        "  sed's `w`). Interpreters have their own rule; anything cleverer isn't caught.\"\"\"),\n]\n"
+        "for a, b in reps:\n    assert a in s, a[:40]; s = s.replace(a, b)\np.write_text(s)\nPY\ngit diff --stat",
+        "python3 - <<'PY'\nfrom pathlib import Path\np = Path(\"bin/crewguard.py\"); s = p.read_text()\n"
+        "s = s.replace('''HELD = [''', '''HELD = [\n    \"\"\"python3 -c \"open('AGENTS.md','w').write('x')\" \"\"\",\n"
+        "    \"subprocess.run(['python3', '-c', \\\"open('CLAUDE.md','w')\\\"])\",''')\np.write_text(s)\nPY",
+    ]
+    STILL_HELD = [
+        # a string that is code: the script runs it
+        "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['python3', '-c', \"open('AGENTS.md','w').write('x')\"])\nPY",
+        # a triple-quoted text written to the agent file itself
+        "python3 - <<'PY'\nfrom pathlib import Path\nPath('AGENTS.md').write_text('''# Rules\n- don't 'w AGENTS.md'\n''')\nPY",
+        "python3 - <<'PY'\np = \"\"\"CLAUDE.md\"\"\"\nopen(p, 'w').write('x')\nPY",
+        # a script written and run in one go: the shell line around the code, judged as before
+        "cat > /tmp/fix.py <<'EOF'\nopen('AGENTS.md','w').write('x')\nEOF\npython3 /tmp/fix.py",
+    ]
+
+    def test_quoted_text_is_not_code(self):
+        for cmd in self.QUOTED_TEXT:
+            self.assertIsNone(rule(cmd), cmd)
+        for cmd in self.STILL_HELD:
+            self.assertEqual(rule(cmd), "agents-file-interpreter", cmd)
+
     def test_a_script_file_that_writes_one(self):
         d = Path(tempfile.mkdtemp(prefix="pals-guard-"))
         (d / "fix.py").write_text("from pathlib import Path\nPath('AGENTS.md').write_text('new rules')\n")
@@ -213,6 +253,7 @@ class EditApprovals(unittest.TestCase):
         self.assertEqual(rule(cmd), "agents-file")
         self.assertIn("+- safe", extra["diff"])
         self.approve(cmd, extra)
+        self.assertIn("send t1 [pal]", (Path(TMP) / "hc.log").read_text())   # the note went to the fake hc
         other, _ = self.hook.edit_request("Write", {"file_path": str(self.path), "content": "# Rules\n- something else\n"}, str(self.path))
         self.assertNotEqual(cmd, other)
         self.assertIsNotNone(crewguard.check("t1", "Pal", "ch", other, {}))   # held: not covered by the approval

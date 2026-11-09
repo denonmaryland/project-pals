@@ -38,7 +38,7 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
                                      a Desk card (done|open) or an ask (one of its options)
   pal home login "! npx vercel login" --topic P#t [--title …]       a login the owner runs in that topic
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
-  pal home queue ["what"] [--release 0.3.1] [--note "…"] | unqueue ID   the next release and what's in it
+  pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
   (the owner, from Project Pals: answer ID "option", seen)
 
@@ -47,7 +47,7 @@ Hiring
   pal hire --partner [Name]         the idea partner (MUSE by default): you riff, it drafts cards you Send
   pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
                                      a new topic (a tab); --worktree gives it its own git branch and folder.
-                                     pal channel is the same command (topics were called channels before 0.3.1)
+                                     pal channel is the same command (topics were called channels before 0.4.0)
 
 Work
   pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
@@ -105,7 +105,7 @@ Approvals (the owner)
 
 "Pal" matches a pal's name or the start of it ("docs" finds "Docs Site"); without
 #topic you get the one it's showing (Pal#topic: a pal's tabs are its topics; --channel and
-pal channel still work, as before 0.3.1). hire, topic and invite are carried out by the Project Pals layout,
+pal channel still work, as before 0.4.0). hire, topic and invite are carried out by the Project Pals layout,
 so Herdr has to be open on it. crewd (herdr-crew.service) delivers messages between turns, runs
 routines and reports back; without it, messages are typed in right away.
 """
@@ -137,7 +137,7 @@ def opts(rest, flags, bools=()):
     pos, out, i = [], {}, 0
     while i < len(rest):
         a = rest[i]
-        if a == "--topic" and "channel" in flags:   # --topic is --channel's new name (0.3.1); both work
+        if a == "--topic" and "channel" in flags:   # --topic is --channel's new name (0.4.0); both work
             a = "--channel"
         if a.startswith("--") and a[2:] in bools:
             out[a[2:]] = True; i += 1
@@ -2088,7 +2088,7 @@ def main(argv):
         print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
-    elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.3.1
+    elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.4.0
         pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
         extra = {}
         if o.pop("worktree", False):

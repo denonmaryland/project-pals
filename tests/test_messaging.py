@@ -254,6 +254,8 @@ class Callbacks(unittest.TestCase):
 
 class Installer(unittest.TestCase):
     def test_new_events_once(self):
+        # A fake ~/.gemini, so the Antigravity hooks go in whether or not this machine has agy (N1).
+        (T / "home/.gemini").mkdir(parents=True, exist_ok=True)
         for _ in range(2):
             subprocess.run([sys.executable, str(REPO / "install-hooks.py"), str(T / "bk")], env=ENV, check=True, capture_output=True)
         claude = json.loads((T / "home/.claude/settings.json").read_text())["hooks"]
