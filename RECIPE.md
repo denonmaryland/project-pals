@@ -134,7 +134,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   everywhere a pal's face shows: the Focus hero (no box at all, the sidebar's full width), the
   sidebar list (bare, no box or line: 75x59 in 68px rows over a soft radial aura that fades to
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
-  under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
+  under it instead of the edge loader; two lines, "status first": the name (600), then the
   state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
   Merged purple, Closing red, Stuck amber, Asleep #808082; **working wins**: Working while any
   topic works, even when Herdr calls the pal done; Needs you beats both, and Done shows only when
@@ -146,7 +146,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     #topic, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
     state is a dot on the pet), 3 Name wraps (30px: the name may take two lines), 4 Rich detail
     (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N topics" or
-    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks, time),
+    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks),
     6 Progress (28px: a 3px bar of the pal's tasks, done today of done + open), 7 Folder first
     (30px: the folder relative to ~/Projects as the mono headline, the name small above, state ·
     branch), 8 Grouped (24px tight rows under the group headers), 9 Mini card (34px: a bordered
@@ -162,16 +162,14 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     then working, then done, latest first, at most four and an 18px "+N more". Each topic row is
     22px, starting at the look's text column (`palstyles.js textLeft`): the mark (the chosen
     working indicator, an amber dot when it asks you, a check when done) in a 16px slot, "#topic"
-    in 11.5px mono (#EDEDED for the shown one) and when it changed; a click opens that topic,
+    in 11.5px mono (#EDEDED for the shown one); a click opens that topic,
     right-click is its menu. Only those rows are added: nothing else moves. Resting, asleep and
     hidden pals never unfold.
     While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
     (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
-    **Times** on pal rows (every look) and Trees rows are small and quiet (DeNon, 2026-11-08):
-    10.5px #6A6A6C in mono (even-width figures; Herdr has no tabular-figures switch),
-    right-aligned in a fixed 38px slot so names never shift, on the name's line at its line height
-    (`crew.js rowTime`).
+    **No times** on pal rows (any look) or Trees rows (DeNon, 2026-11-08): the name and the state
+    line have the width; the state line keeps "Working · 4m". The hero's topic list keeps its times.
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list

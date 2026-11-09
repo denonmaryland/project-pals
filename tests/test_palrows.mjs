@@ -165,18 +165,14 @@ try {
       else if (names) assert.ok(rowText.includes("· #command-bar"), `${st.id} trees off: the row names its topic (${rowText})`);
       if (names) assert.ok(text(rows[1]).includes("· #general"), `${st.id}: a resting pal keeps its #topic`);
     }
-    // Times (DeNon, 2026-11-08): 10.5 px, #6A6A6C, even-width mono, right-aligned in a fixed 38 px
-    // slot, on the pal row (every look with a time) and on each Trees row.
+    // No last-activity times on pal rows or Trees rows (DeNon, 2026-11-08): nothing clock-like
+    // ("21:48", "Fri", "Nov 2") is drawn; "Working · 4m" in the state line stays.
     {
       const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
-      const stamps = all(rows[0]).filter((n) => n.args.text_right && n.args.w?.[0] === 38);
-      const want = (st.id === "card" ? 0 : 1) + (trees ? 3 : 0);
-      assert.equal(stamps.length, want, `${st.id} trees ${trees}: ${want} fixed time slots`);
-      for (const n of stamps) {
-        assert.ok(n.args.text_size[0] === 10.5 && n.args.text_color[0] === "#6A6A6C" && n.args.font_family[0] === d.mono && n.calls.includes("flex_none"), `${st.id}: a quiet time`);
-        assert.ok(typeof n.kids[0] === "string" && n.kids[0].length > 0, `${st.id}: the time shows`);
-      }
-      assert.ok(!all(rows[0]).some((n) => n.args.text_size?.[0] === 11 && n.kids.includes(f1.time)), `${st.id}: no 11 px time left`);
+      const strs = all(rows[0]).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
+      const clock = strs.filter((x) => /^\d{1,2}:\d{2}$|^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$|^[A-Z][a-z]{2} \d{1,2}$/.test(x.trim()));
+      assert.deepEqual(clock, [], `${st.id} trees ${trees}: no times (${clock})`);
+      assert.ok(!all(rows[0]).some((n) => n.args.text_right && n.args.w?.[0] === 38), `${st.id}: no time slot`);
     }
     // Resting and closed pals never unfold.
     for (const r of rows.slice(1)) assert.equal(ids(r).filter((n) => n.args.id?.[0]?.includes("-tp-")).length, 0, `${st.id}: no trees for a resting pal`);
@@ -269,6 +265,7 @@ try {
     assert.equal(crew.palLeadTab(mixed).id, "w1", "the lead topic is the working one");
     const [w, c] = crew.palStateWord(mixed, bot, d);
     assert.ok(w.startsWith("Working") && c === d.info, `working wins over done: ${w}`);
+    assert.equal(w, "Working · 5m", "the state line keeps how long it's been working");
     assert.equal(crew.palStatus(sp("working", [["b1", "blocked", 1], ["w1", "working", 1]])), "blocked", "asks you beats working");
     assert.equal(crew.palStatus(sp("done", [["d1", "done", 1], ["i1", "idle", 1]])), "done", "done when nothing runs");
     assert.equal(crew.palStatus(sp("idle", [])), "idle");
