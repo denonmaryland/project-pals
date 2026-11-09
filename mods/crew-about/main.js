@@ -33,8 +33,8 @@ export default class CrewAbout extends View {
     this.head.on("submit", (_e, cx) => this.saveHead(cx));
     this.head.on("blur", (_e, cx) => { this.headFocused = false; this.saveHead(cx); });
     this.head.on("focus", () => { this.headFocused = true; });
-    // Where everything pushed to the head pal goes (T60): one of its topics, e.g. ops; empty: its first topic.
-    this.inbox = InputState.new({ placeholder: "first topic", value: shared("crew.settings")?.head_topic ?? "" });
+    // Where everything pushed to the head pal goes (T60): one of its topics, e.g. ops; empty: as before, the topic it shows, else its first tab.
+    this.inbox = InputState.new({ placeholder: "the topic it shows", value: shared("crew.settings")?.head_topic ?? "" });
     this.inbox.on("submit", (_e, cx) => this.saveInbox(cx));
     this.inbox.on("blur", (_e, cx) => { this.inboxFocused = false; this.saveInbox(cx); });
     this.inbox.on("focus", () => { this.inboxFocused = true; });
@@ -107,7 +107,7 @@ export default class CrewAbout extends View {
       try {
         await ownerCli(["settings", "head-topic", topic || "none"]);
         this.savedInbox = topic;
-        notify({ title: topic ? `The head pal's pushes now go to #${topic}` : "The head pal's pushes go to its first topic", level: "success", timeout: 3500 });
+        notify({ title: topic ? `The head pal's pushes now go to #${topic}` : "The head pal's pushes go to the topic it shows again", level: "success", timeout: 3500 });
       } catch (e) { notify({ title: "Couldn't set the head pal's inbox topic", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.savingInbox = false;
     });

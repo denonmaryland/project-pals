@@ -75,7 +75,7 @@ class HeadInbox(unittest.TestCase):
         self.assertIn("#ops", set_topic(env, data, "#ops").stdout)
         self.assertEqual(json.loads((data / "crew-settings.json").read_text())["head_topic"], "ops")
         self.assertIn("head pal's inbox topic: #ops", pal(env, "settings").stdout)
-        self.assertIn("none (its first topic)", set_topic(env, data, "none").stdout)
+        self.assertIn("none (the topic it shows, else its first tab)", set_topic(env, data, "none").stdout)
         self.assertNotIn("head_topic", json.loads((data / "crew-settings.json").read_text()))
         self.assertNotEqual(owner(env, data, "settings", "head-topic", "a b;c").returncode, 0)
 

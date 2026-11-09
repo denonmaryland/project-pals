@@ -1970,7 +1970,7 @@ def cmd_settings(rest):
         return
     if not rest:
         st = settings()
-        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nhead pal's inbox topic: {'#' + head_topic() if head_topic() else 'none (its first topic)'}"
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nhead pal's inbox topic: {'#' + head_topic() if head_topic() else 'none (the topic it shows, else its first tab)'}"
               f"\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
         return
     # Changing one is the owner's: a click in Project Pals (About, Settings → Desk). A missing or
@@ -1989,7 +1989,7 @@ def cmd_settings(rest):
     elif key == "llm" and val in ("auto", "claude", "agy"):
         st = save_settings(llm=val)
     elif key in ("head-topic", "head_topic"):
-        # T60: where everything pushed to the head pal goes ("" or "none": its first topic, as before).
+        # T60: where everything pushed to the head pal goes ("" or "none": as before, the topic it shows, else its first tab).
         topic = "" if val.lower() in ("", "none", "off") else val.lstrip("#").strip()
         if topic and not re.fullmatch(r"[\w.-]{1,64}", topic):
             die("a topic name: letters, digits, - _ . (e.g. ops)")
@@ -2003,8 +2003,8 @@ def cmd_settings(rest):
         except CrewError:
             head = None
         if topic and head and not head_inbox(head):
-            print(f"note: {head['name']} has no #{topic} yet; pushes go to its first topic until it does")
-        print(f"head pal's inbox topic: {'#' + topic if topic else 'none (its first topic)'}")
+            print(f"note: {head['name']} has no #{topic} yet; pushes go to the topic it shows (else its first tab) until it does")
+        print(f"head pal's inbox topic: {'#' + topic if topic else 'none (the topic it shows, else its first tab)'}")
         return
     elif key == "head" and val:
         if "#" in val or val.startswith("@"):
