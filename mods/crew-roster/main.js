@@ -14,7 +14,7 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings,
   scrollArea, scrollState, scrollTo, scrollIntoView } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -573,6 +573,10 @@ export default class CrewRoster extends View {
     if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      // Trees: fold or unfold every pal's topics at once (DeNon, 2026-11-08). It's the same "palTrees"
+      // as the switch in Pal list style, so it's remembered and both always agree. Fixed 20 px, like
+      // the search button beside it, so nothing moves when it flips.
+      .child(this.treesToggle(d))
       .child(div().id("pals-search").size(20).flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer().tooltip("Search")
         .hover((s) => s.bg(d.hover)).on_click(() => run("app.palette"))
         .child(svg(`${ICON}/ds-search.svg`).size(13).text_color(d.iconDim))));
@@ -736,7 +740,12 @@ export default class CrewRoster extends View {
     const ROWS = 4, ROW = 30, SID = "hero-ch-list";
     const BOX = ROWS * ROW + 12;
     const sc = scrollState(SID);
-    const below = list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
+    // Folded (the chevron, DeNon 2026-11-08): just this header, with what's working or asks you in
+    // words. One remembered state for every pal ("heroTopicsFolded" in crew-settings.json), so the
+    // hero is still the same height whichever pal you switch to. Searching unfolds it.
+    const folded = topicsFolded() && !this.chSearchOpen;
+    const setFolded = (f, cx) => { saveUiSettings({ heroTopicsFolded: f }); cx.notify(); };
+    const below = !folded && list.length > ROWS ? Math.max(0, list.length - Math.floor((sc.y + BOX + 1) / ROW)) : 0;
     if (this.chSearchOpen) {
       head.child(h_flex().flex_1().h(24).px(8).gap(6).items_center().rounded(d.r.sm).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "escape") { cx.stop_propagation(); close(cx); } })
@@ -746,17 +755,26 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
+      const live = bot.awake ? ordered.filter((x) => tabHasAgent(x)) : [];
+      const working = live.filter((x) => x.status === "working").length, asks = live.filter((x) => x.status === "blocked").length;
+      const summary = [String(ordered.length), working && `${working} working`, asks && `${asks} need${asks === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
       head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
-        .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
+        .child(div().flex_1().min_w(0).truncate().text_size(11).line_height("14px").text_color(d.fg4).child(folded ? summary : String(ordered.length)))
         .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
           .on_click((_e, cx) => { scrollTo(SID, Infinity); cx.notify(); })
           .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Search topics")
-          .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
-          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
+          .on_click((_e, cx) => { if (topicsFolded()) saveUiSettings({ heroTopicsFolded: false }); this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
+          .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)))
+        // Fixed 22 px, like the magnifier, so nothing moves when it flips.
+        .child(div().id("hero-ch-fold").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+          .hover((s) => s.bg(d.hover)).tooltip(folded ? "Show topics" : "Fold topics")
+          .on_click((_e, cx) => setFolded(!folded, cx))
+          .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
     }
+    if (folded) return v_flex().pt(4).child(head);
     // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
     // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
     // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
@@ -883,6 +901,15 @@ export default class CrewRoster extends View {
   // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
   // shows where it will land (above or below the row under the pointer); release drops it. The
   // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
+  // The Pals header's fold-all / unfold-all button: unfolded shows the tree, folded a plain list.
+  treesToggle(d) {
+    const on = palTreesOn();
+    return div().id("pals-trees").size(20).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
+      .tooltip(on ? "Fold all topics" : "Unfold all topics")
+      .hover((s) => s.bg(d.hover))
+      .on_click((_e, cx) => { saveUiSettings({ palTrees: !on }); cx.notify(); })
+      .child(svg(`${ICON}/${on ? "ds-tree" : "ds-tree-folded"}.svg`).size(13).text_color(d.iconDim));
+  }
   palRow({ space, bot }, t, d, gid = undefined) {
     const look = palListStyle();
     const awake = bot.awake || bot.starting;
