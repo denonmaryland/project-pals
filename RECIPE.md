@@ -722,10 +722,20 @@ shows, the header hides the split buttons.
   pick, Enter takes the recommendation (nothing without one), C chat, J next, K back, L later (an
   ask is parked; others skip), Esc to the list ("Review one at a time ›" comes back). A decision
   removes the item and the next one takes its place; the last ends on All caught up.
+- **Narrow** (Home under 900 px wide, e.g. a half-width window; measured with on_size_change):
+  the review's top bar drops "Needs you" and shows key caps only (words in tooltips), option
+  cards put the number before the label instead of a cap, the key legend is hidden, and with more
+  than three options they become full-width 40 px rows (key, label, Recommended, what it does);
+  the list header says "Today ›" / "Review ›" and Talk to <Head> is its icon and T.
+- **Each showing** is stamped by `showHome` (shared `crew.home.shown`, a counter): a hidden view
+  doesn't render, so that's how Home knows to take the keyboard and restart its review after a
+  trip to the terminal.
 - **Chat about it** opens a window (key `home-chat`, 560×520) over Home: a 34 px bar
   (`crew-home-chat`: pet, Pal, #topic, what it's about, Open topic, ×; drag the window by it) over
-  the asking topic's live terminal. When that topic has no live agent, the idea partner's (Muse's)
-  terminal instead, with a toast saying so.
+  the asking topic's live terminal; the bar says "click below to type" (Herdr can't give a window's
+  terminal the keyboard from code). Esc on Home closes it (Home keeps its id; `overlay.close` can't
+  reach a window). When that topic has no live agent, the idea partner's (Muse's) terminal instead,
+  with a toast saying so.
 - **Recommendations:** `pal home ask … --option A --does "what A does" … --recommend A --why "…"
   [--link URL]… [--image FILE]…` (images are copied into `data/crew-attachments`), and for an
   approval, a Desk card or an ask afterwards `pal home recommend <a-…|c-…|h-…> <approve|decline |

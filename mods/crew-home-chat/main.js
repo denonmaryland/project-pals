@@ -26,7 +26,8 @@ export default class CrewHomeChat extends View {
       .child(div().w(26).h(20).flex_none().child(face))
       .child(div().flex_none().text_size(12.5).font_weight(600).child(space ? space.name.split(" - ")[0] : "Gone"))
       .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg2).child(tab ? `#${channelName(tab)}` : ""))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(d.fg3).child(p.muse ? `idea partner · about: ${p.about ?? ""}` : p.about ? `about: ${p.about}` : ""))
+      // Herdr can't give a window's terminal the keyboard from code, so say how (live test, 2026-11-08).
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(d.fg3).child(`click below to type${p.muse ? " · idea partner" : ""}${p.about ? ` · about: ${p.about}` : ""}`))
       .child(stop(h_flex().id("home-chat-open").h(24).px(8).flex_none().items_center().rounded(d.r.sm).cursor_pointer()
         .hover((s) => s.bg(d.hover))
         .on_click(() => { if (space) { run("space.select", { id: space.id }); if (tab) run("tab.select", { id: tab.id }); showTabs(); } close(); })

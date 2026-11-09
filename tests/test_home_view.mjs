@@ -217,7 +217,12 @@ try {
   assert.ok(runs.some((r) => r.startsWith("layout.select") && r.includes("tab-view")), "T leaves Home");
   assert.ok(runs.some((r) => r.startsWith("space.select") && r.includes("s0")), "T shows the head pal");
   assert.ok(runs.some((r) => r.startsWith("pane.focus") && r.includes('"terminal":"tg"')), "T puts the keyboard in its terminal");
-  // Esc: the list.
+  // Esc: first the chat window it opened (Home keeps its id; Herdr's overlay.close can't reach a
+  // window), then the list.
+  const closedBefore = fx.closed;
+  await key("escape");
+  assert.equal(fx.closed, closedBefore + 1, "Esc closes the chat window first");
+  assert.equal(v.mode, "review");
   await key("escape");
   assert.equal(v.mode, "list");
   clicks.clear();
@@ -282,6 +287,24 @@ try {
   crewjs.toggleHome();
   assert.ok(fx.calls.some((c) => c[1] === "layout.select" && c[2].includes("tab-view")));
   assert.ok(fx.calls.some((c) => c[1] === "pane.focus"), "Ctrl+Shift+H from Home: the terminal, focused");
+  // Home, the terminal, Home again: a hidden view doesn't render, so the second showing must still
+  // take the keyboard and restart the review (live test: keys stopped working after a trip away).
+  {
+    const x = new Home();
+    fx.layout.children[0].active = "home-view";
+    await run((cx) => x.init({}, cx));
+    crewjs.showHome();
+    await run((cx) => draw(x, cx));
+    const f1 = focused;
+    x.mode = "list";
+    fx.layout.children[0].active = "tab-view";   // to the terminal; Home isn't rendered while hidden
+    await new Promise((r) => setTimeout(r, 5));
+    crewjs.showHome();
+    fx.layout.children[0].active = "home-view";
+    await run((cx) => draw(x, cx));
+    assert.ok(focused > f1, "shown again: Home takes the keyboard again");
+    assert.equal(x.mode, "review", "shown again: the review starts over");
+  }
   // A layout without home-view (an older one): no Home.
   const keep = fx.layout; fx.layout = { id: "root", children: [{ id: "center", type: "stack", active: "tab-view", children: [] }] };
   assert.equal(crewjs.showHome(), false);

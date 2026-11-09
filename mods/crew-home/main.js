@@ -36,7 +36,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, spaces, agents, shared, run, notify, exec, appHome, home as homeDir, readTextFile, settings, openOverlay, nextCommand } from "herdr";
+import { theme, spaces, agents, shared, run, notify, exec, appHome, home as homeDir, readTextFile, settings, openOverlay, closeOverlay, nextCommand } from "herdr";
 import {
   ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
@@ -638,7 +638,7 @@ export default class CrewHome extends View {
     }
     if (!target) return notify({ title: "Nobody to chat with", body: "That topic is asleep and there's no idea partner awake. Open the topic to wake it.", level: "info", timeout: 4000 });
     const { f, address } = target;
-    openOverlay({ kind: "window", key: "home-chat", width: 560, height: 520,
+    this.chatId = openOverlay({ kind: "window", key: "home-chat", width: 560, height: 520,
       layout: { type: "column", children: [
         { type: "block", size: { px: 34 }, content: { mod: "crew-home-chat", props: { space: f.space.id, tab: f.tab.id, muse, about: sp.title } } },
         { type: "block", content: { terminal: address } }] } });
@@ -648,7 +648,12 @@ export default class CrewHome extends View {
   key(e, list, cx) {
     const k = e.keystroke;
     const n = this.mode === "review" ? this.current(list) : null;
-    if (k === "escape") { if (this.drawer) this.drawer = null; else this.mode = this.mode === "review" ? "list" : "review"; }
+    // Esc: the chat window first (Home keeps its id), then the drawer, then review ↔ list.
+    if (k === "escape") {
+      if (this.chatId) { try { closeOverlay(this.chatId); } catch {} this.chatId = null; }
+      else if (this.drawer) this.drawer = null;
+      else this.mode = this.mode === "review" ? "list" : "review";
+    }
     else if (k === "t") openTerminal();
     else if (!n) return;
     else if (k === "j") this.move(list, 1);
@@ -671,16 +676,19 @@ export default class CrewHome extends View {
     const i = this.at, total = list.length;
     const keyCap = (k) => div().flex_none().h(16).px(4).flex().items_center().rounded(3).border_1().border_color(d.lineStrong)
       .text_size(10.5).font_family(d.mono).text_color(d.fg2).child(k);
-    const navBtn = (id, k, label, onClick, disabled = false) => h_flex().id(id).h(26).px(8).flex_none().items_center().gap(6).rounded(d.r.sm)
+    // Narrow (under 900 px, e.g. a half-width window): key caps only, the words in tooltips.
+    const compact = (this.w ?? 1200) < 900;
+    const navBtn = (id, k, label, onClick, disabled = false) => h_flex().id(id).h(26).px(compact ? 5 : 8).flex_none().items_center().gap(6).rounded(d.r.sm)
+      .tooltip(`${label} (${k})`)
       .when(!disabled, (el) => el.cursor_pointer().hover((s) => s.bg(d.hover)).on_click((_e, cx) => { onClick(cx); cx.notify(); }))
-      .child(keyCap(k)).child(div().text_size(12).text_color(disabled ? d.fg4 : d.fg2).child(label));
+      .child(keyCap(k)).when(!compact, (el) => el.child(div().text_size(12).text_color(disabled ? d.fg4 : d.fg2).child(label)));
     const PIPS = Math.min(total, 12);
     const pips = h_flex().flex_none().gap(4).children(Array.from({ length: PIPS }, (_, j) => {
       const at = total > 12 ? Math.round(i * (PIPS - 1) / (total - 1)) : i;
       return div().w(22).h(3).rounded(2).bg(j === at ? d.warnText : j < at ? d.fg3 : d.lineMid);
     }));
     const top = h_flex().h(32).flex_none().items_center().gap(12)
-      .child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg2).child("Needs you"))
+      .when(!compact, (el) => el.child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg2).child("Needs you")))
       .child(pips)
       .child(div().w(64).flex_none().text_size(12).font_weight(500).text_color(d.body).child(`${i + 1} of ${total}`))
       .child(div().flex_1())
@@ -689,7 +697,7 @@ export default class CrewHome extends View {
       .child(navBtn("rv-later", "L", "Later", (cx) => { if (sp.later) sp.later(cx); else this.move(list, 1); }, !sp.later && total < 2))
       .child(navBtn("rv-list", "Esc", "List", () => { this.mode = "list"; }))
       .child(div().w(1).h(16).mx(4).flex_none().bg(d.lineMid))
-      .child(navBtn("rv-term", "T", `${headName()}'s terminal`, () => openTerminal()));
+      .child(navBtn("rv-term", "T", "Terminal", () => openTerminal()));
     const whoName = sp.who ? short(sp.who.split("#")[0]) : ownerName();
     const whoTopic = sp.topic && sp.topic.includes("#") ? `#${sp.topic.split("#")[1]}` : "";
     const who = h_flex().h(56).mt(18).flex_none().items_center().gap(12)
@@ -728,22 +736,42 @@ export default class CrewHome extends View {
         : div().min_w(0).truncate().text_size(12.5).text_color(d.fg4).child("The asker didn't pick one. Chat about it if you're unsure."));
     // The options: large cards, numbered; the recommended one lit. Approve sits apart from Decline.
     const busy = Boolean(this.busy[n.key]);
-    const optRow = h_flex().id("rv-opts").h(72).mt(14).flex_none().max_w(900).gap(10);
+    // Narrow with more than three options: full-width 40 px rows instead of cards side by side, so
+    // no label is cut to "I…" (live test, a 400 px review area with five options).
+    const asRows = compact && sp.options.length > 3;
+    const optRow = asRows ? v_flex().id("rv-opts").mt(14).flex_none().max_w(900).gap(4)
+      : h_flex().id("rv-opts").h(72).mt(14).flex_none().max_w(900).gap(10);
     let num = 0;
     sp.options.forEach((op, j) => {
       const on = rec && op.label.toLowerCase() === rec.option.toLowerCase();
       const cap = op.cap ?? (++num <= 9 ? String(num) : null);
+      if (asRows) {
+        optRow.child(h_flex().id(`rv-o-${j}`).h(40).flex_none().px(10).gap(8).items_center().rounded(6)
+          .bg(on ? "#26364A" : "#1C1C1E").border_1().border_color(on ? "#4CA1F288" : "#00000080")
+          .when(!busy, (el) => el.cursor_pointer().hover((s) => s.border_color(on ? "#4CA1F2" : d.lineStrong)).on_click((_e, cx) => { op.run(cx); cx.notify(); }))
+          .when(busy, (el) => el.opacity(0.5))
+          .child(cap ? keyCap(cap) : div().w(16))
+          .child(div().flex_none().max_w(160).truncate().text_size(13.5).font_weight(600).text_color(d.fg1).child(op.label))
+          .when(Boolean(on), (el) => el.child(this.tag(d, "Recommended", d.infoText)))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(on ? "#C9DCEF" : d.fg2).child(op.does || "")));
+        return;
+      }
+      // Narrow: the key goes before the label ("1 Ink") instead of a cap at the right, so short
+      // labels aren't cut to "I…" when four cards share a half-width window (live test).
       if (op.gapBefore) optRow.child(div().w(30).flex_none());
-      optRow.child(v_flex().id(`rv-o-${j}`).flex_1().min_w(0).h(72).px(14).py(10).gap(3).rounded(7)
+      optRow.child(v_flex().id(`rv-o-${j}`).flex_1().min_w(0).h(72).px(compact ? 10 : 14).py(10).gap(3).rounded(7)
         .bg(on ? "#26364A" : "#1C1C1E").border_1().border_color(on ? "#4CA1F288" : "#00000080").shadow_xs()
         .when(!busy, (el) => el.cursor_pointer().hover((s) => s.border_color(on ? "#4CA1F2" : d.lineStrong)).on_click((_e, cx) => { op.run(cx); cx.notify(); }))
         .when(busy, (el) => el.opacity(0.5))
+        // The label keeps the first line (with its key cap); the Recommended tag leads the second, so a
+        // narrow card never squeezes the label to "Blur…" (live test, 2026-11-08).
         .child(h_flex().gap(8).items_center().min_w(0)
-          .child(div().min_w(0).truncate().text_size(14).line_height("20px").font_weight(600).text_color(d.fg1).child(op.label))
+          .when(compact && Boolean(cap), (el) => el.child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg3).child(cap)))
+          .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("20px").font_weight(600).text_color(d.fg1).child(op.label))
+          .when(!compact && Boolean(cap), (el) => el.child(keyCap(cap))))
+        .child(h_flex().gap(6).items_center().min_w(0)
           .when(Boolean(on), (el) => el.child(this.tag(d, "Recommended", d.infoText)))
-          .child(div().flex_1())
-          .child(cap ? keyCap(cap) : div()))
-        .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(on ? "#C9DCEF" : d.fg2).child(op.does || " ")));
+          .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(on ? "#C9DCEF" : d.fg2).child(op.does || " "))));
     });
     const chatWho = sp.topic ? `${short(sp.topic.split("#")[0])}${sp.topic.includes("#") ? ` #${sp.topic.split("#")[1]}` : ""}` : "the idea partner";
     const foot = h_flex().h(52).mt(10).flex_none().items_center().gap(8).border_t_1().border_color(d.lineSoft)
@@ -751,10 +779,10 @@ export default class CrewHome extends View {
         .cursor_pointer().hover((s) => s.border_color(d.lineStrong)).on_click((_e, cx) => { this.chat(sp); cx.notify(); })
         .child(keyCap("C")).child(div().text_size(12).font_weight(500).text_color(d.body).child(`Chat with ${chatWho}`)))
       .child(div().flex_1())
-      .child(h_flex().flex_none().gap(12).items_center().text_size(11.5).text_color(d.fg3)
+      .when(!compact, (el) => el.child(h_flex().flex_none().gap(12).items_center().text_size(11.5).text_color(d.fg3)
         .child(h_flex().gap(4).items_center().child(keyCap("1")).child(div().child("–")).child(keyCap(String(Math.min(9, Math.max(1, sp.options.filter((x) => !x.cap).length))))).child(div().child("pick")))
         .child(h_flex().gap(4).items_center().child(keyCap("Enter")).child(div().child(rec ? "recommended" : "—")))
-        .child(h_flex().gap(4).items_center().child(keyCap("J")).child(div().child("/")).child(keyCap("K")).child(div().child("next / back"))));
+        .child(h_flex().gap(4).items_center().child(keyCap("J")).child(div().child("/")).child(keyCap("K")).child(div().child("next / back")))));
     return v_flex().id(`review-${n.key}`).size_full().px(40).pt(16)
       .child(top).child(who).child(title)
       .child(scrollArea(d, `rv-ctx-${n.key}`, ctx).flex_1().min_h(0).mt(12))
@@ -773,7 +801,13 @@ export default class CrewHome extends View {
     const shown = homeMode();
     // Shown: read everything, start the review at the oldest, and take the keyboard. Herdr refuses
     // focus() during render (the view falls back to its last good version), so it's done in a task.
-    if (shown && !this.shown) { this.loading = false; this.fresh = true; this.reload(cx, true); this.mode = "review"; this.at = 0; this.atKey = null; this.focusSoon(cx); }
+    // A new showing: the first render while shown, or showHome's stamp changed (a hidden view doesn't
+    // render, so after a trip to the terminal Home can't tell it was hidden; the stamp tells it).
+    const stamp = shared("crew.home.shown") ?? 0;
+    if (shown && (!this.shown || stamp !== this.shownAt)) {
+      this.shownAt = stamp;
+      this.loading = false; this.fresh = true; this.reload(cx, true); this.mode = "review"; this.at = 0; this.atKey = null; this.drawer = null; this.focusSoon(cx);
+    }
     if (!shown && this.shown) this.drawer = null;   // left Home: the drawer is closed next time
     this.shown = shown;
     const needs = this.needs(), prog = this.progress();
@@ -781,24 +815,27 @@ export default class CrewHome extends View {
     const open = Boolean(this.drawer);
     const root = v_flex().id("crew-home").relative().size_full().bg(d.bg0).text_color(d.fg1)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, needs, cx))
+      // Its width, in design pixels: narrow, the review's top bar shows only the key caps.
+      .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.w ?? 0) - w) > 1) { this.w = w; cx.notify(); } })
       .on_mouse_down("left", () => this.handle.focus());
     if (needs.length && this.mode === "review") {
       return root.child(this.review(d, t, needs)).when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
     }
+    const narrow = (this.w ?? 1200) < 900;   // half a screen: shorter words, the Talk pebble's icon only
     const link = h_flex().id("what-happened").h(22).px(6).mb(2).flex_none().items_center().gap(4).rounded(d.r.xs).cursor_pointer()
       .when(open, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover))
       .on_click((_e, cx) => { if (open) this.drawer = null; else this.openDrawer(this.lastTab || "today"); cx.notify(); })
-      .child(div().text_size(12).text_color(d.infoText).child(open ? "Close ×" : "What happened today ›"));
+      .child(div().text_size(12).text_color(d.infoText).child(open ? "Close ×" : narrow ? "Today ›" : "What happened today ›"));
     const reviewBtn = needs.length ? h_flex().id("review-all").h(22).px(6).mb(2).flex_none().items_center().rounded(d.r.xs).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click((_e, cx) => { this.mode = "review"; this.handle.focus(); cx.notify(); })
-      .child(div().text_size(12).text_color(d.infoText).child("Review one at a time ›")) : null;
+      .child(div().text_size(12).text_color(d.infoText).child(narrow ? "Review ›" : "Review one at a time ›")) : null;
     // Orca's terminal, one click (or T) away, next to What happened today.
     const termBtn = h_flex().id("open-terminal").h(26).px(9).mb(0).flex_none().items_center().gap(7).rounded(5).cursor_pointer()
       .bg("#1C1C1E").border_1().border_color("#00000080").hover((s) => s.border_color(d.lineStrong))
       .tooltip(`${headName()}'s terminal (T, or Ctrl+Shift+H)`)
       .on_click((_e, cx) => { openTerminal(); cx.notify(); })
       .child(svg(`${ICON}/ds-terminal.svg`).size(12).flex_none().text_color(d.iconOn))
-      .child(div().text_size(12).font_weight(500).text_color(d.body).child(`Talk to ${headName()}`))
+      .when(!narrow, (el) => el.child(div().text_size(12).font_weight(500).text_color(d.body).child(`Talk to ${headName()}`)))
       .child(div().flex_none().h(16).px(4).flex().items_center().rounded(3).border_1().border_color(d.lineStrong)
         .text_size(10.5).font_family(d.mono).text_color(d.fg2).child("T"));
     const page = v_flex().id("home-page").size_full().px(28).pt(20).pb(24).gap(12)
