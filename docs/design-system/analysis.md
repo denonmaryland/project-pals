@@ -164,7 +164,7 @@ colour `fg-4` (#5A5A5A) at rest and `fg-2` when active. Same stroke weight every
   border or a 10–15 % tinted fill, uppercase-free 11–12 px label.
 - **Pal tiles (dotface):** 24 px square tiles with `--r-xs 3`, the dotface on a near-black LED field.
   Pal identity colour lives in the tile, state lives in a 6 px dot or the tile's 1 px edge.
-- **Regions:** sidebar | channel chat | (optional) right panel, each split by one 1 px hairline,
+- **Regions:** sidebar | topic chat | (optional) right panel, each split by one 1 px hairline,
   each with a 40 px header ending in a hairline, and a 26 px status bar under a hairline.
 
 ---
@@ -174,9 +174,9 @@ colour `fg-4` (#5A5A5A) at rest and `fg-2` when active. Same stroke weight every
 The file `Project Pals — Geek mascots · hi-fi pixel study` has a new page, **Design system**:
 
 - **DS · Tokens:** surfaces, text, lines, accents, radius, spacing, type, plus the components: buttons,
-  rectangular tags/status chips, segmented control, dropdown, channel tabs, pal rows (rest/hover/
+  rectangular tags/status chips, segmented control, dropdown, topic tabs, pal rows (rest/hover/
   selected/focus), task card, input, composer, the two non-oval "your message" options, status bar.
-- **DS · Project Pals screen:** 1440×900 dark. Pals sidebar with dotface tiles, channel tabs,
+- **DS · Project Pals screen:** 1440×900 dark. Pals sidebar with dotface tiles, topic tabs,
   chat feed with tool chips and a state strip, composer, tasks panel, status bar.
 - **DS · Light check:** 880×520, the same pieces inverted.
 

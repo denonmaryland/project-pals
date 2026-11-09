@@ -135,7 +135,7 @@ export function statCards(view, space, bot, d, { cols = 4, w = 420 } = {}) {
     needs: () => { const c = chans.find((x) => x.awake && x.status === "blocked"); if (c) pointAt(space, c.tab); else setShared("crew.view", "you"); },
     hiccups: () => openPanel("notebook"),
   };
-  const tip = { shipped: "The Vault's Home: the week", motion: "Show the channel at work", needs: "Show the channel that asks, or the Inbox", hiccups: "The Journal" };
+  const tip = { shipped: "The Vault's Home: the week", motion: "Show the topic at work", needs: "Show the topic that asks, or the Inbox", hiccups: "The Journal" };
   const gap = 10;
   const cw = Math.floor((w - gap * (cols - 1)) / cols);
   const grid = h_flex().flex_wrap().gap(gap).w(w);
@@ -227,8 +227,8 @@ function channelsPanel(view, space, bot, d) {
         .child(div().flex_1())
         .when(Boolean(wt), (e) => e.child(smallBtn(d, `ps-rev-${tab.id}`, "Review", () => openReview(space, tab)))))));
   }
-  return panel(d, "channels", "Channels", space.tabs.length,
-    link(d, "ps-ch-new", "+ Channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })), list);
+  return panel(d, "channels", "Topics", space.tabs.length,
+    link(d, "ps-ch-new", "+ Topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } })), list);
 }
 
 // Tasks: Now · Next · Blocked · Done (7 days). A task opens to its details and Mark done / Reopen;

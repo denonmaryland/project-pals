@@ -174,6 +174,34 @@ try {
   assert.equal(outline(heroOf(many, true)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(),
     outline(heroOf(one, false)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(), "the quick actions keep their widths and the Tasks count slot");
   assert.ok(/w\[18\]/.test(shape(heroOf(one, false))), "Tasks reserves its count slot even with no tasks");
+  // Inbox took "+ Channel"'s place (DeNon, 2026-11-08): the needs-you count in a fixed slot, amber
+  // when something waits, and the same widths with or without it. New topic stays in the list.
+  const pebbleOf = (h, id) => ids(h).find((n) => n.args.id?.[0] === id);
+  fixtures.shared["crew.needs"] = { count: 0 };
+  const calm = heroOf(one, false);
+  assert.ok(pebbleOf(calm, "hero-inbox") && !pebbleOf(calm, "hero-channel"), "the hero's first pebble is Inbox");
+  assert.ok(text(pebbleOf(calm, "hero-inbox")).includes("Inbox") && !/\b(Channel|Topic)\b/.test(text(pebbleOf(calm, "hero-inbox"))), "it says Inbox");
+  assert.ok(text(calm).includes("New topic"), "New topic is still the list's last row");
+  fixtures.shared["crew.needs"] = { count: 3 };
+  const busy = heroOf(one, false);
+  const inbox = pebbleOf(busy, "hero-inbox");
+  assert.ok(text(inbox).includes("3"), "Inbox shows what needs you");
+  const slot = (n) => { if (n.args.w?.[0] === 18) return n; for (const k of n.kids) { const f = k?.node && slot(k.node); if (f) return f; } return null; };
+  assert.equal(slot(inbox).args.text_color?.[0], d.warnText, "the count is amber while something waits");
+  assert.equal(outline(busy).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(),
+    outline(calm).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(), "a needs-you count never changes the pebbles' widths");
+  fixtures.shared["crew.view"] = "bots";
+  const cx = { notify() {}, stop_propagation() {} };
+  inbox.args.on_click[0](null, cx);
+  assert.equal(fixtures.shared["crew.view"], "you", "Inbox opens the sidebar's Inbox");
+  pebbleOf(heroOf(one, false), "hero-inbox").args.on_click[0](null, cx);
+  assert.equal(fixtures.shared["crew.view"], "bots", "a second click goes back to the pals");
+  delete fixtures.shared["crew.needs"]; delete fixtures.shared["crew.view"];
+  // A "Channels" category saved before 0.3.1 shows as Topics; new ones are Topics.
+  assert.equal(crew.categoryName("Channels"), "Topics");
+  assert.equal(crew.categoryName("Routines"), "Routines");
+  assert.equal(crew.categoryOf({ categories: { t1: "Channels" } }, { id: "t1", name: "#a" }), "Topics");
+  assert.equal(crew.categoryOf({ categories: {} }, { id: "t2", name: "#b" }), "Topics");
   console.log("palrows: ok (11 looks drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });

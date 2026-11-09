@@ -3,9 +3,9 @@
 Your coding agents as a crew of pals. Any harness works: Claude Code, Antigravity CLI (`agy`),
 Codex, Grok CLI, Gemini CLI, opencode, Hermes, Copilot, Cursor, pi.
 
-Every Herdr space is a pal (a project with a brain), and each of its tabs is a channel, a clone
+Every Herdr space is a pal (a project with a brain), and each of its tabs is a topic, a clone
 working on one thing. Pals are pocket pets whose pose shows what they're doing. You can watch
-a channel as a chat instead of a terminal, put pals together in group-chat rooms, and give them
+a topic as a chat instead of a terminal, put pals together in group-chat rooms, and give them
 tasks and scheduled routines. A head pal (named Orchestrator by default; About → Settings or `pal settings head "Name"`
 renames it) oversees everyone.
 
@@ -27,66 +27,66 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - **A pill switcher:** Pals · Rooms · Tasks · Inbox. Only Inbox shows a count, with a red or
     green dot, when something waits.
   - **Pals:** each pal is a 40px face, its name (14px, 500), and a one-line preview. The preview
-    is its latest channel's terminal title, tagged `[channel]` when it has several. A mark shows
+    is its latest topic's terminal title, tagged `[topic]` when it has several. A mark shows
     only when something's happening: a wave while working, a green dot when it finished. A pill
-    on the right counts its channels ("4 ch", shown from two up), or turns red ("1 blocked") when
-    one needs you. Click a pal to open it; its channels are the tabs along the top, not rows
+    on the right counts its topics ("4 ch", shown from two up), or turns red ("1 blocked") when
+    one needs you. Click a pal to open it; its topics are the tabs along the top, not rows
     here. Right-click a pal for Pin to the top, Rename (memory and routines follow: the roster
     remembers each space's name and runs `pal renamed` when it changes), Customize look, New
-    channel, Put to sleep (keeps the model it's on; Herdr asks "Close space?"). Right-click a
+    topic, Put to sleep (keeps the model it's on; Herdr asks "Close space?"). Right-click a
     sleeping pal for Wake / Unpin / Forget, a room card for Open / Close room. A pal hired in the
     last 10 minutes with no brain yet shows "starting". Pinned pals
     sit first, in the order pinned, with a small pin after the name and a hairline under them.
     Pals with no agent running fold into an **Asleep** row with a count; clicking a closed one
-    wakes it with every channel it had, by name (records keep a tab id → name map).
+    wakes it with every topic it had, by name (records keep a tab id → name map).
   - **Rooms:** cards listing each room's members' faces and its goal, plus "New room".
   - **Tasks:** an "Add a task, @Pal to assign it" field, then bordered lists (Blocked, In
     progress, Open, Done today). Each task row shows its owner's face, its title and
-    `T3 · Owner`. Clicking a task expands it: details, Open channel, Mark done, Cancel, Reopen.
+    `T3 · Owner`. Clicking a task expands it: details, Open topic, Mark done, Cancel, Reopen.
   - **Inbox:**
     - Approval cards ("X wants to push", the command in monospace, Decline / Approve).
     - "X looks stuck" rows.
-    - Finished and needs-you channels.
+    - Finished and needs-you topics.
     - A banner if the helper service is off.
   - **Footer:** "+ Hire a pal", then icons for computers, routines (clock), About (ⓘ, with a dot
     when an update is out) and settings.
 - **Frame** (padding 8/10, gap 6):
-  - **Tab bar, 38px:** the shown pal's channels as soft pills, the only place channels are
+  - **Tab bar, 38px:** the shown pal's topics as soft pills, the only place topics are
     listed. The shown one is filled; each has a 7px status dot (yellow working, red needs you,
     green done, grey idle) and a name; ✕ appears on hover; double-click renames; a round + adds one.
     Right-click a tab (the `crew-menu` popup) to pin it, color it, rename or close it. Pinned tabs
     move to the front (`tab.move`, so Alt+number reaches them first), show a pin and no ✕, and a
     hairline follows them. Colors are the theme's own (ansi1–6 and accent, stored by name in
     shared `crew.marks`), so a colored tab follows the theme: its pill is tinted and its name
-    takes the color. Every new channel gets one automatically: the palette color that looks most
+    takes the color. Every new topic gets one automatically: the palette color that looks most
     different (OKLab) from the ones its pal already uses, blue first. Clearing it in the menu
     keeps it plain. In a room, it shows rooms instead (overlapping faces, then `#name`).
   - **Sheet** (radius 18, the `surface` color, 1px border):
-    - **Header, 52px:** one line: a 20px face, the pal name (dimmed), `/`, `#channel` (15px,
+    - **Header, 52px:** one line: a 20px face, the pal name (dimmed), `/`, `#topic` (15px,
       500; click to rename). On the right: a status dot and word, and the details-panel toggle. In a room
       it's a centered pill: overlapping faces, then `#room`.
     - **Center stack:**
-      - `tab-view`: the channel's terminal (padding 0/24, pane radius 12).
+      - `tab-view`: the topic's terminal (padding 0/24, pane radius 12).
       - `room-view`: the room as a group chat. Your bubbles are on the right in the accent
         color; pals' are on the left with a 30px face and name. It's a centered column at most
         860px wide, with "• • •" typing bubbles.
-      - (A `chat-view`, the channel read as a chat, was removed on 2026-11-08: Project Pals is
+      - (A `chat-view`, the topic read as a chat, was removed on 2026-11-08: Project Pals is
         terminal-first, and a real chat belongs to the native app.)
-      - **Prompt card** (a floating block over `center`, bottom, centred): when the shown channel
+      - **Prompt card** (a floating block over `center`, bottom, centred): when the shown topic
         is blocked on a Claude Code permission prompt or question, its command and every option
         (Yes / Yes, don't ask again / No…) or the question's options; a click answers it (below).
-    - **Composer** (rooms only; hidden while a channel is shown): an r8 box, "Message #room"
+    - **Composer** (rooms only; hidden while a topic is shown): an r8 box, "Message #room"
       (a draft per room), + to attach and send. Files can be dropped in or pasted as images.
     - **Details panel, 340px, hidden by default:**
       - A header: a 38px face (click it to change the look), the name, and
         "harness · computer".
-      - The channel: name, folder and a branch tag, then "Take over terminal".
+      - The topic: name, folder and a branch tag, then "Take over terminal".
       - A 2×2 grid of stat cards: Context, Usage, Model, This session.
       - Own branch: Review and Land.
-      - Other channels, Tasks, Routines, and Memory (a pinned-note field plus the three latest
+      - Other topics, Tasks, Routines, and Memory (a pinned-note field plus the three latest
         remembered facts).
 - **Dialogs** (520px, sized to content, the `popover` color):
-  - Hire a pal, New channel, New room, Routines, Look (the pet's colour), About.
+  - Hire a pal, New topic, New room, Routines, Look (the pet's colour), About.
   - Review (86% × 88%, a diff with line comments).
   - Attach (a 400 × 440 popup).
   - All share one look: a small header (face, 17px title, one dim line, ✕), a big name field in
@@ -121,25 +121,25 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   nothing (`pet-aura.svg`, white at 9% in the middle, for the old box's depth), a small still pool of the state's colour
   under it instead of the edge loader; two lines, "status first": the name (600) and the time, then the
   state word in its colour (Resting, Working · 4m blue, Needs you amber, Done mint, PR open green,
-  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #channel" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), rooms, dialogs.
+  Merged purple, Closing red, Stuck amber, Asleep #808082) and " · #topic" in 11px mono; 64px rows; half-opacity while the pal is closed or idle-hidden), rooms, dialogs.
   - **Pal list style** (Project Pals settings → Pal list style, `crew-palstyle`, saved as
     `palList` in crew-settings.json; DeNon 2026-11-08). The rows above are **Large pets**, the
     default. Ten compact looks from DeNon's board (`crew-boards/compact-pals`) use 22-34px pets
     (bare, a scaled aura, no pool) so more fits: 1 Name + folder (32px: name · time, state ·
-    #channel, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
+    #topic, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
     state is a dot on the pet), 3 Name wraps (30px: the name may take two lines), 4 Rich detail
     (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N ch" or "N
-    blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, channels, open tasks, time), 6
-    Tree (26px; a pal with a channel working or asking unfolds its live channels under it, asks
-    you first, then working, then done, at most four and "+N more"; each opens that channel, the
+    blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks, time), 6
+    Tree (26px; a pal with a topic working or asking unfolds its live topics under it, asks
+    you first, then working, then done, at most four and "+N more"; each opens that topic, the
     working one with the chosen working indicator), 7 Progress (28px: a 3px bar of the pal's
     tasks, done today of done + open), 8 Folder first (30px: the folder relative to ~/Projects as
     the mono headline, the name small above, state · branch), 9 Grouped (24px tight rows under
     the group headers), 10 Mini card (34px: a bordered card, the name may wrap, the folder, a
     state chip). All real data: the folder from the pal's record or space, the branch of the
-    row's lead channel's pane, channel counts from its tabs, task counts from the board (open,
+    row's lead topic's pane, topic counts from its tabs, task counts from the board (open,
     claimed, blocked; done in the last day). Every look keeps the row's behaviour: a click opens
-    the lead channel, right-click its menu, pins (the pin mark), groups and folding, drag to
+    the lead topic, right-click its menu, pins (the pin mark), groups and folding, drag to
     reorder, Hidden pals (a quieter 30px line in the compact looks) and the status-first colours.
     The sidebar and the dialog's preview draw rows with one renderer (`crew.js palLookRow` /
     `palLookTree`; the look list and its pure helpers in `lib/palstyles.js`, copied into every
@@ -174,12 +174,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   Herdr window (`HERDR_APP_HOME` on a short path, started without the `HC_*` variables), across four
   Omarchy themes.
 - **`pal hire --model <model>`** puts `--model` on the hired pal's command line.
-- **Models:** Hire and New channel have a **Model** row for Claude Code (Your default · Opus ·
+- **Models:** Hire and New topic have a **Model** row for Claude Code (Your default · Opus ·
   Sonnet · Haiku) and Antigravity CLI (Your default · Gemini 4 Argon · Gemini 3.8 Flash · Claude
-  Opus/Sonnet · GPT-OSS; New channel adds "Same as <pal>"). It goes on that command line as `--model`,
+  Opus/Sonnet · GPT-OSS; New topic adds "Same as <pal>"). It goes on that command line as `--model`,
   never through `/model`, which would change the default for every session. Antigravity CLI initial
   tasks are passed via `-i <prompt>` rather than positional args so interactive sessions stay alive.
-- **Hire / Add channel / invite:** a pal or you runs `pal hire|channel|invite`. That drops a
+- **Hire / Add topic / invite:** a pal or you runs `pal hire|topic|invite` (`pal channel` is the same as `pal topic`). That drops a
   request in `data/crew-requests/`, which the roster carries out with `space.new` / `tab.new`
   and answers with `<id>.result.json`. Your view stays where it was.
 - **Rooms:**
@@ -187,13 +187,13 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Pals post with `pal-room say`, and @mentions deliver. A pal's message lands after a typing
     delay (1.5s + 45ms per character, capped at 9s).
   - After 12 pal messages in a row, room messages stop being delivered until the owner posts.
-  - Inviting an asleep pal wakes it in a new `#room` channel.
+  - Inviting an asleep pal wakes it in a new `#room` topic.
 - **Helper (crewd, optional):**
   - Messages wait for a pal's turn to end.
   - Whoever handed out work is told when it's done.
-  - Stuck channels (15 minutes of an unchanged screen) get flagged.
+  - Stuck topics (15 minutes of an unchanged screen) get flagged.
   - Routines run on schedule; a reply of NOTHING_NEW stays quiet.
-  - A cheap model (`claude -p` or `agy -p`, chosen with `pal settings llm`) reviews channels to save memory notes, distilled nightly.
+  - A cheap model (`claude -p` or `agy -p`, chosen with `pal settings llm`) reviews topics to save memory notes, distilled nightly.
   - Pals' replies (for `pal ask` and the "finished what you asked" callbacks) are read from Claude Code (`~/.claude/projects/…`) and Antigravity CLI (`~/.gemini/antigravity-cli/brain/…`) session files, through `crewchat.py`.
   - It checks for updates every 6 hours at most (`crewupdate.CHECK_EVERY`).
 - **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
@@ -237,19 +237,19 @@ rectangular segments and tags.
   section (each group, Unassigned, New group…). Right-click a group header: Rename…, Move up /
   down, New group…, Delete group (its pals go to Unassigned). The gear menu has New group… too.
   Saved in shared `crew.marks` (`groups`, `pals[bot].group/order/pin`, `arranged`), so it
-  survives restarts; Herdr's own space order isn't touched. The channel list can't drag: it's a
+  survives restarts; Herdr's own space order isn't touched. The topic list can't drag: it's a
   virtual list, whose rows can't take their own mouse handlers in Herdr.
-- **Dialogs** ("A · Compact sheet", DeNon 2026-11-08): New channel, Hire a pal, New room, New group
+- **Dialogs** ("A · Compact sheet", DeNon 2026-11-08): New topic, Hire a pal, New room, New group
   and Tasks share one kit (`sheet*` in crew.js): a header row (the pal's bare pet over its aura, a
   15/600 title, a 12px #808082 line, a quiet ×), 32px r6 fields on #0A0A0B with a #2C2C2F hairline
   ("#" prefix for names), quiet multi-line boxes, one row of compact 26px selects (label #6A6A6C,
   value #C8C8C8, chevron) whose list opens under the row, and a footer with a hairline over it: a key
   hint, Cancel and the primary action as pebbles (the primary a step brighter, steel blue #26364A;
-  dimmed until it's ready). New channel puts Category behind its own select; Hire's selects are
-  Brain, Model, Role and Computer, then the folder (with Browse) and the first channel.
-- **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the channel
+  dimmed until it's ready). New topic puts Category behind its own select; Hire's selects are
+  Brain, Model, Role and Computer, then the folder (with Browse) and the first topic.
+- **The Focus grid:** content (text, icons, pets) starts 16px in; row backgrounds, the topic
   rows and the quick-action buttons sit 8px in from both sides. Text ladder: names #EDEDED,
-  previews #C8C8C8, `[channel]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
+  previews #C8C8C8, `[topic]` 11px mono #808082, times #6A6A6C; a closed pal's text never goes
   below #808082 (its pet dims instead). The list ends with 24px of padding.
 - **Focus:** the sidebar at 304px (the hero pal and the pal list, as above), no tab strip.
   - **The hero** (hero v2 "2 · Floor", DeNon 2026-11-08): no box. The shown pal's pet and its
@@ -261,22 +261,22 @@ rectangular segments and tags.
     starting 8px into it (bun ears, antennas and crowns reach the sprite's top edge, so the name
     can't sit on the sprite), with the full width so it never cuts off: a 7px state dot before it (blue working, amber
     asks you / stuck, green done / PR); no state word (DeNon took it out; the tooltip names it).
-    Under the floor, the pal's channels at full width: a header ("Channels", the count, and a
+    Under the floor, the pal's topics at full width: a header ("Topics", the count, and a
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
     rows (`#`, the name, the working indicator or an amber dot, a green check or when it last changed; the shown one
     #232324), up to four; the box is ALWAYS four rows plus the 12px peek (132px), whatever the pal has,
     so switching pals never moves the quick actions or the Pals list (DeNon, 2026-11-08): fewer rows
-    leave the rest blank, with a faint "+ New channel" row (#56565A, opens + Channel) after the last
+    leave the rest blank, with a faint "+ New topic" row (#56565A, opens the New topic dialog) after the last
     when not searching; past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, with an always-drawn scrollbar in a gutter: while the list overflows the
     rows end 18px in (11px otherwise) and Herdr's thumb sits in the gap, never over a time, pin or
     dot (Herdr draws the thumb 8-16px in from the scroll area's edge whatever box it's given, and
     picks its colours from the theme) and "+N more" (#808082, rows below the
     box; follows the scroll, gone at the end; a click scrolls to the end) after the count. The
-    shown channel is scrolled into view when it changes. Order: pinned channels first (in pin order,
-    with a small pin mark), then, once you've arranged that pal's channels, Herdr's tab order, else
-    the smart order (needs you, finished, working, idle agents, plain shells). Right-click a channel:
-    Pin / Unpin, Review changes (a worktree channel only: `crew-review`), and Move up / Move down
+    shown topic is scrolled into view when it changes. Order: pinned topics first (in pin order,
+    with a small pin mark), then, once you've arranged that pal's topics, Herdr's tab order, else
+    the smart order (needs you, finished, working, idle agents, plain shells). Right-click a topic:
+    Pin / Unpin, Review changes (a worktree topic only: `crew-review`), and Move up / Move down
     (within its group). Pinning and moving move Herdr's own tabs
     (`tab.move`), so the order survives restarts and the `crew-pick` dropdown lists the same.
     The working indicator (here and in `crew-pick`) is the owner's pick in Project Pals settings →
@@ -285,17 +285,19 @@ rectangular segments and tags.
     spinners, 12px), Sphere (10 shaded spheres, 12px) and ASCII (10 character globes, 16px). They
     are animated WebPs in `mods/crew-roster/working/`, pre-rendered from DeNon's three design boards
     by `tools/working-indicators/build.sh` and played by Herdr natively; only working rows draw
-    one. The dialog: fake channel rows on top showing the style under the pointer (else the chosen
+    one. The dialog: fake topic rows on top showing the style under the pointer (else the chosen
     one), then a grid of 44px tiles with live 24px previews per group; a click applies at once,
     Done keeps it, Cancel or Esc puts back the one you had.
     No dragging: Herdr's lists have no row drag, and a virtual list's rows can't take their own
-    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (Channel and
-    Tasks share the row evenly, flex-basis 0, and Tasks keeps an 18px slot for its count even at zero,
+    clicks, so there is no hover pin either. Then four quick actions as subtle "pebbles" (Inbox and
+    Tasks share the row evenly, flex-basis 0, and each keeps an 18px slot for its count even at zero,
     so no count or pal switch changes their widths; Profile and Sleep are 28px squares) (one flat #1B1B1E face, a 6% white
     hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest
     shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
-    `pebble()` in crew.js): + Channel (new channel
-    dialog), Tasks with this pal's open count, an icon-only Profile (the profile panel, below;
+    `pebble()` in crew.js): Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; an inbox icon,
+    the sidebar's Inbox view, a second click goes back to the pals; its count is what needs you,
+    the status bar's "N need you" from shared `crew.needs`, amber #F0C04A when any, blank at zero;
+    New topic is still the list's "+ New topic" row, the command bar and the right-click menu), Tasks with this pal's open count, an icon-only Profile (the profile panel, below;
     Ctrl+Shift+I; the hero's name, underlined on hover, opens it too) and an icon-only moon (put to
     sleep; Herdr asks first). Tasks (Tell merged into it: DeNon, "a Tell is really a task") opens `crew-tasks`
     (520px): a composer on top (a 13.5px textarea, 3 rows growing to 10; Enter adds, Shift+Enter is
@@ -312,14 +314,14 @@ rectangular segments and tags.
   a quiet recessed field up to 520 px wide (DeNon: no pet in it; h30, r7, a shade darker than the
   header (#08080A), a faint dark line inside the top, a very faint light one inside the bottom, no
   outer shadow; hover a touch lighter; a subtle blue inner ring while the command bar is open,
-  shared `crew.command.open`), a magnifier, "Search pals, channels, tasks… or run a command" and
+  shared `crew.command.open`), a magnifier, "Search pals, topics, tasks… or run a command" and
   its shortcut as a tiny raised pebble (`keyCap`); a click or **Ctrl+Shift+Space**
   (`crew-header.search`) opens the command bar over it (below).
   The split buttons are on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
   or prints the branch when you have no status line of your own); no
-  channel picker on the left (DeNon took it out: channels switch from the hero's list, which shows
-  "no agent"). Under it, the channel's terminal, and nothing on the right (DeNon, 2026-11-08, after
+  topic picker on the left (DeNon took it out: topics switch from the hero's list, which shows
+  "no agent"). Under it, the topic's terminal, and nothing on the right (DeNon, 2026-11-08, after
   Grok Bot).
 - **The profile panel** (DeNon, 2026-11-08; `docs/profiles/proposal.md`): a right-side panel,
   hidden by default. It opens from the hero's name, the Profile quick action, right-click a pal →
@@ -335,33 +337,33 @@ rectangular segments and tags.
     the pal is the star: its pet on the soft aura, standing on a stage lit in its state's colour
     (blue working, mint done or PR open, amber asks you (breathing), red stuck; no light at rest or
     asleep: a hairline under the stage instead); a pool of the same colour under its feet; the
-    state line over it in mono ("Working · 12m in #profiles": the shown channel); the name big under
+    state line over it in mono ("Working · 12m in #profiles": the shown topic); the name big under
     it (22/700; 17 in Side); the mission as one quiet line (else the role; a click opens Vault ›
     Mission); then the **composer**, "Give <pal> a task…" (`compose.js`): it does what the Tasks
     dialog does: Enter adds a real task for the pal (`pal task add --for`, told when its turn ends),
     Shift+Enter is a new line, images by paste, drop on the hero or the paperclip (6 at most,
     `crewattach.py`). Each pal has its own draft; Esc doesn't close the panel over a half-written
     one. **The week cards** (four, r8, tinted fill and edge in their colour): **Shipped** (mint: the
-    pal's tasks done in 7 days; opens Vault › Home), **In motion** (blue: working channels plus
-    claimed tasks not on one; shows the working channel), **Needs you** (amber: asking channels,
-    commands held for approval, proposals, stuck channels; shows the asking channel, else the
+    pal's tasks done in 7 days; opens Vault › Home), **In motion** (blue: working topics plus
+    claimed tasks not on one; shows the working topic), **Needs you** (amber: asking topics,
+    commands held for approval, proposals, stuck topics; shows the asking topic, else the
     Inbox), **Hiccups** (red: the notebook's hiccups in 7 days and the minutes they cost; opens
     the Journal). Side: a compact hero (92 px pet) and the cards 2×2, then the sections below.
   - **Profile in Full is the dashboard** (`profile-dash`): the header with the tabs inline, ⤡ Side
     and ×; then a row: the **stage** (`dash-stage`, scrolling: the hero across its width, the four
-    cards in a row, then calm panels (#161617, r8, a 34 px mono header): **Channels** (live state
+    cards in a row, then calm panels (#161617, r8, a 34 px mono header): **Topics** (live state
     dot, or hollow for no agent; `#name` and how long; what it's on; branch or `worktree · <branch>`
-    with Review; a click points the terminal at it; + Channel), **Tasks** (Now · Blocked · Next ·
-    Done · 7 days: the pal's tasks, plus each working channel without a claimed task, asking and
-    stuck channels; a task opens to its body, result and Mark done / Reopen; All tasks opens the
+    with Review; a click points the terminal at it; + Topic), **Tasks** (Now · Blocked · Next ·
+    Done · 7 days: the pal's tasks, plus each working topic without a claimed task, asking and
+    stuck topics; a task opens to its body, result and Mark done / Reopen; All tasks opens the
     dialog), **Vault** (Home, Mission with its done-when count, Journal with today's entries,
     Brain with its decision and change counts; a click opens that note), **Memory** (as in Side,
     with Remember… in place), **About** (role, facts, routines with Manage, the quick actions); in
     1, 2 or 3 columns by width) | the **mini terminal** column (`dash-right`, 460 px, min 320,
-    resizable): a 33 px bar (`TERMINAL`, a `#channel ▾` picker, live, program and state, Open
-    channel ↗) over `dash-term`, an `{agent: "focused"}` block showing the shown channel's agent:
-    the real session, typed into directly. A channel row, a task's channel or the picker points
-    it at another channel (`tab.select`, then `agent.focus`). A channel with no agent hides the
+    resizable): a 33 px bar (`TERMINAL`, a `#topic ▾` picker, live, program and state, Open
+    topic ↗) over `dash-term`, an `{agent: "focused"}` block showing the shown topic's agent:
+    the real session, typed into directly. A topic row, a task's topic or the picker points
+    it at another topic (`tab.select`, then `agent.focus`). A topic with no agent hides the
     terminal; the bar then fills the column and says so, with Wake for a sleeping pal.
   - Header (52 px, #0E0E0F, a hairline under it): the pal's 30 px pet, its name (14/600), ⤢ / ⤡
     and ×. Tabs (36 px, r4, the shown one #232324): **Profile · Vault** ‖ **AGENTS.md** (a 1 px
@@ -369,13 +371,13 @@ rectangular segments and tags.
     red errors, amber warnings, a blue + when a fix is offered). Esc leaves an edit or a review
     first, then closes the panel.
   - **Profile** (Side): the compact hero and the 2×2 cards (above); Facts (role, click to change:
-    the record's `role`; brain and `--model`, folder, machine, branch, pet, hired by); every channel
+    the record's `role`; brain and `--model`, folder, machine, branch, pet, hired by); every topic
     (its state dot, or a hollow one with no agent; what it's on, else its brief; `worktree ·
-    <branch>` and Review on worktree channels; click shows it); **Memory** (the pinned note,
+    <branch>` and Review on worktree topics; click shows it); **Memory** (the pinned note,
     editable and saved on blur; what a new session starts with and what the 6,000-character primer
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tasks (the
-    `crew-tasks` dialog), + Channel, Customize look, Put to sleep, as pebbles.
+    `crew-tasks` dialog), + Topic, Customize look, Put to sleep, as pebbles.
   - **Vault** (DeNon 2026-11-08: it replaced the Notebook, Mission and Brain tabs, which are now
     its notes; their old keys still open them, e.g. `openPanel("mission")`). Opens Full. Full: the
     file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count (the
@@ -392,22 +394,22 @@ rectangular segments and tags.
     reopens the last note shown; the pal menu's Vault row always opens Home.
   - **Vault › Home** (`vault.js`, numbers from `vaultdata.js`): "<Pal> / Home.md · ● live" (Full adds
     "writes itself from the vault and the board"); the name (26/700, Full only) and mission
-    statement (15 px); Brain / Project / Channels ("8 · 3 working" in blue) / Owner; the Focus now
+    statement (15 px); Brain / Project / Topics ("8 · 3 working" in blue) / Owner; the Focus now
     callout (blue tint: focus 15 px, Goals x of y, Done when x of y, Mission →; with no focus it
     says how the pal sets one, `pal mission focus`, or with no mission how it proposes one); Right
-    now (channels working or needing the owner, needing first, amber-tinted; each with its claimed
+    now (topics working or needing the owner, needing first, amber-tinted; each with its claimed
     task, else its agent's own title (never a shell's user@host), else its brief; click shows it;
     at most 5 in Side, 6 in Full as two rows of three); Tasks as NOW (claimed) / NEXT (open) /
     BLOCKED / DONE TODAY, four columns in Full (4 rows each), rows in Side (3 each), then "+N
-    more", Board → opens `crew-tasks`; Today's journal (newest 3: time · channel · task · how long,
+    more", Board → opens `crew-tasks`; Today's journal (newest 3: time · topic · task · how long,
     did, the first hiccup in amber, the first lesson in mint; Journal →); This week (entries and
     time logged, hiccups and minutes lost, lessons, needs, over the last 7 calendar days; in Full
-    it's in the rail); Latest changes (3, newest first, with the channel; Brain →). In Side, Latest
+    it's in the rail); Latest changes (3, newest first, with the topic; Brain →). In Side, Latest
     decisions (2) closes the note.
   - **Vault › Journal** (was the Notebook tab): the pal's journal, newest day first, today (the
     local date, as the day files are named) live ("live" in mint), All · Hiccups · Lessons, and the
     week's count ("4 hiccups · ~50m lost": from `pal notebook ls`, over the last 7 day files, so
-    with gaps it can differ from Home's This week). Each entry: time · #channel · task · how long;
+    with gaps it can differ from Home's This week). Each entry: time · #topic · task · how long;
     did; hiccups (an amber tag, with what they cost); needed (tool / skill / rule / context /
     access); lesson. × then "Click again to delete" removes an entry (the day is copied to
     `data/crew-backups/notebook/` first). The head pal's has a Notebook · Dreams switch.
@@ -436,11 +438,11 @@ rectangular segments and tags.
   `decide` / `note`. `pal task done` adds a change-log line to the task's pal.
 - **Notebooks** (`bin/crewnotebook.py`): `data/crew-memory/<pal>/notebook/YYYY-MM-DD.md`, one entry
   per piece of work (`### 14:32 · #ch · T16 · 40m`, then `- did:`, `- hiccup: … (cost: ~10m)`,
-  `- needed: skill: …`, `- lesson:`; at most 8 lines; the same channel within 10 minutes merges).
+  `- needed: skill: …`, `- lesson:`; at most 8 lines; the same topic within 10 minutes merges).
   The pal writes it with `pal notebook` (`hiccup` for a quick one); every SessionStart says when
   (only after real work) and carries the last 7 days' lessons (at most 400 characters). `pal task
-  done` / `block` print a reminder, and crewd queues one line when a channel that was stuck 15+
-  minutes moves again (once an hour per channel). Guards: key- and token-shaped text is masked
+  done` / `block` print a reminder, and crewd queues one line when a topic that was stuck 15+
+  minutes moves again (once an hour per topic). Guards: key- and token-shaped text is masked
   (‹masked›); more than 3 lines, or log-looking lines, are refused; paths into someone's home
   other than config (~/.x), ~/Projects and the pal's project are refused. Days older than 90 roll
   into `YYYY-MM.md` (lessons only).
@@ -468,16 +470,16 @@ rectangular segments and tags.
   its field on the header's and centred on it: the field again, live (the same recessed field with
   its blue ring, 6 px in: a magnifier, the query, "esc" as a tiny pebble), then the rows, then a foot ("↑↓ move · ↵ open · esc close"). An empty box lists the pal
   menu's rows unchanged (`palMenuItems` in crew.js, shared with `crew-palmenu`) under "<Pal> · The
-  pal" and "<Pal> · The project", Put to sleep after a hairline, then "Project Pals": New channel
+  pal" and "<Pal> · The project", Put to sleep after a hairline, then "Project Pals": New topic
   (for the shown pal), Hire a pal…, New group…, Check for updates, Project Pals settings (the gear's
   `quick` rows, `appMenuItems`). Typing searches pals (asleep ones say "wake" and Enter wakes them),
-  channels (a state dot: blue working, amber needs you, green done; their task title is searchable),
+  topics (a state dot: blue working, amber needs you, green done; their task title is searchable),
   open tasks (Enter opens `crew-tasks` for the pal working it), the Vault's notes (Home, Mission,
   Journal, Brain; the shown pal's first, another pal's shows that pal) and every command (the pal
-  menu's, New channel, the whole gear menu). Matching (`mods/crew-command/search.js`, tested by
+  menu's, New topic, the whole gear menu). Matching (`mods/crew-command/search.js`, tested by
   `tests/test_command.mjs`): every word must match; a label's start beats a word's start beats
   anywhere beats its letters in order from a word start; sub lines and extra words count less and
-  aren't bolded; the matched letters are bold. Groups come best hit first (ties: Pals, Channels,
+  aren't bolded; the matched letters are bold. Groups come best hit first (ties: Pals, Topics,
   Tasks, Vault, Commands), capped (4, 4, 3, 3, 4) and trimmed so no more than 13 rows (headers
   included) show, so it never scrolls. ↑/↓ move (wrapping), Enter opens or runs, Esc closes; the
   pointer moves the mark too. Ctrl+K isn't used: in a terminal it's the shell's kill-line, and
@@ -486,18 +488,18 @@ rectangular segments and tags.
   command bar replaced the chip, whose empty list shows the same rows): the pal's
   name and "harness · folder", then The pal (Profile with its shortcut, Vault, Memory, Tasks with
   the open count: the `crew-tasks` dialog), The project (AGENTS.md, Review changes on
-  a worktree channel, Open folder), then Put to sleep. No channels: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
+  a worktree topic, Open folder), then Put to sleep. No topics: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
-  **"N need you"** (questions for you, approvals waiting, stuck channels, proposals; amber, red while
+  **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while
   an approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
-  `crew.needs`). Claude Code marks a channel blocked from the wording of its last message, so a
-  blocked channel plainly addressed to another pal ("Orca, should I…", "tell Orca#general when…",
+  `crew.needs`). Claude Code marks a topic blocked from the wording of its last message, so a
+  blocked topic plainly addressed to another pal ("Orca, should I…", "tell Orca#general when…",
   `pal tell`) isn't counted: the roster reads blocked agents' `hc get` → `status.msg` (only theirs,
   cached until the report changes) and `blockedFor()` decides; anything unclear, or no text,
   still counts. Its tooltip says why each one counts ("Question: Orca #general · Approval: push ·
   OMA CMZ #dotfiles · Stuck: … · not counted: 1 asking a pal"). The Inbox lists the pal-to-pal ones
-  as "<pal> asked another pal", after your questions, and they don't turn the Inbox red. Then come the shown channel's 5-hour and weekly usage, the update pill (see Updates) and the installed
+  as "<pal> asked another pal", after your questions, and they don't turn the Inbox red. Then come the shown topic's 5-hour and weekly usage, the update pill (see Updates) and the installed
   version. The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252x454 popup in the terminal menu's look, with
   shortcuts from keys.json): Hire a pal…, New room…, Inbox, Rooms, Routines, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
@@ -508,15 +510,15 @@ rectangular segments and tags.
   so a terminal's default background is the column itself; programs' own coloured cells keep
   theirs. No frame around a lone pane (`lone: false`; split panes keep their hairline and focus
   border); the block is padded 8/16 and terminals 8/8, so text lines up with the header's.
-- **Terminal-first** (DeNon, 2026-11-08): a channel is its terminal; you type in it
+- **Terminal-first** (DeNon, 2026-11-08): a topic is its terminal; you type in it
   directly, and you answer its permission prompts and questions there too (no prompt card:
   DeNon removed it on 2026-11-08, since it repeated the terminal's question and covered it). The
   composer shows only under a room.
 - **Splits:** Herdr's own (Ctrl+Shift+O right, Ctrl+Shift+E down, Ctrl+Shift+X close, Ctrl+Shift+Z
   zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the header, and the right-click on a terminal (`crew-termmenu`, the layout's
   `terminal_menu`: split, zoom, copy, paste, right-click routing, close; "Close pane (ends
-  Claude Code)" in red on the agent's pane). A new pane is a shell in the channel's folder and
-  belongs to that channel; the channel's agent stays its lead pane (state, "no agent" and `pal tell`
+  Claude Code)" in red on the agent's pane). A new pane is a shell in the topic's folder and
+  belongs to that topic; the topic's agent stays its lead pane (state, "no agent" and `pal tell`
   all read the agent's pane).
 - **Remembered** in `data/crew-settings.json`: `focus.sidebarPx` (the dragged sidebar width) and
   `focus.panelPx` (the profile panel's Side width).
@@ -553,7 +555,7 @@ rectangular segments and tags.
   - Commands: `space.new`, `tab.new`, `tab.select`, `tab.rename`, `tab.close`, `space.select`,
     `layout.select`, `layout.toggle`, `layout.resize`, `pane.focus`, `app.settings`,
     `app.palette`, `mod.open`.
-  - Keyable commands: `crew-roster.hire|channel|routines|look|profile`, `crew-header.search`. The
+  - Keyable commands: `crew-roster.hire|topic|routines|look|profile` (`crew-roster.channel` still works), `crew-header.search`. The
     installer binds `ctrl-shift-i` to `crew-roster.profile` and `ctrl-shift-space` to
     `crew-header.search` in keys.json's `global` map, each when no section uses that key yet and
     the action isn't bound (keys.json backed up first; no keys.json, no change).
@@ -600,7 +602,7 @@ rectangular segments and tags.
   (`SAFE_CONFIG`). Everything else in a home folder is refused.
 - **Notebook writes hold a per-pal lock and their own temp file** (M2), and every entry has an id
   (`· e1a2b3` at the end of its heading); deleting removes exactly that entry (M3). An older entry
-  without an id is named "HH:MM #channel" and must match only one.
+  without an id is named "HH:MM #topic" and must match only one.
 - **The dream's housekeeping runs every night** (M7): expired proposals reopen their patterns and
   quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
 - **Roll back restores Project Pals' config entries** (M6): each snapshot records `keys.json`'s
@@ -655,11 +657,11 @@ rectangular segments and tags.
 - **Testing proposals in a `CREW_DATA` sandbox from a pal's terminal** still tells the proposer:
   with no crewd for that data, the message is typed into the real terminal. Run such tests with
   `HC_TERMINAL_ID=` for both sides.
-- **The dashboard's terminal is the shown channel's own session in a second view.** Full hides the
+- **The dashboard's terminal is the shown topic's own session in a second view.** Full hides the
   `work` column, so it's the only visible view and sets the terminal's size; closing the dashboard
   gives the size back and Claude Code redraws. `{agent: "focused"}` shows the agent chosen with
   `agent.focus`, else the focused pane's, else the FIRST agent anywhere, so `dash-tbar` hides
-  `dash-term` while the shown channel has no agent. To verify live (2026-11-08, not yet seen): that
+  `dash-term` while the shown topic has no agent. To verify live (2026-11-08, not yet seen): that
   `agent.focus` doesn't move the view elsewhere, and that a hidden block doesn't keep the size.
 - **The profile panel's focus:** it takes the keyboard on every open (a 250 ms poll of
   `crew.panel.at`, not in render), so Esc closes it; a click in the terminal gives the keyboard back.
@@ -675,7 +677,7 @@ rectangular segments and tags.
   pass one, and their 4 px corners stay square.
 - **It runs programs and reads outside its folder:** `hc send/read` into terminals, `git`,
   Claude Code session files (`~/.claude/projects/…/*.jsonl`), and `claude -p`, which sends
-  channel screens to the API.
+  topic screens to the API.
 - **The helpers change your setup:**
   - They add a systemd user service, `herdr-crew.service`.
   - They edit `~/.claude/settings.json` (SessionStart, PreToolUse, PostToolUse and Stop hooks, plus the
@@ -692,10 +694,10 @@ rectangular segments and tags.
 - **Herdr doesn't paint a hidden window,** so `herdr-app shot` fails off-screen.
 - **Session formats aren't public:** unknown entries are skipped when replies are read from session
   files. Approvals cover Claude Code and Antigravity CLI (Codex and others stay un-gated).
-- **Claude Code's folder-trust question stalls new pals:** a pal or worktree channel in a folder
+- **Claude Code's folder-trust question stalls new pals:** a pal or worktree topic in a folder
   Claude Code hasn't seen waits on "Quick safety check … one you trust?". Detect it (whitespace-
   insensitive: "Yes, I trust this folder" plus "Accessing workspace" or "Quick safety check") and
-  point the owner at the tab: a toast from the hire handler, a notice from `pal hire` / `pal channel`,
+  point the owner at the tab: a toast from the hire handler, a notice from `pal hire` / `pal topic`,
   and crewd's `trust` entry in the feed, the overview's "Waiting on" and a note to the head pal.
   Never answer it: trusting a folder is the owner's call, even with permissions bypassed.
 - **Never type over someone's draft:** messages are pasted into a pal's terminal and Enter is
@@ -730,7 +732,7 @@ rectangular segments and tags.
 - `pal hire Test --harness claude` makes a space named Test, and your view doesn't move.
 - `pal-room new demo --with "A#x" "B#y"` opens a room in Rooms, and `pal-room say demo "@A hi"`
   shows a typing bubble, then the message.
-- A Claude Code channel blocked on a question shows "asks you" on its pet and row, and nothing
+- A Claude Code topic blocked on a question shows "asks you" on its pet and row, and nothing
   floats over its terminal.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
@@ -739,7 +741,7 @@ rectangular segments and tags.
   quick action, right-click → Profile, the pal menu's Profile and Ctrl+Shift+I each open it on the
   right, beside the terminal; the same trigger, × or Esc (panel focused) close it. ⤢ fills the work
   area; ⤡ goes back.
-- A worktree channel's right-click has Review changes; a plain channel's doesn't.
+- A worktree topic's right-click has Review changes; a plain topic's doesn't.
 - `pal mission set` from a pal is refused; `pal mission propose -F f` puts a card in the Inbox; View
   shows it in the panel's Vault › Mission; Accept writes `mission.md`, and the next session's primer
   starts with the new mission.
@@ -754,9 +756,9 @@ rectangular segments and tags.
   --kind skill …` puts one card in the Inbox; Approve saves the skill and `pal dream ls` shows the
   pattern watching; the same hiccup again makes it recurred; 15 quiet days, resolved.
 - Ctrl+Shift+I opens the dashboard over the work area; typing "hi" + Enter in its terminal reaches
-  that channel's Claude Code (closing the dashboard shows it there too); clicking another channel
-  row shows that channel's session; a channel with no agent shows "no agent running" and Wake.
-- The status bar shows "1 needs you" while one channel asks, and nothing at zero. A channel that ends
+  that topic's Claude Code (closing the dashboard shows it there too); clicking another topic
+  row shows that topic's session; a topic with no agent shows "no agent running" and Wake.
+- The status bar shows "1 needs you" while one topic asks, and nothing at zero. A topic that ends
   its turn with "Orca, should I…?" doesn't raise it, and the tooltip names why each one counts
   (`node tests/test_needs.mjs`).
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.

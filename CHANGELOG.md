@@ -26,13 +26,21 @@ Thanks to **goodboimax** for native Antigravity CLI support and the hook deliver
 
 ## 0.3.1 (not released yet)
 
+- **Channels are now topics.** A pal's tabs are the topics it's working on, so everything you
+  see says so: the hero's Topics list and "+ New topic", the picker, the right-click menu, the
+  command bar, dialogs, the profile and Vault panels, the pal list ("3 topics"), help text and
+  the docs. The `#` stays (`# profiles`), and so does `Pal#topic`. `pal topic` is the new command;
+  `pal channel` and `--channel` still work, so older scripts and pals don't break.
+- **Inbox in the hero.** The hero's first quick action is Inbox (it was + Channel): it opens the
+  sidebar's Inbox and shows how many things need you, in amber. New topic is the last row of the
+  hero's list, in the command bar and in the right-click menu.
 - **Pick your working indicator.** Project Pals settings → Working indicator: the mark beside a
-  working channel can be the classic dot or one of 30 small animations (pixel spinners, shaded
+  working topic can be the classic dot or one of 30 small animations (pixel spinners, shaded
   spheres, ASCII globes), with live previews. A click applies it.
 - **Pick how your pals are listed.** Project Pals settings → Pal list style: keep the big pets, or
   pick one of ten compact looks with smaller pets, so the full name, the project folder, the
-  branch, the brain and channel and task counts fit (Name + folder, Two tight lines, Name wraps,
-  Rich detail, Table, Tree with a working pal's live channels, Progress, Folder first, Grouped,
+  branch, the brain and topic and task counts fit (Name + folder, Two tight lines, Name wraps,
+  Rich detail, Table, Tree with a working pal's live topics, Progress, Folder first, Grouped,
   Mini card). The dialog previews each one with your own pals; a click applies it.
 
 ## 0.3.0

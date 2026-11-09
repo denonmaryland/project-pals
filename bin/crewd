@@ -226,7 +226,7 @@ class Crewd:
             ask = "; ".join('"' + " ".join((d.get("text") or "").split())[:90] + '"' for d in ds)
             if what == "blocked":
                 msg = (f"[pal] {bot} #{ch} is stuck on a question for {OWNER} while on what you asked ({ask}). "
-                       f"It can't go on until {OWNER} answers in its channel; don't answer for {OWNER}.")
+                       f"It can't go on until {OWNER} answers in its topic; don't answer for {OWNER}.")
             else:
                 reply = crewchat.replies_since(addr, min(d["delivered_at"] for d in ds))
                 if reply:
@@ -422,7 +422,7 @@ class Crewd:
             user = (MEMORY / "USER.md").read_text() if (MEMORY / "USER.md").exists() else ""
             skills = "\n".join(f"- {s['name']}: {s['description']}" for s in crewskills.all_skills())
             prompt = f"""You review a coding agent's recent session so its next sessions remember what matters.
-The agent is the pal "{bot}" (channel #{ch}), working for {OWNER}.
+The agent is the pal "{bot}" (topic #{ch}), working for {OWNER}.
 
 Already remembered by this pal:
 {current or "(nothing yet)"}

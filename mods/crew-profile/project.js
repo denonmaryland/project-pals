@@ -468,8 +468,8 @@ export function brainTab(view, space, bot, d, full) {
   body.child(section(d, "bwhere", "Brain lives in", v_flex().gap(8).child(h_flex().child(seg))
     .child(div().text_size(11).line_height("15px").font_family(d.mono).text_color(d.fg3).child(b.dir.replace(/^\/home\/[^/]+/, "~")))
     .child(div().text_size(11).line_height("15px").text_color(d.fg3).child(b.where === "pal"
-      ? "One brain for every channel and worktree, never in the repo."
-      : "In the project's .pals/, where git and Obsidian see it. Worktree channels read the main folder's."))));
+      ? "One brain for every topic and worktree, never in the repo."
+      : "In the project's .pals/, where git and Obsidian see it. Worktree topics read the main folder's."))));
   body.child(section(d, "bwho", "Who writes it", div().text_size(12).line_height("17px").text_color(d.body)
     .child("The pal keeps it current: pal brain log, pal brain decide, pal mission focus. You edit anything here. No rules live here: those go in AGENTS.md.")));
   return body;

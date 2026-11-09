@@ -252,7 +252,7 @@ export default class CrewProfile extends View {
     const cards = div().px(16).pt(4).pb(14).child(statCards(this, space, bot, d, { cols: 2, w: W - 32 }));
     const facts = sec("facts", "Facts", v_flex().gap(6).child(this.roleRow(bot, d)).child(this.facts(space, bot, d)),
       this.link("pf-look", "Customize look", d, () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })));
-    const channels = sec("channels", "Channels", this.channels(space, bot, d));
+    const channels = sec("channels", "Topics", this.channels(space, bot, d));
     const memory = sec("memory", "Memory", this.memory(bot, d), h_flex().gap(10)
       .child(this.link("pf-remember", "Remember…", d, () => { this.showRemember = !this.showRemember; if (this.showRemember) this.remember.focus(); }))
       .when(Boolean(this.mem?.folder), (el) => el.child(this.link("pf-memfolder", "Open folder", d, () => exec("xdg-open", [this.mem.folder]).catch(() => {})))));
@@ -399,7 +399,7 @@ export default class CrewProfile extends View {
     return v_flex().gap(6)
       .child(h_flex().gap(6)
         .child(btn("pf-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } })))
-        .child(btn("pf-channel", "ds-plus", "Channel", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
+        .child(btn("pf-channel", "ds-plus", "Topic", () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }))))
       .child(h_flex().gap(6)
         .child(btn("pf-look", "ds-user", "Customize look", () => openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } })))
         .when(!bot.god, (el) => el.child(btn("pf-sleep", "ds-moon", "Put to sleep", (cx) => this.sleep(space, bot)(cx)))));

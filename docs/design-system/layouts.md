@@ -23,14 +23,14 @@ and which nodes are shown. Content never re-orders and a draft never gets lost.
 | | **Focus** (default) | **Pro** |
 |---|---|---|
 | For | Talking to one pal, reading, the everyday | Running several pals, reviewing work, watching tools |
-| Left | 304 px sidebar: **hero pal** (hero v2 Floor: no box, the pet full width on a lit floor, name + state, channel chips, quick actions), then the **pal list** with avatar, name, `[tag] preview`, time, unread/state dot, and "Hidden pals N" | **Pal rail** 60 px (avatars + state dots, same order) + **list column** 264 px: banner pal card (art cropped to 150 px), the active pal's **channels** with previews, and "Across pals" (working / needs you) |
-| Header | `# channel ▾` picker on the left, **pal name chip centred**, branch chip on the right | **Channel tabs** (30 px, r4), name chip at the right end |
+| Left | 304 px sidebar: **hero pal** (hero v2 Floor: no box, the pet full width on a lit floor, name + state, topic chips, quick actions), then the **pal list** with avatar, name, `[tag] preview`, time, unread/state dot, and "Hidden pals N" | **Pal rail** 60 px (avatars + state dots, same order) + **list column** 264 px: banner pal card (art cropped to 150 px), the active pal's **topics** with previews, and "Across pals" (working / needs you) |
+| Header | `# topic ▾` picker on the left, **pal name chip centred**, branch chip on the right | **Topic tabs** (30 px, r4), name chip at the right end |
 | Chat | Centred 720 px column, 28 px between groups, airy | Fluid column, 16 px between groups, inline **tool log** under replies |
 | Right | Nothing: the chat takes the full width (the rail was removed 2026-11-08; terminal via Chat · Terminal) | **Inspector** 320 px: Run / Tasks / Memory tabs, Tasks list, **Changes** with +/− per file, **Terminal** tail, and Fold |
 | Composer | **Shared** (below) | **Shared**, full width |
 | Status bar | working count · usage · **mode switch** · version | Same, plus needs-you count and git ahead/behind |
 
-Hidden in Focus (one click away, never removed): channel tabs, the Changes list, the terminal tail,
+Hidden in Focus (one click away, never removed): topic tabs, the Changes list, the terminal tail,
 the tool-log detail (a single tool chip shows instead), and the cross-pal summary (state dots in the
 pal list carry it).
 
@@ -82,7 +82,7 @@ Stored with the other UI prefs in `data/crew-settings.json` (mirrored to shared 
 | `focus.sidebarPx` / `pro.listPx` / `pro.inspectorPx` | 304 / 264 / 320 | Each mode remembers its own drag widths, so switching never fights a resize. |
 | `pro.inspectorTab` | `"run"` | The last inspector tab. |
 
-Not remembered: an open peek, the scroll position, the composer draft (that belongs to the channel, as today).
+Not remembered: an open peek, the scroll position, the composer draft (that belongs to the topic, as today).
 Per-pal data under `data/` is never touched by the switch (see AGENTS.md rules of thumb).
 
 ## Implementation plan for the mod (not started)
@@ -105,9 +105,9 @@ Small steps. Each step ships alone behind `layoutMode` defaulting to today's beh
 4. **Commands + keys.** Add `mode` / `mode.focus` / `mode.pro` to the roster's `nextCommand()` loop
    (callable as `crew-roster.mode` from `keys.json`, `herdr-app do` and the command palette). The installer adds
    `"ctrl-shift-m": "crew-roster.mode"` to the `global` map **only if that key is free**, and never rewrites a user's existing binding.
-5. **Roster renders by mode.** Focus draws the hero card + pal list with previews (the `[tag]` is the channel name or
-   the last task tag). Pro draws the banner card + channel list + "Across pals". Both use the same row and avatar code.
-6. **`crew-header`** shows the channel picker and centred chip in Focus, and the tab strip's chip in Pro (it reads `layoutMode`).
+5. **Roster renders by mode.** Focus draws the hero card + pal list with previews (the `[tag]` is the topic name or
+   the last task tag). Pro draws the banner card + topic list + "Across pals". Both use the same row and avatar code.
+6. **`crew-header`** shows the topic picker and centred chip in Focus, and the tab strip's chip in Pro (it reads `layoutMode`).
 7. **`crew-side` becomes the inspector** (Run/Tasks/Memory, Changes, Terminal) and also renders a single section,
    (Focus no longer peeks; Pro shows it.)
 8. **`crew-composer`** gets the shared two-row control set (model, permission, mic, voice) in both modes. Mic and voice
@@ -121,10 +121,10 @@ Open before building: the A vs B bubble, closing grey vs red outline, near-black
 
 ## Terminal-first: the chat view is removed (DeNon, 2026-11-08)
 
-DeNon felt a chat view fights Herdr's nature: the channel's terminal is the main view in both Focus
+DeNon felt a chat view fights Herdr's nature: the topic's terminal is the main view in both Focus
 and Pro, and a real chat belongs to the parked native app later. Removed: the `crew-chat` mod
 (and its session-file feeds, `bin/crewchat.py`), the Chat | Terminal switch, and the composer for
-channels. The composer stays for rooms only (a room has no terminal). The prompt card that answered
+topics. The composer stays for rooms only (a room has no terminal). The prompt card that answered
 Claude Code's permission prompts and questions moved to a floating block over the terminal
 (`crew-prompt`), then was removed the same day: it repeated the terminal's question and covered it. On the Paper boards, everything drawn in the chat column (bubbles, groups, the tool
-log, the channel composer) is history: read that column as the channel's terminal.
+log, the topic composer) is history: read that column as the topic's terminal.

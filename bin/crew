@@ -2,36 +2,37 @@
 """pal (also crew): how a Project Pals pal (or you) works with the rest of the team.
 
 The team
-  pal overview [--deep]             everything at once: pals, channels (what each is on), projects
+  pal overview [--deep]             everything at once: pals, topics (what each is on), projects
                                      (git), memory, tasks, rooms, routines, approvals, what's stuck
   pal team                          the short roster
   pal feed [--all] [-n 40]          what happened since you last looked (finished, blocked, stuck…)
-  pal peek <Pal[#ch]> [-n 60]       read a pal's screen and recent history, and what it's waiting on if blocked
+  pal peek <Pal[#topic]> [-n 60]    read a pal's screen and recent history, and what it's waiting on if blocked
                                      (a prompt and its options: only the owner answers those, in its tab)
 
 Talking
-  pal tell <Pal[#ch]> <text> [--now]
+  pal tell <Pal[#topic]> <text> [--now]
                                      message a pal; delivered when its turn ends (--now: right away,
                                      for a pal that's stuck mid-turn). You hear back when it finishes.
-  pal ask <Pal[#ch]> <text> [--timeout 600]
+  pal ask <Pal[#topic]> <text> [--timeout 600]
                                      message a pal, wait for its answer, print it
-  pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#ch]>...
+  pal room ...                      group rooms (pal-room --help); pal invite <room> <Pal[#topic]>...
 
 Hiring
-  pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--channel general] [--folder DIR] [--machine M] [--task T]
-  pal channel <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
-                                     a new channel; --worktree gives it its own git branch and folder
+  pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--topic general] [--folder DIR] [--machine M] [--task T]
+  pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
+                                     a new topic (a tab); --worktree gives it its own git branch and folder.
+                                     pal channel is the same command (topics were called channels before 0.3.1)
 
 Work
-  pal task add "<title>" [--for Pal[#ch]] [--after T1,T2] [--body T] [--check "cmd"]
+  pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
   pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
             | assign T Pal | cancel T | reopen T
-  pal routine add <Pal> "<when>" "<prompt>" [--name N] [--channel routines]
+  pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
-  pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--channel C]
-  pal diff <Pal#ch> [--stat|--json] what a worktree channel changed
-  pal land <Pal#ch> [--check "cmd"] merge a worktree channel's branch into its project (needs the owner)
+  pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--topic C]
+  pal diff <Pal#topic> [--stat|--json] what a worktree topic changed
+  pal land <Pal#topic> [--check "cmd"] merge a worktree topic's branch into its project (needs the owner)
 
 Mission, brain and agent files (the profile panel shows them all)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
@@ -76,7 +77,8 @@ Approvals (the owner)
   pal approve ID | pal deny ID ["note"]
 
 "Pal" matches a pal's name or the start of it ("docs" finds "Docs Site"); without
-#channel you get the one it's showing. hire, channel and invite are carried out by the Project Pals layout,
+#topic you get the one it's showing (Pal#topic: a pal's tabs are its topics; --channel and
+pal channel still work, as before 0.3.1). hire, topic and invite are carried out by the Project Pals layout,
 so Herdr has to be open on it. crewd (herdr-crew.service) delivers messages between turns, runs
 routines and reports back; without it, messages are typed in right away.
 """
@@ -106,6 +108,8 @@ def opts(rest, flags, bools=()):
     pos, out, i = [], {}, 0
     while i < len(rest):
         a = rest[i]
+        if a == "--topic" and "channel" in flags:   # --topic is --channel's new name (0.3.1); both work
+            a = "--channel"
         if a.startswith("--") and a[2:] in bools:
             out[a[2:]] = True; i += 1
         elif a.startswith("--") and a[2:] in flags:
@@ -339,7 +343,7 @@ def target(spaces, spec):
         die("that's you")
     if x["terminal"] not in live_agents():
         die(f"{space['name']} #{chan(tab)} is asleep (no agent running there). Wake it by inviting it to a room, "
-            f"or give it a fresh channel: pal channel \"{space['name']}\" <name> --brief \"...\"")
+            f"or give it a fresh topic: pal topic \"{space['name']}\" <name> --brief \"...\"")
     return space, tab, x["terminal"]
 
 
@@ -479,7 +483,7 @@ def git(folder, *args, check=True):
 def make_worktree(space, name, base=None):
     folder = space.get("folder")
     if space.get("machine"):
-        raise CrewError("worktree channels are for pals on this computer for now")
+        raise CrewError("worktree topics are for pals on this computer for now")
     if not folder:
         raise CrewError(f"{space['name']} has no project folder")
     repo = git(folder, "rev-parse", "--show-toplevel")
@@ -502,7 +506,7 @@ def worktree_of(space, tab):
     wts = r.get("worktrees") or {}
     wt = wts.get(tab["name"]) or wts.get("#" + chan(tab))
     if not wt:
-        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with pal channel … --worktree)")
+        raise CrewError(f"{space['name']} #{chan(tab)} doesn't have its own branch (make one with pal topic … --worktree)")
     return wt
 
 
@@ -570,7 +574,7 @@ def cmd_land(spaces, spec, check=None):
                 except CrewError:
                     pass
             die(f"couldn't land {wt['branch']}: it conflicts with {wt['base']} (merge aborted, nothing changed). "
-                f"The channel was asked to rebase.\n{conflicts[-800:]}")
+                f"The topic was asked to rebase.\n{conflicts[-800:]}")
     x = lead(tab)
     if x:
         try:
@@ -654,7 +658,7 @@ def cmd_routine(spaces, rest):
     if sub == "add":
         pos, o = opts(args, ("name", "channel"))
         if len(pos) < 3:
-            die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--channel routines]')
+            die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]')
         space, _ = find(pos[0], spaces)
         r = crewroutines.add(space["name"], pos[1], " ".join(pos[2:]), o.get("name"), o.get("channel", "routines"), by=name)
         print(f"added {r['id']} {r['name']}: {space['name']} #{r['channel']}, {crewroutines.describe(r['rule'])}"
@@ -711,7 +715,7 @@ def cmd_remember(spaces, args):
     s, t = my_bot(spaces)
     bot = o.get("bot") or (s["name"] if s else None)
     if not bot and not o.get("user"):
-        die("run this from a pal's channel, or say which: --pal Name")
+        die("run this from a pal's topic, or say which: --pal Name")
     path = remember(bot or f"{OWNER}", " ".join(pos), channel=chan(t) if t else None, user=o.get("user", False))
     print(f"remembered ({path.relative_to(DATA)})")
 
@@ -786,7 +790,7 @@ def pal_of(spaces, spec=None):
     else:
         space, _ = my_bot(spaces)
         if not space:
-            die("run this from a pal's channel, or say which: --pal Name")
+            die("run this from a pal's topic, or say which: --pal Name")
     return space, record_of(space), space["name"]
 
 
@@ -1128,7 +1132,7 @@ def cmd_notebook(spaces, rest):
     if sub == "rm":
         require_owner("Remove a notebook entry")
         if len(pos) < 3:
-            die("pal notebook rm <Pal> <YYYY-MM-DD> <entry id | \"HH:MM #channel\">")
+            die("pal notebook rm <Pal> <YYYY-MM-DD> <entry id | \"HH:MM #topic\">")
         space, rec, name = pal_of(spaces, pos[0])
         crewnotebook.remove(name, pos[1], " ".join(pos[2:]), DATA / "crew-backups" / "notebook" / slug(name))
         print(f"removed entry {' '.join(pos[2:])} from {name}'s {pos[1]} (a copy of the day is in crew-backups/notebook/)")
@@ -1490,7 +1494,7 @@ def main(argv):
         print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
-    elif cmd == "channel" and len(rest) >= 2:
+    elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.3.1
         pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
         extra = {}
         if o.pop("worktree", False):
@@ -1507,7 +1511,7 @@ def main(argv):
         if out.get("added"):
             print(f"added {', '.join(out['added'])} to #{rest[0].lstrip('#')} (briefed)")
             if out.get("woke"):
-                print(f"woke {', '.join(out['woke'])} in a new channel for the room (it was asleep)")
+                print(f"woke {', '.join(out['woke'])} in a new topic for the room (it was asleep)")
         if out.get("skipped"):
             print(f"already in it: {', '.join(out['skipped'])}")
     elif cmd == "task":

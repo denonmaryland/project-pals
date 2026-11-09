@@ -106,7 +106,7 @@ export default class CrewRoster extends View {
     this.taskInput = InputState.new({ placeholder: "Add a task, @Pal to assign it" });
     this.taskInput.on("submit", (_e, cx) => this.addTask(cx));
     // The hero's channel search (its header's magnifier): filters as you type, Esc clears.
-    this.chSearch = InputState.new({ placeholder: "Search channels" });
+    this.chSearch = InputState.new({ placeholder: "Search topics" });
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
     this.chScroll = VirtualListScrollHandle.new();
@@ -119,7 +119,7 @@ export default class CrewRoster extends View {
         if (c === "hire") this.hire();
         else if (c === "routines") this.routines();
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
-        else if (c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
+        else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
         else if (c === "profile") togglePanel(panelTab());
@@ -281,7 +281,7 @@ export default class CrewRoster extends View {
     return div().flex_none().px(7).py(2).rounded(4).text_size(11.5)
       .bg(blocked ? a(t.blocked, "22") : a(t.foreground, "0c"))
       .text_color(blocked ? t.blocked : t.dim)
-      .child(blocked ? `${blocked} blocked` : `${n} ch`);
+      .child(blocked ? `${blocked} blocked` : `${n} topic${n === 1 ? "" : "s"}`);
   }
 
   segments(t, bots, waiting, extra = 0, first = "Pals") {
@@ -478,7 +478,7 @@ export default class CrewRoster extends View {
         .when(Boolean(task.result), (el) => el.child(div().text_size(12).text_color(t.muted).child(`Result: ${task.result}`)))
         .when(Boolean(last) && !task.result, (el) => el.child(div().text_size(12).text_color(t.dim).child(`${last.by}: ${last.text}`)))
         .child(h_flex().gap(14)
-          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open channel", () => this.go(f.space, f.tab))))
+          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open topic", () => this.go(f.space, f.tab))))
           .when(task.status !== "done", (el) => el.child(link(`tk-done-${task.id}`, "Mark done", act(["task", "done", task.id], `${task.id} done`), t.muted)))
           .when(task.status === "done" || task.status === "cancelled", (el) => el.child(link(`tk-re-${task.id}`, "Reopen", act(["task", "reopen", task.id]), t.muted)))
           .when(task.status !== "done" && task.status !== "cancelled", (el) => el.child(link(`tk-x-${task.id}`, "Cancel", act(["task", "cancel", task.id]), t.dim)))) : null;
@@ -526,10 +526,10 @@ export default class CrewRoster extends View {
           .when(busy, (el) => el.child(svg(WAVE).w(26).h(8).text_color(t.working))))
         .child(h_flex().items_center().gap(8)
           .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 18, t))))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} channels`)))
+          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} topic${members.length === 1 ? "" : "s"}`)))
         .when(Boolean(room.goal), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(room.goal))));
     }
-    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put channels from different pals together, so they can hand each other work."));
+    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put topics from different pals together, so they can hand each other work."));
     list.child(h_flex().id("room-new").items_center().gap(8).px(12).py(10).cursor_pointer().hover((s) => s.opacity(0.8))
       .on_click(() => openOverlay({ mod: "crew-room-new", kind: "dialog", width: 520, modal: true }))
       .child(svg(`${ICON}/plus.svg`).size(12).text_color(t.accent))
@@ -646,7 +646,7 @@ export default class CrewRoster extends View {
   // 30 px band at the top, just over the sprite (16/600, the full width, never cut; a state dot before
   // it; no state word). Under the floor: the pal's channels, full width,
   // up to six rows then scrolling, with a search in their header; then the quick actions as
-  // pebbles: + Channel, Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
+  // pebbles: Inbox (the needs-you count), Tasks (its count), Profile (icon: the right-side panel), Sleep (icon). The
   // name opens the profile panel too. Its task text is in its pal row below.
   heroCard({ space, bot }, t, d, w) {
     const tab = space.tabs.find((x) => x.active);
@@ -689,21 +689,26 @@ export default class CrewRoster extends View {
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
     // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    // Channel and Tasks share the row evenly and Tasks keeps a fixed slot for its count, so a count
+    // Inbox and Tasks share the row evenly and each keeps a fixed slot for its count, so a count
     // appearing or a pal switch never changes their widths (DeNon: nothing in the hero may move).
-    const btn = (id, icon, text, action, extra, slot = 0) => pebble(d, { id, icon, label: text, extra, slot, onClick: action, even: true });
+    const btn = (id, icon, text, action, extra, slot = 0, more = {}) => pebble(d, { id, icon, label: text, extra, slot, onClick: action, even: true, ...more });
+    // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
+    // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
+    // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
+    const needs = shared("crew.needs")?.count ?? 0;
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().px(8).pt(12).gap(6)
-        .child(btn("hero-channel", "ds-plus", "Channel", () => this.duplicate(bot)))
+        .child(btn("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"),
+          needs ? (needs > 99 ? "99+" : needs) : null, 18, { extraColor: needs ? d.warnText : null, tooltip: needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "Nothing needs you" }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
         .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine ? (mine > 99 ? "99+" : mine) : null, 18))
         // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
-        // Channel and Tasks keep their full labels at 304 px; the name above opens it too.
+        // Inbox and Tasks keep their full labels at 304 px; the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
         .child(pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
   }
@@ -738,14 +743,14 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
-      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Channels"))
+      head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
         .child(div().flex_1().text_size(11).line_height("14px").text_color(d.fg4).child(String(ordered.length)))
         .when(below > 0, (el) => el.child(div().id("hero-ch-more").flex_none().h(22).px(4).flex().items_center().rounded(d.r.xs).cursor_pointer()
           .hover((s) => s.bg(d.hover)).tooltip("Show the rest")
           .on_click((_e, cx) => { this.chScroll.scroll_to_item(list.length - 1); cx.timer.after(80, (cx) => cx.notify()); })
           .child(div().text_size(11).line_height("14px").text_color(d.fg2).child(`+${below} more`))))
         .child(div().id("hero-ch-search").size(22).flex_none().flex().items_center().justify_center().rounded(d.r.xs).cursor_pointer()
-          .hover((s) => s.bg(d.hover)).tooltip("Search channels")
+          .hover((s) => s.bg(d.hover)).tooltip("Search topics")
           .on_click((_e, cx) => { this.chSearchOpen = true; this.chSearch.focus(); cx.notify(); })
           .child(svg(`${ICON}/ds-search.svg`).size(12).text_color(d.fg3)));
     }
@@ -785,9 +790,9 @@ export default class CrewRoster extends View {
     const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
       .child(svg(`${ICON}/ds-plus.svg`).size(11).flex_none().text_color(d.fg4))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New channel")));
+      .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New topic")));
     if (!list.length) {
-      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No channel matches "${this.chSearch.value().trim()}"`));
+      if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No topic matches "${this.chSearch.value().trim()}"`));
       else box.child(newRow());
       return v_flex().pt(4).child(head).child(box);
     }

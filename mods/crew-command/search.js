@@ -7,8 +7,8 @@
 // ("rvch" finds "Review changes"). Results come back grouped, each group capped, groups in the
 // order of their best hit (ties keep GROUPS' order), so Enter on the first row is the best match.
 
-export const GROUPS = ["Pals", "Channels", "Tasks", "Vault", "Commands"];
-export const CAPS = { Pals: 4, Channels: 4, Tasks: 3, Vault: 3, Commands: 4 };
+export const GROUPS = ["Pals", "Topics", "Tasks", "Vault", "Commands"];
+export const CAPS = { Pals: 4, Topics: 4, Tasks: 3, Vault: 3, Commands: 4 };
 // At most this many rows in all, so the list fits the popup without scrolling.
 export const MAX_ROWS = 13;
 

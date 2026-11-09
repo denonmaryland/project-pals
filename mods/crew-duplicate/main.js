@@ -6,7 +6,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, notify, spaces, exec } from "herdr";
 import { botOf, updateBot, brainLogo, mascotEl, mood, crewCli, withBypass, a, modelsFor, modelOf, withModel, launchSpec, primerHint, tone, ds,
-  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter } from "./crew.js";
+  sheet, sheetHeader, sheetFace, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetToggle, sheetPanel, sheetOption, sheetFooter, categoryName } from "./crew.js";
 
 export default class CrewDuplicate extends View {
   init(_props, cx) {
@@ -40,7 +40,7 @@ export default class CrewDuplicate extends View {
   }
 
   categories() {
-    return [...new Set(Object.values(this.bot?.categories ?? {}).concat("General"))];
+    return [...new Set(Object.values(this.bot?.categories ?? {}).map(categoryName).concat("General"))];
   }
 
   go(cx) {
@@ -48,7 +48,7 @@ export default class CrewDuplicate extends View {
     const space = bot && spaces().find((x) => x.id === bot.space);
     if (!space) return notify({ title: "That pal is gone", level: "warning" });
     const name = "#" + (this.channel.value().trim().replace(/^#/, "").replace(/\s+/g, "-"));
-    if (name === "#") return notify({ title: "Name the channel", level: "warning", timeout: 2500 });
+    if (name === "#") return notify({ title: "Name the topic", level: "warning", timeout: 2500 });
     if (space.tabs.some((x) => x.name === name || x.name === name.slice(1))) return notify({ title: `${bot.name} already has ${name}`, level: "warning", timeout: 2500 });
     const category = this.category === "+new" ? (this.newCategory.value().trim() || "General") : this.category;
     const brief = this.brief.value().trim();
@@ -141,7 +141,7 @@ export default class CrewDuplicate extends View {
 
     const ready = Boolean(this.channel.value().trim()) && !this.busy;
     return sheet(d, "crew-duplicate", this.handle, (e, cx) => this.key(e, cx))
-      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New channel", onClose: close,
+      .child(sheetHeader(d, { id: "dup", face: sheetFace(bot, t), title: "New topic", onClose: close,
         sub: `in ${bot.name} · ${bot.machine ?? "this computer"} · ${bot.memory?.trim() ? "starts with its memory" : "shares its project"}` }))
       .child(sheetBody()
         .child(sheetField(d, Input.new(this.channel).w_full().text_size(13).text_color(d.fg1), { prefix: "#" }))
@@ -149,6 +149,6 @@ export default class CrewDuplicate extends View {
         .child(row)
         .when(Boolean(panel), (el) => el.child(panel)))
       .child(sheetFooter(d, { id: "dup", hint: "Enter adds · Esc cancels", onCancel: close, ready,
-        primary: this.busy ? "Making its branch…" : "Add channel", onPrimary: (cx) => this.go(cx) }));
+        primary: this.busy ? "Making its branch…" : "Add topic", onPrimary: (cx) => this.go(cx) }));
   }
 }
