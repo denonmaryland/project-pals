@@ -408,24 +408,43 @@ def _ledger():
         return []
 
 
-def owner_entry(card):
-    """The ledger's word for this card as it is now: the owner's click, or a pass of it (T52), or None.
-    A pass entry only counts when it chains back, pass by pass, to the owner's own entry for the same
-    card: a pass changes `to` and nothing else, so the owner's words are still exactly theirs."""
+def _own_entries(card):
+    """hash → this card's own ledger entries: one without a card id, or another card's, matches nothing (Grok T56)."""
+    out = {}
+    for e in _ledger():
+        if e.get("hash") and card.get("id") and e.get("card") == card["id"]:
+            out.setdefault(e["hash"], e)
+    return out
+
+
+def _chain(card):
+    """[entries], newest first, from this card as it is now back to the owner's own entry; None when
+    the ledger doesn't vouch for it. Each pass step is recomputed from the card itself: the same card
+    with only `to` set back to where it was must hash to that step's passed_from. So a pass entry can
+    only ever move the owner's words, never change them (Grok T56: a hand-written passed_from line
+    used to bless a body the owner didn't write)."""
     if card.get("from_kind") != "owner":
         return None
-    by_hash = {}
-    for e in _ledger():
-        if e.get("hash") and e.get("card") in (None, card.get("id")):
-            by_hash.setdefault(e["hash"], e)
-    e, seen = by_hash.get(card_hash(card)), set()
-    first = e
-    while e and e.get("passed_from"):
-        if e["hash"] in seen or len(seen) > 50:
+    by_hash = _own_entries(card)
+    e, to, out = by_hash.get(card_hash(card)), card.get("to"), []
+    while e is not None:
+        out.append(e)
+        if not e.get("passed_from"):
+            return out   # the owner's own entry (a click, a sent draft, Confirm as mine)
+        if len(out) > 50 or e.get("to") != to or not e.get("from_to"):
             return None
-        seen.add(e["hash"])
-        e = by_hash.get(e["passed_from"])
-    return first if e else None
+        before = card_hash({**card, "to": e["from_to"]})
+        if before != e["passed_from"]:
+            return None
+        e, to = by_hash.get(before), e["from_to"]
+    return None
+
+
+def owner_entry(card):
+    """The ledger's word for this card as it is now: the owner's click, or a pass of it (T52), or None.
+    A pass changes `to` and nothing else, so the owner's words are still exactly theirs."""
+    c = _chain(card)
+    return c[0] if c else None
 
 
 def owner_verified(card):
@@ -434,19 +453,13 @@ def owner_verified(card):
 
 
 def passes(card):
-    """[(by, to)] for each pal that passed this verified owner card on, oldest first, and the owner's
-    original `to` first: [(None, to the owner sent it to), (by, to), …]. Empty when not passed."""
-    e = owner_entry(card)
-    if not e or not e.get("passed_from"):
+    """[(None, where the owner sent it), (by, to), …] for a verified owner card pals passed on, oldest
+    first. Empty when it wasn't passed."""
+    c = _chain(card) or []
+    if len(c) < 2:
         return []
-    by_hash = {x["hash"]: x for x in _ledger() if x.get("hash") and x.get("card") in (None, card.get("id"))}
-    out, sent = [], "?"
-    while e and e.get("passed_from"):
-        out.append((e.get("by") or "a pal", e.get("to") or "To route"))
-        sent = e.get("from_to") or sent   # the oldest pass's: where the owner sent it
-        e = by_hash.get(e["passed_from"])
-    out.append((None, sent))
-    return out[::-1]
+    steps = [(e.get("by") or "a pal", e.get("to") or "To route") for e in c[:-1]][::-1]
+    return [(None, c[-2].get("from_to") or "?"), *steps]
 
 
 def passed_note(card):
