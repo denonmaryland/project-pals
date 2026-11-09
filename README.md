@@ -85,7 +85,7 @@ tokens or the Desk's cards. The command waits in your Inbox until you click Appr
   fed to a shell, or a string that Python, Node, Perl, Ruby or PHP runs; file writes from those
   languages and from editors. A command that's only mentioned (a grep pattern, a quoted string,
   `--help`) isn't held. If the gate itself fails, the command is stopped, not let through.
-- Settings, updates, roll back, landing and renaming need your click in Project Pals too, and only
+- Settings, updates, roll back, uninstall, landing and renaming need your click in Project Pals too, and only
   your click sends a message as you.
 - **It catches mistakes, not a pal set on getting around it.** Pals run as you: a determined one
   could build a command from pieces or write a script and run it later. Antigravity CLI pals are
@@ -114,6 +114,19 @@ Needs Linux, Herdr (open it once first), `python3`, `curl` and `rsync`. Then swi
 `pals` layout (Ctrl+Shift+L). Without a systemd user session the install still works, but crewd is
 skipped: messages are typed in directly and routines and callbacks don't run.
 
+### Supported Herdr
+
+| | Supported | Run live (install, hire, topic, tell; uninstall on 0.1.14) | Checked (every mod loads, every command and argument it uses exists) |
+|---|---|---|---|
+| Herdr (`herdr-app`) | 0.1.8 or newer, below 0.2 | 0.1.8, 0.1.12, 0.1.14 | also 0.1.6, 0.1.7, 0.1.10, 0.1.13 |
+| herdr-core (`hc`) | 0.1.11 or newer, below 0.2 | 0.1.11, 0.1.15, 0.1.19 | also 0.1.17, 0.1.18 |
+
+Herdr is still at 0.1.x, so a Herdr update can change what Project Pals relies on. The installer
+checks `herdr-app --version` and `hc --version` against this range (it's in `pals.json`) and warns
+loudly outside it; it installs anyway. A Herdr newer than the tested one gets a quiet note. `pal
+version` shows the same check. Herdr 0.1.5 and older don't work (two mods fail to load). Each
+release states the range it was tested on.
+
 ## What it changes on your computer
 
 Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files outside Herdr's folder.
@@ -132,6 +145,31 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
 - **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; choose in About → Background model).
 - **The Desk's Auto routing:** a card you drop with Auto is sent to Claude Haiku (else Antigravity
   CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk.
+
+## Uninstall
+
+In Project Pals: **About → Uninstall** (it asks once more). From a terminal, in a clone or an
+unpacked release:
+
+```sh
+./install.sh --uninstall --dry-run   # list what would go, change nothing
+./install.sh --uninstall             # take Project Pals out; your pals' data stays
+./install.sh --uninstall --purge     # and the data too (pals, memory, the Desk, tasks, backups)
+```
+
+It takes out everything the install added: the layout and mods (Herdr goes back to its `main`
+layout), `pal` and the other commands, the library in `~/.local/lib/herdr-crew`, crewd's service,
+the Claude Code hooks, status-line wrapper and Desk mod, the Antigravity CLI hooks, the shared
+skill links, and the shortcuts it added to `keys.json`. Your own settings in those files stay as
+they are: when you haven't changed a file since the install, it goes back byte for byte; when you
+have, only Project Pals' entries come out (and the file is backed up first). Folders the install
+made go too, once empty.
+
+Your pals' data (`~/.config/herdr-app/data/crew-*`) and install backups (`.crew-backups`) stay
+unless you `--purge`. `--purge` still keeps `data/crew-worktrees` when it holds git worktrees,
+which can have uncommitted work. Agents already running in a pal's space keep the old hooks until
+they restart. `pal uninstall` is the same command, but it needs your click (that's what About's
+button sends), so a pal can't start one; the approval gate holds a pal's `./install.sh --uninstall`.
 
 ## Hiring a pal into a new folder
 
@@ -161,7 +199,7 @@ most every 6 hours.
 
 From a terminal: `pal version` and `pal update check`. Installing and rolling back are buttons in
 Project Pals: they need your click, so a pal can't start one.
-A first install has nothing to roll back to.
+A first install has nothing to roll back to; to take it out again, use Uninstall (above).
 
 ## Releasing (maintainers)
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (v1 work)
+
+- **Supported Herdr, stated and checked.** Project Pals works with Herdr 0.1.8 or newer and
+  herdr-core 0.1.11 or newer, below 0.2 (tested on 0.1.8–0.1.14 and 0.1.11–0.1.19). The range is
+  in `pals.json`; the installer checks both versions and warns loudly outside it, and `pal version`
+  and About say so too.
+- **Uninstall.** About → Uninstall, or `./install.sh --uninstall` (`--dry-run` to list,
+  `--purge` to take your pals' data too). Everything the install added comes out, and your own
+  `keys.json`, `~/.claude/settings.json` and `~/.gemini/config/hooks.json` go back to how they
+  were. `pal uninstall` needs your click; the approval gate holds a pal's
+  `./install.sh --uninstall`.
+
 ## 0.4.0: the Desk
 
 Everything sent to a pal is now a card you can follow, Home is one page to come back to, and
