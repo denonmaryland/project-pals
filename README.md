@@ -68,11 +68,28 @@ Code (Sonnet).
 | Harness | Status |
 |---|---|
 | Claude Code | Tested daily: hiring, topics, model picker, hooks and the Desk's pals mod (cards handed over mid-step or when idle), the approval gate and status line |
-| Antigravity CLI (`agy`) | Native (goodboimax's PR #1): hiring, topics, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate, shared skills |
+| Antigravity CLI (`agy`) | Native (goodboimax's PR #1): hiring, topics, model picker, `-i` startup prompt, hooks (`SessionStart`, `PreToolUse`, `PreInvocation`, `Stop`), the approval gate (shell commands only; its file-edit tools aren't gated yet), shared skills |
 | Codex | Tested as a pal. Shared skills work, and a `desk_check` / `desk_done` tool lets it check its desk; the approval gate and hooks are Claude Code and Antigravity CLI only, so cards are typed in when it's idle |
 | Grok CLI, Gemini CLI, opencode, Hermes, others | Supported by the code as terminal pals. Hooks and the approval gate are Claude Code and Antigravity CLI only |
 
 Reports from other harnesses are welcome.
+
+## The approval gate
+
+Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,
+merge or post on GitHub, deploy, send mail or webhooks, land a branch, run a repo's release script,
+edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
+tokens or the Desk's cards. The command waits in your Inbox until you click Approve.
+
+- It looks at the command as it runs: behind `npx`, a full path or `env`; inside `sh -c`, a heredoc
+  fed to a shell, or a string that Python, Node, Perl, Ruby or PHP runs; file writes from those
+  languages and from editors. A command that's only mentioned (a grep pattern, a quoted string,
+  `--help`) isn't held. If the gate itself fails, the command is stopped, not let through.
+- Settings, updates, roll back, landing and renaming need your click in Project Pals too, and only
+  your click sends a message as you.
+- **It catches mistakes, not a pal set on getting around it.** Pals run as you: a determined one
+  could build a command from pieces or write a script and run it later. Antigravity CLI pals are
+  gated on shell commands only: their own file-edit tools aren't checked yet.
 
 ## Install
 
@@ -112,10 +129,9 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
   - The Desk's Claude Code mod in `~/.claude/project-pals/pals`, loaded only by pals (with
     `--plugin-dir`), never by your other Claude Code sessions.
   - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
-- **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; configurable with `pal settings llm auto|claude|agy`).
+- **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; choose in About → Background model).
 - **The Desk's Auto routing:** a card you drop with Auto is sent to Claude Haiku (else Antigravity
-  CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk or
-  with `pal settings desk.triage off`.
+  CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk.
 
 ## Hiring a pal into a new folder
 
@@ -143,7 +159,9 @@ most every 6 hours.
 - The previous version is kept for **Roll back** (in the update dialog after an update, and in
   Project Pals settings). If an install fails, the previous version goes back by itself.
 
-From a terminal: `pal version`, `pal update check | apply | rollback`.
+From a terminal: `pal version` and `pal update check`. Installing and rolling back are buttons in
+Project Pals: they need your click, so a pal can't start one.
+A first install has nothing to roll back to.
 
 ## Releasing (maintainers)
 

@@ -73,16 +73,32 @@ held (topics, the new profile page, machines, the command bar, pal list looks) s
 ### Safer
 - **Only you speak as you.** A message headed "[from you]" now needs your click in Project Pals
   (Tasks, Review, Home). From a plain shell it says "not verified as you", and text inside a
-  message can't fake a header. Writing into the message queue by hand is held for your approval.
-- **The approval gate matches the command as it runs**, not as it's spelled: `npx vercel`,
-  `/usr/bin/git push`, `env -i … git push` and `git -C repo push` are held like `git push`, while
-  text that only mentions a command (a grep pattern, a quoted string) isn't.
-- **Agent files are guarded from scripts and editors too.** Writing AGENTS.md or CLAUDE.md through
-  Python, a heredoc, or a terminal editor (`ed`, `vim -es`, `sed`'s `w` …) is held for your click;
-  a script that only names those files without writing them isn't.
+  message can't fake a header. A message file Project Pals didn't write itself (one a script put in
+  the queue) reaches the pal labelled "unverified", its header quoted, never as yours.
+- **Your settings, updates and landings need your click too.** Changing settings (owner, head pal,
+  bypass, Settings → Desk), installing or rolling back an update, landing a branch, renaming pals
+  and pruning the Desk's archive go through Project Pals' buttons. A pal, or a terminal Herdr doesn't
+  know, is refused. Reading settings still works from any shell.
+- **What the approval gate holds** in Claude Code and Antigravity CLI pals, for your click in the
+  Inbox: `git push`, package publishes, GitHub releases, PR merges and posts, deploys (fly, vercel
+  --prod, netlify --prod, wrangler, kubectl apply/delete), mail and chat webhooks, `pal land`, a
+  repo's release script, edits of a project's AGENTS.md or CLAUDE.md, and writes into Project Pals'
+  message queue, your click tokens and the Desk's cards. It matches the command as it runs, not as
+  it's spelled: behind `npx`, a full path, `env` or `git -C`; inside `sh -c`, a heredoc or
+  here-string fed to a shell, or a string Python, Node, Perl, Ruby or PHP runs (`os.system`,
+  `subprocess`, `child_process`, `system`, backticks); and file writes from those languages
+  (`open(…, "w")`, `mode="w"`, `write_text`, `writeFileSync` …) or an editor (`ed`, `vim -es`,
+  `code` …). Text that only mentions a command (a grep pattern, a quoted string, `--help`) isn't
+  held. If the gate itself fails, the command is stopped, not let through.
+- **The gate catches mistakes, not a pal set on getting around it.** A pal runs as you: one
+  determined to could build a command from pieces, write a script first and run it later, or edit
+  these files directly. Antigravity CLI pals are gated on `run_command` only: their own file-edit
+  tools aren't checked yet, so an agy pal's edit of AGENTS.md isn't held.
 - **Notebook paths stay in the pal's own project** (and Project Pals' own config), not anywhere
-  under your projects folder.
-- **Roll back covers the new hooks** (and Antigravity CLI's hooks file), leaving your own.
+  under your projects folder, however the path is spelled (`~`, `$HOME`, `${HOME}`).
+- **Roll back puts the previous version back cleanly:** library files the newer version added go,
+  and so do its hooks (Antigravity CLI's too), with no empty hook lists left behind. Your own hooks
+  stay. A first install has nothing to roll back to.
 
 ### Topics, profiles and the sidebar
 - **Channels are now topics.** A pal's tabs are the topics it's working on, and everything you

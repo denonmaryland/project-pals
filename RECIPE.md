@@ -7,8 +7,8 @@ Every Herdr space is a pal (a project with a brain), and each of its tabs is a t
 working on one thing. Pals are pocket pets whose pose shows what they're doing. A topic is its
 agent's own terminal. You can put pals together in group-chat rooms and give them tasks and
 scheduled routines. Everything sent to a pal is a card on its desk (the Desk), and Home is the
-one page that shows what needs you. A head pal (named Orchestrator by default; About → Settings or
-`pal settings head "Name"` renames it) oversees everyone.
+one page that shows what needs you. A head pal (named Orchestrator by default; About → Settings
+renames it) oversees everyone.
 
 The layout updates itself from its GitHub releases.
 
@@ -243,7 +243,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Whoever handed out work is told when it's done.
   - Stuck topics (15 minutes of an unchanged screen) get flagged.
   - Routines run on schedule; a reply of NOTHING_NEW stays quiet.
-  - A cheap model (`claude -p` or `agy -p`, chosen with `pal settings llm`) reviews topics to save memory notes, distilled nightly.
+  - A cheap model (`claude -p` or `agy -p`, chosen in About → Background model: `pal settings llm` with the owner's click) reviews topics to save memory notes, distilled nightly.
   - Pals' replies (for `pal ask` and the "finished what you asked" callbacks) are read from Claude Code (`~/.claude/projects/…`) and Antigravity CLI (`~/.gemini/antigravity-cli/brain/…`) session files, through `crewchat.py`.
   - It checks for updates every 6 hours at most (`crewupdate.CHECK_EVERY`).
 - **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
@@ -659,7 +659,9 @@ still travels through crewd's queue, carrying the card's id.
   top (open, held, needs you, drafts; triage calls against the cap; the last check-in), then Triage
   (Auto / Off), −/+ steppers for the triage cap, pals' soon cards per topic an hour, the check-in's
   held and quiet minutes and the archive days, and "MUSE sends as itself". Each change saves at once
-  with `pal settings desk.<key> <value>` (validated; pals are refused, as for every setting).
+  with `pal settings desk.<key> <value>` and the owner's one-time click token (`ownerCli`; validated).
+  Without the token every setting change is refused: a pal, an unknown terminal, a plain shell
+  (Grok review H1). Reading settings needs nothing.
 - **The head pal's check-in:** at most every 15 minutes, when something's stuck, crewd puts one low
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
@@ -868,6 +870,34 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   including ed / ex / `vim -es` commands from a heredoc, a here-string, `printf … |` or a `-S`/`<`
   script. Matched on the command as run, so a grep for "vim -c wq AGENTS.md" isn't held. Interpreters
   have their own rule; anything cleverer isn't caught: the gate isn't a boundary.
+  `sed -i` / `perl -i`'s script argument isn't a target (`_edited_files`; a-15ccbe). Desktop editors
+  count too (`code`, `cursor`, `zed`, `subl`, `gedit` …).
+- **Commands inside code are judged with every rule** (Grok review H2, `run_strings` in crewguard.py):
+  a heredoc, here-string or `echo|printf …|` fed to sh / bash / zsh / dash / ksh is a script it runs;
+  strings that interpreter code runs (`os.system`, `subprocess`, `child_process`, `system`, backticks
+  in Perl / Ruby / PHP), from `-c` / `-e` or code fed on stdin, are command lines (each string, and
+  each statement's strings joined, plus a name assigned a command earlier). `matches()` recurses into
+  those three levels deep. Python / Node / … writes into `crew-queue`, `crew-queue-sent`,
+  `crew-clicks` and `crew-desk` are found like agent-file writes. `open(p, mode="w")` and
+  `Path.open("w")` are writes. A command with `--help` runs nothing and isn't held. A heredoc fed to
+  an interpreter is judged as code (T38): text quoted inside its strings is neither a path nor a call,
+  unless the code runs commands. Best effort: a command built from pieces, base64, or a script written
+  and run later isn't seen.
+- **The gate fails closed** (Grok review M3): when `crew-hook pre-tool-use` / `agy-pre-tool-use` throws
+  in a Herdr terminal it denies with what failed. Outside Herdr (the hooks are global) and for the
+  other events it fails open, so a bug never blocks someone's own Claude Code session.
+- **A queue file needs a card or enqueue's record** (Grok review H2): `enqueue` writes
+  `crew-queue-sent/<item id>` = sha256 of its text; at hand-over (`item_text`, used by crewd, the
+  hooks and the Claude Code mod) an item with neither a readable card nor a matching record is
+  prefixed `[unverified: a queue file Project Pals didn't write …]` and `unforge`d. Delivery deletes
+  the record; crewd's tidy drops records older than 7 days.
+- **Owner commands need the click** (Grok review H1): `pal settings <key> …`, `pal update apply|rollback`,
+  `pal desk prune`, `pal renamed` and `pal land` (when the caller isn't a pal's terminal) call
+  `require_owner`: the app's one-time token for exactly that argv, from `ownerCli` / `clickToken`
+  (About, Settings → Desk, the roster's rename watcher, Review's Land, `updateStart`). "hc didn't
+  say pal" (no terminal ID, an unknown one, hc failing) isn't the owner.
+- **Known limit: Antigravity CLI's file-edit tools aren't gated** (Grok review M1): its hook sees
+  `run_command` only, so an agy pal's edit of AGENTS.md isn't held. The README says so.
 - **The profile panel binds every edit and review to its pal** (H4, `bind.js`): space, name,
   folder and a generation that bumps when the shown pal changes. A late diff for another pal is
   dropped, Write and Save refuse a changed target, and `pal agents apply --folder --staged-sha`
@@ -886,7 +916,8 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   (`SAFE_CONFIG`). Not the rest of ~/Projects: `~/Projects/demo-private` while working on
   `~/Projects/demo` is refused. Checked wherever personal files live (`PRIVATE_ROOTS`: home
   folders, `$HOME` wherever it is, `/root`, `/mnt`, `/media`, `/run/media`, `/srv` …); system paths
-  (`/usr`, `/etc`, `/tmp`) and a bare root ("under /mnt") aren't.
+  (`/usr`, `/etc`, `/tmp`) and a bare root ("under /mnt") aren't. `$HOME/…` and `${HOME}/…` are home
+  like `~/…` (Grok review M2).
 - **Notebook writes hold a per-pal lock and their own temp file** (M2), and every entry has an id
   (`· e1a2b3` at the end of its heading); deleting removes exactly that entry (M3). An older entry
   without an id is named "HH:MM #topic" and must match only one.

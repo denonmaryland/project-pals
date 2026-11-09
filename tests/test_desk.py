@@ -389,7 +389,7 @@ class Upkeep(unittest.TestCase):
 
     def test_a_rename_moves_the_desk(self):
         cid = cid_of(pal(self.env, "tell", "Helper#build", "follow me", term="tW").stdout)
-        r = pal(self.env, "renamed", "Helper", "Builder")
+        r = owner(self.env, self.data, "renamed", "Helper", "Builder")   # the app's token (Grok review H1)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse((self.data / "crew-desk" / "helper").exists())
         c = card(self.env, cid)
@@ -662,9 +662,9 @@ class DeskSettings(unittest.TestCase):
         self.root, self.env, self.data = sandbox()
 
     def test_set_and_show(self):
-        r = pal(self.env, "settings", "desk.triage_daily_cap", "40")
+        r = owner(self.env, self.data, "settings", "desk.triage_daily_cap", "40")   # Settings → Desk's click
         self.assertEqual((r.returncode, r.stdout.strip()), (0, "desk.triage_daily_cap = 40"), r.stderr)
-        self.assertEqual(pal(self.env, "settings", "desk.partner_sends_as_itself", "on").stdout.strip(), "desk.partner_sends_as_itself = on")
+        self.assertEqual(owner(self.env, self.data, "settings", "desk.partner_sends_as_itself", "on").stdout.strip(), "desk.partner_sends_as_itself = on")
         d = json.loads((self.data / "crew-settings.json").read_text())["desk"]
         self.assertEqual((d["triage_daily_cap"], d["partner_sends_as_itself"], d["archive_after_days"]), (40, True, 14))
         self.assertIn("desk.triage = auto", pal(self.env, "settings", "desk").stdout)
@@ -674,10 +674,11 @@ class DeskSettings(unittest.TestCase):
     def test_bad_values_and_pals_are_refused(self):
         for key, val in (("desk.triage", "maybe"), ("desk.triage_daily_cap", "-1"), ("desk.archive_after_days", "0"),
                          ("desk.nope", "1")):
-            self.assertNotEqual(pal(self.env, "settings", key, val).returncode, 0, key)
-        r = pal(self.env, "settings", "desk.triage", "off", term="tW")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("owner's to change", r.stderr)
+            self.assertNotEqual(owner(self.env, self.data, "settings", key, val).returncode, 0, key)
+        for term in ("tW", None):   # a pal, and a shell with no click (Grok review H1)
+            r = pal(self.env, "settings", "desk.triage", "off", term=term)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("click in Project Pals", r.stderr)
 
 
 def hook(env, *args, term=None, interactive="1"):

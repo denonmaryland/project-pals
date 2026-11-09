@@ -9,6 +9,8 @@ import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile,
 import { crewCli, ownerCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
+const LLM_ORDER = ["auto", "claude", "agy"];
+const LLM_NAMES = { auto: "Auto", claude: "Claude", agy: "Antigravity CLI" };
 const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"]).slice(0, 3).map(Number);
 const newer = (x, y) => { const p = vt(x), q = vt(y); for (let i = 0; i < 3; i++) if (p[i] !== q[i]) return p[i] > q[i]; return false; };
 const ago = (s) => { const d = Date.now() / 1000 - s; return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)}h ago` : `${Math.round(d / 86400)}d ago`; };
@@ -99,6 +101,15 @@ export default class CrewAbout extends View {
     });
   }
 
+  setLlm(value, cx) {
+    this.llm = value;   // shown at once; the saved one comes back through crew.settings
+    cx.notify();
+    cx.spawn(async () => {
+      try { await ownerCli(["settings", "llm", value]); }
+      catch (e) { this.llm = null; notify({ title: "Couldn't change it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+    });
+  }
+
   setBypass(on, cx) {
     cx.spawn(async () => {
       try { await ownerCli(["settings", "bypass", on ? "on" : "off"]); }
@@ -164,6 +175,7 @@ export default class CrewAbout extends View {
 
     // Settings, one row each.
     const bypass = Boolean(shared("crew.settings")?.bypass);
+    const llm = this.llm ?? shared("crew.settings")?.llm ?? "auto";
     // Settings can arrive after the dialog opened: fill the name in if it's still empty.
     if (!this.ownerFocused && !this.owner.value() && shared("crew.settings")?.owner) this.fillOwner = shared("crew.settings").owner;
     if (!this.headFocused && !this.head.value() && shared("crew.settings")?.head) this.fillHead = shared("crew.settings").head;
@@ -185,6 +197,11 @@ export default class CrewAbout extends View {
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
           .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
         (_e, cx) => this.setBypass(!bypass, cx)))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // Which model reviews topics for memory (pal settings llm: the owner's click since 0.4.0).
+      .child(row("set-llm", "Background model", "Reviews topics to save memory notes · click to change",
+        div().text_size(12.5).text_color(t.muted).child(LLM_NAMES[llm] ?? llm),
+        (_e, cx) => this.setLlm(LLM_ORDER[(LLM_ORDER.indexOf(llm) + 1) % LLM_ORDER.length], cx)))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // The mark beside a working channel: its own dialog, a grid of live previews (crew-indicator).
       .child(row("set-indicator", "Working indicator", "Beside a topic while its agent works",

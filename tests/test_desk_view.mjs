@@ -310,10 +310,10 @@ try {
   assert.equal(ds_.st.triage_today, 12);
   fx.calls.length = 0;
   await run((cx) => clicks.get("ds-triage_daily_cap-up")(null, cx));
-  assert.ok(fx.calls.some((c) => c.join(" ") === "pal settings desk.triage_daily_cap 110"), "the stepper saves at once");
+  assert.ok(fx.calls.some((c) => c.join(" ").startsWith("pal settings desk.triage_daily_cap 110 --click ")), "the stepper saves at once, with the owner's click");
   await run((cx) => ds_.render(cx));
   await run((cx) => clicks.get("ds-triage-t")(null, cx));
-  assert.ok(fx.calls.some((c) => c.join(" ") === "pal settings desk.triage off"), "triage switches off");
+  assert.ok(fx.calls.some((c) => c.join(" ").startsWith("pal settings desk.triage off --click ")), "triage switches off");
   fx.stats.settings.archive_after_days = 1;
   await run((cx) => ds_.load(cx)); await run((cx) => ds_.render(cx));
   fx.calls.length = 0;
