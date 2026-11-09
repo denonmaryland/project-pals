@@ -264,32 +264,49 @@ if __name__ == "__main__":
     unittest.main()
 
 
-def uninstall_in_a_pty(sb, typed, **extra):
+PTY_DRIVER = r"""
+import json, os, pty, select, sys, time
+argv, env, typed, out_file = json.loads(sys.argv[1])
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(env.pop("_CWD"))
+    os.execve(argv[0], argv, env)
+out, sent, deadline = b"", False, time.time() + 120
+while time.time() < deadline:
+    r, _, _ = select.select([fd], [], [], 0.5)
+    if r:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    if not sent and b"Type uninstall" in out:
+        os.write(fd, typed.encode() + b"\n")
+        sent = True
+_, status = os.waitpid(pid, 0)
+json.dump({"code": os.waitstatus_to_exitcode(status), "out": out.decode(errors="replace")}, open(out_file + ".tmp", "w"))
+os.replace(out_file + ".tmp", out_file)
+"""
+
+
+def uninstall_in_a_pty(sb, typed, argv=None, **extra):
     """./install.sh --uninstall at a real terminal (a pty as its controlling terminal), typing `typed`.
+    The driver runs detached (setsid -f: its parent is the user's service manager, not whatever runs
+    the tests), so the process tree above the uninstall is a person's terminal's, with no agent in it
+    even when a pal runs the suite. `argv` runs something else in the pty (an agent above it, say).
     Returns (exit status, what the terminal showed)."""
-    import pty
-    import select
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.chdir(ROOT)
-        os.execve("/bin/bash", ["bash", "install.sh", "--uninstall"], sb.env(**extra))
-    out, sent, deadline = b"", False, time.time() + 120
-    while time.time() < deadline:
-        r, _, _ = select.select([fd], [], [], 0.5)
-        if r:
-            try:
-                chunk = os.read(fd, 4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
-        if not sent and b"Type uninstall" in out:
-            os.write(fd, typed.encode() + b"\n")
-            sent = True
-    _, status = os.waitpid(pid, 0)
-    os.close(fd)
-    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
+    out_file = str(sb.base / f"pty-{time.time_ns()}.json")
+    env = {**sb.env(**extra), "_CWD": str(ROOT)}
+    argv = argv or ["/bin/bash", "install.sh", "--uninstall"]
+    subprocess.run(["setsid", "-f", sys.executable, "-c", PTY_DRIVER, json.dumps([argv, env, typed, out_file])],
+                   env={"PATH": "/usr/bin:/bin"}, check=True)
+    deadline = time.time() + 150
+    while not os.path.exists(out_file) and time.time() < deadline:
+        time.sleep(0.2)
+    res = json.load(open(out_file))
+    return res["code"], res["out"]
 
 
 class OnlyTheOwner(unittest.TestCase):
@@ -348,6 +365,39 @@ class OnlyTheOwner(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertFalse((self.sb.app / "mods" / "crew-roster").exists())
 
+    def test_not_under_a_pal_in_a_pty_it_made(self):
+        """Grok's re-check: expect / script / a pty give the uninstall a terminal, with HC_TERMINAL_ID
+        dropped. An agent above it in the process tree still refuses it."""
+        agent = self.sb.base / "fake-agent" / "claude"                    # a process named claude
+        agent.parent.mkdir()
+        agent.symlink_to(sys.executable)
+        run = "import subprocess, sys; sys.exit(subprocess.call(['bash', 'install.sh', '--uninstall']))"
+        code, out = uninstall_in_a_pty(self.sb, "uninstall", argv=[str(agent), "-c", run])
+        self.assertEqual(code, 3, out)
+        self.assertNotIn("Type uninstall", out)
+        self.assertIn("runs under claude", out)
+        # The terminal's id is still in an ancestor's environment after `env -u HC_TERMINAL_ID`.
+        (self.sb.shims / "hc").write_text('#!/bin/sh\n[ "$1" = get ] && { echo \'{"status": {"app": "codex", "state": "working"}}\'; exit 0; }\n'
+                                         + FAKE_HC.split("\n", 1)[1])
+        code, out = uninstall_in_a_pty(self.sb, "uninstall", HC_TERMINAL_ID="t9",
+                                       argv=["/bin/bash", "-c", "env -u HC_TERMINAL_ID bash install.sh --uninstall; exit $?"])
+        self.assertEqual(code, 3, out)
+        self.assertIn("terminal t9", out)
+        self.unchanged()
+        if shutil.which("expect"):                                        # Grok's own repro
+            code, out = uninstall_in_a_pty(self.sb, "", argv=[shutil.which("expect"), "-c",
+                "spawn bash install.sh --uninstall; expect \"Type uninstall\" { send \"uninstall\\r\" }; expect eof; catch wait r; exit [lindex $r 3]"],
+                HC_TERMINAL_ID="t9")
+            self.assertTrue((self.sb.app / "mods" / "crew-roster").exists(), out)
+
+    def test_purge_says_what_it_deletes(self):
+        code, out = uninstall_in_a_pty(self.sb, "no", argv=["/bin/bash", "install.sh", "--uninstall", "--purge"])
+        self.assertEqual(code, 3, out)
+        self.assertIn("--purge also deletes your pals' data", out)
+        self.assertIn("crew-desk", out)
+        self.assertIn(".crew-backups", out)
+        self.unchanged()
+
     def test_not_at_an_agents_terminal(self):
         # herdr-core reports an agent status for the terminal this runs in: typing doesn't count.
         (self.sb.shims / "hc").write_text('#!/bin/sh\n[ "$1" = get ] && { echo \'{"status": {"app": "claude-code", "state": "working"}}\'; exit 0; }\n'
@@ -396,6 +446,31 @@ class NoLinksFollowed(unittest.TestCase):
         self.assertTrue((self.elsewhere / "mods" / "crew-roster" / "main.js").is_file())
         for n in ("mods", ".claude", "data"):
             self.assertTrue(any(f"/{n} is a link" in x for x in out["notes"]), (n, out["notes"]))
+
+    def test_a_linked_app_home_or_config_isnt_followed(self):
+        """Grok's re-check: HERDR_APP_HOME a link, or ~/.config a link above it."""
+        self.sb.install()
+        real = self.elsewhere / "herdr-app"
+        shutil.move(str(self.sb.app), real)
+        link = self.sb.base / "app-link"
+        link.symlink_to(real)
+        tok_dir = real / "data" / "crew-clicks"   # (the token is read through the link; deletes aren't)
+        tok_dir.mkdir(exist_ok=True)
+        nonce = "cd" * 16
+        (tok_dir / f"{nonce}.json").write_text(json.dumps({"args": ["uninstall", "--json"], "at": int(time.time() * 1000)}))
+        out = json.loads(self.sb.run(sys.executable, "bin/crewuninstall.py", "uninstall", "--json", "--click", nonce,
+                                     HERDR_APP_HOME=str(link)).stdout)
+        self.assertTrue((real / "mods" / "crew-roster" / "crew.js").is_file())
+        self.assertTrue((real / "layouts" / "pals.json").is_file())
+        self.assertTrue(any("Herdr's home" in n and "is a link" in n for n in out["notes"]), out["notes"])
+        # ~/.config itself a link, Herdr's home the usual one inside it.
+        shutil.move(str(real), self.sb.home / ".config" / "herdr-app")
+        cfg = self.elsewhere / "config"
+        shutil.move(str(self.sb.home / ".config"), cfg)
+        (self.sb.home / ".config").symlink_to(cfg)
+        out = json.loads(self.sb.uninstall("--json").stdout)
+        self.assertTrue((cfg / "herdr-app" / "mods" / "crew-roster" / "crew.js").is_file())
+        self.assertTrue(any("above Herdr's home, is a link" in n for n in out["notes"]), out["notes"])
 
     def test_a_linked_settings_file_is_left_alone(self):
         user_config(self.sb)
@@ -457,12 +532,27 @@ class Lows(unittest.TestCase):
             d = self.sb.app / "mods" / name
             d.mkdir()
             (d / "main.js").write_text("// my own mod\n")
-        (self.sb.app / "mods" / "crew-tell").mkdir()                      # a retired one of ours
+        (self.sb.app / "mods" / "crew-tell").mkdir()                      # retired, our crew.js, not in the manifest
         shutil.copy(self.sb.app / "mods" / "crew-roster" / "crew.js", self.sb.app / "mods" / "crew-tell" / "crew.js")
         self.sb.uninstall()
         self.assertTrue((self.sb.app / "mods" / "crew-chat" / "main.js").is_file())
         self.assertTrue((self.sb.app / "mods" / "crew-mine" / "main.js").is_file())
+        # Grok's re-check: marker AND manifest. This install never placed crew-tell, so it stays.
+        self.assertTrue((self.sb.app / "mods" / "crew-tell" / "crew.js").is_file())
+
+    def test_without_a_manifest_the_marker_decides(self):
+        self.sb.install()
+        fp = self.sb.app / "data" / "crew-footprint.json"
+        d = json.loads(fp.read_text())
+        d.pop("installed")                                                 # an install from before the manifest
+        fp.write_text(json.dumps(d))
+        (self.sb.app / "mods" / "crew-tell").mkdir()
+        shutil.copy(self.sb.app / "mods" / "crew-roster" / "crew.js", self.sb.app / "mods" / "crew-tell" / "crew.js")
+        (self.sb.app / "mods" / "crew-chat").mkdir()
+        (self.sb.app / "mods" / "crew-chat" / "main.js").write_text("// my own mod\n")
+        self.sb.uninstall()
         self.assertFalse((self.sb.app / "mods" / "crew-tell").exists())
+        self.assertTrue((self.sb.app / "mods" / "crew-chat" / "main.js").is_file())
 
     def test_a_broken_range_check_is_said_out_loud(self):
         src = self.sb.base / "src"

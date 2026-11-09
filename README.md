@@ -176,16 +176,22 @@ which can have uncommitted work. Agents already running in a pal's space keep th
 they restart.
 
 - **Only you.** Every way in (About, `pal uninstall`, `./install.sh --uninstall`, the Python module
-  itself) needs your click or you typing `uninstall` at a terminal that isn't an agent's. A pal's
-  shell has no terminal to type in, so a pal can't uninstall; the approval gate also holds a pal's
-  `./install.sh --uninstall`. `--dry-run` needs neither.
-- **Never through a link.** If a folder on the way (`~/.local/lib`, `~/.claude`, Herdr's `mods` or
-  `data`) or a config file is a symlink, uninstall leaves it and tells you, instead of deleting or
-  writing where the link points. Install skips a `~/.claude/settings.json`, `~/.gemini` hooks file
-  or `keys.json` that is a link too, and says so.
-- It removes only what the install recorded placing (installs before 0.4.1 have no record: each
-  file is checked for Project Pals' own content instead), and only hook entries that are exactly
-  Project Pals' commands.
+  itself) needs your click or you typing `uninstall` at a terminal with no agent in it or above it.
+  A pal's shell has no terminal to type in, and a terminal a pal makes for it (`expect`, `script`, a
+  pty) has the pal above it, so both are refused. The approval gate also holds a pal's
+  `./install.sh --uninstall`, the same wrapped in `expect` / `script` / `unbuffer`, and code that
+  imports the uninstaller or reaches its click tokens. `--dry-run` needs neither. `--purge` tells you
+  what it will delete before you type.
+- **That stops mistakes, not a pal set on it.** Pals run as you, so a pal determined to get around
+  these checks (detaching from its own process tree, writing a script file first) can still
+  uninstall Project Pals, as it could delete the files by hand.
+- **Never through a link.** If Herdr's home, a folder above it (`~/.config`) or on the way
+  (`~/.local/lib`, `~/.claude`, Herdr's `mods` or `data`), or a config file is a symlink, uninstall
+  leaves it and tells you, instead of deleting or writing where the link points. Install skips a
+  `~/.claude/settings.json`, `~/.gemini` hooks file or `keys.json` that is a link too, and says so.
+- It removes only what the install recorded placing, and only when it still holds Project Pals'
+  own content (installs before 0.4.1 have no record: the content alone decides), and only hook
+  entries that are exactly Project Pals' commands.
 
 ## Hiring a pal into a new folder
 

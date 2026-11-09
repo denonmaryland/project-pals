@@ -312,9 +312,18 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   (`bin/crewuninstall.py`) from a checkout. `crewuninstall.uninstall()` itself checks the owner on
   every non-dry run, whoever calls it: a one-time click token for exactly its arguments
   (`["uninstall", …flags]`; pal passes its own `owner_args()`), or, with no click, "uninstall" typed
-  on `/dev/tty` (opened with `os.open`: a text `"r+"` open fails on a tty) when `HC_TERMINAL_ID`'s
-  terminal has no agent status (`hc get --json` `.status`; unknown counts as an agent). A pal's
-  shell has no controlling terminal. Refused: exit 3, nothing changed. `--dry-run` needs neither.
+  on `/dev/tty` (opened with `os.open`: a text `"r+"` open fails on a tty) when nothing above it is
+  an agent (`agent_above`, T58): not `HC_TERMINAL_ID`'s terminal, and, walking `/proc` parents, no
+  ancestor whose `comm` is an agent program (`AGENT_COMMS`) or whose own environment's
+  `HC_TERMINAL_ID` has an agent status (`hc get --json` `.status`; unknown counts as an agent). That
+  refuses a pal's `expect` / `script` / pty even after `env -u HC_TERMINAL_ID`. A pal's shell has no
+  controlling terminal. `--purge` prints `purge_list()` (the `data/crew-*` names, backups, cache)
+  before asking. Refused: exit 3, nothing changed. `--dry-run` needs neither. The gate's
+  `uninstall-indirect` check (`crewguard.runs_uninstall`) holds a pty wrapper (`expect`, `script`,
+  `unbuffer`, …) on a line naming `install.sh … --uninstall` or `crewuninstall`, and interpreter code
+  importing `crewuninstall`, naming `CLICKS` / `click_ok`, or running the uninstall under a pty.
+  Herdr's home itself, and every folder between `$HOME` and it, must not be a link
+  (`app_home_unsafe`).
   Every delete and write goes through `unsafe()`: each folder between Herdr's home or `$HOME` and
   the path must be a real folder resolving where its path says; a last-part link is unlinked; a
   config file that's a link is never written (temp file `O_EXCL | O_NOFOLLOW`, then rename). What's
@@ -1001,7 +1010,12 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
 - **Tests must never wait on the uninstall prompt**: run uninstall subprocesses with
   `start_new_session=True` (no controlling terminal), as `tests/test_uninstall.py` does; the release
-  preflight runs in a terminal. The typed path is tested in a `pty.fork()`.
+  preflight runs in a terminal. The typed path is tested in a `pty.fork()` inside a driver started
+  with `setsid -f`, so its parent is the user's service manager: run under a pal, the pal would
+  otherwise be above it and the owner's path would be refused.
+- **The uninstall checks stop mistakes, not a determined pal** (T58, Orca's bar). Pals run as you:
+  `setsid -f` around an `expect` (the same trick the test uses), a script file written first, or
+  deleting the files by hand all get past them. README says so.
 - **Roll back still writes `keys.json` and `~/.claude/settings.json` with a rename**, which would
   replace a symlinked one with a plain file; install and uninstall skip linked files (T57).
 - **Uninstall can only be exact from the first install that ran `record`** (T48). An install from

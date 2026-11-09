@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 12
+DEFAULTS_VERSION = 13   # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56)
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -41,6 +41,11 @@ DEFAULT = {
         # comment (`./install.sh --uninstall # --dry-run`) it's not one (Grok T56).
         {"name": "uninstall", "why": "uninstalls Project Pals",
          "pattern": r"(?![^#]*\s--dry-run(?:\s|$))(?:(?:ba)?sh\s+)?(?:\S*/)?install\.sh\b[^#]*\s--uninstall\b"},
+        # The same through a terminal a pal makes (expect, script, unbuffer, a pty) or from code that
+        # imports the uninstaller or reaches its click tokens (Grok T56 re-check). Catches the obvious
+        # ways, not a pal set on getting around it (README says so).
+        {"name": "uninstall-indirect", "why": "uninstalls Project Pals (through a pty or from code)",
+         "check": "uninstall-indirect", "pattern": r"$^"},
         # A project's agent instructions change only with the owner's click (the profile panel's
         # AGENTS.md tab; DeNon 2026-11-08, P6). A pal's Edit/Write on AGENTS.md or CLAUDE.md is held
         # (crew-hook turns it into "edit <path>"), and so is a shell write to one. The smooth way:
@@ -532,7 +537,8 @@ def code_writes_agent_file(code, quoted_text=False, path_re=None):
 
 
 # Project Pals' own commands, as they sit in bin/ next to this file (pal is crew, pal-room crew-room).
-OWN_CLI = {"crew", "crew-room", "crewd", "crew-hook", "crew-statusline"}
+OWN_CLI = {"crew", "crew-room", "crewd", "crew-hook", "crew-statusline",
+           "crewuninstall.py"}   # checks the owner itself; uninstall-indirect holds a real run
 
 
 def writes_agent_file_via_interpreter(cmd, path_re=None, file_re=None):
@@ -615,6 +621,50 @@ def writes_desk(cmd):
     """A write INTO data/crew-desk (as writes_queue)."""
     return any("crew-desk" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
         or bool(re.match(r"^edit\s+.*/crew-desk/", cmd)) or writes_agent_file_via_interpreter(cmd, *DESK_PLACE)
+
+
+# ─── Uninstall through a pty or from code (Grok T56 re-check) ───────────────────────────────────
+PTY_WRAPPERS = {"expect", "script", "unbuffer", "socat", "empty", "pty", "ptyrun", "faketty", "dtach",
+                "abduco", "tmux", "screen", "zpty", "pexpect"}
+NAMES_UNINSTALL = re.compile(r"install\.sh\b[^\n#]*--uninstall\b|\bcrewuninstall\b")
+# Code that loads the uninstaller or reaches the click tokens it trusts.
+UNINSTALL_CODE = re.compile(r"""\b(?:import|from)\s+crewuninstall\b|(?:__import__|import_module|require)\s*\(\s*['"][^'"]*crewuninstall"""
+                            r"""|\bcrewuninstall\.(?!py\b)\w+|\bCLICKS\b|\bclick_ok\b""")   # (not the file name)
+PTY_CODE = re.compile(r"""\bpty\b|\bopenpty\b|\bforkpty\b|\bpexpect\b|node-pty""")
+NOT_RUN = ("py_compile", "compileall", "pydoc", "pyflakes", "pylint", "flake8", "black", "ruff", "mypy")
+
+
+def runs_uninstall(cmd):
+    """The uninstall wrapped in a pty program, or code that imports the uninstaller, reaches its click
+    tokens, or runs the uninstall under a pty. --dry-run by itself (no wrapper, no code) stays free."""
+    segs = [normal_words(RUNNER.sub("", s)) for s in commands(cmd)]
+    heads = {os.path.basename(w[0]) for w in segs if w}
+    if heads & PTY_WRAPPERS and NAMES_UNINSTALL.search(cmd):
+        return True
+    for words in segs:
+        if not words or not INTERP.match(words[0]):
+            continue
+        args = words[1:]
+        if "-m" in args and any(a in NOT_RUN for a in args):
+            continue   # compiles or lints it; nothing runs
+        if UNINSTALL_CODE.search(cmd) or (PTY_CODE.search(cmd) and NAMES_UNINSTALL.search(cmd)):
+            return True   # -c / -e code, a heredoc, or the rest of the line
+        script = next((a for a in args if not a.startswith("-")), None)
+        if not script:
+            continue
+        if os.path.basename(script) == "crewuninstall.py":
+            rest = args[args.index(script) + 1:]
+            if rest[:1] == ["uninstall"] and "--dry-run" not in rest:
+                return True
+            continue
+        try:
+            with open(os.path.expanduser(script), errors="replace") as f:
+                text = f.read(400000)
+        except OSError:
+            continue
+        if UNINSTALL_CODE.search(text) and os.path.basename(script) not in ("crew", "crewuninstall.py"):
+            return True   # a script file that loads it
+    return False
 
 
 # ─── Commands run from inside other code (Grok review H2) ───────────────────────────────────────
@@ -700,7 +750,7 @@ def run_strings(cmd):
 
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk}
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall}
 
 
 def _help(seg):

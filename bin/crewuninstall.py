@@ -117,6 +117,24 @@ def exists(p):
 
 # ─── never through a symlink (T56, H2) ──────────────────────────────────────────────────────────
 
+def app_home_unsafe():
+    """Herdr's home itself (Grok T56 re-check): neither it nor a folder between your home and it (say
+    ~/.config) may be a link, or everything under it would be followed there. Outside your home (a
+    custom HERDR_APP_HOME), it must resolve to itself."""
+    app = Path(os.path.abspath(APP))
+    if app.is_symlink():
+        return f"Herdr's home {app} is a link (to {os.readlink(app)})"
+    if USER in app.parents:
+        cur = USER
+        for part in app.relative_to(USER).parts[:-1]:
+            cur = cur / part
+            if cur.is_symlink():
+                return f"{cur}, above Herdr's home, is a link (to {os.readlink(cur)})"
+    elif exists(app) and os.path.realpath(app) != str(app):
+        return f"Herdr's home {app} resolves somewhere else ({os.path.realpath(app)})"
+    return None
+
+
 def unsafe(p):
     """None when `p` may be deleted or written: it lies under Herdr's home or $HOME, and every folder
     between that root and `p` is a real folder that resolves where its path says. Else why not.
@@ -126,6 +144,10 @@ def unsafe(p):
     if not roots or p in (APP, USER):
         return f"{p} isn't inside Herdr's home or your home folder"
     root = roots[0]
+    if root == APP:
+        why = app_home_unsafe()
+        if why:
+            return why
     cur = root
     for part in p.relative_to(root).parts[:-1]:
         cur = cur / part
@@ -177,12 +199,13 @@ def click_ok(click, args):
             and time.time() * 1000 - (tok.get("at") or 0) < CLICK_TTL * 1000)
 
 
-def agent_terminal():
-    """Is this running in a terminal where an agent runs (herdr-core has an agent status for it)?
-    When herdr-core can't say, assume it is."""
-    tid = os.environ.get("HC_TERMINAL_ID")
-    if not tid:
-        return False
+# Programs that are coding agents (crewsleep.AGENT_COMMS and a few more harnesses).
+AGENT_COMMS = {"claude", "agy", "codex", "gemini", "opencode", "grok", "hermes", "cursor-agent", "aider",
+               "goose", "amp", "copilot", "crush", "qwen", "droid", "kiro", "kimi", "cline", "auggie"}
+
+
+def terminal_has_agent(tid):
+    """Does herdr-core report an agent status for this terminal? When it can't say, assume it does."""
     try:
         r = subprocess.run(["hc", "get", tid, "--json"], capture_output=True, text=True, timeout=10)
         return bool(json.loads(r.stdout).get("status"))
@@ -190,17 +213,67 @@ def agent_terminal():
         return True
 
 
+def _proc(pid, name):
+    try:
+        with open(f"/proc/{pid}/{name}", "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def agent_above():
+    """Why this runs under an agent, or None. Grok's T56 re-check: a pal can give the uninstall a
+    terminal of its own (expect, script, a pty) and drop HC_TERMINAL_ID first. So look up the whole
+    process tree: an agent program above us, or an ancestor in a herdr-core terminal that has an agent
+    (its HC_TERMINAL_ID is in that ancestor's own environment, whatever we were handed)."""
+    tid = os.environ.get("HC_TERMINAL_ID")
+    if tid and terminal_has_agent(tid):
+        return f"terminal {tid} runs an agent"
+    seen, checked, pid = set(), {tid} if tid else set(), os.getppid()
+    while pid > 1 and pid not in seen:
+        seen.add(pid)
+        comm = _proc(pid, "comm").decode(errors="replace").strip()
+        if comm in AGENT_COMMS:
+            return f"it runs under {comm} (pid {pid})"
+        for kv in _proc(pid, "environ").split(b"\0"):
+            if kv.startswith(b"HC_TERMINAL_ID="):
+                t = kv.split(b"=", 1)[1].decode(errors="replace")
+                if t and t not in checked:
+                    checked.add(t)
+                    if terminal_has_agent(t):
+                        return f"it runs under terminal {t}, which runs an agent"
+        stat = _proc(pid, "stat").decode(errors="replace")
+        try:
+            pid = int(stat[stat.rindex(")") + 2:].split()[1])
+        except (ValueError, IndexError):
+            break
+    return None
+
+
+def purge_list():
+    """What --purge deletes on top of an uninstall, in words (the typed prompt says it all first)."""
+    data = sorted(d.name for d in DATA.glob("crew-*")) if DATA.is_dir() and not unsafe(DATA / "x") else []
+    data = [n for n in data if n not in BOOKKEEPING and n != "crew-worktrees"]
+    return (f"your pals' data in {DATA}: {', '.join(data) or 'nothing there'}; agy-models.json; "
+            f"{APP / '.crew-backups'} (install and update backups); {USER / '.cache' / 'project-pals'}. "
+            f"A crew-worktrees folder with worktrees in it stays.")
+
+
 def typed_ok(purge):
-    """The owner at a real terminal types "uninstall". A pal's shell has no controlling terminal."""
+    """The owner at a real terminal types "uninstall". A pal's shell has no controlling terminal, and
+    a terminal a pal makes (expect, script, a pty) has the pal above it (agent_above), so both are
+    refused. The owner's own terminal has neither."""
     try:
         fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)   # (a text "r+" open fails: a tty can't seek)
     except OSError:
         return False
     try:
-        if agent_terminal():
+        if agent_above():
             return False
-        os.write(fd, (f"This takes Project Pals out of {APP}{' and deletes your pals’ data (--purge)' if purge else ''}.\n"
-                      "Type uninstall to go ahead: ").encode())
+        what = f"This takes Project Pals out of {APP}."
+        if purge:
+            what += f"\n--purge also deletes {purge_list()}"
+        os.write(fd, (what + "\nType uninstall to go ahead: ").encode())
         line = b""
         while not line.endswith(b"\n") and len(line) < 200:
             chunk = os.read(fd, 1)
@@ -222,9 +295,10 @@ def authorize(purge, click=None, args=None):
         raise NotAllowed("that click expired or was for something else; click Uninstall again in About")
     if typed_ok(purge):
         return "typed"
+    why = agent_above() if os.path.exists("/dev/tty") else None
     raise NotAllowed("uninstalling Project Pals is the owner's: About → Uninstall in Project Pals, or run "
-                     "./install.sh --uninstall yourself in a terminal (not an agent's) and type uninstall. "
-                     "--dry-run lists what would go and needs neither")
+                     "./install.sh --uninstall yourself in a terminal (not an agent's) and type uninstall"
+                     + (f" (not here: {why})" if why else "") + ". --dry-run lists what would go and needs neither")
 
 
 # ─── the manifest: what an install placed ───────────────────────────────────────────────────────
@@ -615,9 +689,9 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
     if mods_unsafe and any((APP / "mods").glob("crew-*")):
         run.refuse(APP / "mods", f"{mods_unsafe}, so its crew-* mods weren't touched")
     for d in sorted((APP / "mods").glob("crew-*")) if (APP / "mods").is_dir() and not mods_unsafe else []:
-        # Retired mods (RETIRED_MODS) were set aside by later installs; one still here goes when it
-        # holds Project Pals' crew.js, like the rest. A folder of the person's own never does.
-        if d.name in RETIRED_MODS or run.listed(d) is None:
+        # Every mod, retired names (RETIRED_MODS, which later installs set aside) included: with a manifest it must be listed AND hold Project Pals'
+        # crew.js; with none (an older install), the crew.js alone decides (Grok T56 re-check).
+        if run.listed(d) is None:
             if ours_mod(d):
                 run.remove(d)
             elif d.is_dir():
