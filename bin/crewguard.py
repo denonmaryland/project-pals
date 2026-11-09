@@ -85,21 +85,137 @@ HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n.*?\n\s*\2\s*(?=\n|$)
 heredoc_free = lambda cmd: HEREDOC.sub(lambda m: m.group(1) + m.group(3), cmd)
 SPLIT = re.compile(r"\n|;|&&|\|\||\||\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
 INNER = re.compile(r"""\b(?:sh|bash|zsh|eval)\s+(?:-\w+\s+)*-c\s+(['"])(.*?)\1""", re.S)
-LEAD = re.compile(r"^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+|\w+=\S*\s+)*")
+# (A wrapper with options, `env -i …`, is left for normal_head, which knows them.)
+LEAD = re.compile(r"""^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+(?!-)|\w+=(?:'[^']*'|"[^"]*"|\S)*\s+)*""")
+
+
+EVAL = re.compile(r"""\beval\s+(['"])(.*?)\1""", re.S)
+
+
+def _sub_end(text, i):
+    """Where a command substitution starting at text[i] ($( or a backtick) ends."""
+    if text[i] == "`":
+        j = text.find("`", i + 1)
+        return len(text) if j < 0 else j + 1
+    depth, j = 0, i + 1
+    while j < len(text):
+        depth += text[j] == "("
+        depth -= text[j] == ")"
+        j += 1
+        if depth == 0:
+            return j
+    return len(text)
+
+
+def mask_quotes(text):
+    """The line with quoted text blanked (same length): a grep pattern "…|pal land|…" isn't a command
+    (T26, a-707718). Inside double quotes, $( … ) and `…` still run, so they stay."""
+    out, i, q = list(text), 0, None
+    while i < len(text):
+        c = text[i]
+        if q == "'":
+            if c == "'":
+                q = None
+            else:
+                out[i] = "_"
+        elif q == '"':
+            if c == "\\" and i + 1 < len(text):
+                out[i] = out[i + 1] = "_"
+                i += 2
+                continue
+            if c == '"':
+                q = None
+            elif text.startswith("$(", i) or c == "`":
+                i = _sub_end(text, i)
+                continue
+            else:
+                out[i] = "_"
+        elif c == "\\" and i + 1 < len(text):
+            i += 2
+            continue
+        elif c in "'\"":
+            q = c
+        i += 1
+    return "".join(out)
 
 
 def commands(cmd):
-    """The commands a shell line runs: each segment's start, including inside sh -c '...', but not
-    heredoc bodies (text being written to a file isn't a command)."""
+    """The commands a shell line runs: each segment's start, including inside sh -c '...' and
+    eval '...', but not heredoc bodies (text being written to a file isn't a command), nor text in
+    quotes (an argument, like a grep pattern)."""
     text = heredoc_free(cmd)
+    masked = mask_quotes(text)
     out = []
-    for inner in INNER.findall(text):
-        out += commands(inner[1])
-    for seg in SPLIT.split(text):
+    for m in list(INNER.finditer(text)) + list(EVAL.finditer(text)):
+        if masked[m.start()] != "_":        # a real sh -c / eval, not one quoted inside an argument
+            out += commands(m.group(2))
+    last = 0
+    for m in list(SPLIT.finditer(masked)) + [None]:
+        seg = text[last:m.start()] if m else text[last:]
+        last = m.end() if m else last
         seg = LEAD.sub("", seg).strip()
         if seg:
             out.append(seg)
     return out
+
+
+# Wrappers that run the command after them (and the options that take a value), and package runners
+# (npx vercel …): the gate looks at the command they run (T26).
+WRAPPERS = {"sudo": {"-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U"}, "doas": {"-u", "-C"},
+            "env": {"-u", "-C", "-S", "--unset", "--chdir"}, "command": set(), "exec": {"-a"}, "nohup": set(),
+            "time": {"-f", "-o"}, "nice": {"-n", "--adjustment"}, "ionice": {"-c", "-n", "-p", "-P", "-u"},
+            "stdbuf": {"-i", "-o", "-e"}, "timeout": {"-s", "-k", "--signal", "--kill-after"},
+            "xargs": {"-I", "-i", "-n", "-L", "-l", "-P", "-d", "-a", "-E", "-e", "-s", "--max-args", "--delimiter"},
+            "chronic": set(), "caffeinate": set(), "unbuffer": set(), "setsid": set(),
+            "npx": {"-p", "--package", "-c", "--call"}, "bunx": {"-p", "--package"}, "uvx": {"--from", "--with", "-p", "--python"},
+            "pnpx": set()}
+RUNNER_SUBS = {"pnpm": {"dlx", "exec"}, "yarn": {"dlx", "exec"}, "npm": {"exec", "x"}, "uv": {"run", "tool"},
+               "poetry": {"run"}, "bundle": {"exec"}, "pipx": {"run"}, "pdm": {"run"}, "hatch": {"run"}}
+GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"}
+
+
+def normal_words(seg):
+    """A command as the gate matches it: env assignments, wrappers (env, command, exec, nice, sudo,
+    timeout, xargs …), package runners (npx, bunx, pnpm dlx, npm exec, uv run …) and the path to the
+    binary dropped, and git's global options (-C dir, -c k=v, --no-pager …) before its subcommand.
+    "env A=1 command /usr/bin/git -C r --no-pager push" → ["git", "push"]."""
+    import shlex
+    try:
+        toks = shlex.split(seg)
+    except ValueError:
+        toks = seg.split()
+    while toks:
+        head = os.path.basename(toks[0])
+        if re.fullmatch(r"[A-Za-z_]\w*=.*", toks[0], re.S):
+            toks = toks[1:]
+            continue
+        if head in RUNNER_SUBS and len(toks) > 1 and toks[1] in RUNNER_SUBS[head]:
+            toks, takes = toks[2:], {"--from", "--with", "-p", "--package"}
+        elif head in WRAPPERS:
+            toks, takes = toks[1:], WRAPPERS[head]
+        else:
+            break
+        while toks and toks[0].startswith("-") and toks[0] != "-":
+            flag = toks.pop(0)
+            if flag == "--":
+                break
+            if flag in takes and toks:
+                toks.pop(0)
+        if head == "timeout" and toks:
+            toks = toks[1:]                 # its duration
+    if not toks:
+        return []
+    toks[0] = os.path.basename(toks[0])
+    if toks[0] == "git":
+        i = 1
+        while i < len(toks) and toks[i].startswith("-"):
+            i += 2 if toks[i] in GIT_VALUE_OPTS else 1
+        toks = ["git"] + toks[i:]
+    return toks
+
+
+def normal_head(seg):
+    return " ".join(normal_words(seg))
 
 
 AGENT_FILE = re.compile(r"(^|/)(AGENTS|CLAUDE)\.md$")
@@ -265,16 +381,16 @@ def code_writes_agent_file(code):
     return unknown and bool(WRITE_CALL.search(code))
 
 
+# Project Pals' own commands, as they sit in bin/ next to this file (pal is crew, pal-room crew-room).
+OWN_CLI = {"crew", "crew-room", "crewd", "crew-hook", "crew-statusline"}
+
+
 def writes_agent_file_via_interpreter(cmd):
     """An interpreter in the line, and an AGENTS.md / CLAUDE.md path it writes (or a script handed one)."""
     import shlex
     segs = []
     for seg in commands(cmd):
-        seg = RUNNER.sub("", seg)
-        try:
-            words = shlex.split(seg)
-        except ValueError:
-            words = seg.split()
+        words = normal_words(RUNNER.sub("", seg))   # behind env, nice, uv run … too (T26)
         if words and INTERP.match(words[0]):
             segs.append(words)
     if not segs:
@@ -291,6 +407,9 @@ def writes_agent_file_via_interpreter(cmd):
         script = next((a for a in args if not a.startswith("-")), None)
         if not script:
             continue
+        real = os.path.realpath(os.path.expanduser(script))
+        if os.path.basename(real) in OWN_CLI and os.path.exists(os.path.join(os.path.dirname(real), "crewguard.py")):
+            continue   # Project Pals' own CLI (python3 bin/crew …, a-c3849a): its owner-only writes are gated inside it
         try:
             with open(os.path.expanduser(script), errors="replace") as f:
                 text = f.read(400000)
@@ -339,7 +458,8 @@ def matches(cmd):
         # Most rules: a command that starts that way. "anywhere" rules (URLs): anywhere in the line.
         if rule.get("anywhere") and pat.search(flat):
             return rule
-        if any(pat.match(seg) for seg in segs):
+        # As written, or as run (normal_head: behind npx, a path, env, nice …; T26).
+        if any(pat.match(seg) or pat.match(normal_head(seg)) for seg in segs):
             return rule
     return None
 

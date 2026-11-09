@@ -845,6 +845,19 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   or when the script file itself writes one. Prose that only mentions AGENTS.md isn't a path, and
   reading one isn't a write. A script written by the Write tool and run later is caught when it's
   run (its file is read).
+  Only a write whose TARGET is one counts (T25): the code is split into statements and a write
+  call is held when its statement has the quoted path, or a name that carries it (assigned from
+  it, or a loop over it). A skip list, a comparison (`item.name in ("AGENTS.md", …)`, hello-lock's
+  lab.py), a read or a print doesn't; a use it can't follow (handed to a function) still holds
+  when the code writes anything. Project Pals' own CLI run through python (`python3 bin/crew …`)
+  isn't a script writing one: its owner-only writes are gated inside it (T26).
+- **Rules match the command as run, not as spelled** (T26): each rule is tried on the command and
+  on its normal form (`normal_head`): env assignments (quoted values too), wrappers (`env -i`,
+  `command`, `exec`, `nice`, `ionice`, `sudo -u`, `timeout`, `xargs`, `stdbuf` …), package runners
+  (`npx`, `bunx`, `uvx`, `pnpm dlx`/`exec`, `npm exec`, `uv run` …) and the binary's path are dropped,
+  and git's global options (`-C dir`, `-c k=v`, `--no-pager` …). `eval '…'` is read like `sh -c`.
+  Text in quotes is an argument, not a command: a grep pattern with `|pal land|` isn't `pal land`
+  (a-707718), though `$( … )` inside double quotes still runs.
 - **Shell writes to AGENTS.md / CLAUDE.md are found by a parse** (H3, `write_targets` in
   crewguard.py): redirects in both heredoc orders and to quoted paths with spaces, `tee`, `sed`/`perl
   -i`, `cp`/`mv`/`install`/`ln`/`rsync` destinations, `dd of=`, inside `sh -c` too. Policy defaults
