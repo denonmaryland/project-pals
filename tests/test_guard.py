@@ -71,6 +71,61 @@ class ShellWrites(unittest.TestCase):
         self.assertEqual(rule("cat <<'EOF' > notes.md\nhi\nEOF\ngit push"), "push")
 
 
+class InterpreterWrites(unittest.TestCase):
+    """Writes to AGENTS.md / CLAUDE.md from an interpreter (2026-11-08: two such edits got past the shell
+    parse). Held: -c / -e code, a heredoc fed to it, a script written and run in one line, a script
+    handed an agent file, and a script file that writes one."""
+    HELD = [
+        # python -c
+        """python3 -c "open('AGENTS.md','w').write('x')" """,
+        """python -c 'from pathlib import Path; Path("docs/CLAUDE.md").write_text("x")'""",
+        # a heredoc fed to the interpreter
+        "python3 - <<'EOF'\np='AGENTS.md'; s=open(p).read()\nopen(p,'w').write(s+'x')\nEOF",
+        "python3 <<EOF\nimport shutil\nshutil.copy('new.md', 'CLAUDE.md')\nEOF",
+        "cd /repo && python3 - <<'PY'\nimport os\nos.replace('tmp.md', \"AGENTS.md\")\nPY",
+        # node, perl, ruby, php
+        """node -e "require('fs').writeFileSync('AGENTS.md', 'x')" """,
+        """node <<'EOF'\nconst fs = require('fs'); fs.appendFileSync("CLAUDE.md", "x")\nEOF""",
+        """perl -e 'open(my $f, ">", "AGENTS.md"); print $f "x"'""",
+        """ruby -e 'File.write("AGENTS.md", "x")'""",
+        """php -r 'file_put_contents("CLAUDE.md", "x");'""",
+        # through a runner, and in sh -c
+        """uv run python -c "open('AGENTS.md','w').write('x')" """,
+        """bash -c "python3 -c \\"open('AGENTS.md','w').write('x')\\"" """,
+        # a script written and run in one line
+        "cat > /tmp/fix.py <<'EOF'\nopen('AGENTS.md','w').write('x')\nEOF\npython3 /tmp/fix.py",
+        # a script handed an agent file (it can't be seen what it does there)
+        "python3 tools/fix.py AGENTS.md",
+        "node scripts/edit.mjs ./docs/CLAUDE.md",
+        "ruby rewrite.rb 'My Project/AGENTS.md'",
+    ]
+    ALLOWED = [
+        "python3 -c \"print(open('AGENTS.md').read())\"",                      # reading it
+        "cat AGENTS.md | python3 -c 'import sys; print(len(sys.stdin.read()))'",
+        "python3 - <<'EOF'\np='RECIPE.md'; s=open(p).read()\ns=s.replace('x', 'see AGENTS.md for the layout')\nopen(p,'w').write(s)\nEOF",  # prose
+        "python3 -c \"print(open('AGENTS.md').read().replace('a', 'b'))\"",    # str.replace isn't a write
+        "python3 -m unittest discover -s tests",
+        "node tests/test_needs.mjs",
+        "echo 'AGENTS.md' > notes.txt",                                       # no interpreter (the shell rule's job)
+        "grep -n AGENTS.md README.md",
+    ]
+
+    def test_held(self):
+        for cmd in self.HELD:
+            self.assertEqual(rule(cmd), "agents-file-interpreter", cmd)
+
+    def test_allowed(self):
+        for cmd in self.ALLOWED:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_a_script_file_that_writes_one(self):
+        d = Path(tempfile.mkdtemp(prefix="pals-guard-"))
+        (d / "fix.py").write_text("from pathlib import Path\nPath('AGENTS.md').write_text('new rules')\n")
+        (d / "lint.py").write_text("print(open('AGENTS.md').read().count('#'))\n")
+        self.assertEqual(rule(f"python3 {d}/fix.py"), "agents-file-interpreter")
+        self.assertIsNone(rule(f"python3 {d}/lint.py"))
+
+
 class EditApprovals(unittest.TestCase):
     """Review H2: an approval is for one exact edit of one file version."""
 

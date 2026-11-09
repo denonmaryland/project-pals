@@ -773,6 +773,13 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
 - **An AGENTS.md / CLAUDE.md edit approval is for one exact edit** (H2): the request is bound to the
   path, a hash of the edit and a hash of the file it applies to, and the Inbox card shows the
   resulting diff. A different payload, or the file having changed, is a new request.
+- **Interpreter writes to them are held too** (`agents-file-interpreter`, 2026-11-08): a line that
+  runs python / node / perl / ruby / php / … (also through `uv run`, `npx`, `sh -c`) is held when its
+  code (`-c` / `-e`, a heredoc fed to it, or a script written in the same line) names a quoted
+  `AGENTS.md` / `CLAUDE.md` path and makes a write call, when a script is handed one as an argument,
+  or when the script file itself writes one. Prose that only mentions AGENTS.md isn't a path, and
+  reading one isn't a write. A script written by the Write tool and run later is caught when it's
+  run (its file is read).
 - **Shell writes to AGENTS.md / CLAUDE.md are found by a parse** (H3, `write_targets` in
   crewguard.py): redirects in both heredoc orders and to quoted paths with spaces, `tee`, `sed`/`perl
   -i`, `cp`/`mv`/`install`/`ln`/`rsync` destinations, `dd of=`, inside `sh -c` too. Policy defaults

@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 10
+DEFAULTS_VERSION = 11
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -45,6 +45,12 @@ DEFAULT = {
         # -i, cp / mv / install / ln / rsync onto it, dd of= (review H3). A parse, not a regex.
         {"name": "agents-file-shell", "why": "writes the project's AGENTS.md or CLAUDE.md (propose it instead: pal agents propose)",
          "check": "agent-file-writes", "pattern": r"$^"},
+        # And from an interpreter (python / node / perl / ruby / php …): code given with -c / -e or a
+        # heredoc, or a script, that writes a quoted AGENTS.md / CLAUDE.md path; or a script handed one
+        # as an argument (what it does there can't be seen). The shell parse above can't see inside
+        # those (two such edits got past it on 2026-11-08).
+        {"name": "agents-file-interpreter", "why": "writes the project's AGENTS.md or CLAUDE.md from a script (propose it instead: pal agents propose)",
+         "check": "agent-file-interpreter", "pattern": r"$^"},
         # The owner's one-time click tokens (data/crew-clicks): a pal writing one would be forging a
         # click (review H1).
         {"name": "owner-click", "why": "writes one of the owner's click tokens", "check": "click-writes", "pattern": r"$^"},
@@ -165,6 +171,53 @@ def writes_agent_file(cmd):
     return any(AGENT_FILE.search(os.path.normpath(t.strip("'\""))) for t in write_targets(cmd))
 
 
+INTERP = re.compile(r"^(?:\S*/)?(?:python[\d.]*|pypy[\d.]*|node(?:js)?|deno|bun|tsx|ts-node|perl[\d.]*|ruby|php[\d.]*|lua[\d.]*|Rscript|osascript)$")
+RUNNER = re.compile(r"^(?:(?:uv|poetry|pipenv|bundle)\s+(?:run|exec)|uvx|npx|bunx|pnpm\s+(?:exec|dlx))\s+")
+# A quoted path that ends in AGENTS.md / CLAUDE.md ("AGENTS.md", '/x/CLAUDE.md', f"{d}/AGENTS.md"):
+# a mention inside prose ("see AGENTS.md for…") isn't one.
+AGENT_PATH = re.compile(r"""['"`][^'"`\n]*\b(?:AGENTS|CLAUDE)\.md['"`]""")
+# Calls that write, move or copy a file, in the interpreters above.
+WRITE_CALL = re.compile(r"""\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.write_(?:text|bytes)\s*\(|\bshutil\.(?:copy\w*|move)\s*\(|\bos\.(?:rename|replace)\s*\("""
+                        r"""|\.(?:rename|touch)\s*\(\s*(?:\w|['"])|\b(?:write|append)File(?:Sync)?\s*\(|\bcreateWriteStream\s*\(|\bcopyFile(?:Sync)?\s*\(|\brename(?:Sync)?\s*\("""
+                        r"""|\bDeno\.write\w*\s*\(|\bBun\.write\s*\(|\bFile\.(?:write|open|rename)\b|\bIO\.write\b|\bFileUtils\.|\bopen\s*\(?\s*(?:my\s+)?\$?\w*\s*,\s*['"]?\+?>|\bfile_put_contents\s*\(|\bfopen\s*\([^)]*['"][wax]""")
+
+
+def writes_agent_file_via_interpreter(cmd):
+    """An interpreter in the line, and an AGENTS.md / CLAUDE.md path it writes (or a script handed one)."""
+    import shlex
+    segs = []
+    for seg in commands(cmd):
+        seg = RUNNER.sub("", seg)
+        try:
+            words = shlex.split(seg)
+        except ValueError:
+            words = seg.split()
+        if words and INTERP.match(words[0]):
+            segs.append(words)
+    if not segs:
+        return False
+    # Code in the line itself: -c / -e, a heredoc fed to it, or a script written and run in one go.
+    if AGENT_PATH.search(cmd) and WRITE_CALL.search(cmd):
+        return True
+    for words in segs:
+        args = words[1:]
+        if any(a in ("-c", "-e", "-E", "-p", "-r", "--eval", "-") or a.startswith("<<") for a in args):
+            continue   # inline code: judged above
+        if any(AGENT_FILE.search(os.path.normpath(a.strip("'\""))) or re.search(r"\b(?:AGENTS|CLAUDE)\.md$", a) for a in args):
+            return True   # a script handed an agent file
+        script = next((a for a in args if not a.startswith("-")), None)
+        if not script:
+            continue
+        try:
+            with open(os.path.expanduser(script), errors="replace") as f:
+                text = f.read(400000)
+        except OSError:
+            continue
+        if AGENT_PATH.search(text) and WRITE_CALL.search(text):
+            return True   # the script itself writes one
+    return False
+
+
 def writes_click(cmd):
     """A write INTO data/crew-clicks (redirect, tee, cp/mv onto it, …); mentioning it isn't one."""
     return any("crew-clicks" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
@@ -183,7 +236,8 @@ def writes_desk(cmd):
         or bool(re.match(r"^edit\s+.*/crew-desk/", cmd))
 
 
-CHECKS = {"agent-file-writes": writes_agent_file, "click-writes": writes_click, "queue-writes": writes_queue,
+CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
+          "click-writes": writes_click, "queue-writes": writes_queue,
           "desk-writes": writes_desk}
 
 
