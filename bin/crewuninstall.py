@@ -2,7 +2,20 @@
 """Take Project Pals out again: everything an install added, nothing of the person's own.
 
   crewuninstall.py record                          install.sh runs this before it changes anything
-  crewuninstall.py uninstall [--purge] [--dry-run] [--json]
+  crewuninstall.py record-installed SRC            and this after: what it placed (the manifest)
+  crewuninstall.py uninstall [--purge] [--dry-run] [--json] [--click TOKEN]
+
+Uninstalling is the owner's (Grok review T56, H1), and this module checks it itself, whoever calls it
+(pal uninstall, ./install.sh --uninstall, an import): a non-dry run needs the app's one-time click token
+for exactly its arguments (About → Uninstall), or the word "uninstall" typed on a real controlling
+terminal that isn't an agent's (herdr-core reports no agent status for it). A pal's shell has no
+controlling terminal, so a pal's one-liner is refused. --dry-run changes nothing and needs neither.
+
+Nothing is followed through a symlink (T56, H2): before it deletes or writes a path, every folder
+between Herdr's home (or $HOME) and it must be a real folder and resolve where it says; otherwise the
+path is left and reported. A link as the last part is unlinked, never followed; a config file that is
+a link is left alone. Only what the install manifest lists is removed (an install from before the
+manifest: each candidate is checked for Project Pals' own content instead).
 
 What an install adds, and what uninstall does with it:
   Herdr's home   mods/crew-*, layouts/pals.json + pals.svg      removed (Herdr switched to "main" first
@@ -36,6 +49,7 @@ Standard library only: install.sh --uninstall runs it from a checkout, `pal unin
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +61,8 @@ APP = Path(os.environ.get("HERDR_APP_HOME", USER / ".config" / "herdr-app"))
 DATA = APP / "data"
 FOOTPRINT = DATA / "crew-footprint.json"
 ORIGINALS = DATA / "crew-originals"
+CLICKS = DATA / "crew-clicks"
+CLICK_TTL = 120   # seconds, as crewlib.CLICK_TTL
 
 KEYS = APP / "keys.json"
 CLAUDE = USER / ".claude" / "settings.json"
@@ -62,6 +78,14 @@ AGY_KEY = "project-pals"
 BINS = ("pal", "pal-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline", "crew-mcp")
 ALIASES = {"buddy": "pal", "buddy-room": "pal-room", "botz": "pal", "botz-room": "pal-room", "crew": "pal", "crew-room": "pal-room"}
 MARKERS = ("Project Pals", "Project Buddies", "Terminal Botz", "Herdr Crew", "crew-hook")
+# Project Pals' shared crew.js, copied into every mod it installs (and the retired ones it installed).
+MOD_MARKER = re.compile(r"^// (Project Pals|Project Buddies|Terminal Botz|Herdr Crew)\b", re.M)
+BINDIR = USER / ".local" / "bin"
+# Exactly the hook commands install-hooks.py writes (and older installs wrote): one of the two hook
+# programs at their installed path, then one event word. A person's own hook that merely mentions
+# crew-hook stays (T56, low).
+OUR_HOOK = re.compile(r"^%s/crew-hook(-fast)? [a-z][a-z-]*$" % re.escape(str(BINDIR)))
+STATUSLINE = str(BINDIR / "crew-statusline")
 SKILL_LINKS = (USER / ".claude" / "skills", USER / ".codex" / "skills", USER / ".gemini" / "config" / "skills")
 UNIT = USER / ".config" / "systemd" / "user" / "herdr-crew.service"
 # Mods Project Pals shipped once and set aside since (install.sh's list), besides every crew-* mod
@@ -91,6 +115,148 @@ def exists(p):
     return p.exists() or p.is_symlink()
 
 
+# ─── never through a symlink (T56, H2) ──────────────────────────────────────────────────────────
+
+def unsafe(p):
+    """None when `p` may be deleted or written: it lies under Herdr's home or $HOME, and every folder
+    between that root and `p` is a real folder that resolves where its path says. Else why not.
+    (`p` itself may be a link: it's then unlinked, never followed.)"""
+    p = Path(os.path.abspath(p))
+    roots = sorted((r for r in (APP, USER) if p == r or r in p.parents), key=lambda r: len(r.parts), reverse=True)
+    if not roots or p in (APP, USER):
+        return f"{p} isn't inside Herdr's home or your home folder"
+    root = roots[0]
+    cur = root
+    for part in p.relative_to(root).parts[:-1]:
+        cur = cur / part
+        if cur.is_symlink():
+            return f"{cur} is a link (to {os.readlink(cur)})"
+        if exists(cur) and not cur.is_dir():
+            return f"{cur} isn't a folder"
+    if exists(p.parent) and os.path.realpath(p.parent) != os.path.join(os.path.realpath(root), *p.relative_to(root).parts[:-1]):
+        return f"{p.parent} resolves somewhere else ({os.path.realpath(p.parent)})"
+    return None
+
+
+def write_nofollow(path, data, mode=None):
+    """Replace `path` with `data` (bytes) without writing through a link: a fresh temp file opened
+    O_EXCL | O_NOFOLLOW beside it, then renamed over it (a rename replaces, never follows)."""
+    tmp = path.with_name(f".{path.name}.crew-{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# ─── only the owner (T56, H1) ───────────────────────────────────────────────────────────────────
+
+class NotAllowed(Exception):
+    pass
+
+
+def click_ok(click, args):
+    """The app's one-time click token (crewlib.owner_gate's format) for exactly `args`. Used up either way."""
+    if not click or not re.fullmatch(r"[0-9a-f]{16,64}", str(click)):
+        return False
+    path = CLICKS / f"{click}.json"
+    tok = None if path.is_symlink() else load(path, None)   # (a token behind a linked data/ is still the app's)
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return (isinstance(tok, dict) and tok.get("args") == list(args)
+            and time.time() * 1000 - (tok.get("at") or 0) < CLICK_TTL * 1000)
+
+
+def agent_terminal():
+    """Is this running in a terminal where an agent runs (herdr-core has an agent status for it)?
+    When herdr-core can't say, assume it is."""
+    tid = os.environ.get("HC_TERMINAL_ID")
+    if not tid:
+        return False
+    try:
+        r = subprocess.run(["hc", "get", tid, "--json"], capture_output=True, text=True, timeout=10)
+        return bool(json.loads(r.stdout).get("status"))
+    except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+        return True
+
+
+def typed_ok(purge):
+    """The owner at a real terminal types "uninstall". A pal's shell has no controlling terminal."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)   # (a text "r+" open fails: a tty can't seek)
+    except OSError:
+        return False
+    try:
+        if agent_terminal():
+            return False
+        os.write(fd, (f"This takes Project Pals out of {APP}{' and deletes your pals’ data (--purge)' if purge else ''}.\n"
+                      "Type uninstall to go ahead: ").encode())
+        line = b""
+        while not line.endswith(b"\n") and len(line) < 200:
+            chunk = os.read(fd, 1)
+            if not chunk:
+                break
+            line += chunk
+        return line.decode(errors="replace").strip() == "uninstall"
+    finally:
+        os.close(fd)
+
+
+def authorize(purge, click=None, args=None):
+    """Raise NotAllowed unless the owner asked: their click for exactly `args`, or (no click) typed
+    confirmation at a real terminal. A wrong or used click is refused, never downgraded."""
+    args = list(args) if args is not None else ["uninstall"] + (["--purge"] if purge else [])
+    if click:
+        if click_ok(click, args):
+            return "click"
+        raise NotAllowed("that click expired or was for something else; click Uninstall again in About")
+    if typed_ok(purge):
+        return "typed"
+    raise NotAllowed("uninstalling Project Pals is the owner's: About → Uninstall in Project Pals, or run "
+                     "./install.sh --uninstall yourself in a terminal (not an agent's) and type uninstall. "
+                     "--dry-run lists what would go and needs neither")
+
+
+# ─── the manifest: what an install placed ───────────────────────────────────────────────────────
+
+def candidates(src_mods=()):
+    """Every path an install places (mods: those named in `src_mods`, else every mods/crew-*)."""
+    mods = APP / "mods"
+    names = list(src_mods) or ([d.name for d in sorted(mods.glob("crew-*"))] if mods.is_dir() else [])
+    out = [mods / n for n in names] + [APP / "layouts" / "pals.json", APP / "layouts" / "pals.svg"]
+    out += [BINDIR / n for n in (*BINS, *ALIASES)]
+    out += [USER / ".local" / "lib" / "herdr-crew", UNIT, UNIT.parent / "default.target.wants" / "herdr-crew.service",
+            USER / ".claude" / "project-pals"]
+    return out
+
+
+def record_installed(src):
+    """After an install: add what it placed to the manifest (crew-footprint.json "installed")."""
+    src_mods = [d.name for d in sorted((Path(src) / "mods").glob("crew-*")) if d.is_dir()]
+    fp = load(FOOTPRINT, {}) or {}
+    have = set(fp.get("installed") or [])
+    for p in candidates(src_mods):
+        if not exists(p):
+            continue
+        if p.parent == BINDIR and p.name in ALIASES and not (p.is_symlink() and os.readlink(p) == ALIASES[p.name]):
+            continue   # someone else's `crew` (install leaves it alone)
+        have.add(str(p))
+    fp["installed"] = sorted(have)
+    DATA.mkdir(parents=True, exist_ok=True)
+    write_nofollow(FOOTPRINT, json.dumps(fp, indent=2).encode())
+    return fp
+
+
 # ─── record (install.sh, before anything changes) ───────────────────────────────────────────────
 
 def has_ours(name, data):
@@ -101,7 +267,11 @@ def has_ours(name, data):
         g = data.get("global")
         return isinstance(g, dict) and any(g.get(k) == a for k, a in INSTALL_KEYS.items())
     if name == "claude-settings.json":
-        return "crew-hook" in json.dumps(data.get("hooks", {})) or "crew-statusline" in json.dumps(data.get("statusLine", {}))
+        hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+        ours = any(our_hook(h) for es in hooks.values() if isinstance(es, list)
+                   for e in es if isinstance(e, dict) for h in (e.get("hooks") or []))
+        sl = data.get("statusLine")
+        return ours or (isinstance(sl, dict) and str(sl.get("command", "")).strip() == STATUSLINE)
     return AGY_KEY in data
 
 
@@ -156,6 +326,10 @@ def clean_keys(keys, original):
     return out, notes
 
 
+def our_hook(h):
+    return isinstance(h, dict) and bool(OUR_HOOK.match(str(h.get("command", "")).strip()))
+
+
 def clean_claude(st, original, statusline_original):
     """~/.claude/settings.json without Project Pals' hooks and status-line wrapper."""
     out = json.loads(json.dumps(st))
@@ -170,7 +344,7 @@ def clean_claude(st, original, statusline_original):
             new = []
             for e in entries:
                 hs = e.get("hooks", []) if isinstance(e, dict) else []
-                keep = [h for h in hs if "crew-hook" not in str((h or {}).get("command", ""))]
+                keep = [h for h in hs if not our_hook(h)]
                 if len(keep) == len(hs):
                     new.append(e)
                 elif keep:
@@ -186,8 +360,8 @@ def clean_claude(st, original, statusline_original):
         if not hooks and "hooks" not in orig and (emptied or original is not None):
             out.pop("hooks")
     sl = out.get("statusLine")
-    if isinstance(sl, dict) and "crew-statusline" in str(sl.get("command", "")):
-        if isinstance(orig.get("statusLine"), dict) and "crew-statusline" not in str(orig["statusLine"].get("command", "")):
+    if isinstance(sl, dict) and str(sl.get("command", "")).strip() == STATUSLINE:
+        if isinstance(orig.get("statusLine"), dict) and str(orig["statusLine"].get("command", "")).strip() != STATUSLINE:
             out["statusLine"] = {**sl, "command": orig["statusLine"].get("command")}
         elif statusline_original:
             out["statusLine"] = {**sl, "command": statusline_original}
@@ -210,6 +384,8 @@ class Run:
         fp = load(FOOTPRINT, {}) or {}
         self.existed = fp.get("existed") or {}
         self.originals = fp.get("originals") or {}
+        # The manifest (install's "installed" list); None for an install from before it.
+        self.installed = set(fp["installed"]) if isinstance(fp.get("installed"), list) else None
 
     def say(self, msg):
         self.log(("would: " if self.dry else "") + msg)
@@ -218,28 +394,75 @@ class Run:
         """Did an install create this path? (True only when `record` saw it missing.)"""
         return self.existed.get(str(p)) is False
 
+    def listed(self, p):
+        """Is `p` in the install manifest? (An install from before the manifest: None, can't tell.)"""
+        return None if self.installed is None else str(p) in self.installed
+
+    def refuse(self, p, why):
+        self.notes.append(f"left {p} alone: {why}. If it's Project Pals', remove it by hand")
+        self.kept.append(str(p))
+
     def backup(self, path):
-        if self.dry or not path.exists():
+        if self.dry or not path.is_file():
             return
         dest = APP / ".crew-backups" / f"uninstall-{self.stamp}"
+        why = unsafe(dest / "x")
+        if why:
+            raise OSError(f"can't back up {path}: {why}")
         dest.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, dest / (path.name if path != CLAUDE else "claude-settings.json"))
+        write_nofollow(dest / (path.name if path != CLAUDE else "claude-settings.json"), path.read_bytes())
         self.kept.append(str(dest))
 
     def remove(self, p, what=None):
         if not exists(p):
+            return
+        why = unsafe(p)
+        if why:
+            self.refuse(p, why)
             return
         self.say(f"remove {what or p}")
         self.removed.append(str(p))
         if self.dry:
             return
         if p.is_dir() and not p.is_symlink():
-            shutil.rmtree(p)
+            shutil.rmtree(p)   # the fd-based walk: links inside are unlinked, not followed
         else:
             p.unlink()
 
+    def remove_installed(self, p, what=None, ours=lambda _p: True):
+        """Remove something an install placed: only when the manifest lists it (and it still looks
+        like Project Pals'), or, with no manifest, when its content says it's Project Pals'."""
+        if not exists(p):
+            return
+        listed = self.listed(p)
+        if listed is False:
+            return
+        if not ours(p):
+            self.notes.append(f"left {p} alone: it isn't Project Pals'")
+            return
+        self.remove(p, what)
+
+    def write(self, path, data, what, backup=True):
+        """Write a config file in place: never through a link (after a backup when it keeps edits)."""
+        why = unsafe(path) or (f"{path} is a link (to {os.readlink(path)})" if path.is_symlink() else None)
+        if why:
+            self.refuse(path, f"{why}; take Project Pals' entries out of it yourself")
+            return
+        self.say(what)
+        self.restored.append(str(path))
+        if not self.dry:
+            mode = path.stat().st_mode & 0o7777
+            if backup:
+                self.backup(path)
+            write_nofollow(path, data, mode)
+
     def config(self, name, path, cleaner, fmt):
         """Take Project Pals' entries out of one of the person's config files."""
+        if path.is_symlink():
+            # Read through it (reading changes nothing); never write. Say so only when it has ours.
+            if path.is_file() and has_ours(name, load(path, None)):
+                self.refuse(path, f"it's a link (to {os.readlink(path)}); take Project Pals' entries out of it yourself")
+            return
         if not path.is_file():
             return
         try:
@@ -267,23 +490,14 @@ class Run:
             self.notes += notes
         if orig_raw is not None and cleaned == original:
             if raw != orig_raw:
-                self.say(f"put {path} back exactly as it was before Project Pals")
-                self.restored.append(str(path))
-                if not self.dry:
-                    path.write_bytes(orig_raw)
+                self.write(path, orig_raw, f"put {path} back exactly as it was before Project Pals", backup=False)
             return
         if not cleaned and self.created(path):
             self.remove(path, f"{path} (Project Pals made it; nothing else is in it)")
             return
         if cleaned == cur:
             return
-        self.say(f"take Project Pals' entries out of {path}")
-        self.restored.append(str(path))
-        if not self.dry:
-            self.backup(path)
-            tmp = path.with_suffix(path.suffix + ".crew-tmp")
-            tmp.write_text(fmt(cleaned))
-            tmp.replace(path)
+        self.write(path, fmt(cleaned).encode(), f"take Project Pals' entries out of {path}")
 
 
 # ─── uninstall ──────────────────────────────────────────────────────────────────────────────────
@@ -313,20 +527,37 @@ def herdr_do(*args):
         pass
 
 
-def uninstall(purge=False, dry=False, log=print):
+def ours_mod(d):
+    """A mod folder Project Pals installed: it holds Project Pals' shared crew.js (retired ones too)."""
+    js = d / "crew.js"
+    try:
+        return d.is_dir() and not d.is_symlink() and js.is_file() and not js.is_symlink() and bool(MOD_MARKER.search(js.read_text(errors="replace")[:2000]))
+    except OSError:
+        return False
+
+
+def uninstall(purge=False, dry=False, log=print, click=None, args=None):
+    """Take Project Pals out. Not a dry run: only for the owner (authorize), whoever calls this."""
+    if not dry:
+        authorize(purge, click, args)
     run = Run(dry, log)
+    if run.installed is None:
+        run.notes.append("this install is older than its list of installed files: each one was checked for Project Pals' own content instead")
 
     # 1. crewd: stop it first, so it doesn't write anything while the rest goes.
-    if UNIT.is_file() and "crewd" in UNIT.read_text(errors="replace"):
+    unit_ours = lambda p: p.is_file() and not p.is_symlink() and "crewd" in p.read_text(errors="replace")
+    if exists(UNIT) and run.listed(UNIT) is not False and unit_ours(UNIT) and not unsafe(UNIT):
         run.say("stop and disable crewd (herdr-crew.service)")
         if not dry:
             subprocess.run(["systemctl", "--user", "disable", "--now", "herdr-crew.service"], capture_output=True, timeout=60)
         wants = UNIT.parent / "default.target.wants" / "herdr-crew.service"
         if wants.is_symlink():
             run.remove(wants, f"{wants} (crewd's start-at-login link)")
-        run.remove(UNIT, f"{UNIT} (crewd's service)")
+        run.remove_installed(UNIT, f"{UNIT} (crewd's service)", unit_ours)
         if not dry:
             subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=60)
+    elif exists(UNIT):
+        run.remove_installed(UNIT, f"{UNIT} (crewd's service)", unit_ours)
 
     # 2. The person's config files: only Project Pals' entries come out.
     run.config("claude-settings.json", CLAUDE, clean_claude, lambda d: json.dumps(d, indent=2, ensure_ascii=False) + "\n")
@@ -345,20 +576,19 @@ def uninstall(purge=False, dry=False, log=print):
                     run.remove(link, f"{link} (a shared pal skill)")
 
     # 4. The Desk's Claude Code mod, the commands, the library.
-    run.remove(USER / ".claude" / "project-pals", "~/.claude/project-pals (the Desk's Claude Code mod)")
-    bindir = USER / ".local" / "bin"
+    cmod = USER / ".claude" / "project-pals"
+    run.remove_installed(cmod, "~/.claude/project-pals (the Desk's Claude Code mod)",
+                         lambda p: p.is_dir() and not p.is_symlink() and (p / "pals").is_dir())
     for name, target in ALIASES.items():
-        p = bindir / name
-        if p.is_symlink() and os.readlink(p) in (target, str(bindir / target)):
-            run.remove(p, f"{p} (an old name for {target})")
+        p = BINDIR / name
+        run.remove_installed(p, f"{p} (an old name for {target})",
+                             lambda q, t=target: q.is_symlink() and os.readlink(q) in (t, str(BINDIR / t)))
     for name in BINS:
-        p = bindir / name
-        if p.is_file() and not p.is_symlink() and ours_file(p):
-            run.remove(p)
-        elif exists(p):
-            run.notes.append(f"left {p} alone: it isn't Project Pals'")
+        p = BINDIR / name
+        run.remove_installed(p, None, lambda q: q.is_file() and not q.is_symlink() and ours_file(q))
     lib = USER / ".local" / "lib" / "herdr-crew"
-    run.remove(lib, f"{lib} (Project Pals' library{', a link to a checkout' if lib.is_symlink() else ''})")
+    run.remove_installed(lib, f"{lib} (Project Pals' library{', a link to a checkout' if lib.is_symlink() else ''})",
+                         lambda q: q.is_symlink() or (q.is_dir() and (q / "crewlib.py").is_file()))
 
     # 5. Herdr: off the pals layout first (so nothing shows missing mods), then the layout and mods.
     #    Project Pals' own dialogs too (About, which runs this): a layout switch leaves them open, and
@@ -377,13 +607,23 @@ def uninstall(purge=False, dry=False, log=print):
             break
         herdr_do("overlay.close")
         status = herdr_status()
-    for n in ("pals.json", "pals.svg"):
-        p = APP / "layouts" / n
-        if p.is_file() and (n.endswith(".svg") or "crew-roster" in p.read_text(errors="replace")):
-            run.remove(p)
-    for d in sorted((APP / "mods").glob("crew-*")) if (APP / "mods").is_dir() else []:
-        if d.is_dir() and ((d / "crew.js").exists() or d.name in RETIRED_MODS):
-            run.remove(d)
+    layout = APP / "layouts" / "pals.json"
+    run.remove_installed(layout, None, lambda q: q.is_file() and not q.is_symlink() and "crew-roster" in q.read_text(errors="replace"))
+    if not exists(layout):
+        run.remove_installed(APP / "layouts" / "pals.svg", None, lambda q: q.is_file() and not q.is_symlink())
+    mods_unsafe = unsafe(APP / "mods" / "crew-x") if exists(APP / "mods") else None
+    if mods_unsafe and any((APP / "mods").glob("crew-*")):
+        run.refuse(APP / "mods", f"{mods_unsafe}, so its crew-* mods weren't touched")
+    for d in sorted((APP / "mods").glob("crew-*")) if (APP / "mods").is_dir() and not mods_unsafe else []:
+        # Retired mods (RETIRED_MODS) were set aside by later installs; one still here goes when it
+        # holds Project Pals' crew.js, like the rest. A folder of the person's own never does.
+        if d.name in RETIRED_MODS or run.listed(d) is None:
+            if ours_mod(d):
+                run.remove(d)
+            elif d.is_dir():
+                run.notes.append(f"left {d} alone: it isn't Project Pals'")
+        else:
+            run.remove_installed(d, None, ours_mod)
 
     # 6. Pals' data stays unless --purge; install's own bookkeeping goes either way (at the end:
     #    the originals were needed above).
@@ -400,20 +640,22 @@ def uninstall(purge=False, dry=False, log=print):
         # Install and update backups go; this run's copies of the person's own config files (made
         # only when they had changed since the install) stay, so a mistake here can be undone.
         backups, this_run = APP / ".crew-backups", f"uninstall-{run.stamp}"
-        if backups.is_dir():
+        if backups.is_symlink():
+            run.refuse(backups, f"it's a link (to {os.readlink(backups)})")
+        elif backups.is_dir():
             for p in sorted(backups.iterdir()):
                 if p.name != this_run:
                     run.remove(p)
             if (backups / this_run).exists():
                 run.notes.append(f"kept {backups / this_run}: your config files as they were before this uninstall")
-            elif not dry:
+            elif not dry and not unsafe(backups):
                 backups.rmdir()
     for n in BOOKKEEPING:
         run.remove(DATA / n)
 
     # 7. Folders an install made, when nothing else is left in them (deepest first).
     for p in sorted(WATCHED, key=lambda x: len(x.parts), reverse=True):
-        if run.created(p) and p.is_dir() and not p.is_symlink():
+        if run.created(p) and p.is_dir() and not p.is_symlink() and not unsafe(p):
             try:
                 if not any(p.iterdir()):
                     run.say(f"remove the empty folder {p} (Project Pals made it)")
@@ -436,11 +678,32 @@ def main(argv):
     if cmd == "record":
         record()
         return 0
+    if cmd == "record-installed" and len(argv) == 2:
+        record_installed(argv[1])
+        return 0
     if cmd != "uninstall":
         print(__doc__.strip())
         return 2
-    as_json = "--json" in argv
-    out = uninstall(purge="--purge" in argv, dry="--dry-run" in argv, log=(lambda *_: None) if as_json else print)
+    rest, click, i = [], None, 1
+    while i < len(argv):
+        if argv[i] == "--click" and i + 1 < len(argv):
+            click, i = argv[i + 1], i + 2
+            continue
+        if argv[i] not in ("--purge", "--dry-run", "--json"):
+            print(f"unknown option: {argv[i]}", file=sys.stderr)
+            return 2
+        rest.append(argv[i])
+        i += 1
+    as_json = "--json" in rest
+    try:
+        out = uninstall(purge="--purge" in rest, dry="--dry-run" in rest, log=(lambda *_: None) if as_json else print,
+                        click=click, args=["uninstall", *rest])
+    except NotAllowed as e:
+        if as_json:
+            print(json.dumps({"ok": False, "error": str(e)}))
+        else:
+            print(f"not uninstalled: {e}", file=sys.stderr)
+        return 3
     if as_json:
         print(json.dumps(out))
     else:

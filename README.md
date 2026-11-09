@@ -153,8 +153,8 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
 
 ## Uninstall
 
-In Project Pals: **About → Uninstall** (it asks once more). From a terminal, in a clone or an
-unpacked release:
+In Project Pals: **About → Uninstall** (it asks once more). From your own terminal, in a clone or
+an unpacked release (it asks you to type `uninstall`):
 
 ```sh
 ./install.sh --uninstall --dry-run   # list what would go, change nothing
@@ -173,8 +173,19 @@ made go too, once empty.
 Your pals' data (`~/.config/herdr-app/data/crew-*`) and install backups (`.crew-backups`) stay
 unless you `--purge`. `--purge` still keeps `data/crew-worktrees` when it holds git worktrees,
 which can have uncommitted work. Agents already running in a pal's space keep the old hooks until
-they restart. `pal uninstall` is the same command, but it needs your click (that's what About's
-button sends), so a pal can't start one; the approval gate holds a pal's `./install.sh --uninstall`.
+they restart.
+
+- **Only you.** Every way in (About, `pal uninstall`, `./install.sh --uninstall`, the Python module
+  itself) needs your click or you typing `uninstall` at a terminal that isn't an agent's. A pal's
+  shell has no terminal to type in, so a pal can't uninstall; the approval gate also holds a pal's
+  `./install.sh --uninstall`. `--dry-run` needs neither.
+- **Never through a link.** If a folder on the way (`~/.local/lib`, `~/.claude`, Herdr's `mods` or
+  `data`) or a config file is a symlink, uninstall leaves it and tells you, instead of deleting or
+  writing where the link points. Install skips a `~/.claude/settings.json`, `~/.gemini` hooks file
+  or `keys.json` that is a link too, and says so.
+- It removes only what the install recorded placing (installs before 0.4.1 have no record: each
+  file is checked for Project Pals' own content instead), and only hook entries that are exactly
+  Project Pals' commands.
 
 ## Hiring a pal into a new folder
 

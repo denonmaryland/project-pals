@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -67,8 +68,11 @@ class Sandbox:
         return {"HOME": str(self.home), "PATH": f"{self.shims}:{self.home}/.local/bin:/usr/bin:/bin",
                 "LANG": "C.UTF-8", **extra}
 
-    def run(self, *args, check=True, **extra):
-        r = subprocess.run(list(args), cwd=ROOT, env=self.env(**extra), capture_output=True, text=True, timeout=300)
+    def run(self, *args, check=True, input=None, **extra):
+        # A new session: no controlling terminal, so uninstall's typed confirmation can never wait on
+        # the terminal running the tests (the release preflight runs them in one).
+        r = subprocess.run(list(args), cwd=ROOT, env=self.env(**extra), capture_output=True, text=True, timeout=300,
+                           start_new_session=True, input=input)
         if check and r.returncode != 0:
             raise AssertionError(f"{args} failed ({r.returncode}):\n{r.stdout}\n{r.stderr}")
         return r
@@ -76,8 +80,20 @@ class Sandbox:
     def install(self, *flags, **extra):
         return self.run("bash", "install.sh", *flags, **extra)
 
-    def uninstall(self, *flags, **extra):
-        return self.run("bash", "install.sh", "--uninstall", *flags, **extra)
+    def click(self, args):
+        """The app's one-time click token for exactly `args` (what About writes before pal uninstall)."""
+        clicks = self.app / "data" / "crew-clicks"
+        clicks.mkdir(parents=True, exist_ok=True)
+        nonce = hashlib.sha256(f"{time.time()}{args}{os.urandom(8)}".encode()).hexdigest()[:32]
+        (clicks / f"{nonce}.json").write_text(json.dumps({"args": list(args), "at": int(time.time() * 1000)}))
+        return nonce
+
+    def uninstall(self, *flags, check=True, **extra):
+        """The owner's uninstall: the same code ./install.sh --uninstall runs, with a click token."""
+        flags = list(flags)
+        args = ["uninstall", *flags]
+        extra_args = [] if "--dry-run" in flags else ["--click", self.click(args)]
+        return self.run(sys.executable, "bin/crewuninstall.py", *args, *extra_args, check=check, **extra)
 
     def snapshot(self, skip=()):
         # The fake herdr-app's own log isn't part of the home being compared, nor Python's bytecode
@@ -246,3 +262,216 @@ class Uninstall(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def uninstall_in_a_pty(sb, typed, **extra):
+    """./install.sh --uninstall at a real terminal (a pty as its controlling terminal), typing `typed`.
+    Returns (exit status, what the terminal showed)."""
+    import pty
+    import select
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(ROOT)
+        os.execve("/bin/bash", ["bash", "install.sh", "--uninstall"], sb.env(**extra))
+    out, sent, deadline = b"", False, time.time() + 120
+    while time.time() < deadline:
+        r, _, _ = select.select([fd], [], [], 0.5)
+        if r:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+        if not sent and b"Type uninstall" in out:
+            os.write(fd, typed.encode() + b"\n")
+            sent = True
+    _, status = os.waitpid(pid, 0)
+    os.close(fd)
+    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
+
+
+class OnlyTheOwner(unittest.TestCase):
+    """Grok T56 H1: every way into uninstall is held by the module itself, not only pal's CLI."""
+    def setUp(self):
+        self.sb = Sandbox()
+        user_config(self.sb)
+        self.sb.install()
+        self.before = self.sb.snapshot()
+
+    def tearDown(self):
+        self.sb.close()
+
+    def unchanged(self):
+        # (crew-clicks: the tokens the test wrote; a refused one is used up, the folder stays)
+        skip = lambda d: {k: v for k, v in d.items() if "crew-clicks" not in k}
+        self.assertEqual(skip(self.sb.snapshot()), skip(self.before))
+
+    def test_install_sh_without_a_click_or_a_terminal(self):
+        for flags in ([], ["--purge"]):
+            r = self.sb.run("bash", "install.sh", "--uninstall", *flags, check=False)
+            self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+            self.assertIn("About → Uninstall", r.stderr)
+        r = self.sb.run("bash", "-c", "./install.sh --uninstall # --dry-run", check=False)
+        self.assertEqual(r.returncode, 3)
+        self.unchanged()
+
+    def test_an_import_without_a_click(self):
+        code = ("import sys; sys.path.insert(0, 'bin'); import crewuninstall as u\n"
+                "try:\n    u.uninstall(purge=True)\nexcept u.NotAllowed:\n    print('refused')\n")
+        self.assertEqual(self.sb.run(sys.executable, "-c", code).stdout.strip(), "refused")
+        r = self.sb.run(sys.executable, "-c", "import sys; sys.path.insert(0, 'bin'); import crewuninstall as u; u.main(['uninstall', '--purge'])",
+                        check=False)
+        self.assertEqual(r.stdout + r.stderr, "not uninstalled: " + r.stderr.split("not uninstalled: ", 1)[-1])
+        self.unchanged()
+
+    def test_a_click_for_something_else_or_used_twice(self):
+        tok = self.sb.click(["uninstall"])                      # minted for a plain uninstall…
+        r = self.sb.run(sys.executable, "bin/crewuninstall.py", "uninstall", "--purge", "--click", tok, check=False)
+        self.assertEqual(r.returncode, 3)                         # …is no good for --purge
+        r = self.sb.run(sys.executable, "bin/crewuninstall.py", "uninstall", "--click", tok, check=False)
+        self.assertEqual(r.returncode, 3)                         # and it's used up
+        self.assertIn("expired or was for something else", r.stderr)
+        self.unchanged()
+
+    def test_dry_run_needs_nothing(self):
+        r = self.sb.run("bash", "install.sh", "--uninstall", "--dry-run")
+        self.assertIn("would: remove", r.stdout)
+        self.unchanged()
+
+    def test_the_owner_typing_at_their_terminal(self):
+        code, out = uninstall_in_a_pty(self.sb, "no")
+        self.assertEqual(code, 3, out)
+        self.unchanged()
+        code, out = uninstall_in_a_pty(self.sb, "uninstall")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.sb.app / "mods" / "crew-roster").exists())
+
+    def test_not_at_an_agents_terminal(self):
+        # herdr-core reports an agent status for the terminal this runs in: typing doesn't count.
+        (self.sb.shims / "hc").write_text('#!/bin/sh\n[ "$1" = get ] && { echo \'{"status": {"app": "claude-code", "state": "working"}}\'; exit 0; }\n'
+                                         + FAKE_HC.split("\n", 1)[1])
+        code, out = uninstall_in_a_pty(self.sb, "uninstall", HC_TERMINAL_ID="t9")
+        self.assertEqual(code, 3, out)
+        self.assertNotIn("Type uninstall", out)
+        self.unchanged()
+
+
+class NoLinksFollowed(unittest.TestCase):
+    """Grok T56 H2: nothing is deleted or written through a symlink."""
+    def setUp(self):
+        self.sb = Sandbox()
+        self.elsewhere = self.sb.base / "elsewhere"
+        self.elsewhere.mkdir()
+
+    def tearDown(self):
+        self.sb.close()
+
+    def test_a_linked_parent_isnt_followed(self):
+        """Grok's repro: ~/.local/lib is a link to a folder that holds herdr-crew/secret.txt."""
+        self.sb.install()
+        lib = self.sb.home / ".local" / "lib"
+        shutil.rmtree(lib)
+        (self.elsewhere / "herdr-crew").mkdir()
+        (self.elsewhere / "herdr-crew" / "secret.txt").write_text("not Project Pals'")
+        (self.elsewhere / "herdr-crew" / "crewlib.py").write_text("# looks like ours\n")
+        lib.symlink_to(self.elsewhere)
+        out = json.loads(self.sb.uninstall("--purge", "--json").stdout)
+        self.assertEqual((self.elsewhere / "herdr-crew" / "secret.txt").read_text(), "not Project Pals'")
+        self.assertNotIn(str(lib / "herdr-crew"), out["removed"])
+        self.assertTrue(any(str(lib) in n and "is a link" in n for n in out["notes"]), out["notes"])
+        self.assertFalse((self.sb.app / "mods" / "crew-roster").exists())   # the rest still went
+
+    def test_linked_mods_claude_and_data_folders(self):
+        self.sb.install()
+        for linked in (self.sb.app / "mods", self.sb.home / ".claude", self.sb.app / "data"):
+            moved = self.elsewhere / linked.name
+            shutil.move(str(linked), moved)
+            linked.symlink_to(moved)
+        before = tree(self.elsewhere)
+        out = json.loads(self.sb.uninstall("--purge", "--json").stdout)
+        # (data/crew-clicks: the click token the test itself wrote, used up)
+        self.assertEqual({k: v for k, v in tree(self.elsewhere).items() if "crew-clicks" not in k}, before)
+        self.assertTrue((self.elsewhere / "mods" / "crew-roster" / "main.js").is_file())
+        for n in ("mods", ".claude", "data"):
+            self.assertTrue(any(f"/{n} is a link" in x for x in out["notes"]), (n, out["notes"]))
+
+    def test_a_linked_settings_file_is_left_alone(self):
+        user_config(self.sb)
+        real = self.elsewhere / "settings.json"
+        shutil.move(str(self.sb.home / ".claude" / "settings.json"), real)
+        (self.sb.home / ".claude" / "settings.json").symlink_to(real)
+        original = real.read_bytes()
+        out = self.sb.install().stdout
+        self.assertIn("settings.json: it's a link", out)              # install leaves it be…
+        self.assertTrue((self.sb.home / ".claude" / "settings.json").is_symlink())
+        self.assertEqual(real.read_bytes(), original)
+        # …and when it holds Project Pals' hooks anyway (an older install wrote them), uninstall
+        # doesn't write through it either: it says so.
+        st = json.loads(original)
+        st["hooks"]["Stop"] = [{"hooks": [{"type": "command", "command": f"{self.sb.home}/.local/bin/crew-hook-fast stop"}]}]
+        real.write_text(json.dumps(st))
+        with_ours = real.read_bytes()
+        out = json.loads(self.sb.uninstall("--json").stdout)
+        self.assertTrue((self.sb.home / ".claude" / "settings.json").is_symlink())
+        self.assertEqual(real.read_bytes(), with_ours)
+        self.assertTrue(any("settings.json" in n and "it's a link" in n for n in out["notes"]), out["notes"])
+
+    def test_only_what_the_manifest_lists(self):
+        self.sb.install()
+        fp = json.loads((self.sb.app / "data" / "crew-footprint.json").read_text())
+        self.assertIn(str(self.sb.app / "mods" / "crew-roster"), fp["installed"])
+        self.assertIn(str(self.sb.home / ".local" / "lib" / "herdr-crew"), fp["installed"])
+        # A mod folder that looks like Project Pals' but this install never placed it.
+        shutil.copytree(self.sb.app / "mods" / "crew-roster", self.sb.app / "mods" / "crew-extra")
+        self.sb.uninstall()
+        self.assertTrue((self.sb.app / "mods" / "crew-extra" / "crew.js").is_file())
+        self.assertFalse((self.sb.app / "mods" / "crew-roster").exists())
+
+
+class Lows(unittest.TestCase):
+    def setUp(self):
+        self.sb = Sandbox()
+
+    def tearDown(self):
+        self.sb.close()
+
+    def test_only_our_exact_hook_commands_go(self):
+        user_config(self.sb)
+        sp = self.sb.home / ".claude" / "settings.json"
+        st = json.loads(sp.read_text())
+        mine = [{"type": "command", "command": "my-crew-hook-wrapper --check"},
+                {"type": "command", "command": f"{self.sb.home}/.local/bin/crew-hook pre-tool-use; notify-send done"}]
+        st["hooks"]["Stop"] = [{"hooks": mine}]
+        sp.write_text(json.dumps(st))
+        self.sb.install()
+        self.sb.uninstall()
+        after = json.loads(sp.read_text())
+        self.assertEqual(after["hooks"]["Stop"], [{"hooks": mine}])
+        self.assertNotIn("crew-hook-fast", json.dumps(after))
+
+    def test_a_retired_name_without_our_crew_js_stays(self):
+        self.sb.install()
+        for name in ("crew-chat", "crew-mine"):
+            d = self.sb.app / "mods" / name
+            d.mkdir()
+            (d / "main.js").write_text("// my own mod\n")
+        (self.sb.app / "mods" / "crew-tell").mkdir()                      # a retired one of ours
+        shutil.copy(self.sb.app / "mods" / "crew-roster" / "crew.js", self.sb.app / "mods" / "crew-tell" / "crew.js")
+        self.sb.uninstall()
+        self.assertTrue((self.sb.app / "mods" / "crew-chat" / "main.js").is_file())
+        self.assertTrue((self.sb.app / "mods" / "crew-mine" / "main.js").is_file())
+        self.assertFalse((self.sb.app / "mods" / "crew-tell").exists())
+
+    def test_a_broken_range_check_is_said_out_loud(self):
+        src = self.sb.base / "src"
+        shutil.copytree(ROOT, src, ignore=shutil.ignore_patterns(".git", "__pycache__", "dist"))
+        m = json.loads((src / "pals.json").read_text())
+        m["herdr"]["app"]["min"] = 5                                       # crashes the check
+        (src / "pals.json").write_text(json.dumps(m))
+        r = subprocess.run(["bash", "install.sh"], cwd=src, env=self.sb.env(), capture_output=True, text=True,
+                           timeout=300, start_new_session=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Traceback", r.stderr)
+        self.assertIn("WARNING: couldn't check which Herdr this is", r.stderr)

@@ -431,7 +431,9 @@ class UninstallRule(unittest.TestCase):
     HELD = ["./install.sh --uninstall", "bash install.sh --uninstall --purge",
             "cd ~/Projects/project-pals && ./install.sh --uninstall",
             "sh /home/x/project-pals/install.sh --purge --uninstall",
-            "env HOME=/tmp/x ./install.sh --uninstall"]
+            "env HOME=/tmp/x ./install.sh --uninstall",
+            # Grok T56: --dry-run in a comment isn't an argument; the shell runs the uninstall.
+            "./install.sh --uninstall # --dry-run", "./install.sh --uninstall --purge #--dry-run"]
     ALLOWED = ["./install.sh", "./install.sh --no-helpers", "./install.sh --uninstall --dry-run",
                "./install.sh --dry-run --uninstall", "grep -n uninstall install.sh", "./install.sh --uninstall --help"]
 

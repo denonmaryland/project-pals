@@ -9,6 +9,7 @@ hooks on the same events are never touched. About → Roll back takes Project Pa
 when the version it goes back to didn't have them (crewupdate.MANAGED_EVENTS)."""
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -35,12 +36,30 @@ def write_with_backup(path, data, backup_prefix):
     return existed
 
 
+# Exactly the commands this writes (one of the two hook programs at its installed path, then an event):
+# a person's own hook that merely mentions crew-hook isn't ours, and is never rewritten (Grok T56).
+OUR_HOOK = re.compile(r"^%s/crew-hook(-fast)? [a-z][a-z-]*$" % re.escape(str(Path.home() / ".local" / "bin")))
+
+
 def ours(entry):
-    return any("crew-hook" in h.get("command", "") for h in entry.get("hooks", []))
+    return isinstance(entry, dict) and any(isinstance(h, dict) and OUR_HOOK.match(str(h.get("command", "")).strip())
+                                           for h in entry.get("hooks", []))
+
+
+def linked(path):
+    """A config file that is a symlink (a dotfiles manager's) is never written: a rename would replace
+    the link with a plain file, and writing through it changes a file elsewhere."""
+    if path.is_symlink():
+        print(f"skipped {path}: it's a link (to {os.readlink(path)}). Add Project Pals' hooks there yourself, "
+              f"or run ./install.sh again once it's a plain file")
+        return True
+    return False
 
 
 def install_claude():
     settings = Path.home() / ".claude" / "settings.json"
+    if linked(settings):
+        return
     try:
         data = json.loads(settings.read_text()) if settings.exists() else {}
     except ValueError:
@@ -78,7 +97,7 @@ def install_claude():
     wrapper = str(Path.home() / ".local" / "bin" / "crew-statusline")
     data_dir = Path(os.environ.get("HERDR_APP_HOME", Path.home() / ".config" / "herdr-app")) / "data"
     sl = data.get("statusLine") or {}
-    if sl.get("type") == "command" and "crew-statusline" not in sl.get("command", ""):
+    if sl.get("type") == "command" and str(sl.get("command", "")).strip() != wrapper:
         data_dir.mkdir(parents=True, exist_ok=True)
         (data_dir / "crew-statusline-original").write_text(sl["command"])
         data["statusLine"] = {**sl, "command": wrapper}
@@ -97,6 +116,8 @@ def install_claude():
 
 def install_agy():
     hooks_file = Path.home() / ".gemini" / "config" / "hooks.json"
+    if linked(hooks_file):
+        return
     if not hooks_file.exists() and not shutil.which("agy") and not (Path.home() / ".gemini").exists():
         return   # no Antigravity CLI here: don't make its config folder
     try:
