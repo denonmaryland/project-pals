@@ -39,6 +39,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     sit first, in the order pinned, with a small pin after the name and a hairline under them.
     Pals with no agent running fold into an **Asleep** row with a count; clicking a closed one
     wakes it with every topic it had, by name (records keep a tab id → name map).
+    Each topic runs its brain: the command on record, else its brain on record started fresh, else
+    Claude Code (as `pal topic` does), never bare shells; when nothing was on record it says which
+    brain it picked and keeps it (T27). No brain to be had: a warning, and the topics open as shells.
   - **Rooms:** cards listing each room's members' faces and its goal, plus "New room".
   - **Tasks:** an "Add a task, @Pal to assign it" field, then bordered lists (Blocked, In
     progress, Open, Done today). Each task row shows its owner's face, its title and

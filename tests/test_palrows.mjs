@@ -92,7 +92,7 @@ try {
     export const settings = () => ({ zoom: 1 }), layout = () => fixtures.layout ?? null, props = () => ({}), keys = () => ({});
     export const machines = () => [], terminals = () => [];
     const nop = () => {}, later = async () => ({ stdout: "", stderr: "", code: 0 });
-    export const run = (op, a) => { (fixtures.ran ??= []).push([op, a]); }, notify = nop, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
+    export const run = (op, a) => { (fixtures.ran ??= []).push([op, a]); }, notify = (x) => { (fixtures.notes ??= []).push(x); }, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => fixtures.known ?? [];
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
@@ -477,6 +477,33 @@ try {
   await assert.rejects(crew.requestHandlers.channel({ op: "channel", bot: "Softly", name: "x", harness: "nope" }), /couldn't start a brain for Softly.*no harness called "nope"/);
   assert.equal(fixtures.ran.filter(([op]) => op === "tab.new").length, 0);
   fixtures.shared.crew = saved; delete fixtures.known; delete fixtures.ran;
+  // T27: waking a closed pal with no command on record starts a brain, never bare shells: its brain
+  // on record, else Claude Code (as pal topic does), and it says which; with no brain to be had it
+  // says so and opens shells.
+  {
+    const CLAUDE = { key: "claude", name: "Claude Code", run: ["claude"], installed: true };
+    const CODEX = { key: "codex", name: "Codex", run: ["codex"], installed: true };
+    const wake = async (rec, known) => {
+      fixtures.known = known; fixtures.ran = []; fixtures.notes = [];
+      fixtures.shared.crew = { ...fixtures.shared.crew, bots: [...fixtures.shared.crew.bots.filter((b) => b.id !== rec.id), rec] };
+      await crew.wakePal(rec);
+      const made = fixtures.ran.find(([op]) => op === "space.new")?.[1];
+      return { argv: made?.argv, notes: fixtures.notes, saved: fixtures.shared.crew.bots.find((b) => b.id === rec.id) };
+    };
+    const bare = await wake({ id: "w1", name: "Sleepy", folder: "/x", categories: { "#main": "Topics" } }, [CODEX, CLAUDE]);
+    assert.equal(bare.argv?.[0], "claude", "no brain on record: Claude Code, not a bare shell");
+    assert.ok(bare.notes.some((n) => /Woke Sleepy with Claude Code/.test(n.title) && /no brain on record/.test(n.body)), "it says which brain");
+    assert.equal(bare.saved.harness, "claude", "and keeps it on the record");
+    const hired = await wake({ id: "w2", name: "Coder", harness: "codex", categories: {} }, [CODEX, CLAUDE]);
+    assert.equal(hired.argv?.[0], "codex", "its brain on record, started fresh");
+    const saved = await wake({ id: "w3", name: "Kept", harness: "claude", argv: ["claude", "--model", "opus"], categories: {} }, [CLAUDE]);
+    assert.deepEqual(saved.argv.slice(0, 3), ["claude", "--model", "opus"], "a saved command is used as is");
+    assert.ok(!saved.notes.some((n) => /^Woke/.test(n.title)), "nothing to say when it was on record");
+    const none = await wake({ id: "w4", name: "Lost", categories: {} }, []);
+    assert.equal(none.argv, undefined);
+    assert.ok(none.notes.some((n) => /without a brain/.test(n.title) && n.level === "warning"), "no brain to be had: it says so");
+    fixtures.known = undefined; fixtures.notes = [];
+  }
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
