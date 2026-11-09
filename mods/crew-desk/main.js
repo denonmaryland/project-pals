@@ -28,6 +28,18 @@ const ICON = "mods/crew-roster/icons";
 const LEFT = 232, RIGHT = 400;
 const AMBER_FILL = "#E8AA0A1F", AMBER_EDGE = "#E8AA0A47";
 
+// A receipt as people read it: "routed #docs" → "Routed to #docs"; the rest as they are.
+export function receiptWord(status) {
+  const m = /^routed (#\S+)$/.exec(status ?? "");
+  return m ? `Routed to ${m[1]}` : status ?? "";
+}
+// Its second line: who and how, then the note. Triage's reads "by triage: <why>" (the model's reason).
+export function receiptLine(r) {
+  if (r.via === "triage" && /^routed /.test(r.status ?? "")) return `by triage${r.note ? `: ${r.note}` : ""}`;
+  if (r.via === "rules" && /^routed /.test(r.status ?? "")) return `by the rules${r.note ? `: ${r.note}` : ""}`;
+  return [r.by, r.via, r.note].filter(Boolean).join(" · ");
+}
+
 export default class CrewDesk extends View {
   init(_props, cx) {
     this.cards = [];
@@ -156,8 +168,13 @@ export default class CrewDesk extends View {
     const on = this.openId === c.id;
     const dot = urgencyColor(d, c.urgency);
     const last = c.last ?? (c.receipts ?? []).slice(-1)[0];
-    const sub = [`${c.from_kind === "owner" ? this.owner() : c.from ?? "?"} → ${c.to ?? "?"}`, cardAge(c.created),
-      last ? `${last.status}${last.by ? ` · ${last.by}` : ""}` : null].filter(Boolean).join("  ·  ");
+    // In To route: a card dropped with Auto is being sorted (crewd's triage); one triage couldn't place
+    // waits on you, and its row says why (the last receipt's note).
+    const sorting = c.tray === "_route" && c.route === "auto" && c.status === "queued";
+    const unplaced = c.tray === "_route" && c.status === "needs you" && last?.note;
+    const sub = unplaced ? `waits on you · ${last.note}`
+      : [`${c.from_kind === "owner" ? this.owner() : c.from ?? "?"} → ${c.to ?? "?"}`, cardAge(c.created),
+        last ? `${receiptWord(last.status)}${last.by ? ` · ${last.by}` : ""}` : null].filter(Boolean).join("  ·  ");
     return v_flex().id(`dc-${c.id}`).flex_none().gap(2).px(10).py(7).rounded(d.r.sm).cursor_pointer()
       .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
       .on_click((_e, cx) => { this.openId = on ? null : c.id; this.moving = false; cx.notify(); })
@@ -166,8 +183,10 @@ export default class CrewDesk extends View {
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("17px").text_color(c.unreadable ? d.warnText : d.fg1)
           .child(c.unreadable ? `Can't read this card: ${c.unreadable}` : c.title || "(no title)"))
         .when(c.status === "held", (el) => el.child(div().flex_none().text_size(11).text_color(d.warnText).child(`held · ${c.held ?? "?"} ${cardAge(c.held_since)}`)))
+        .when(sorting, (el) => el.child(div().flex_none().text_size(11).text_color(d.infoText)
+          .loop("opacity", { from: 0.45, to: 1, period: 1200 }).child("sorting…")))
         .child(div().flex_none().text_size(11).font_family(d.mono).text_color(d.fg4).child(c.id ?? "")))
-      .child(div().pl(14).truncate().text_size(11).line_height("14px").text_color(d.fg3).child(sub));
+      .child(div().pl(14).truncate().text_size(11).line_height("14px").text_color(unplaced ? d.warnText : d.fg3).child(sub));
   }
 
   middle(d) {
@@ -260,12 +279,12 @@ export default class CrewDesk extends View {
       .tooltip(a).child(image(`data/${a}`).w(112).h(80)));
     const timeline = v_flex().gap(0).children((c.receipts ?? []).map((r, i, all) => h_flex().id(`dr-${i}`).gap(10).items_start()
       .child(v_flex().w(8).flex_none().items_center().h_full()
-        .child(div().size(7).mt(5).rounded(4).bg(cardStatusColor(d, r.status)))
+        .child(div().size(7).mt(5).rounded(4).bg(/^routed /.test(r.status ?? "") ? d.infoText : cardStatusColor(d, r.status)))
         .when(i < all.length - 1, (el) => el.child(div().w(1).flex_1().min_h(14).bg(d.line))))
       .child(v_flex().flex_1().min_w(0).pb(8)
-        .child(h_flex().gap(6).child(div().text_size(12).font_weight(500).text_color(d.body).child(r.status))
+        .child(h_flex().gap(6).child(div().text_size(12).font_weight(500).text_color(d.body).child(receiptWord(r.status)))
           .child(div().text_size(11).text_color(d.fg4).child(cardAge(r.at))))
-        .child(div().text_size(11).line_height("15px").text_color(d.fg3).child([r.by, r.via, r.note].filter(Boolean).join(" · "))))));
+        .child(div().text_size(11).line_height("15px").text_color(d.fg3).child(receiptLine(r))))));
     const body = v_flex().gap(12).p(16).pr(18)
       .child(div().text_size(15).line_height("20px").font_weight(600).text_color(d.fg1).child(c.title || "(no title)"))
       .child(h_flex().flex_wrap().gap(6)

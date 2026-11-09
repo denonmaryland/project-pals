@@ -605,6 +605,11 @@ still travels through crewd's queue, carrying the card's id.
   gear menu): a 560 px dialog with To (Auto = To route until triage ships, a pal, or a topic),
   Low · Normal · Soon · Now, images, and "Track on the board" (on for multi-line text). Enter
   drops; the toast names the card ("Dropped on Helper #build · c-7f3a9e").
+- **Triage:** a card dropped with **Auto** waits in To route (`route: auto`) while crewd asks a cheap
+  model (`run_headless`: `claude -p --model haiku`, else agy) which pal and topic should take it. It
+  goes there with a "routed #topic · triage · why" receipt, or stays in To route as needs you
+  (`route: manual`) with the reason: unsure (below 0.6), an answer naming anything not on the
+  roster, no model, triage off (`desk.triage`), no pals, or the day's 100 calls used up.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
@@ -817,6 +822,10 @@ still travels through crewd's queue, carrying the card's id.
 - **The card format is parsed twice** (`crewdesk.parse` and `parseCard` in crew.js): change both
   and the fixtures in `tests/fixtures/desk/` together. A body line that is exactly `## Receipts` or
   `## Reply` is written with a leading `\`.
+- **Triage only routes** (§9.2, §10.4): the card goes to the model as quoted data, the answer must
+  name a pal and topic from the roster exactly, its urgency is at most `soon` and never replaces the
+  owner's own pick, and `routes.jsonl` keeps a hash of the input, never the card's text. Its calls
+  count against `desk.triage_daily_cap` in `budget.json`; over the cap no model is called.
 - **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal), `now` is the owner's
   only, and a `--re` thread stops at 6 cards deep.
 - **The shipped `pal-desk` skill** is replaced on update only while it's unchanged since the last
@@ -885,3 +894,6 @@ still travels through crewd's queue, carrying the card's id.
   "edited by hand" receipt; an owner card edited by hand shows "edited after sending · unverified"
   until Confirm as mine.
 - `node tests/test_desk_parser.mjs` and `node tests/test_desk_view.mjs` pass.
+- A card dropped with Auto lands on a topic within about 20 seconds with a "routed #topic" receipt,
+  or waits in To route as needs you with the reason; an answer naming a pal or topic that isn't
+  there is thrown away (`tests/test_desk.py` Triage).

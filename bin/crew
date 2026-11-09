@@ -23,7 +23,7 @@ The Desk (everything sent to you is a card with a status and receipts)
   pal desk open ID                  the whole card (marks it seen · opened)
   pal desk take ID [--sub] | later ID | done ID ["result"] | reply ID "answer"
   pal desk block ID "why" [--owner] | pass ID <Pal[#topic]> "why"
-  pal desk send <Pal[#topic]|owner|route> "text" [--soon|--low] [--ask] [--task] [--attach F]... [-F file]
+  pal desk send <Pal[#topic]|owner|route|auto> "text" [--soon|--low] [--ask] [--task] [--attach F]... [-F file]
             [--relaying] [--re ID]   a new card (pal tell / ask / task add --for send cards too)
   pal desk sent [--json] | cancel ID | attach FILE | stats | check
   (the owner, from Project Pals: urgency ID LEVEL, confirm ID, prune --older 180d)
@@ -691,7 +691,8 @@ def cmd_task(spaces, rest):
 
 def desk_print(rows, as_json, empty):
     if as_json:
-        print(json.dumps({"cards": [crewdesk.summary(c, p) for p, c in rows], "counts": crewdesk.counts()}, ensure_ascii=False))
+        print(json.dumps({"cards": [crewdesk.summary(c, p) for p, c in rows], "counts": crewdesk.counts(), "pals": crewdesk.by_pal(),
+                          "triage": crewdesk.conf().get("triage")}, ensure_ascii=False))
     else:
         print("\n".join(crewdesk.line(c) for _, c in rows) or empty)
 
@@ -833,6 +834,7 @@ def cmd_desk(spaces, rest):
             die("send what? pal desk send <to> \"text\" (or -F file)")
         urgency = o.get("urgency") or ("now" if o.get("now") else "soon" if o.get("soon") else "low" if o.get("low") else "normal")
         to = pos[0]
+        auto = to.lower() == "auto"
         if to.lower() in ("route", "to route", "auto"):
             to = ""
         elif to.lower() in (OWNER.lower(), "owner"):
@@ -870,7 +872,8 @@ def cmd_desk(spaces, rest):
         card = crewdesk.create(kind, to, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
                                relaying=OWNER if o.get("relaying") and who["from_kind"] == "pal" else None,
                                urgency=urgency, status="needs you" if to == OWNER else "queued", via=via, task=task,
-                               thread=thread, depth=depth, reply_to=o.get("re"), attachments=atts)
+                               thread=thread, depth=depth, reply_to=o.get("re"), attachments=atts,
+                               extra={"route": "auto"} if auto else None)
         did = None
         if who["me"] and to and to != OWNER:
             did = new_id("d-")

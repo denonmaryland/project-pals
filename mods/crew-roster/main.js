@@ -15,7 +15,7 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab,
-  scrollArea, scrollState, scrollTo, scrollIntoView } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
@@ -703,6 +703,7 @@ export default class CrewRoster extends View {
     // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
     const needs = shared("crew.needs")?.count ?? 0;
     const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
+    const desk = deskOf(space.name);
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
@@ -713,6 +714,11 @@ export default class CrewRoster extends View {
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
         .child(btn("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine ? (mine > 99 ? "99+" : mine) : null, 18))
+        // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
+        // the Desk view on this pal. Icon and a fixed count slot, so its width never changes.
+        .child(pebble(d, { id: "hero-desk", icon: "ds-tell", extra: desk?.open ? (desk.open > 99 ? "99+" : desk.open) : null, slot: 18,
+          extraColor: desk?.held ? d.warnText : null, onClick: () => showDesk(`pal:${deskSlug(space.name)}`),
+          tooltip: desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting" }))
         // Profile: the right-side profile panel (again: closes it). Icon-only, like the moon, so
         // Inbox and Tasks keep their full labels at 304 px; the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
@@ -766,6 +772,7 @@ export default class CrewRoster extends View {
       const on = tab.active;
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
+      const lane = deskLane(space.name, channelName(tab));
       return div().h(ROW).flex_none().pb(2).pr(11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
         .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
@@ -774,6 +781,8 @@ export default class CrewRoster extends View {
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
           .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
         .when(tabPinned(tab), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
+        // The Desk: "N waiting" or "held 12m" when cards wait for this topic (crew.desk, from the header).
+        .when(Boolean(lane?.open), (el) => el.child(deskLaneMark(d, lane)))
         .child(!tabHasAgent(tab) ? noAgentTag(d)
           : st === "working" ? workingMark(d)
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)

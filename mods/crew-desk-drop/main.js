@@ -4,13 +4,16 @@
 // - The text: multi-line, 3 rows growing to 10 (the Tasks composer). Its first line is the card's
 //   title. Images by pasting, dropping files on the dialog, or the paperclip (crew-attach): each is
 //   copied into data/crew-attachments (images only, 10 MB at most, 6 a card) and sent with --attach.
-// - To: Auto (To route until triage ships, stage 4), a pal (its pal tray: the rules pick the topic),
-//   or Pal#topic, with a filter field (typeahead over spaces()). With no pals it's To route only.
+// - To: Auto (crewd's triage, a cheap model, picks the pal and topic: `pal desk send auto`), To route
+//   (it waits there and you pick), a pal (its pal tray: the rules pick the topic), or Pal#topic, with a
+//   filter field (typeahead over spaces()). Auto is hidden while triage is off (shared crew.desk.triage,
+//   published by crew-header) or there are no pals; To route is the default then.
 // - Urgency: Low · Normal · Soon · Now (Now only here: the owner's interrupt).
 // - Track on the board: on by default once the text has more than one line (--task makes a T-n).
 // Enter drops, Shift+Enter is a new line. The card goes as the owner's, with a click token
 // (ownerCli: `pal desk send … --click`); a toast says where it landed ("Dropped on Pal #topic · c-7f3a",
-// "Waiting in To route · c-7f3a", or "Held · …" with why). props: { to? }.
+// "Dropped · sorting it to a pal · c-7f3a", "Waiting in To route · c-7f3a", or "Held · …" with why).
+// props: { to? }.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, InputState, Input } from "gpui-base";
@@ -23,6 +26,9 @@ const STORE = "data/crew-attachments";
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const MAX_FILES = 6;
 const ROUTE = "route";
+const AUTO = "auto";
+// Auto (triage) is offered while there are pals and triage isn't switched off.
+const autoOk = () => spaces().length > 0 && shared("crew.desk")?.triage !== "off";
 async function attachCli(args) {
   const r = await exec("python3", [`${home()}/.local/lib/herdr-crew/crewattach.py`, ...args]);
   try { return { ...JSON.parse(r.stdout.trim().split("\n").pop() || "{}"), code: r.code }; } catch { return { error: r.stderr.trim() || "the attachment helper failed", code: r.code || 1 }; }
@@ -42,7 +48,7 @@ export default class CrewDeskDrop extends View {
     this.filter.on("change", (_e, cx) => cx.notify());
     this.filter.on("submit", (_e, cx) => { const first = this.targets()[0]; if (first) this.pickTo(first.to, cx); });
     this.handle = cx.focus_handle();
-    this.to = props()?.to ?? ROUTE;
+    this.to = props()?.to ?? (autoOk() ? AUTO : ROUTE);
     this.toOpen = false;
     this.urgency = "normal";
     this.track = null;     // null: on for multi-line text; true/false once clicked
@@ -53,10 +59,12 @@ export default class CrewDeskDrop extends View {
 
   close() { closeOverlay(props()?.overlay); }
 
-  // Every place a card can go: Auto (To route), each pal, each of its topics.
+  // Every place a card can go: Auto (triage), To route, each pal, each of its topics.
   targets() {
     const q = (this.filter.value() ?? "").trim().toLowerCase().replace(/^@/, "");
-    const out = [{ to: ROUTE, label: spaces().length ? "Auto" : "To route", sub: spaces().length ? "To route for now" : "no pals yet" }];
+    const out = [];
+    if (autoOk()) out.push({ to: AUTO, label: "Auto", sub: "a pal picks it" });
+    out.push({ to: ROUTE, label: "To route", sub: spaces().length ? "I'll pick" : "no pals yet" });
     for (const s of spaces()) {
       out.push({ to: s.name, label: s.name, sub: "the pal: the rules pick a topic" });
       for (const t of s.tabs ?? []) out.push({ to: `${s.name}#${channelName(t)}`, label: `${s.name} #${channelName(t)}`, sub: t.status && t.status !== "idle" ? t.status : null });
@@ -66,7 +74,8 @@ export default class CrewDeskDrop extends View {
   }
 
   toLabel() {
-    if (this.to === ROUTE) return spaces().length ? "Auto (To route)" : "To route";
+    if (this.to === AUTO) return autoOk() ? "Auto (a pal picks it)" : "To route";
+    if (this.to === ROUTE) return spaces().length ? "To route (I'll pick)" : "To route";
     const [pal, topic] = this.to.split("#");
     return topic ? `${pal} #${topic}` : pal;
   }
@@ -117,7 +126,8 @@ export default class CrewDeskDrop extends View {
     const text = this.input.value().replace(/\n+$/, "").trim() || (this.files.length ? `Look at the attached image${this.files.length > 1 ? "s" : ""}` : "");
     if (!text || this.busy) return;
     const files = this.files, track = this.tracking();
-    const args = ["desk", "send", this.to, text, "--urgency", this.urgency, ...(track ? ["--task"] : []),
+    const to = this.to === AUTO && !autoOk() ? ROUTE : this.to;
+    const args = ["desk", "send", to, text, "--urgency", this.urgency, ...(track ? ["--task"] : []),
       ...files.flatMap((f) => ["--attach", f.path]), "--json"];
     this.input.set_value("");
     this.files = [];
@@ -131,7 +141,8 @@ export default class CrewDeskDrop extends View {
         const id = res.card?.id ?? "";
         const where = res.card?.to ?? this.to;
         const what = String(res.what ?? "queued");
-        if (what.startsWith("held")) notify({ title: `Held · ${id}`, body: what.replace(/^held:\s*/, ""), level: "warning", timeout: 5000 });
+        if (to === AUTO && !what.startsWith("held")) notify({ title: `Dropped · sorting it to a pal · ${id}`, body: track ? "Tracked on the board too." : null, level: "success", timeout: 3000 });
+        else if (what.startsWith("held")) notify({ title: `Held · ${id}`, body: what.replace(/^held:\s*/, ""), level: "warning", timeout: 5000 });
         else if (what.startsWith("waiting")) notify({ title: `${what[0].toUpperCase()}${what.slice(1)} · ${id}`, level: "success", timeout: 3000 });
         else notify({ title: `Dropped on ${where.replace("#", " #")} · ${id}`, body: track ? "Tracked on the board too." : null, level: "success", timeout: 3000 });
         this.busy = false;

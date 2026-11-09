@@ -1,7 +1,9 @@
 // The Desk view and the quick-drop, run headless: crew-desk renders every desk (Needs you, To route,
 // Held, All, a pal, a lane, a pal tray) and every card it's given (an unverified owner card, a held
 // one, one with a reply and images) without throwing; its actions call `pal desk …` with a click
-// token; the quick-drop sends what was typed, to where and how urgent, with --task for multi-line text.
+// token; the quick-drop sends what was typed, to where and how urgent, with --task for multi-line text,
+// to Auto (triage) by default and To route when triage is off or there are no pals; To route shows
+// Auto cards as sorting and triage's leftovers with why; the sidebar's per-topic markers read right.
 // Run: node tests/test_desk_view.mjs
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, cpSync } from "node:fs";
@@ -147,15 +149,67 @@ try {
   await run((cx) => q2.init({}, cx));
   q2.input.set_value("One line");
   assert.equal(q2.tracking(), false);
-  assert.equal(q2.toLabel(), "Auto (To route)");
+  assert.equal(q2.toLabel(), "Auto (a pal picks it)", "Auto (triage) is the default while there are pals");
+  assert.deepEqual(q2.targets().slice(0, 2).map((x) => x.to), ["auto", "route"], "Auto, then To route (I'll pick)");
   fx.calls.length = 0;
   await run((cx) => q2.drop(cx));
   const s2 = fx.calls.find((c) => c[0] === "pal" && c[2] === "send");
-  assert.equal(s2[3], "route");
+  assert.equal(s2[3], "auto");
   assert.ok(!s2.includes("--task"));
+  assert.match(fx.toasts.at(-1).title, /^Dropped · sorting it to a pal · c-abcdef$/);
   assert.ok(q2.targets().some((x) => x.to === "Herdr Mod#docs"), "every topic is a target");
   q2.filter.set_value("docs");
   assert.deepEqual(q2.targets().map((x) => x.to), ["Herdr Mod#docs"], "the filter narrows the targets");
+  // Triage off: no Auto; To route is the default (and an Auto pick still sends route).
+  fx.shared["crew.desk"] = { triage: "off" };
+  const q3 = new Drop();
+  await run((cx) => q3.init({}, cx));
+  assert.equal(q3.toLabel(), "To route (I'll pick)");
+  assert.ok(!q3.targets().some((x) => x.to === "auto"), "no Auto while triage is off");
+  q3.to = "auto"; q3.input.set_value("x");
+  fx.calls.length = 0;
+  await run((cx) => q3.drop(cx));
+  assert.equal(fx.calls.find((c) => c[0] === "pal" && c[2] === "send")[3], "route");
+  // No pals: To route only.
+  delete fx.shared["crew.desk"];
+  const keep = fx.spaces; fx.spaces = [];
+  const q4 = new Drop();
+  await run((cx) => q4.init({}, cx));
+  assert.equal(q4.toLabel(), "To route");
+  assert.deepEqual(q4.targets().map((x) => x.to), ["route"]);
+  fx.spaces = keep;
+
+  // ── To route: Auto cards being sorted, and ones triage couldn't place ──
+  const { receiptWord, receiptLine } = await import(pathToFileURL(join(dir, "crew-desk.mjs")).href);
+  assert.equal(receiptWord("routed #docs"), "Routed to #docs");
+  assert.equal(receiptWord("seen"), "seen");
+  assert.equal(receiptLine({ status: "routed #docs", by: "Project Pals", via: "triage", note: "it's about the docs" }), "by triage: it's about the docs");
+  assert.equal(receiptLine({ status: "seen", by: "t4", via: "hook:stop", note: "" }), "t4 · hook:stop");
+  v.cards = [
+    { id: "c-666666", kind: "tell", status: "queued", route: "auto", from: "DeNon", from_kind: "owner", to: "To route", title: "Sort me", receipts: [r("queued", "DeNon", "pal desk send")], tray: "_route", verified: true },
+    { id: "c-777777", kind: "tell", status: "needs you", route: "manual", from: "DeNon", from_kind: "owner", to: "To route", title: "Unsure",
+      receipts: [r("queued", "DeNon", "pal desk send"), r("needs you", "Project Pals", "triage", "triage wasn't sure (0.3)")], last: r("needs you", "Project Pals", "triage", "triage wasn't sure (0.3)"), tray: "_route", verified: true },
+    { id: "c-888888", kind: "tell", status: "seen", route: "triage", from: "DeNon", from_kind: "owner", to: "Herdr Mod#docs", title: "Placed",
+      receipts: [r("queued", "DeNon", "pal desk send"), r("routed #docs", "Project Pals", "triage", "docs work")], tray: "herdr-mod", topic: "docs", verified: true },
+  ];
+  v.pick = "route";
+  for (const id of [null, "c-666666", "c-777777"]) { v.openId = id; await run((cx) => v.render(cx)); }
+  v.pick = "all"; v.openId = "c-888888";
+  await run((cx) => v.render(cx));
+  assert.deepEqual(v.cards.filter((c) => v.match("needs", c)).map((c) => c.id), ["c-777777"], "triage's leftovers wait on you");
+
+  // ── the sidebar's Desk markers (crew.js, from the header's shared crew.desk.pals) ──
+  const crewjs = await import(pathToFileURL(join(dir, "crew.js")).href);
+  fx.shared["crew.desk"] = { counts: {}, triage: "auto", pals: { "herdr-mod": { pal: "Herdr Mod", open: 4, held: 1, held_since: iso(12),
+    topics: { "": { open: 1, held: 0, held_since: null }, Desk: { open: 2, held: 1, held_since: iso(12) }, docs: { open: 1, held: 0, held_since: null } } } } };
+  assert.equal(crewjs.deskOf("Herdr Mod").open, 4);
+  assert.equal(crewjs.deskOf("Nobody"), null);
+  assert.equal(crewjs.deskLaneText(crewjs.deskLane("Herdr Mod", "desk")), "held 12m", "held wins, with its age (topic matched case-insensitively)");
+  assert.equal(crewjs.deskLaneText(crewjs.deskLane("Herdr Mod", "#docs")), "1 waiting");
+  assert.equal(crewjs.deskLane("Herdr Mod", ""), null, "the pal tray isn't a topic row");
+  assert.equal(crewjs.deskLaneText(crewjs.deskLane("Herdr Mod", "review")), null, "nothing for a topic with no cards");
+  assert.ok(crewjs.deskLaneMark({ r: { xs: 3 }, line: "#1E1E20", fg3: "#808082", warnText: "#E8AA0A" }, crewjs.deskLane("Herdr Mod", "desk")));
+  assert.equal(crewjs.deskLaneMark({}, null), null);
   console.log("desk view: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

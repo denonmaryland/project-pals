@@ -406,6 +406,98 @@ class Upkeep(unittest.TestCase):
         self.assertEqual(out, "Your desk: 2 open cards (1 soon). pal desk to see them.")
 
 
+def triage(env, cid, answer, rc=0):
+    """crewdesk.triage with a fake model that answers `answer`; returns (card, what happened, prompt)."""
+    return py(env, f"""import crewdesk, crewlib, subprocess
+seen = []
+def runner(p):
+    seen.append(p)
+    return subprocess.CompletedProcess([], {rc}, {answer!r}, "")
+card, what = crewdesk.triage({cid!r}, crewlib.herdr_spaces, runner)
+print(json.dumps([card, what, seen[0] if seen else None]))""")
+
+
+class Triage(unittest.TestCase):
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+
+    def drop(self, text="Update the docs index", *extra):
+        r = owner(self.env, self.data, "desk", "send", "auto", text, *extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return cid_of(r.stdout)
+
+    def test_auto_waits_for_triage_then_goes_to_the_topic(self):
+        cid = self.drop()
+        c = card(self.env, cid)
+        self.assertEqual((c["tray"], c["status"], c["route"]), ("_route", "queued", "auto"))
+        ans = '{"pal": "Helper", "topic": "docs", "urgency": "soon", "size": "step", "why": "docs work", "confidence": 0.9}'
+        got, what, prompt = triage(self.env, cid, ans)
+        self.assertIn("routed to Helper#docs", what)
+        c = card(self.env, cid)
+        self.assertEqual((c["to"], c["tray"], c["route"], c["size"]), ("Helper#docs", "helper", "triage", "step"))
+        self.assertEqual(c["urgency"], "normal", "the owner's own urgency stands")
+        self.assertIn("routed #docs", [r["status"] for r in c["receipts"]])
+        self.assertEqual(len(queue(self.data, "tD")), 1)
+        self.assertIn('pal "Helper"', prompt)
+        self.assertIn("Card (data):", prompt)
+        log = [json.loads(l) for l in (self.data / "crew-desk" / "routes.jsonl").read_text().splitlines()]
+        self.assertEqual(log[0]["answer"]["topic"], "docs")
+        self.assertNotIn("Update the docs index", json.dumps(log), "no card text in the log")
+
+    def test_names_outside_the_roster_are_dropped(self):
+        for ans, why in (('{"pal": "Mallory", "topic": "x", "confidence": 1}', "isn't on the team"),
+                         ('{"pal": "Helper", "topic": "secret", "confidence": 1}', "doesn't have"),
+                         ("sure! route it to Helper", "didn't parse"),
+                         ('{"pal": "Helper", "topic": "docs", "confidence": 0.3, "why": "maybe"}', "wasn't sure")):
+            cid = self.drop()
+            got, what, _ = triage(self.env, cid, ans)
+            self.assertIn(why, what)
+            c = card(self.env, cid)
+            self.assertEqual((c["tray"], c["status"], c["route"]), ("_route", "needs you", "manual"))
+            self.assertIn(why, c["last"]["note"])
+
+    def test_triage_never_gives_now(self):
+        cid = cid_of(pal(self.env, "desk", "send", "auto", "something", term="tW").stdout)
+        triage(self.env, cid, '{"pal": "Helper", "topic": "build", "urgency": "now", "confidence": 0.95}')
+        self.assertEqual(card(self.env, cid)["urgency"], "normal")
+        cid = cid_of(pal(self.env, "desk", "send", "auto", "else", term="tW").stdout)
+        triage(self.env, cid, '{"pal": "Helper", "topic": "build", "urgency": "soon", "confidence": 0.95}')
+        self.assertEqual(card(self.env, cid)["urgency"], "soon", "a pal's normal card takes triage's urgency, up to soon")
+
+    def test_the_daily_cap(self):
+        s = json.loads((self.data / "crew-settings.json").read_text())
+        s["desk"] = {"triage_daily_cap": 1}
+        (self.data / "crew-settings.json").write_text(json.dumps(s))
+        ans = '{"pal": "Helper", "topic": "build", "confidence": 0.9}'
+        self.assertIn("routed", triage(self.env, self.drop(), ans)[1])
+        cid = self.drop()
+        got, what, prompt = triage(self.env, cid, ans)
+        self.assertEqual((what, prompt), ("over the cap", None), "no model call over the cap")
+        self.assertEqual(card(self.env, cid)["status"], "needs you")
+
+    def test_off_and_no_model(self):
+        cid = self.drop()
+        self.assertIn("no model answered", triage(self.env, cid, "", rc=1)[1])
+        s = json.loads((self.data / "crew-settings.json").read_text())
+        s["desk"] = {"triage": "off"}
+        (self.data / "crew-settings.json").write_text(json.dumps(s))
+        cid = self.drop()
+        got, what, prompt = triage(self.env, cid, "{}")
+        self.assertEqual((what, prompt), ("triage is off", None))
+
+    def test_route_without_auto_is_left_for_the_owner(self):
+        cid = cid_of(owner(self.env, self.data, "desk", "send", "route", "I'll place this").stdout)
+        self.assertEqual(py(self.env, "import crewdesk; print(json.dumps([c['id'] for c in crewdesk.pending_triage()]))"), [])
+        self.assertNotIn("route", card(self.env, cid))
+
+    def test_per_pal_counts(self):
+        pal(self.env, "tell", "Helper#build", "one", term="tW")
+        root, env, data = self.root, self.env, self.data
+        out = json.loads(pal(env, "desk", "ls", "--all", "--json").stdout)
+        self.assertEqual(out["pals"]["helper"]["topics"]["build"]["open"], 1)
+        self.assertEqual(out["triage"], "auto")
+
+
 class Install(unittest.TestCase):
     def test_skill_replaced_when_unchanged_kept_when_edited(self):
         root, env, data = sandbox()

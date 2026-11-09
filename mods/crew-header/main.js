@@ -11,7 +11,8 @@
 // toggles the Desk view, the center stack's desk-view. crew-header.drop (Ctrl+Shift+D) opens the
 // quick-drop composer, crew-header.desk the view. The header is always shown, so it's the one place
 // that reads the desk's counts (`pal desk ls --all --json`, when data/crew-desk changes, else every
-// 10 s) and publishes them as shared("crew.desk") = { counts, at } for the other mods.
+// 10 s) and publishes them as shared("crew.desk") = { counts, pals, triage, at } for the other mods
+// (pals: open / held per pal folder and topic, for the sidebar; triage: "auto" | "off").
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -61,10 +62,13 @@ export default class CrewHeader extends View {
     this.deskBusy = true;
     cx.spawn(async (cx) => {
       try {
-        const { counts } = await loadDesk();
+        const { counts, pals, triage } = await loadDesk();
         this.lastDesk = Date.now();
-        const was = shared("crew.desk")?.counts;
-        if (JSON.stringify(was) !== JSON.stringify(counts)) setShared("crew.desk", { counts, at: this.lastDesk });
+        // Published only when something changed: the counts, any pal's or topic's (the sidebar's
+        // Desk button and topic markers), or whether triage is on (the quick-drop's Auto).
+        const was = shared("crew.desk");
+        const now = { counts, pals, triage };
+        if (JSON.stringify({ counts: was?.counts, pals: was?.pals, triage: was?.triage }) !== JSON.stringify(now)) setShared("crew.desk", { ...now, at: this.lastDesk });
       } catch { /* no pal desk yet (an older install): no count */ }
       this.deskBusy = false;
       if (this.deskAgain) { this.deskAgain = false; this.refreshDesk(cx); }

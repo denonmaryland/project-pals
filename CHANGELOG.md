@@ -11,6 +11,9 @@
   cancel any card with a click.
 - **Drop a card from anywhere** with Ctrl+Shift+D: type it, pick a pal or topic (or leave it in
   To route), set how urgent it is, add images. Multi-line cards go on the task board too.
+- **Auto finds the pal for you.** Drop a card with Auto and a quick, cheap model picks the pal and
+  topic it belongs to. If it isn't sure, the card waits in To route for you to place it, with the
+  reason. At most 100 a day; set `desk.triage` to `off` to always place cards yourself.
 - **`pal desk`** for pals (and you, in a shell): their cards, `take`, `done "result"`, `reply`,
   `block`, `pass`, `send`, `sent`. The shipped `pal-desk` skill teaches every pal how to use it.
 - **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title
