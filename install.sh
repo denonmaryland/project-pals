@@ -165,7 +165,7 @@ crewd_before="$(crewd_code)"
 [[ -L "$bin/pal-room" ]] && rm -f "$bin/pal-room"
 install -m 755 "$src/bin/crew" "$bin/pal"
 install -m 755 "$src/bin/crew-room" "$bin/pal-room"
-for b in crewd crew-hook crew-hook-fast crew-statusline; do install -m 755 "$src/bin/$b" "$bin/$b"; done
+for b in crewd crew-hook crew-hook-fast crew-statusline crew-mcp; do install -m 755 "$src/bin/$b" "$bin/$b"; done
 ours() { grep -qsE "Project Pals|Project Buddies|Terminal Botz|Herdr Crew" "$1"; }
 for alias in buddy:pal buddy-room:pal-room botz:pal botz-room:pal-room crew:pal crew-room:pal-room; do
   name="${alias%%:*}"; target="${alias##*:}"
@@ -227,6 +227,18 @@ if [[ ! -f "$home/data/crew-settings.json" ]]; then
   python3 -c 'import sys, json; sys.path.insert(0, sys.argv[1]); import crewlib; json.dump({"owner": crewlib._default_owner(), "bypass": False}, open(sys.argv[2], "w"), indent=2)' \
     "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json"
 fi
+# Codex pals get the Desk's MCP server (desk_check …) on their own command line, from here.
+python3 - "$home/data/crew-settings.json" "$bin/crew-mcp" <<'PY'
+import json, sys
+path, mcp = sys.argv[1:]
+try:
+    s = json.load(open(path))
+except (OSError, ValueError):
+    s = {}
+if s.get("codex_mcp") != mcp:
+    s["codex_mcp"] = mcp
+    json.dump(s, open(path, "w"), indent=2)
+PY
 # Where Claude Code pals load the Desk's mod from (set above when it was installed).
 if [[ -n "${claude_mod_path:-}" ]]; then
     python3 - "$home/data/crew-settings.json" "$claude_mod_path" <<'PY'

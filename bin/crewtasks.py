@@ -68,7 +68,11 @@ def clean(text):
 def line(t):
     who = t.get("claimed_by") or t.get("assignee") or "anyone"
     deps = f" after {', '.join(t['deps'])}" if t.get("deps") else ""
-    return f"{t['id']} [{t['status']}] {t['title']} · {who}{deps}"
+    c = t.get("card") or {}
+    card = ""
+    if c and t["status"] in OPEN and c.get("status") not in ("done", "cancelled", "expired"):
+        card = f" · card {c['id']} {c.get('status')}" + (f" ({c['held']})" if c.get("held") else "")
+    return f"{t['id']} [{t['status']}] {t['title']} · {who}{deps}{card}"
 
 
 def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None, notify_assignee=True):
@@ -100,6 +104,7 @@ def task_card(t, spaces, me, me_name):
         card = crewdesk.create("task", t["assignee"], f"{t['id']} {t['title']}",
                                (t.get("body") or "") + f"\n\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
                                frm=who["from"], from_kind=who["from_kind"], proof=who["proof"], task=t["id"], via="pal task add")
+        note_card(card)
         crewdesk.deliver(card, spaces)
     except CrewError:
         notify(t["assignee"], f"{header(me, me_name)} New task for you: {t['id']} {clean(t['title'])}"
@@ -107,7 +112,9 @@ def task_card(t, spaces, me, me_name):
                spaces, me_name)
 
 
-def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=False, assignee=None):
+def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=False, assignee=None, from_card=False):
+    """Change a task. Its open Desk card follows (claimed → working, blocked, done with the result,
+    cancelled), unless the change came from that card (from_card: pal desk take / done / block)."""
     with locked("tasks"):
         board = load()
         t = get(board, tid)
@@ -162,4 +169,53 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
         notify(creator, f"{who} {t['id']} is blocked: {unforge(t['title'])}" + (f"\nWhy: {clean(note)}" if note else ""), spaces, me_name)
     if assignee is not None and t["status"] == "open":
         notify(t["assignee"], f"{who} {t['id']} is yours now: {unforge(t['title'])}" + (f"\n{unforge(t['body'])}" if t["body"] else ""), spaces, me_name)
+    if not from_card:
+        mirror_to_card(t, me or me_name, status, result, note, claim)
     return t
+
+
+# ── the board and the Desk (stage 6): a task's card follows the task, and the board shows the card ──
+
+def card_of(tid):
+    """The open Desk card for this task (kind task, `task: T-n`), or None."""
+    try:
+        import crewdesk
+    except ImportError:
+        return None
+    hits = [c for _, c in crewdesk.cards() if not c.get("unreadable") and c.get("task") == tid]
+    return hits[-1] if hits else None
+
+
+def mirror_to_card(t, by, status=None, result=None, note=None, claim=False):
+    """The task changed on the board: its card says so too (a receipt the sender sees)."""
+    card = card_of(t["id"])
+    if not card:
+        return
+    import crewdesk
+    try:
+        if status == "done":
+            crewdesk.mark(card["id"], "done", by, "pal task done", (result or "")[:200], result=result)
+        elif status == "cancelled":
+            crewdesk.mark(card["id"], "cancelled", by, "pal task cancel")
+        elif status == "blocked":
+            crewdesk.mark(card["id"], "blocked", by, "pal task block", (note or "")[:300])
+        elif claim:
+            crewdesk.mark(card["id"], "working", by, "pal task claim")
+    except CrewError:
+        pass
+
+
+def note_card(card):
+    """A receipt on a task's card: the board keeps its latest state (the Tasks dialog shows it)."""
+    tid = card.get("task")
+    if not tid:
+        return
+    last = (card.get("receipts") or [{}])[-1]
+    want = {"id": card["id"], "status": card.get("status"), "held": card.get("held"), "at": last.get("at"), "via": last.get("via")}
+    with locked("tasks"):
+        board = load()
+        t = next((x for x in board["tasks"] if x["id"] == tid), None)
+        if not t or t.get("card") == want:
+            return
+        t["card"] = want
+        save_json(STORE, board)

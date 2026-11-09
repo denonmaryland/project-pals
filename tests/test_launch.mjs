@@ -85,6 +85,11 @@ try {
   assert.deepEqual(crew.palArgv(["claude"], "claude"), ["claude", "--plugin-dir", "/h/.claude/project-pals/pals", ...OFF]);
   assert.deepEqual(crew.palArgv(["codex"], "codex"), ["codex"], "not other brains");
   assert.deepEqual(crew.palArgv(["claude", "--plugin-dir", "/mine"], "claude"), ["claude", "--plugin-dir", "/mine", ...OFF], "one already given is kept");
+  // Codex pals get the Desk's MCP server on their command line (stage 6); a pal that names its own keeps it.
+  fixtures.shared["crew.settings"] = { owner: "DeNon", head: "Orca", codex_mcp: "/h/.local/bin/crew-mcp" };
+  assert.deepEqual(crew.palArgv(["codex", "--no-daemon"], "codex"), ["codex", "--no-daemon", "-c", 'mcp_servers.pals.command="/h/.local/bin/crew-mcp"']);
+  assert.deepEqual(crew.palArgv(["codex", "-c", "mcp_servers.pals.command=x"], "codex"), ["codex", "-c", "mcp_servers.pals.command=x"]);
+  assert.deepEqual(crew.palArgv(["agy"], "agy"), ["agy"]);
   console.log("launch: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

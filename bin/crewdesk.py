@@ -370,7 +370,13 @@ def mark(cid, status, by, via, note="", **fields):
         _write(dest, card)
         if dest != path:
             path.unlink(missing_ok=True)
-        return card
+    if card.get("task") and _status_of(status):
+        try:   # the board shows the task's card (after the desk lock: crewtasks takes its own)
+            import crewtasks
+            crewtasks.note_card(card)
+        except Exception:
+            pass
+    return card
 
 
 # ── the owner ledger (§10.1) ─────────────────────────────────────────────────────────────────

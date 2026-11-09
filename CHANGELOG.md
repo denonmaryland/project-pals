@@ -31,6 +31,10 @@
   mid-step while the pal works, or starts a turn when it's idle. Whatever you've half-typed in its box
   stays put, and a band above its prompt shows the topic's open cards (`/desk` lists them). It's
   loaded only in pals, never your other Claude Code sessions.
+- **Tasks and their cards stay in step.** Finishing a task's card finishes the task, and the Tasks
+  dialog shows whether each new task has reached its pal yet ("not seen yet", "seen", or why it's held).
+- **Codex pals can check their desk** with a `desk_check` tool (and close cards with `desk_done`),
+  given to them on their own command line.
 - **Cards are plain files** in `data/crew-desk`, readable in any editor. You can fix a card's title
   or text by hand; its status and who sent it can't be changed that way.
 

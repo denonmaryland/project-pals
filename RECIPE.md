@@ -664,6 +664,16 @@ still travels through crewd's queue, carrying the card's id.
   While the pal is idle, it submits the card as a turn of its own. Nothing is typed, and a draft in the
   box stays. Above the prompt: "📥 Desk · #topic: N open cards · M held · /desk". `/desk` lists the
   topic's cards.
+- **Tasks and their cards move together** (stage 6). Claiming, blocking, finishing or cancelling a
+  task moves its card the same way, and `pal desk take / done / block` on a task's card claims,
+  finishes (after the task's check) or blocks the task. The board keeps the card's latest state
+  (`card: {id, status, held, at, via}` on the task): `pal task ls` adds "· card c-… seen", and the
+  Tasks dialog tags an open task "not seen yet", "seen" or amber "held · <why>", with the card in its
+  details.
+- **Codex pals get the `pals` MCP server** (`bin/crew-mcp`, on their own command line with
+  `-c mcp_servers.pals.command=…`). `desk_check` hands over what waits (`seen · mcp:desk_check`) and
+  lists the open cards; `desk_done`, `desk_reply`, `desk_block` and `desk_send` run `pal desk`, so who
+  may do what is the CLI's. It finds its terminal in its parent's environment when Codex trims its own.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
@@ -1030,3 +1040,8 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   tests. In a sandbox `claude --plugin-dir claude-mod/pals` session, a card queued while idle
   starts its own turn with a draft left in the box, and one queued during a `sleep 20` is read in
   that turn (`tests/test_desk.py` ClaudeMod covers mod-take, mod-status, the heartbeat and Roll back).
+- A task added for a pal shows its card's delivery in `pal task ls`; `pal desk done` on that card
+  finishes the task (only once its check passes); `pal task block` blocks the card
+  (`tests/test_desk.py` BoardAndCards). The pals MCP server answers initialize / tools/list and
+  `desk_check` marks cards `seen · mcp:desk_check` (McpServer); `codex mcp list -c
+  mcp_servers.pals.command=…` shows it enabled.

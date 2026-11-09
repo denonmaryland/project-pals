@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""crew-mcp: the `pals` MCP server (the Desk, stage 6). For pals whose harness has no delivery hooks
+(Codex and the rest): the model checks its desk itself, between steps, with a tool call.
+
+  crew-mcp        speaks MCP over stdio (one JSON-RPC message a line)
+
+Project Pals starts Codex pals with it (`-c mcp_servers.pals.command=…`, crew-settings.json
+"codex_mcp"), so nothing in ~/.codex is changed. Tools:
+
+  desk_check        what's waiting for you: messages and cards, taken off your queue (each card
+                    marked seen · mcp:desk_check), then your open cards. Call it at natural breaks.
+  desk_done         close a card with its result (pal desk done)
+  desk_reply        answer an ask card (pal desk reply)
+  desk_block        a card is blocked, optionally on the owner (pal desk block [--owner])
+  desk_send         send a card to a pal or topic (pal desk send)
+
+The terminal is HC_TERMINAL_ID, else the nearest parent process's (an MCP server may be started
+with a trimmed environment). The tools run `pal desk` with it, so who may do what is the same as on
+the command line. Outside a Herdr terminal every tool says so and does nothing.
+"""
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+VERSION = "0.4.0"
+PROTOCOL = "2025-06-18"
+
+
+def terminal():
+    """This pal's terminal: our own HC_TERMINAL_ID, else the first parent process that has one."""
+    if "HC_TERMINAL_ID" in os.environ:   # set (an empty one means: not a Herdr terminal; don't look further)
+        return os.environ["HC_TERMINAL_ID"] or None
+    pid = os.getppid()
+    for _ in range(12):
+        if pid <= 1:
+            break
+        try:
+            env = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+            for kv in env:
+                if kv.startswith(b"HC_TERMINAL_ID="):
+                    return kv.split(b"=", 1)[1].decode() or None
+            stat = Path(f"/proc/{pid}/stat").read_text()
+            pid = int(stat[stat.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+    return None
+
+
+HERE = Path(__file__).resolve().parent
+LIB = HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"
+PAL = HERE / "crew" if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "bin" / "pal"
+
+TOOLS = [
+    {"name": "desk_check",
+     "description": "Check your Project Pals desk: messages and Desk cards sent to you since you last looked (from other pals "
+                    "or your owner), then your open cards. Call it at natural breaks in long work and before you finish a "
+                    "turn. Close each card you act on with desk_done (or desk_reply / desk_block).",
+     "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
+    {"name": "desk_done", "description": "Close a Desk card with its result; the sender sees it.",
+     "inputSchema": {"type": "object", "properties": {"id": {"type": "string", "description": "the card id, e.g. c-7f3a9e"},
+                                                       "result": {"type": "string", "description": "what you did, one or two lines"}},
+                     "required": ["id"], "additionalProperties": False}},
+    {"name": "desk_reply", "description": "Answer an ask card (it closes the card with your answer).",
+     "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "answer": {"type": "string"}},
+                     "required": ["id", "answer"], "additionalProperties": False}},
+    {"name": "desk_block", "description": "Mark a Desk card blocked, with why. owner: true when it waits on your owner (it shows in their Inbox).",
+     "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "why": {"type": "string"},
+                                                       "owner": {"type": "boolean"}},
+                     "required": ["id", "why"], "additionalProperties": False}},
+    {"name": "desk_send", "description": "Send a Desk card to another pal ('Pal' or 'Pal#topic'). ask: true for a question.",
+     "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"},
+                                                       "ask": {"type": "boolean"}, "soon": {"type": "boolean"}},
+                     "required": ["to", "text"], "additionalProperties": False}},
+]
+
+
+def pal(t, *args):
+    env = {**os.environ, "HC_TERMINAL_ID": t}
+    r = subprocess.run([sys.executable, str(PAL), "desk", *args], capture_output=True, text=True, env=env, timeout=60)
+    out = (r.stdout + ("\n" + r.stderr if r.stderr.strip() else "")).strip()
+    return out or "(done)", r.returncode != 0
+
+
+def check(t):
+    """Waiting messages (taken off the queue, receipt mcp:desk_check), then the open cards."""
+    os.environ["HC_TERMINAL_ID"] = t
+    sys.path.insert(0, str(LIB))
+    import crewlib
+    from crewlib import mark_hooked
+    text = crewlib.take_queue(t, via="mcp:desk_check")
+    mark_hooked(t)
+    cards, _ = pal(t)
+    if text:
+        return f"New since you last looked:\n\n{text}\n\nYour open cards:\n{cards}"
+    return f"Nothing new. Your open cards:\n{cards}"
+
+
+def call(name, args):
+    t = terminal()
+    if not t:
+        return "This session isn't a Project Pals pal (no Herdr terminal), so it has no desk.", True
+    if name == "desk_check":
+        return check(t), False
+    if name == "desk_done":
+        return pal(t, "done", args["id"], *([args["result"]] if args.get("result") else []))
+    if name == "desk_reply":
+        return pal(t, "reply", args["id"], args["answer"])
+    if name == "desk_block":
+        return pal(t, "block", args["id"], args["why"], *(["--owner"] if args.get("owner") else []))
+    if name == "desk_send":
+        return pal(t, "send", args["to"], args["text"], *(["--ask"] if args.get("ask") else []), *(["--soon"] if args.get("soon") else []))
+    return f"no tool {name}", True
+
+
+def handle(msg):
+    """One JSON-RPC message → its response (None for a notification)."""
+    mid, method, params = msg.get("id"), msg.get("method"), msg.get("params") or {}
+    if mid is None:
+        return None   # notifications (initialized, cancelled): nothing to answer
+    if method == "initialize":
+        result = {"protocolVersion": params.get("protocolVersion") or PROTOCOL, "capabilities": {"tools": {}},
+                  "serverInfo": {"name": "pals", "version": VERSION},
+                  "instructions": "Project Pals' Desk: call desk_check at natural breaks to get messages and cards sent to you."}
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        result = {"tools": TOOLS}
+    elif method == "tools/call":
+        try:
+            text, err = call(params.get("name"), params.get("arguments") or {})
+        except Exception as e:   # a tool never takes the server down
+            text, err = f"{type(e).__name__}: {e}", True
+        result = {"content": [{"type": "text", "text": text}], "isError": bool(err)}
+    else:
+        return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"no method {method}"}}
+    return {"jsonrpc": "2.0", "id": mid, "result": result}
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print(__doc__)
+        return
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            out = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}}
+        else:
+            out = handle(msg) if isinstance(msg, dict) else None
+        if out is not None:
+            sys.stdout.write(json.dumps(out) + "\n")
+            sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()

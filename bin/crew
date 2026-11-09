@@ -809,6 +809,8 @@ def cmd_desk(spaces, rest):
         pos, o = opts(args, (), ("sub",))
         _, card = desk_card(pos[0])
         desk_may(card, who, "take")
+        if card.get("task"):   # the board follows: taking a task's card claims the task
+            crewtasks.update(card["task"], spaces, who["me"], who["name"], claim=True, from_card=True)
         card = crewdesk.mark(card["id"], "working", by, via, "handed to a sub-agent" if o.get("sub") else "")
         print(crewdesk.line(card))
         if o.get("sub"):
@@ -824,6 +826,9 @@ def cmd_desk(spaces, rest):
         result = " ".join(args[1:]).strip() or None
         if result:
             result = crewdesk.check_text("x", result)[1]
+        if card.get("task"):   # the task is done too (its check, if it has one, must pass first)
+            crewtasks.update(card["task"], spaces, who["me"], who["name"], status="done", result=result,
+                             note=f"done: {result}" if result else None, from_card=True)
         print(crewdesk.line(crewdesk.mark(card["id"], "done", by, via, (result or "")[:200], result=result)))
     elif sub == "reply" and len(args) >= 2:
         _, card = desk_card(args[0])
@@ -835,6 +840,8 @@ def cmd_desk(spaces, rest):
         _, card = desk_card(pos[0])
         desk_may(card, who, "block")
         why = " ".join(pos[1:])
+        if card.get("task"):
+            crewtasks.update(card["task"], spaces, who["me"], who["name"], status="blocked", note=why, from_card=True)
         card = crewdesk.mark(card["id"], "needs you" if o.get("owner") else "blocked", by, via, why[:300])
         print(crewdesk.line(card) + (f"\n{OWNER} sees it in the Inbox." if o.get("owner") else ""))
     elif sub == "pass" and len(args) >= 2:

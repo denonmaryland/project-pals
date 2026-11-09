@@ -741,6 +741,129 @@ class ClaudeMod(unittest.TestCase):
         self.assertTrue((home / ".local" / "bin" / "pal").exists())
 
 
+class BoardAndCards(unittest.TestCase):
+    """Stage 6: a task's card follows the board, the board follows its card, and shows it."""
+
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+        r = pal(self.env, "task", "add", "Ship the docs", "--for", "Helper#build", term="tW")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.cid = queue(self.data, "tH")[0]["card"]
+
+    def task(self):
+        return json.loads((self.data / "crew-tasks.json").read_text())["tasks"][0]
+
+    def test_the_board_shows_the_card(self):
+        self.assertEqual(self.task()["card"]["id"], self.cid)
+        py(self.env, "import crewlib; crewlib.take_queue('tH', via='hook:post-tool-use'); print(1)", term="tH")
+        t = self.task()
+        self.assertEqual((t["card"]["status"], t["card"]["via"]), ("seen", "hook:post-tool-use"))
+        self.assertIn(f"card {self.cid} seen", pal(self.env, "task", "ls").stdout)
+
+    def test_taking_and_closing_the_card_moves_the_task(self):
+        r = pal(self.env, "desk", "take", self.cid, term="tH")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.task()["status"], self.task()["claimed_by"]), ("claimed", "Helper#build"))
+        r = pal(self.env, "desk", "done", self.cid, "shipped", term="tH")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        t = self.task()
+        self.assertEqual((t["status"], t["result"]), ("done", "shipped"))
+        self.assertEqual(card(self.env, self.cid)["status"], "done")
+
+    def test_the_board_moves_the_card(self):
+        pal(self.env, "task", "claim", "T1", term="tH")
+        self.assertEqual(card(self.env, self.cid)["status"], "working")
+        pal(self.env, "task", "block", "T1", "waiting on a review", term="tH")
+        c = card(self.env, self.cid)
+        self.assertEqual((c["status"], c["last"]["note"]), ("blocked", "waiting on a review"))
+        pal(self.env, "task", "done", "T1", "all good", term="tH")
+        c = card(self.env, self.cid)
+        self.assertEqual((c["status"], c["result"]), ("done", "all good"))
+        self.assertNotIn("card", pal(self.env, "task", "ls", "--all").stdout.split("T1")[1].split("\n")[0], "a closed card isn't shown")
+
+    def test_a_failing_check_keeps_both_open(self):
+        board = json.loads((self.data / "crew-tasks.json").read_text())
+        board["tasks"][0]["check"] = "false"
+        (self.data / "crew-tasks.json").write_text(json.dumps(board))
+        r = pal(self.env, "desk", "done", self.cid, "done?", term="tH")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("check", r.stderr)
+        self.assertNotEqual(card(self.env, self.cid)["status"], "done")
+        self.assertNotEqual(self.task()["status"], "done")
+
+
+def mcp(env, *msgs, term=None, via_parent=False):
+    """Talk to bin/crew-mcp over stdio: the responses, in order."""
+    e = dict(env)
+    lines = "".join(json.dumps(m) + "\n" for m in msgs)
+    if via_parent:   # a server started with a trimmed env finds the terminal in its parent process
+        e["HC_TERMINAL_ID"] = term
+        argv = ["sh", "-c", f'env -u HC_TERMINAL_ID {sys.executable} {BIN / "crew-mcp"}; true']
+    else:
+        if term is not None:
+            e["HC_TERMINAL_ID"] = term
+        argv = [sys.executable, str(BIN / "crew-mcp")]
+    r = subprocess.run(argv, input=lines, capture_output=True, text=True, env=e, timeout=60)
+    return [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
+
+
+def tool(name, args=None, mid=2):
+    return {"jsonrpc": "2.0", "id": mid, "method": "tools/call", "params": {"name": name, "arguments": args or {}}}
+
+
+class McpServer(unittest.TestCase):
+    """Stage 6: the pals MCP server (desk_check …) for harnesses without delivery hooks."""
+
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+
+    def test_handshake_and_tools(self):
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t"}}}
+        out = mcp(self.env, init, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                  {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, {"jsonrpc": "2.0", "id": 3, "method": "nope"}, term="tH")
+        self.assertEqual([o["id"] for o in out], [1, 2, 3], "a notification gets no answer")
+        self.assertEqual(out[0]["result"]["serverInfo"]["name"], "pals")
+        self.assertEqual(out[0]["result"]["protocolVersion"], "2025-06-18")
+        self.assertEqual([t["name"] for t in out[1]["result"]["tools"]], ["desk_check", "desk_done", "desk_reply", "desk_block", "desk_send"])
+        self.assertEqual(out[2]["error"]["code"], -32601)
+
+    def test_desk_check_takes_and_marks_seen(self):
+        cid = cid_of(pal(self.env, "tell", "Helper#build", "Over to Codex", term="tW").stdout)
+        [r] = mcp(self.env, tool("desk_check"), term="tH")
+        text = r["result"]["content"][0]["text"]
+        self.assertFalse(r["result"]["isError"])
+        self.assertIn("New since you last looked", text)
+        self.assertIn(f"📥 Desk card {cid}", text)
+        self.assertIn(cid, text.split("Your open cards:")[1], "and it's listed as open")
+        c = card(self.env, cid)
+        self.assertEqual((c["status"], c["last"]["via"], c["last"]["by"]), ("seen", "mcp:desk_check", "tH"))
+        [r] = mcp(self.env, tool("desk_check"), term="tH")
+        self.assertTrue(r["result"]["content"][0]["text"].startswith("Nothing new"))
+        [r] = mcp(self.env, tool("desk_done", {"id": cid, "result": "did it"}), term="tH")
+        self.assertFalse(r["result"]["isError"], r)
+        self.assertEqual(card(self.env, cid)["result"], "did it")
+
+    def test_permissions_are_the_clis(self):
+        cid = cid_of(pal(self.env, "tell", "Helper#build", "Not yours", term="tD").stdout)
+        [r] = mcp(self.env, tool("desk_done", {"id": cid}), term="tW")
+        self.assertTrue(r["result"]["isError"])
+        self.assertIn("only that pal", r["result"]["content"][0]["text"])
+
+    def test_outside_a_pal_and_via_the_parent(self):
+        [r] = mcp(self.env, tool("desk_check"), term="")   # HC_TERMINAL_ID set and empty: no terminal
+        self.assertTrue(r["result"]["isError"])
+        self.assertIn("isn't a Project Pals pal", r["result"]["content"][0]["text"])
+        cid = cid_of(pal(self.env, "tell", "Helper#build", "Found you", term="tW").stdout)
+        [r] = mcp(self.env, tool("desk_check"), term="tH", via_parent=True)
+        self.assertIn(cid, r["result"]["content"][0]["text"])
+
+    def test_desk_send(self):
+        [r] = mcp(self.env, tool("desk_send", {"to": "Helper#docs", "text": "From Codex", "ask": True}), term="tW")
+        self.assertFalse(r["result"]["isError"], r)
+        c = card(self.env, cid_of(r["result"]["content"][0]["text"]))
+        self.assertEqual((c["kind"], c["from"], c["to"]), ("ask", "Worker#general", "Helper#docs"))
+
+
 class Install(unittest.TestCase):
     def test_skill_replaced_when_unchanged_kept_when_edited(self):
         root, env, data = sandbox()

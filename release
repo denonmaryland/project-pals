@@ -35,7 +35,7 @@ if git rev-parse -q --verify origin/main >/dev/null && [[ "$(git rev-parse origi
   echo "origin/main has commits you don't; pull first" >&2; exit 2
 fi
 bash -n install.sh release && sh -n bin/crew-hook-fast || exit 2
-for f in bin/crew bin/crew-room bin/crewd bin/crew-hook bin/*.py install-hooks.py; do python3 -m py_compile "$f" || { echo "python error in $f" >&2; exit 2; }; done
+for f in bin/crew bin/crew-room bin/crewd bin/crew-hook bin/crew-mcp bin/*.py install-hooks.py; do python3 -m py_compile "$f" || { echo "python error in $f" >&2; exit 2; }; done
 python3 -m unittest discover -s tests -q || { echo "tests failed" >&2; exit 2; }
 for f in layouts/*.json mods/*/mod.json pals.json; do python3 -m json.tool "$f" >/dev/null || { echo "bad JSON in $f" >&2; exit 2; }; done
 if command -v node >/dev/null; then

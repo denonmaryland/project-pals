@@ -160,7 +160,13 @@ export default class CrewTasks extends View {
 
     const row = (x) => {
       const on = this.open === x.id;
-      const tag = x.status === "claimed" ? ["working", d.infoText] : x.status === "blocked" ? ["blocked", d.warnText] : null;
+      // An open task shows its Desk card's delivery (Desk stage 6: the board reads from cards): not seen
+      // yet, seen, or held (amber, with why); claimed and blocked say so as before.
+      const c = x.card;
+      const delivery = x.status === "open" && c && !["done", "cancelled", "expired"].includes(c.status)
+        ? (c.status === "held" ? [`held · ${c.held ?? "?"}`, d.warnText] : c.status === "queued" ? ["not seen yet", d.fg3]
+          : c.status === "seen" ? ["seen", d.fg3] : null) : null;
+      const tag = x.status === "claimed" ? ["working", d.infoText] : x.status === "blocked" ? ["blocked", d.warnText] : delivery;
       return v_flex().id(`tk-${x.id}`).flex_none().rounded(d.r.sm).when(on, (el) => el.bg(d.raised))
         .child(h_flex().h(32).px(8).gap(10).items_center()
           // The tick: finishes it.
@@ -176,7 +182,8 @@ export default class CrewTasks extends View {
           .children((x.notes ?? []).slice(-2).map((n, i) => div().id(`tk-n-${x.id}-${i}`).text_size(12).line_height("17px").text_color(d.fg2)
             .child(`${n.by ?? ""}${n.by ? ": " : ""}${n.text ?? n}`)))
           .child(div().text_size(11).line_height("14px").text_color(d.fg3)
-            .child([x.by && `from ${x.by}`, x.created && ago(x.created), x.claimed_by && `claimed by ${x.claimed_by}`].filter(Boolean).join(" · ")))));
+            .child([x.by && `from ${x.by}`, x.created && ago(x.created), x.claimed_by && `claimed by ${x.claimed_by}`,
+              c && `card ${c.id} ${c.status}${c.held ? ` (${c.held})` : ""}${c.via ? ` via ${c.via}` : ""}`].filter(Boolean).join(" · ")))));
     };
 
     return sheet(d, "crew-tasks", this.handle, (e, cx) => { if (e.key === "escape") { close(); cx.stop_propagation(); } })

@@ -234,7 +234,7 @@ def _snapshot(label):
     home = Path.home()
     app = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
     app += [HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
-    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline")]
+    user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline", "crew-mcp")]
     user += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service"]
     user += [home / ".claude" / "project-pals"]   # the Desk's Claude Code mod (pals load it with --plugin-dir)
     # Without the generated mascots (they're redrawn on install).

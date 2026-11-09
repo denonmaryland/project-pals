@@ -302,9 +302,17 @@ Codex (and Gemini CLI, opencode, Cursor agent, …) gets typing only, done hones
 - **Pull, for every harness:** the primer tells pals to run `pal desk` at natural breaks on long work.
   `pal desk` is cheap and prints one line when the desk is empty. Later a `pals` MCP server
   (cli-mods §4) gives Codex and the rest a `desk_check` tool.
-- Codex's `notify` program runs after a turn. It can tell crewd at once that the turn ended (faster
-  than the 2 s poll), but it can't inject anything. **To check:** what hook surface the installed Codex
-  release has. It's unverified here, and §16 stage 2 starts by checking it.
+- **Checked (2026-11-08, codex-cli 0.167.0):** Codex has stable hooks in `~/.codex/hooks.json`, in Claude
+  Code's format, with `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`,
+  `PermissionRequest`, `Interrupt`, `SubagentStart` and `SubagentStop`. It also has `codex queue --thread
+  <id> --message <text>` (queue a message for an existing session) and `-c key=value` config overrides.
+  So Codex pals could get the same hook delivery as Claude Code, but that needs a live Codex test
+  (Codex's limit is spent until 2026-11-10), so it's next, not built.
+- **Built (stage 6):** the `pals` MCP server (`bin/crew-mcp`), given to Codex pals on their own command
+  line (`-c mcp_servers.pals.command=…`, crew-settings.json `codex_mcp`; `~/.codex` untouched). Its
+  `desk_check` takes what waits (receipt `seen · mcp:desk_check`); `desk_done`, `desk_reply`,
+  `desk_block` and `desk_send` run `pal desk`. `codex mcp list` with the override shows it enabled; a
+  live Codex session waits for the same limit.
 
 ### 6.6 What the pal reads
 
@@ -956,8 +964,12 @@ back to To route, and a draft Send without a click is refused.
 `--plugin-dir` from Herdr's pal launch if possible, so `~/.claude` stays untouched. Typing then
 remains only for Codex and other harnesses.
 
-**Stage 6 (later): the board reads from cards**, and a `pals` MCP server with a `desk_check` tool
-for Codex and other harnesses.
+**Stage 6: the board reads from cards**, and a `pals` MCP server with a `desk_check` tool
+for Codex and other harnesses. *Built 2026-11-08:* a task's card follows the board (claim → working,
+block → blocked, done → done with the result, cancel → cancelled) and the board follows its card
+(`pal desk take` claims the task, `done` finishes it after its check, `block` blocks it). The board
+keeps each task's latest card state, shown by `pal task ls` and the Tasks dialog. Plus `bin/crew-mcp`
+(§6.5).
 
 ## 17. Decisions for DeNon
 
