@@ -29,6 +29,20 @@ const ICON = "mods/crew-roster/icons";
 // The tabs built so far, as [key, label]; "|" is the divider between the pal and its project.
 const TABS = [["profile", "Profile"], ["vault", "Vault"], ["|"], ["agents", "AGENTS.md"]];
 
+// pane.go sends "focus" when it moves onto the panel. crew-profile.<tab or note> (keys.json,
+// herdr-app do) shows that tab or Vault note: profile, vault, agents, home, mission, notebook, brain.
+// The panel's state is shared (openPanel), so whichever copy gets the command, the panel follows.
+function listen(view, cx) {
+  cx.spawn(async (cx) => {
+    for (;;) {
+      const c = await nextCommand();
+      if (c === "focus") view.h.focus();
+      else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { view.edit = null; view.review = null; if (c === "brain") view.brainFile = null; view.brainSeq = (view.brainSeq ?? 0) + 1; openPanel(c); }
+      cx.notify();
+    }
+  });
+}
+
 export default class CrewProfile extends View {
   init(_props, cx) {
     this.h = cx.focus_handle();
@@ -55,6 +69,7 @@ export default class CrewProfile extends View {
       return;
     }
     if (this.part !== "main") {
+      listen(this, cx);   // a command can reach any shown copy, so the dashboard's parts take them too
       initDash(this, cx, this.part);
       if (this.part === "head") {
         cx.timer.every(250, () => { const st = panelState(); if (st.at && st.at !== this.seenAt && this.isOpen()) { this.seenAt = st.at; this.h.focus(); } });
@@ -85,16 +100,7 @@ export default class CrewProfile extends View {
       ensureProject(this, cx, s.bot);
       if (this.agentsFor !== s.bot.name && !this.agentsLoading) loadAgents(this, cx, true);
     });
-    // pane.go sends "focus" when it moves onto the panel. crew-profile.<tab or note> (keys.json,
-    // herdr-app do) shows that tab or Vault note: profile, vault, agents, home, mission, notebook, brain.
-    cx.spawn(async (cx) => {
-      for (;;) {
-        const c = await nextCommand();
-        if (c === "focus") this.h.focus();
-        else if (["profile", "vault", "agents", ...VAULT_NOTES].includes(c)) { this.edit = null; this.review = null; if (c === "brain") this.brainFile = null; this.brainSeq = (this.brainSeq ?? 0) + 1; openPanel(c); }
-        cx.notify();
-      }
-    });
+    listen(this, cx);
   }
 
   isOpen() { return panelOpen(); }
