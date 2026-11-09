@@ -1,5 +1,9 @@
 {
   "name": "Project Pals",
   "repo": "denonmaryland/project-pals",
-  "layout": "pals"
+  "layout": "pals",
+  "herdr": {
+    "app": { "min": "0.1.8", "tested": "0.1.14", "below": "0.2" },
+    "core": { "min": "0.1.11", "tested": "0.1.19", "below": "0.2" }
+  }
 }

@@ -423,3 +423,22 @@ class CommandsInsideCode(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UninstallRule(unittest.TestCase):
+    """T48: uninstalling Project Pals is the owner's. `pal uninstall` checks the click itself; a pal
+    running a checkout's install.sh --uninstall is held here. Listing what would go isn't."""
+    HELD = ["./install.sh --uninstall", "bash install.sh --uninstall --purge",
+            "cd ~/Projects/project-pals && ./install.sh --uninstall",
+            "sh /home/x/project-pals/install.sh --purge --uninstall",
+            "env HOME=/tmp/x ./install.sh --uninstall"]
+    ALLOWED = ["./install.sh", "./install.sh --no-helpers", "./install.sh --uninstall --dry-run",
+               "./install.sh --dry-run --uninstall", "grep -n uninstall install.sh", "./install.sh --uninstall --help"]
+
+    def test_held(self):
+        for cmd in self.HELD:
+            self.assertEqual(rule(cmd), "uninstall", cmd)
+
+    def test_allowed(self):
+        for cmd in self.ALLOWED:
+            self.assertIsNone(rule(cmd), cmd)

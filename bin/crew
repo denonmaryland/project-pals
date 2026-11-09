@@ -104,6 +104,9 @@ Updates
   pal version                       what's installed
   pal update [check|apply|rollback] [--json]
                                      check GitHub for a newer release, install it, or put the previous one back
+  pal uninstall [--purge] [--dry-run] [--json]
+                                     take Project Pals out (the owner's: About → Uninstall): everything it added,
+                                     nothing of yours; pals' data stays unless --purge (--dry-run: just list it)
 
 Approvals (the owner)
   pal approvals                     guarded commands waiting on the owner
@@ -2078,6 +2081,30 @@ def cmd_update(rest):
         print(f"put back {out['restored']}")
 
 
+def cmd_uninstall(rest):
+    """Take Project Pals out (bin/crewuninstall.py). Like installing an update, it's the owner's: a
+    click in About (Uninstall). --dry-run only lists what would go, so anyone may run it."""
+    import crewuninstall
+    bad = [a for a in rest if a not in ("--purge", "--dry-run", "--json")]
+    if bad:
+        die("pal uninstall [--purge] [--dry-run] [--json]")
+    dry, as_json = "--dry-run" in rest, "--json" in rest
+    if not dry:
+        update_log(f"uninstall{' --purge' if '--purge' in rest else ''} asked by {f'terminal {ME}' if ME else 'the app or a shell'}")
+        if not click_of():
+            update_log("uninstall refused: no click from Project Pals")
+        require_owner(f"uninstalling Project Pals is {OWNER}'s to do (About → Uninstall, or ./install.sh --uninstall in a terminal)")
+    out = crewuninstall.uninstall(purge="--purge" in rest, dry=dry, log=(lambda *_: None) if as_json else print)
+    if not dry and "--purge" not in rest:   # (a purge took the log with it: don't make it again)
+        update_log(f"uninstall done: removed {len(out['removed'])}, restored {len(out['restored'])}")
+    if as_json:
+        print(json.dumps(out))
+        return
+    for n in out["notes"]:
+        print(f"note: {n}")
+    print("Nothing was changed (--dry-run)." if dry else f"Project Pals is uninstalled from {HOME}.")
+
+
 # ── Home (bin/crewhome.py) ───────────────────────────────────────────────────────────────────
 
 def home_topic(spaces, spec):
@@ -2256,9 +2283,18 @@ def main(argv):
     if cmd == "version":
         ins = crewupdate.installed()
         print(f"{ins.get('name', 'Project Pals')} {ins.get('version', '?')} ({ins.get('source', '?')}, from {ins.get('repo', '?')})")
+        # The Herdr on PATH now, against the range this version was released for (pals.json "herdr").
+        import crewcompat
+        c = crewcompat.check({"herdr": (ins.get("herdr") or {}).get("range")})
+        if (ins.get("herdr") or {}).get("range"):
+            print(f"supports {crewcompat.supported_line({'herdr': ins['herdr']['range']})}")
+        for prog in c["programs"]:
+            print(prog["message"])
         return
     if cmd == "update":
         return cmd_update(rest)
+    if cmd == "uninstall":
+        return cmd_uninstall(rest)
     if cmd == "settings":
         return cmd_settings(rest)
     if cmd == "renamed":

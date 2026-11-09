@@ -299,6 +299,34 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   A local `./install.sh` over an existing install takes the same kind of snapshot first
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
   recent install, not an older release update.
+- **Supported Herdr** (T48): `pals.json` `"herdr"` gives `{min, tested, below}` for `app` (herdr-app)
+  and `core` (hc): 0.1.8 / 0.1.14 / 0.2 and 0.1.11 / 0.1.19 / 0.2. `install.sh` runs
+  `bin/crewcompat.py` first: outside min..below (or a missing / unreadable version) it prints a
+  boxed WARNING with the supported line to stderr and installs anyway; newer than `tested` but below
+  `below` prints one `note:` line. `crew-install.json` records `herdr: {app, core, supported, warn,
+  range}`; About shows the first warning in red under the status when `supported` is false; `pal
+  version` checks the Herdr on PATH against the recorded range.
+- **Uninstall** (T48): About's footer has Uninstall beside Roll back. It asks in place ("Uninstall
+  Project Pals?" in the blocked color, Keep it / Uninstall), then runs `pal uninstall --json` with
+  the owner's click token. `./install.sh --uninstall [--purge] [--dry-run]` runs the same code
+  (`bin/crewuninstall.py`) from a checkout; `pal uninstall --dry-run` needs no click. Order: stop
+  and disable crewd and remove its unit; take Project Pals' entries out of `~/.claude/settings.json`
+  (crew-hook entries, the crew-statusline wrapper back to its original command or gone),
+  `~/.gemini/config/hooks.json` (`project-pals`) and `keys.json` (only install's exact key → action
+  pairs); remove skill links into `data/crew-skills`, `~/.claude/project-pals`, the commands and
+  old-name links (only Project Pals' own), `~/.local/lib/herdr-crew`; switch Herdr from `pals` to
+  `main` and close Project Pals' open dialogs (top first, until none is `crew-*`); remove
+  `layouts/pals.*` and every `mods/crew-*` holding `crew.js`; remove install's bookkeeping
+  (`crew-install.json`, `crew-footprint.json`, `crew-originals`, `crew-clicks`, `crew-update*.json`,
+  `crew-statusline-original`); remove folders install created once empty. `--purge` also removes
+  `data/crew-*` (not a non-empty `crew-worktrees`), `agy-models.json`, `~/.cache/project-pals` and
+  `.crew-backups`.
+  To make that exact, every install first runs `crewuninstall.py record`: it notes which of the
+  paths it touches existed (first time each is seen only) and copies `keys.json`,
+  `~/.claude/settings.json` and `~/.gemini/config/hooks.json` to `data/crew-originals/` while they
+  hold nothing of Project Pals'. Uninstall writes a copy's exact bytes back when the cleaned file
+  equals it; otherwise it keeps the person's later edits and backs the file up to
+  `.crew-backups/uninstall-<time>/` first.
 
 ### The layout: Focus
 
@@ -958,6 +986,13 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   without an id is named "HH:MM #topic" and must match only one.
 - **The dream's housekeeping runs every night** (M7): expired proposals reopen their patterns and
   quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
+- **Uninstall can only be exact from the first install that ran `record`** (T48). An install from
+  before it has no `crew-originals`: Project Pals' entries still come out, but a file it created
+  (an otherwise empty `~/.claude/settings.json`) stays, and the files keep install's JSON
+  formatting. `herdr-app status` lists overlays by mod name and `overlay.close {id}` with that name
+  does nothing on 0.1.14: close the top one without an id. A layout switch doesn't close dialogs.
+  Roll back's `crewupdate.MANAGED_KEYS` still lacks ctrl-shift-d and ctrl-shift-h (rolling back to
+  0.3.x leaves them bound to missing mods); uninstall has its own full list.
 - **Roll back restores Project Pals' config entries** (M6): each snapshot records `keys.json`'s
   ctrl-shift-i / ctrl-shift-space / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
   `~/.claude/settings.json` (absence included); Roll back puts back only those still Project Pals'
@@ -1173,6 +1208,15 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   "edited by hand" receipt; an owner card edited by hand shows "edited after sending · unverified"
   until Confirm as mine.
 - `node tests/test_desk_parser.mjs` and `node tests/test_desk_view.mjs` pass.
+- Install into a fresh throwaway HOME, then `./install.sh --uninstall --purge`: the HOME is identical
+  file for file and byte for byte; with the person's own `keys.json`, `~/.claude/settings.json`
+  (own hooks and status line) and `~/.gemini/config/hooks.json`, after one or two installs, the
+  same; without `--purge` only `data/` and `.crew-backups` differ (`tests/test_uninstall.py`).
+  `pal uninstall` without a click is refused and changes nothing; with a token for
+  `uninstall --json` it runs. In a sandbox Herdr on the pals layout with About open, it ends on
+  `main` with no overlays and no errors in `herdr-app status`.
+- `install.sh` with a fake `herdr-app --version` of 0.2.1 and `hc --version` of 0.1.9 prints the
+  WARNING and installs; with 0.1.14 / 0.1.19 it's quiet (`tests/test_compat.py`).
 - A card dropped with Auto lands on a topic within about 20 seconds with a "routed #topic" receipt,
   or waits in To route as needs you with the reason; an answer naming a pal or topic that isn't
   there is thrown away (`tests/test_desk.py` Triage).

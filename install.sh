@@ -6,6 +6,9 @@
 #   ./install.sh --no-claude-hooks  helpers + Antigravity CLI hooks, leaving ~/.claude/settings.json alone
 #   ./install.sh --no-agy-hooks     helpers + Claude Code hooks, leaving ~/.gemini/config/hooks.json alone
 #   ./install.sh --no-helpers       only the layout, mods and commands
+#   ./install.sh --uninstall [--purge] [--dry-run]
+#                                   take Project Pals out again (bin/crewuninstall.py): everything it
+#                                   added, nothing of yours; your pals' data stays unless --purge
 #
 # Helpers: crewd (a user service that queues messages between turns, runs routines, reports back
 # and keeps memory) plus Claude Code and Antigravity CLI hooks and the Claude status line (pal primer
@@ -25,19 +28,37 @@ helpers=1
 claude_hooks=1
 agy_hooks=1
 from="local"
+uninstall=0
+un_flags=()
 for arg in "$@"; do
   case "$arg" in
     --no-helpers) helpers=0; claude_hooks=0; agy_hooks=0 ;;
     --no-claude-hooks) claude_hooks=0 ;;
     --no-agy-hooks) agy_hooks=0 ;;
     --from-release) from="release" ;;
+    --uninstall) uninstall=1 ;;
+    --purge|--dry-run) un_flags+=("$arg") ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
 version="$(cat "$src/VERSION" 2>/dev/null || echo 0.0.0)"
 
+# Uninstall: the same code as `pal uninstall` (which needs the owner's click in About), run from here.
+if [[ $uninstall -eq 1 ]]; then
+  command -v python3 >/dev/null || { echo "uninstalling needs python3" >&2; exit 1; }
+  HERDR_APP_HOME="$home" exec python3 "$src/bin/crewuninstall.py" uninstall ${un_flags[@]+"${un_flags[@]}"}
+fi
+[[ ${#un_flags[@]} -eq 0 ]] || { echo "--purge and --dry-run go with --uninstall" >&2; exit 2; }
+
 [[ -d "$home" ]] || { echo "no Herdr app home at $home (open Herdr once first)" >&2; exit 1; }
 for need in rsync python3; do command -v "$need" >/dev/null || { echo "Project Pals needs $need; install it and run this again" >&2; exit 1; }; done
+
+# Which Herdr this release works with (pals.json "herdr"): outside that range, say so loudly, then go on.
+python3 "$src/bin/crewcompat.py" "$src/pals.json" || true
+
+# What exists before this install touches anything (and the person's config files as they are now,
+# the first time), so an uninstall can take out exactly what Project Pals added (bin/crewuninstall.py).
+HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record || echo "couldn't record what was here before the install; an uninstall will be less exact" >&2
 
 # About › Roll back puts back the newest update snapshot (.crew-backups/update-*.tar.gz). The
 # updater takes one before it installs a release (and runs this with --from-release); take one here
@@ -349,6 +370,15 @@ rec = {"name": m.get("name"), "repo": m.get("repo"), "version": version, "helper
        "source": source, "installed": now}
 if build:
     rec["build"] = build
+# The Herdr it was installed on, and whether that's in the supported range (pals.json "herdr").
+try:
+    sys.path.insert(0, os.path.join(src, "bin"))
+    import crewcompat
+    c = crewcompat.check(m)
+    rec["herdr"] = {"app": c["programs"][0]["version"], "core": c["programs"][1]["version"], "supported": c["ok"],
+                    "warn": c["warn"], "range": m.get("herdr")}
+except Exception as e:
+    print(f"couldn't check the Herdr version: {e}", file=sys.stderr)
 json.dump(rec, open(out, "w"), indent=2)
 try:
     lines = open(log).read().splitlines()[-199:]
