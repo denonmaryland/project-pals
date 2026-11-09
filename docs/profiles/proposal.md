@@ -402,7 +402,7 @@ Kept small: `changelog.md` holds 200 lines, and older ones roll into `changelog-
 
 - **The pal keeps it current**, with commands, never by rewriting the files wholesale:
   `pal brain log "…"`, `pal brain decide "…" --why "…"`, `pal mission focus "…"`,
-  `pal mission tick "…"`, `pal brain note <topic> "…"`. Each appends or changes one line.
+  `pal mission tick "…"`, `pal brain note <subject> "…"`. Each appends or changes one line.
 - **DeNon edits anything** from the mission profile. Saves are hash-checked (`writeTextFile`'s
   `expected`, as SOUL.md does), so a pal's append and DeNon's edit can't silently overwrite each other.
   On a clash, DeNon sees both versions.
@@ -810,7 +810,7 @@ Internal names stay `crew` (AGENTS.md): new data sits beside the old.
 | Settings | the panel's width | `crew-settings.json` `focus.panelPx` |
 | Shared | the need-you count (P12) | `crew.needs` |
 | CLI | mission | `pal mission [show] [<pal>]`, `focus "…"`, `tick "…"`, `propose -F f` |
-| CLI | brain | `pal brain ls / show [file] / log "…" / decide "…" --why "…" / note <topic> "…"` |
+| CLI | brain | `pal brain ls / show [file] / log "…" / decide "…" --why "…" / note <subject> "…"` |
 | CLI | agents files | `pal agents show / lint [--deep] [--json] / propose <file> -F f / apply` (gated) |
 | Gate | rules | `agents-apply` (`pal agents apply`), `agents-file` (Edit/Write on AGENTS.md / CLAUDE.md, P6) |
 | Data | notebook | `data/crew-memory/<slug>/notebook/YYYY-MM-DD.md` |

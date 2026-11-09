@@ -39,7 +39,7 @@ Mission, brain and agent files (the profile panel shows them all)
   pal mission focus "…" | tick "goal" [--undo]          keep your focus current, tick a goal
   pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to the Inbox
   pal brain [ls] [Pal] [--json] | show [Pal] [file]     the pal's brain (mission, decisions, change log, map, notes)
-  pal brain log "what changed" | decide "what" --why "why" | note <topic> "…"
+  pal brain log "what changed" | decide "what" --why "why" | note <subject> "…"
   pal agents show|lint [Pal] [--json] [--deep]          the project's AGENTS.md / CLAUDE.md: what loads, what to fix
   pal agents propose <file> -F new.md [--note "why"]    a change to AGENTS.md / CLAUDE.md, for the owner to apply
   pal proposals | pal proposal show|accept|decline ID   proposals waiting on the owner (accept/decline: the owner)
@@ -919,7 +919,7 @@ def cmd_brain(spaces, rest):
         print(crewbrain.decide(d, " ".join(pos), o.get("why"), o.get("by") or (name if t else OWNER)))
     elif sub == "note":
         if len(pos) < 2:
-            die('pal brain note <topic> "text"')
+            die('pal brain note <subject> "text"')
         print("added to " + crewbrain.note(d, pos[0], " ".join(pos[1:])))
     elif sub == "where":
         require_owner("Move a brain")
@@ -941,7 +941,7 @@ def cmd_brain(spaces, rest):
         crewbrain.write(d, f, text)
         print(f"wrote {d / f}")
     else:
-        die("pal brain ls | show [Pal] [file] | log \"…\" | decide \"…\" --why \"…\" | note <topic> \"…\" | where <Pal> pal|project")
+        die("pal brain ls | show [Pal] [file] | log \"…\" | decide \"…\" --why \"…\" | note <subject> \"…\" | where <Pal> pal|project")
 
 
 def set_record(spaces, space, **fields):
