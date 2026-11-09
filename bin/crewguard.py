@@ -182,6 +182,89 @@ WRITE_CALL = re.compile(r"""\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.write_(?:text
                         r"""|\bDeno\.write\w*\s*\(|\bBun\.write\s*\(|\bFile\.(?:write|open|rename)\b|\bIO\.write\b|\bFileUtils\.|\bopen\s*\(?\s*(?:my\s+)?\$?\w*\s*,\s*['"]?\+?>|\bfile_put_contents\s*\(|\bfopen\s*\([^)]*['"][wax]""")
 
 
+def _statements(code):
+    """Code split into statements: at newlines and ';' outside brackets and quotes, so a call over
+    several lines stays one. Rough (no full parser): when unsure it keeps text together, which can
+    only make a hold more likely, never less."""
+    out, cur, depth, quote, i = [], [], 0, None, 0
+    while i < len(code):
+        c = code[i]
+        if quote:
+            cur.append(c)
+            if c == "\\" and i + 1 < len(code):
+                cur.append(code[i + 1]); i += 2; continue
+            if c == quote or (c == "\n" and quote in "'\""):
+                quote = None
+        elif c in "'\"`":
+            quote = c; cur.append(c)
+        elif c == "#" and (not cur or cur[-1] in " \t\n") and depth == 0:
+            while i < len(code) and code[i] != "\n":   # a comment to the end of the line
+                i += 1
+            continue
+        elif c in "([{":
+            depth += 1; cur.append(c)
+        elif c in ")]}":
+            depth = max(0, depth - 1); cur.append(c)
+        elif c in "\n;" and depth == 0:
+            out.append("".join(cur)); cur = []
+        else:
+            cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return [x.strip() for x in out if x.strip()]
+
+
+# Around a mention of an agent file (or a name holding one), what makes it harmless: compared, tested
+# for membership, read, or printed. (lab.py: `if item.name in ("AGENTS.md", "CLAUDE.md"): continue`
+# while it writes a tarball; T25.)
+_INERT_BEFORE = re.compile(r"""(?:\b(?:not\s+)?in\s*[(\[{][^()\[\]{}]*|\bin\s+|(?:==|!=|===|!==|<>)\s*"""
+                           r"""|\.(?:endswith|startswith|includes|has|count|index|find|match|search|fullmatch|test|get)\s*\([^()]*"""
+                           r"""|\bfnmatch\w*\s*\([^()]*|\b(?:readFileSync|readFile|read_text|read_bytes|exists|existsSync|isfile|is_file)\s*\([^()]*"""
+                           r"""|\b(?:print|puts|echo|say|warn|die|log|info|debug|warning|error|console\.\w+|logging\.\w+|raise\s+\w+|throw\s+new\s+\w+)\s*\([^()]*)$""")
+_INERT_AFTER = re.compile(r"""^\s*(?:==|!=|===|!==|\b(?:not\s+)?in\b|\)\s*\.(?:read\w*|exists|is_file|stat)\s*\(|\.(?:read\w*|exists|is_file|stat)\s*\()""")
+_ASSIGN = re.compile(r"""^(?:(?:const|let|var|my|our|local)\s+)?([$@%]?\w+)\s*(?::[^=]+)?(?:\+|\|)?=(?!=)""")
+_FOR = re.compile(r"""^(?:for|foreach)\s*\(?\s*(?:const|let|var|my)?\s*([$]?\w+)\s*(?:\bin\b|\bof\b|\()""")
+
+
+def _active(stmt, start, end):
+    """Is the mention at stmt[start:end] used (not just compared, read or printed)?"""
+    before, after = stmt[:start], stmt[end:]
+    if re.search(r"\bopen\s*\(\s*$", before) and re.match(r"\s*\)", after):
+        return False   # open("AGENTS.md") with no mode: a read
+    return not (_INERT_BEFORE.search(before) or _INERT_AFTER.match(after))
+
+
+def code_writes_agent_file(code):
+    """Does this code write an AGENTS.md / CLAUDE.md? Only when a write call's target is one: the
+    quoted path itself in that statement, or a name that holds it (assigned from it, or looping
+    over it). A use the parse can't follow (handed to a function, say) still holds when the code
+    writes anything at all, as the rule did before T25."""
+    stmts = _statements(code)
+    tainted, unknown = set(), False
+    for _ in range(3):   # names that carry the path, to a fixed point (a = "AGENTS.md"; b = a)
+        grew = False
+        for st in stmts:
+            hits = [m.span() for m in AGENT_PATH.finditer(st)]
+            hits += [m.span() for n in tainted for m in re.finditer(r"(?<![\w$@%])" + re.escape(n) + r"\b", st)]
+            # In `for f in FILES`, what follows `in` is what f takes, not a membership test.
+            loop = _FOR.match(st)
+            live = [h for h in hits if _active(st, *h) or (loop and h[0] >= loop.end())]
+            if not live:
+                continue
+            if WRITE_CALL.search(st):
+                return True
+            m = _ASSIGN.match(st) or _FOR.match(st)
+            if m:
+                lhs_end = m.end()
+                if any(a >= lhs_end for a, _b in live) and m.group(1) not in tainted:
+                    tainted.add(m.group(1)); grew = True
+                continue
+            unknown = True
+        if not grew:
+            break
+    return unknown and bool(WRITE_CALL.search(code))
+
+
 def writes_agent_file_via_interpreter(cmd):
     """An interpreter in the line, and an AGENTS.md / CLAUDE.md path it writes (or a script handed one)."""
     import shlex
@@ -197,7 +280,7 @@ def writes_agent_file_via_interpreter(cmd):
     if not segs:
         return False
     # Code in the line itself: -c / -e, a heredoc fed to it, or a script written and run in one go.
-    if AGENT_PATH.search(cmd) and WRITE_CALL.search(cmd):
+    if AGENT_PATH.search(cmd) and WRITE_CALL.search(cmd) and code_writes_agent_file(cmd):
         return True
     for words in segs:
         args = words[1:]
@@ -213,7 +296,7 @@ def writes_agent_file_via_interpreter(cmd):
                 text = f.read(400000)
         except OSError:
             continue
-        if AGENT_PATH.search(text) and WRITE_CALL.search(text):
+        if AGENT_PATH.search(text) and WRITE_CALL.search(text) and code_writes_agent_file(text):
             return True   # the script itself writes one
     return False
 
