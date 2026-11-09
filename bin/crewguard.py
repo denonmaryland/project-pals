@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 11
+DEFAULTS_VERSION = 12
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -35,6 +35,10 @@ DEFAULT = {
         # so the script itself needs the click: ./release 0.2.3, bash scripts/release.sh v1.0.0, make release.
         {"name": "release-script", "why": "runs a release script (push and publish)",
          "pattern": r"(?:(?:ba|z)?sh\s+)?(?:\S*/)?release(?:\.sh)?\s+v?\d+\.\d+\.\d+|make\s+(?:\S+\s+)*release(?:\s|$)"},
+        # Uninstalling Project Pals is the owner's (T48): `pal uninstall` needs the app's click itself,
+        # and a checkout's `./install.sh --uninstall` needs it here. --dry-run only lists, so it's free.
+        {"name": "uninstall", "why": "uninstalls Project Pals",
+         "pattern": r"(?!.*--dry-run)(?:(?:ba)?sh\s+)?(?:\S*/)?install\.sh\b.*\s--uninstall\b"},
         # A project's agent instructions change only with the owner's click (the profile panel's
         # AGENTS.md tab; DeNon 2026-11-08, P6). A pal's Edit/Write on AGENTS.md or CLAUDE.md is held
         # (crew-hook turns it into "edit <path>"), and so is a shell write to one. The smooth way:

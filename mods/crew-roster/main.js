@@ -15,7 +15,7 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
@@ -554,11 +554,13 @@ export default class CrewRoster extends View {
       const members = roomMembers(room);
       const on = shown?.id === room.id;
       const busy = members.some((m) => m.status === "working");
+      const up = members.filter((m) => m.agent).length;
       list.child(v_flex().id(`room-${room.id}`).gap(8).px(12).py(11).rounded(8).cursor_pointer()
+        .when(!up && members.length > 0, (el) => el.opacity(0.55))
         .when(on, (el) => el.bg(a(t.accent, "1f")).border_1().border_color(a(t.accent, "2e")))
         .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "08"))))
         .on_click(() => showRoom(room.id))
-        // Right-click: open or close it.
+        // Right-click: open, sleep/wake its pals, or close it.
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "room", room: room.id } }); })
         .child(h_flex().items_center().justify_between()
           .child(h_flex().items_baseline().gap(3)
@@ -566,8 +568,9 @@ export default class CrewRoster extends View {
             .child(div().text_size(15).when(on, (el) => el.font_medium()).text_color(t.foreground).child(room.name)))
           .when(busy, (el) => el.child(svg(WAVE).w(26).h(8).text_color(t.working))))
         .child(h_flex().items_center().gap(8)
-          .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, Boolean(m.terminal)), 18, t))))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`${members.length} topic${members.length === 1 ? "" : "s"}`)))
+          .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, m.agent), 18, t))))
+          .child(div().truncate().text_size(12).text_color(t.dim)
+            .child(!members.length ? "0 topics" : up ? `${up} of ${members.length} awake` : "all asleep · zzz")))
         .when(Boolean(room.goal), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(room.goal))));
     }
     if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put topics from different pals together, so they can hand each other work."));
@@ -776,14 +779,14 @@ export default class CrewRoster extends View {
         .child(div().flex_1().min_w(0))
         // Profile: the right-side profile panel (again: closes it); the name above opens it too.
         .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
-        // The last pebble: Put to sleep, except on the head pal, which never sleeps (its menu has no
+        // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head pal, which never sleeps (its menu has no
         // Sleep either). There it's Home (a terminal icon, primary, while Home shows: back to the
         // topic), in the same slot, so the row is the same width for every pal and fits a narrow
         // sidebar (a sixth pebble pushed the moon off at 281 px). Ctrl+Shift+H does the same.
         .child(bot.god && hasHome()
           ? pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(), onClick: () => toggleHome(),
             tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })
-          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: "Put to sleep" })));
+          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: CLOSE_LABEL })));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a

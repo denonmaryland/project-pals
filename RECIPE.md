@@ -34,7 +34,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     one needs you. Click a pal to open it; its topics are the tabs along the top, not rows
     here. Right-click a pal for Pin to the top, Rename (memory and routines follow: the roster
     remembers each space's name and runs `pal renamed` when it changes), Customize look, New
-    topic, Put to sleep (keeps the model it's on; Herdr asks "Close space?"). Right-click a
+    topic, Sleep (keep topics, free RAM) / Wake (resume topics), Close pal (end its space; keeps the model it's on; Herdr asks "Close space?"). Right-click a
     sleeping pal for Wake / Unpin / Forget, a room card for Open / Close room. A pal hired in the
     last 10 minutes with no brain yet shows "starting". Pinned pals
     sit first, in the order pinned, with a small pin after the name and a hairline under them.
@@ -238,6 +238,37 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     delay (1.5s + 45ms per character, capped at 9s).
   - After 12 pal messages in a row, room messages stop being delivered until the owner posts.
   - Inviting an asleep pal wakes it in a new `#room` topic.
+- **Sleep (keep topics, free RAM) and Wake (resume topics), in place** (PR #4, goodboimax; 0.4.1):
+  - `pal sleep <Pal|Pal#topic|#topic>` or `--idle` stops the agent in a topic and keeps its shell,
+    tab and room seats. In the app: a pal's right-click and pal menu (Sleep (keep topics, free RAM) /
+    Wake (resume topics)), a topic's right-click (Sleep this topic / Wake this topic), a room's
+    (Sleep all / Wake all, its seats only). They run `pal … --notify` detached; the outcome comes
+    back as a toast (`power-report` request), refusals with their reason. Close pal (end its space)
+    is the other rest: it closes the space (it was "Put to sleep" before 0.4.1).
+  - It refuses, saying why, and has no `--force`: working (or "esc to interrupt" on screen), blocked
+    or a folder-trust prompt, unsent text in its box, an input box it can't read, a message being
+    handed over, or work the agent still runs itself (a descendant started more than 20s after it,
+    seen twice 1.5s apart, at any depth, a helper's later children too; Claude Code's "N shells still
+    running"). `--idle` skips the head pal, and naming it needs the owner's click (the menus send
+    one, a one-time token for exactly those arguments).
+  - Only this machine's pals, and only the one known agent (`claude`, `agy`, `codex`, …) directly
+    under the topic's shell, with `HC_TERMINAL_ID` naming that terminal in both the shell's and the
+    agent's environment. It's pinned with a pidfd and checked again before any signal. TERM, a 5s
+    wait, then KILL only if it's still there. A dev server or editor in the tab is never touched.
+  - Sleep writes `data/crew-slept/<terminal>.json` (the session link it had); crewd forgets markers
+    of gone terminals.
+  - `pal wake` asks the app for the brain (`wake-brain`, T27's order per topic: the topic's brain on
+    record, the pal's command on record, its harness started fresh, else Claude Code) and types it
+    into the bare shell (nothing else may run there). It resumes (`claude --resume <id>`,
+    `agy --conversation=<id>`) only a session linked by the hook, unchanged since it was put to
+    sleep, of the brain being started, in the folder the shell is in (Claude), and not open in
+    another topic; else it starts fresh with the primer hint and says why. Never `--continue`.
+    `pal wake Pal` wakes the topics `pal sleep` put to sleep, else its room seats, else its active topic.
+  - Messages: crewd never types into a bare shell. Cards queued for it go back to the Desk, held:
+    asleep, and are delivered once an agent runs there; messages without a card wait in the queue.
+  - agy doesn't clear its Herdr status (OSC 7501) when it exits, so a dead agy tab looked awake.
+    Sleep, and crewd for any agent tab whose shell has no children left, write
+    `\e]7501;state=clear\a` to the shell's terminal.
 - **Helper (crewd, optional):**
   - Messages wait for a pal's turn to end.
   - Whoever handed out work is told when it's done.
@@ -268,6 +299,34 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   A local `./install.sh` over an existing install takes the same kind of snapshot first
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
   recent install, not an older release update.
+- **Supported Herdr** (T48): `pals.json` `"herdr"` gives `{min, tested, below}` for `app` (herdr-app)
+  and `core` (hc): 0.1.8 / 0.1.14 / 0.2 and 0.1.11 / 0.1.19 / 0.2. `install.sh` runs
+  `bin/crewcompat.py` first: outside min..below (or a missing / unreadable version) it prints a
+  boxed WARNING with the supported line to stderr and installs anyway; newer than `tested` but below
+  `below` prints one `note:` line. `crew-install.json` records `herdr: {app, core, supported, warn,
+  range}`; About shows the first warning in red under the status when `supported` is false; `pal
+  version` checks the Herdr on PATH against the recorded range.
+- **Uninstall** (T48): About's footer has Uninstall beside Roll back. It asks in place ("Uninstall
+  Project Pals?" in the blocked color, Keep it / Uninstall), then runs `pal uninstall --json` with
+  the owner's click token. `./install.sh --uninstall [--purge] [--dry-run]` runs the same code
+  (`bin/crewuninstall.py`) from a checkout; `pal uninstall --dry-run` needs no click. Order: stop
+  and disable crewd and remove its unit; take Project Pals' entries out of `~/.claude/settings.json`
+  (crew-hook entries, the crew-statusline wrapper back to its original command or gone),
+  `~/.gemini/config/hooks.json` (`project-pals`) and `keys.json` (only install's exact key → action
+  pairs); remove skill links into `data/crew-skills`, `~/.claude/project-pals`, the commands and
+  old-name links (only Project Pals' own), `~/.local/lib/herdr-crew`; switch Herdr from `pals` to
+  `main` and close Project Pals' open dialogs (top first, until none is `crew-*`); remove
+  `layouts/pals.*` and every `mods/crew-*` holding `crew.js`; remove install's bookkeeping
+  (`crew-install.json`, `crew-footprint.json`, `crew-originals`, `crew-clicks`, `crew-update*.json`,
+  `crew-statusline-original`); remove folders install created once empty. `--purge` also removes
+  `data/crew-*` (not a non-empty `crew-worktrees`), `agy-models.json`, `~/.cache/project-pals` and
+  `.crew-backups`.
+  To make that exact, every install first runs `crewuninstall.py record`: it notes which of the
+  paths it touches existed (first time each is seen only) and copies `keys.json`,
+  `~/.claude/settings.json` and `~/.gemini/config/hooks.json` to `data/crew-originals/` while they
+  hold nothing of Project Pals'. Uninstall writes a copy's exact bytes back when the cleaned file
+  equals it; otherwise it keeps the person's later edits and backs the file up to
+  `.crew-backups/uninstall-<time>/` first.
 
 ### The layout: Focus
 
@@ -461,7 +520,7 @@ rectangular segments and tags.
     editable and saved on blur; what a new session starts with and what the 6,000-character primer
     cap cuts; MEMORY.md; the last two days of notes; how many facts about the owner it shares;
     Remember…, saved as `pal remember --bot`; Open folder); its routines; and Tasks (the
-    `crew-tasks` dialog), + Topic, Customize look, Put to sleep, as pebbles.
+    `crew-tasks` dialog), + Topic, Customize look, Close pal, as pebbles.
   - **Vault** (DeNon 2026-11-08: it replaced the Notebook, Mission and Brain tabs, which are now
     its notes; their old keys still open them, e.g. `openPanel("mission")`). Opens Full. Full: the
     file tree (232 px, #0B0B0C: Home with a mint live dot, Mission, Journal with its day count (the
@@ -555,7 +614,7 @@ rectangular segments and tags.
   its field on the header's and centred on it: the field again, live (the same recessed field with
   its blue ring, 6 px in: a magnifier, the query, "esc" as a tiny pebble), then the rows, then a foot ("↑↓ move · ↵ open · esc close"). An empty box lists the pal
   menu's rows unchanged (`palMenuItems` in crew.js, shared with `crew-palmenu`) under "<Pal> · The
-  pal" and "<Pal> · The project", Put to sleep after a hairline, then "Project Pals": New topic
+  pal" and "<Pal> · The project", Sleep (keep topics, free RAM) or Wake (resume topics) and Close pal (end its space) after a hairline, then "Project Pals": New topic
   (for the shown pal), Hire a pal…, New group…, Check for updates, Project Pals settings (the gear's
   `quick` rows, `appMenuItems`). Typing searches pals (asleep ones say "wake" and Enter wakes them),
   topics (a state dot: blue working, amber needs you, green done; their task title is searchable),
@@ -573,7 +632,7 @@ rectangular segments and tags.
   command bar replaced the chip, whose empty list shows the same rows): the pal's
   name and "harness · folder", then The pal (Profile with its shortcut, Vault, Memory, Tasks with
   the open count: the `crew-tasks` dialog), The project (AGENTS.md, Review changes on
-  a worktree topic, Open folder), then Put to sleep. No topics: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
+  a worktree topic, Open folder), then Sleep / Wake and Close pal. No topics: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
 - **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
   **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while
@@ -927,6 +986,13 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   without an id is named "HH:MM #topic" and must match only one.
 - **The dream's housekeeping runs every night** (M7): expired proposals reopen their patterns and
   quiet watched fixes resolve even when the night is skipped for having too few new hiccups.
+- **Uninstall can only be exact from the first install that ran `record`** (T48). An install from
+  before it has no `crew-originals`: Project Pals' entries still come out, but a file it created
+  (an otherwise empty `~/.claude/settings.json`) stays, and the files keep install's JSON
+  formatting. `herdr-app status` lists overlays by mod name and `overlay.close {id}` with that name
+  does nothing on 0.1.14: close the top one without an id. A layout switch doesn't close dialogs.
+  Roll back's `crewupdate.MANAGED_KEYS` still lacks ctrl-shift-d and ctrl-shift-h (rolling back to
+  0.3.x leaves them bound to missing mods); uninstall has its own full list.
 - **Roll back restores Project Pals' config entries** (M6): each snapshot records `keys.json`'s
   ctrl-shift-i / ctrl-shift-space / ctrl-shift-m and Project Pals' hook entries and status-line wrapper in
   `~/.claude/settings.json` (absence included); Roll back puts back only those still Project Pals'
@@ -1160,6 +1226,15 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   "edited by hand" receipt; an owner card edited by hand shows "edited after sending · unverified"
   until Confirm as mine.
 - `node tests/test_desk_parser.mjs` and `node tests/test_desk_view.mjs` pass.
+- Install into a fresh throwaway HOME, then `./install.sh --uninstall --purge`: the HOME is identical
+  file for file and byte for byte; with the person's own `keys.json`, `~/.claude/settings.json`
+  (own hooks and status line) and `~/.gemini/config/hooks.json`, after one or two installs, the
+  same; without `--purge` only `data/` and `.crew-backups` differ (`tests/test_uninstall.py`).
+  `pal uninstall` without a click is refused and changes nothing; with a token for
+  `uninstall --json` it runs. In a sandbox Herdr on the pals layout with About open, it ends on
+  `main` with no overlays and no errors in `herdr-app status`.
+- `install.sh` with a fake `herdr-app --version` of 0.2.1 and `hc --version` of 0.1.9 prints the
+  WARNING and installs; with 0.1.14 / 0.1.19 it's quiet (`tests/test_compat.py`).
 - A card dropped with Auto lands on a topic within about 20 seconds with a "routed #topic" receipt,
   or waits in To route as needs you with the reason; an answer naming a pal or topic that isn't
   there is thrown away (`tests/test_desk.py` Triage).

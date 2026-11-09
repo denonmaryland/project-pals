@@ -23,17 +23,18 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
-from crewlib import (DATA, QUEUE, MEMORY, SKILLS, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
-                     hc_terminals, is_agent, screen, meaningful, split_where, send_now, feed, enqueue, without_input_box,
-                     herdr_spaces, find, record_of, records, lead, chan, memory_dir, remember, today, now_ms, slug,
-                     trust_prompt, trust_notice, input_draft, DraftInTheWay, batch_text, claim_queue,
-                     unclaim, finish_claimed, hooked, tidy_queue, mod_alive)
+from crewlib import (DATA, QUEUE, MEMORY, SKILLS, HOOKED, CrewError, OWNER, settings, load_json, save_json, locked, append_jsonl,
+                     hc_terminals, is_agent, term_info, proc_comm, shell_is_bare, clear_osc_status, owns_terminal, screen, meaningful,
+                     split_where, send_now, feed, enqueue, without_input_box, herdr_spaces, find, record_of, records, lead,
+                     chan, memory_dir, remember, today, now_ms, slug, trust_prompt, trust_notice, input_draft, DraftInTheWay,
+                     batch_text, claim_queue, unclaim, finish_claimed, hooked, tidy_queue, mod_alive)
 import crewskills
 import crewroutines
 import crewupdate
 import crewguard
 import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
 import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
+import crewsleep  # pals put to sleep in place (their markers)
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
@@ -113,6 +114,7 @@ def log(msg):
 class Crewd:
     def __init__(self):
         self.prev = {}            # terminal → status last tick
+        self.shell_pids = {}      # terminal → root shell pid
         self.last_sent = {}       # terminal → when we last typed into it
         self.shots = {}           # terminal → (screen hash, since)
         health = load_json(DATA / "crew-health.json", {})
@@ -143,6 +145,7 @@ class Crewd:
         terms = hc_terminals()
         if not terms:
             return
+        self.reap_osc(terms)
         self.transitions(terms)
         self.deliver(terms)
         self.desk_triage()
@@ -153,6 +156,7 @@ class Crewd:
             self.last_stall_check = time.time()
             self.stalls(terms)
             tidy_queue(set(terms))
+            crewsleep.tidy(set(terms))
             self.desk_upkeep()
             try:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
@@ -181,6 +185,25 @@ class Crewd:
                 log(f"update available: {info['latest']} (installed {info.get('current')})")
         except Exception as e:
             log(f"update check failed: {e}")
+
+    def reap_osc(self, terms):
+        """Antigravity CLI exits without OSC 7501 state=clear, leaving herdr-core stuck on
+        'antigravity / idle'. When an agent terminal's shell has no children left, clear its pty."""
+        for gone in [a for a in self.shell_pids if a not in terms]:
+            self.shell_pids.pop(gone, None)
+        for addr, t in terms.items():
+            if not is_agent(t):
+                continue
+            pid = self.shell_pids.get(addr)
+            if not pid or not proc_comm(pid):
+                pid = term_info(addr).get("pid")
+                if pid:
+                    self.shell_pids[addr] = pid
+            if pid and shell_is_bare(pid) and owns_terminal(pid, addr):
+                clear_osc_status(pid)
+                (HOOKED / addr).unlink(missing_ok=True)
+                t["agent"] = proc_comm(pid)
+                t["status"] = None
 
     # ── turns ending ──
     def transitions(self, terms):
@@ -337,6 +360,12 @@ class Crewd:
                     for f, _ in items:
                         f.unlink(missing_ok=True)
                 continue
+            if not is_agent(t):
+                # Asleep (a bare shell: put to sleep in place, or its agent exited). Nothing is ever
+                # typed into a shell. Cards go back to the Desk, held: asleep, and its redelivery queues
+                # them again once an agent runs there; messages without a card wait here.
+                self.hand_back_asleep(addr, items)
+                continue
             due = [(f, m) for f, m in items if m.get("not_before", 0) <= now_ms()]
             if not due:
                 continue
@@ -376,6 +405,17 @@ class Crewd:
                 self.save_health()
             self.last_sent[addr] = time.time()
             finish_claimed(claimed, via="typed")
+
+    def hand_back_asleep(self, addr, items):
+        cards = [f for f, m in items if m.get("card")]
+        if not cards:
+            return
+        claimed = claim_queue(addr, only=cards)   # claimed first, so a hook can't deliver one meanwhile
+        for taken, m in claimed:
+            taken.unlink(missing_ok=True)
+            crewdesk.hold(m["card"], "asleep")
+        if claimed:
+            log(f"{addr} is asleep: {len(claimed)} card(s) back on the Desk, held until it wakes")
 
     # ── stuck channels ──
     def stalls(self, terms):

@@ -19,7 +19,8 @@ export default class CrewAbout extends View {
   init(_props, cx) {
     this.ins = {};
     this.state = {};
-    this.busy = null;      // "check" | "update" | "rollback"
+    this.busy = null;      // "check" | "update" | "rollback" | "uninstall"
+    this.confirmUninstall = false;   // Uninstall asks once more, in place, before it runs
     this.error = null;
     this.backups = 0;
     // Settings: who the pals work for, and whether new pals start with permissions bypassed.
@@ -68,6 +69,8 @@ export default class CrewAbout extends View {
         const out = JSON.parse(await (kind === "check" ? crewCli : ownerCli)([...args, "--json"]));
         if (kind === "update") notify({ title: out.updated ? `Updated to ${out.version}` : "Already up to date", level: "success", timeout: 4000 });
         if (kind === "rollback") notify({ title: "Put the previous version back", level: "success", timeout: 4000 });
+        // (Uninstall switches Herdr to its main layout, which usually closes this dialog first.)
+        if (kind === "uninstall") notify({ title: "Project Pals is uninstalled", body: "Your pals' data stays in Herdr's data folder. ./install.sh puts Project Pals back.", level: "success", timeout: 8000 });
       } catch (e) {
         // pal update --json prints {ok:false,error} and exits 1: crewCli throws with that text.
         const msg = String(e.message ?? e);
@@ -146,6 +149,8 @@ export default class CrewAbout extends View {
     if (this.busy === "check") { title = "Checking for updates…"; sub = ins.repo ?? ""; }
     else if (this.busy === "update") { title = `Updating to ${st.latest}…`; sub = "Downloading, backing up, installing, checking each mod"; }
     else if (this.busy === "rollback") { title = "Putting the previous version back…"; sub = ""; }
+    else if (this.busy === "uninstall") { title = "Uninstalling Project Pals…"; sub = "Herdr switches to its main layout when it's done"; }
+    else if (this.confirmUninstall) { title = "Uninstall Project Pals?"; sub = "Takes out its layout, mods, commands, Claude Code and Antigravity hooks, shortcuts and crewd. Your own settings go back to how they were; your pals' data (pals, memory, the Desk, tasks) stays."; color = t.blocked; }
     else if (this.error) { title = "That didn't work"; sub = this.error; color = t.blocked; }
     else if (available) { title = `${st.name || st.latest} is available`; sub = st.published ? `released ${String(st.published).slice(0, 10)}` : ""; }
     else if (st.checked && !st.latest) { title = "No releases yet"; sub = `checked ${ago(st.checked)}`; }
@@ -164,11 +169,17 @@ export default class CrewAbout extends View {
         .on_click(() => exec("xdg-open", [st.url]).catch(() => {}))
         .child(div().text_size(12).text_color(t.accent).child("Full release notes"))));
 
-    const footer = h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
-      .child(this.backups && !this.busy
-        ? div().id("about-rollback").cursor_pointer().hover((s) => s.opacity(0.75)).on_click((_e, cx) => this.run("rollback", ["update", "rollback"], cx))
-            .child(div().text_size(12.5).text_color(t.dim).child("Roll back"))
-        : div())
+    const link = (id, label, action) => div().id(id).cursor_pointer().hover((s) => s.opacity(0.75)).on_click(action)
+      .child(div().text_size(12.5).text_color(t.dim).child(label));
+    const footer = this.confirmUninstall && !this.busy
+      ? h_flex().items_center().justify_end().gap(8).px(24).pt(14).pb(20)
+        .child(button("about-uninstall-cancel", "Keep it", false, (_e, cx) => { this.confirmUninstall = false; cx.notify(); }, false))
+        // The owner's click: pal uninstall runs with its one-time token (like Update and Roll back).
+        .child(button("about-uninstall-go", "Uninstall", true, (_e, cx) => { this.confirmUninstall = false; this.run("uninstall", ["uninstall"], cx); }, false))
+      : h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
+      .child(h_flex().gap(16).items_center()
+        .when(Boolean(this.backups && !this.busy), (el) => el.child(link("about-rollback", "Roll back", (_e, cx) => this.run("rollback", ["update", "rollback"], cx))))
+        .when(!this.busy, (el) => el.child(link("about-uninstall", "Uninstall", (_e, cx) => { this.confirmUninstall = true; this.error = null; cx.notify(); }))))
       .child(h_flex().gap(8).items_center()
         .child(button("about-check", "Check for updates", !available, (_e, cx) => this.run("check", ["update", "check"], cx), Boolean(this.busy)))
         .when(Boolean(available), (el) => el.child(button("about-update", `Update to ${st.latest}`, true, (_e, cx) => this.run("update", ["update", "apply"], cx), Boolean(this.busy)))));
@@ -230,6 +241,9 @@ export default class CrewAbout extends View {
       .child(header)
       .child(v_flex().gap(10).px(24).pt(12)
         .child(status)
+        // The Herdr it was installed on, when that's outside the range this version supports (pals.json "herdr").
+        .when(ins.herdr?.supported === false, (el) => el.child(div().px(4).text_size(12).text_color(t.blocked)
+          .child(`${(ins.herdr.warn ?? [])[0] ?? "This Herdr isn't one Project Pals supports."}`)))
         .child(div().px(4).text_size(12).text_color(t.dim)
           .child("Updates replace Project Pals's own files only. Your pals, rooms, memory and routines stay as they are, and the previous version is kept so you can roll back."))
         .child(div().px(4).pt(10).text_size(12.5).font_medium().text_color(t.muted).child("Settings"))

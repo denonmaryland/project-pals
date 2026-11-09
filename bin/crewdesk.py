@@ -390,22 +390,85 @@ def edit_hash(card):
     return hashlib.sha256(json.dumps([card.get(k) or "" for k in EDITABLE], ensure_ascii=False).encode()).hexdigest()
 
 
-def ledger_add(card):
+def _ledger_append(entry):
     if not LEDGER.exists():
         DESK.mkdir(parents=True, exist_ok=True)
         os.close(os.open(LEDGER, os.O_WRONLY | os.O_CREAT, 0o600))
-    append_jsonl(LEDGER, {"card": card["id"], "hash": card_hash(card), "at": iso()})
+    append_jsonl(LEDGER, entry)
+
+
+def ledger_add(card):
+    _ledger_append({"card": card["id"], "hash": card_hash(card), "at": iso()})
+
+
+def _ledger():
+    try:
+        return [e for e in (json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()) if isinstance(e, dict)]
+    except (OSError, ValueError):
+        return []
+
+
+def _own_entries(card):
+    """hash → this card's own ledger entries: one without a card id, or another card's, matches nothing (Grok T56)."""
+    out = {}
+    for e in _ledger():
+        if e.get("hash") and card.get("id") and e.get("card") == card["id"]:
+            out.setdefault(e["hash"], e)
+    return out
+
+
+def _chain(card):
+    """[entries], newest first, from this card as it is now back to the owner's own entry; None when
+    the ledger doesn't vouch for it. Each pass step is recomputed from the card itself: the same card
+    with only `to` set back to where it was must hash to that step's passed_from. So a pass entry can
+    only ever move the owner's words, never change them (Grok T56: a hand-written passed_from line
+    used to bless a body the owner didn't write)."""
+    if card.get("from_kind") != "owner":
+        return None
+    by_hash = _own_entries(card)
+    e, to, out = by_hash.get(card_hash(card)), card.get("to"), []
+    while e is not None:
+        out.append(e)
+        if not e.get("passed_from"):
+            return out   # the owner's own entry (a click, a sent draft, Confirm as mine)
+        if len(out) > 50 or e.get("to") != to or not e.get("from_to"):
+            return None
+        before = card_hash({**card, "to": e["from_to"]})
+        if before != e["passed_from"]:
+            return None
+        e, to = by_hash.get(before), e["from_to"]
+    return None
+
+
+def owner_entry(card):
+    """The ledger's word for this card as it is now: the owner's click, or a pass of it (T52), or None.
+    A pass changes `to` and nothing else, so the owner's words are still exactly theirs."""
+    c = _chain(card)
+    return c[0] if c else None
 
 
 def owner_verified(card):
-    """Is this the owner's card as the owner clicked it? Only a ledger entry for its current hash says so."""
-    if card.get("from_kind") != "owner":
-        return False
-    h = card_hash(card)
-    try:
-        return any(json.loads(l).get("hash") == h for l in LEDGER.read_text().splitlines() if l.strip())
-    except (OSError, ValueError):
-        return False
+    """Is this the owner's card as the owner clicked it (or passed on unchanged)? Only the ledger says so."""
+    return owner_entry(card) is not None
+
+
+def passes(card):
+    """[(None, where the owner sent it), (by, to), …] for a verified owner card pals passed on, oldest
+    first. Empty when it wasn't passed."""
+    c = _chain(card) or []
+    if len(c) < 2:
+        return []
+    steps = [(e.get("by") or "a pal", e.get("to") or "To route") for e in c[:-1]][::-1]
+    return [(None, c[-2].get("from_to") or "?"), *steps]
+
+
+def passed_note(card):
+    """'passed on by Orca (Dee sent it to Orca#general)' for a verified owner card a pal passed on."""
+    p = passes(card)
+    if not p:
+        return ""
+    by = ", then ".join(pal_of(b) or b for b, _ in p[1:])
+    return f"passed on by {by} ({OWNER} sent it to {p[0][1]})"
 
 
 # ── making cards ─────────────────────────────────────────────────────────────────────────────
@@ -485,6 +548,8 @@ def move(cid, to, by, via, note=""):
         card = read(path)
         if card.get("status") in CLOSED:
             raise DeskError(f"{card['id']} is {card['status']}; send a new card instead")
+        before = card_hash(card) if owner_verified(card) else None   # the owner's words, as they clicked them
+        was = card.get("to")
         card["to"] = to or "To route"
         card["status"] = "queued"
         card.pop("held", None)
@@ -495,6 +560,11 @@ def move(cid, to, by, via, note=""):
         _write(dest, card)
         if dest != path:
             path.unlink(missing_ok=True)
+        if before:
+            # Only `to` changed: the ledger chains the new hash to the owner's (T52), with who passed it,
+            # so the receiving pal still reads [from the owner], plus who passed it and where it was sent.
+            _ledger_append({"card": card["id"], "hash": card_hash(card), "passed_from": before, "by": by,
+                            "from_to": was, "to": card["to"], "at": iso()})
         return card
 
 
@@ -560,7 +630,7 @@ def summary(card, path=None):
     out = {k: v for k, v in card.items() if k not in ("title", "body", "reply", "receipts") and v not in (None, "")}
     out.update({"title": card.get("title"), "body": card.get("body") or "", "reply": card.get("reply"),
                 "receipts": card.get("receipts", []), "pal": pal_of(card.get("to")), "topic": topic_of(card.get("to")),
-                "verified": owner_verified(card), "last": (card.get("receipts") or [{}])[-1]})
+                "verified": owner_verified(card), "passed_note": passed_note(card), "last": (card.get("receipts") or [{}])[-1]})
     if card.get("unreadable"):
         out["unreadable"] = card["unreadable"]
     if path:
@@ -637,8 +707,11 @@ def frame(card):
     n = len(card.get("attachments") or [])
     if n:
         bits.append(f"{n} image{'s' if n != 1 else ''} (pal desk open {cid})")
+    note = passed_note(card)   # on the header line, where a body can't write it
+    if note:
+        bits.append(note)
     if card.get("kind") in NEWS:
-        return f"{who(card)} {escape_body(card.get('title'))}" + (f"\n{escape_body(card['body'])}" if card.get("body") else "")
+        return f"{who(card)}{' (' + note + ')' if note else ''} {escape_body(card.get('title'))}" + (f"\n{escape_body(card['body'])}" if card.get("body") else "")
     own = owner_verified(card)   # the owner's own words stay exactly as they clicked them
     esc = (lambda t: t or "") if own else escape_body
     body = esc(card.get("body"))
