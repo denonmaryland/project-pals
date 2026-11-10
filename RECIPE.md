@@ -114,7 +114,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   species (8), colour (16 swatches or a hex), what it wears (none or up to two of 10; a third
   replaces the older one) and its eyes (9), each choice shown as a resting thumbnail of the pet with
   it; Reset to its default, Cancel, Save (stores `pet` {species, acc, eyes} and `look.color`). No
-  laptop choice: every state uses the profile laptop. (The folder mascots' `mascot-art.js` is gone.)
+  laptop choice: every state uses the same three-quarter laptop, and its screen shows the state
+  (code while working, a tick for done, ? for asks you, a branch for PR open, a merge, an x for
+  closing, ! for stuck; shut while asleep). Under 46 px wide (`SMALL_BELOW`) a pet shows its head
+  alone (`tileSvg`'s `small`, the `-s` files), with no paw frame or bits: the whole scene is a
+  smudge at those sizes. (Redrawn 2026-11-09: lit bodies with faces, pale accessories, the laptop.
+  The folder mascots' `mascot-art.js` is gone.)
 - **Scrolling** (DeNon, 2026-11-08: round scrollbars, not Herdr's hard-cut rectangle). A mod can't
   shape Herdr's scrollbar (no radius or width; its colours come from the theme) or read where a
   scroll area is, so every area our mods scroll is our own (`crew.js scrollArea`): it clips its
