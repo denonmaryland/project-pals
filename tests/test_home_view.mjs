@@ -55,6 +55,7 @@ try {
     export const spaces = () => fx.spaces, agents = () => fx.agents ?? [], panes = () => fx.panes ?? [], shared = (k) => fx.shared[k], setShared = (k, v) => { fx.shared[k] = v; };
     export const exec = async (cmd, args) => {
       fx.calls.push([cmd.split("/").pop(), ...args]);
+      if (cmd.endsWith("/pal") && args[0] === "welcome") return { stdout: JSON.stringify(fx.folders ?? []), stderr: "", code: 0 };
       if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "ls") return { stdout: JSON.stringify(fx.desk), stderr: "", code: 0 };
       if (cmd === "tail") return { stdout: fx.feed ?? "", stderr: "", code: 0 };
       if (cmd === "sh") return { stdout: String(args.at(-1)).endsWith("crew-approvals") ? fx.approvals ?? "" : "", stderr: "", code: 0 };
@@ -64,10 +65,11 @@ try {
     const nop = () => {};
     export const theme = () => ({ background: "#0B0B0C" }), home = () => "/h", appHome = () => "/h/.config/herdr-app", layout = () => fx.layout, keys = () => [], settings = () => ({});
     export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = (o) => { (fx.overlays ??= []).push(o); return "ov1"; }, nextCommand = () => new Promise(() => {}), closeOverlay = () => { fx.closed++; };
-    export const hc = exec, readTextFile = async (p) => (fx.files ?? {})[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
+    export const hc = exec, readTextFile = async (p) => (fx.files ?? {})[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => fx.known ?? [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   cpSync(join(root, "mods", "crew-home", "main.js"), join(dir, "crew-home.mjs"));
+  for (const f of ["welcome.js", "welcome-text.js"]) copyFileSync(join(root, "mods", "crew-home", f), join(dir, f));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
   const crewjs = await import(pathToFileURL(join(dir, "crew.js")).href);
@@ -361,6 +363,133 @@ try {
   await run((cx) => h.init({}, cx));
   await run((cx) => draw(h, cx));
   assert.ok(!fx.calls.some((c) => c[0] === "tail"), "hidden, it reads nothing");
+
+  // ── The welcome tour (T76): a first install, nobody hired, two brains and two project folders ──
+  {
+    const click = async (id) => run((cx) => clicks.get(id)(null, cx));
+    const hires = () => fx.calls.filter((c) => c[0] === "pal" && c[1] === "hire");
+    const mark = () => fx.shared["crew.settings"].welcome;
+    fx.layout.children[0].active = "home-view";
+    fx.shared["crew.settings"] = { owner: "Sam", welcome: { state: "new", beat: 0 } };
+    fx.shared.crew = { bots: [] };
+    fx.spaces = [];
+    fx.known = [{ key: "codex", name: "Codex", installed: true }, { key: "claude", name: "Claude Code", installed: true }, { key: "grok", name: "Grok", installed: false }];
+    fx.folders = [{ path: "/h/Projects/weather-app", show: "~/Projects/weather-app", name: "Weather App", at: now - 120 * min },
+      { path: "/h/code/docs-site", show: "~/code/docs-site", name: "Docs Site", at: now - 3000 * min }];
+    fx.calls.length = 0; fx.toasts.length = 0; clicks.clear();
+    assert.ok(crewjs.welcomePending());
+    const t = new Home();
+    await run((cx) => t.init({}, cx));
+    await run((cx) => draw(t, cx));
+    await run((cx) => draw(t, cx));
+    assert.ok(clicks.has("wel-go") && clicks.has("wel-skip"), "screen 1 has its button and Skip the tour");
+    assert.ok(!clicks.has("message-head") && !clicks.has("rv-o-0"), "the tour has the whole page");
+    assert.equal(hires().length, 0, "nothing is hired before a click");
+    assert.equal(t.wel.headBrain.key, "claude", "the head pal's brain: Claude Code first");
+    assert.ok(fx.calls.some((c) => c[0] === "pal" && c[1] === "welcome" && c[2] === "folders"), "it looked for project folders");
+    // The first click hires the head pal, once, and moves on.
+    const f0 = focused;
+    await click("wel-go");
+    assert.deepEqual(hires().at(-1).slice(0, 5), ["pal", "hire", "--god", "--harness", "claude"]);
+    await new Promise((r) => setTimeout(r, 5));
+    assert.ok(focused > f0, "after the hire, Home takes the keyboard back from the new terminal");
+    assert.equal(mark().beat, 1);
+    const key = async (k) => run((cx) => t.key({ keystroke: k, key: k }, [], cx));
+    await key("enter");
+    assert.equal(mark().beat, 2, "Enter is the main button");
+    await key("left");
+    assert.equal(mark().beat, 1, "← goes back");
+    await key("enter");
+    assert.equal(hires().length, 1, "the head pal is hired once");
+    // Screen 3: the folders, the brains found, and Hire.
+    clicks.clear();
+    await run((cx) => draw(t, cx));
+    for (const id of ["wel-f-0", "wel-f-1", "wel-f-other", "wel-b-claude", "wel-b-codex", "wel-alt", "wel-back"]) assert.ok(clicks.has(id), `screen 3 has ${id}`);
+    assert.ok(!clicks.has("wel-b-grok"), "a brain that isn't installed isn't offered");
+    await key("down");
+    assert.equal(t.wel.pick, 1);
+    await click("wel-f-0");
+    await click("wel-b-codex");
+    await click("wel-go");
+    assert.deepEqual(hires().at(-1), ["pal", "hire", "Weather App", "--harness", "codex", "--folder", "/h/Projects/weather-app"]);
+    assert.equal(mark().beat, 2, "it stays on the screen: the pal is hired, and says so");
+    assert.equal(mark().pal, "Weather App", "the hire is remembered, so a restart doesn't offer it again");
+    assert.ok(!fx.calls.some((c) => c[0] === "run" && c[1] === "space.select"), "your view stays on the tour");
+    // The pal's space shows up: hired, and the button carries on.
+    fx.spaces = [{ id: "sw", name: "Weather App", tabs: [{ id: "tw", name: "general" }] }];
+    fx.shared.crew = { bots: [{ id: "bh", name: "Orchestrator", god: true }, { id: "bw", name: "Weather App", space: "sw", harness: "codex" }] };
+    clicks.clear();
+    await run((cx) => draw(t, cx));
+    assert.equal(t.wel.hired, "Weather App");
+    assert.ok(!clicks.has("wel-f-0"), "hired: the folder list is gone");
+    await click("wel-go");
+    assert.equal(hires().length, 2, "the button carries on; it doesn't hire twice");
+    assert.equal(mark().beat, 3);
+    for (const want of [4, 5, 6]) { await key("enter"); assert.equal(mark().beat, want); }
+    // Done: the mark is set, and "Go to Weather App" shows it.
+    clicks.clear();
+    await run((cx) => draw(t, cx));
+    assert.ok(clicks.has("wel-go") && clicks.has("wel-alt") && !clicks.has("wel-skip"), "the last screen: go to the pal, or stay");
+    fx.calls.length = 0;
+    await click("wel-go");
+    assert.equal(mark().state, "done");
+    assert.ok(!crewjs.welcomePending());
+    assert.ok(fx.calls.some((c) => c[0] === "run" && c[1] === "space.select" && c[2].includes("sw")), "Go to Weather App");
+    clicks.clear();
+    await run((cx) => draw(t, cx));
+    assert.ok(!clicks.has("wel-go"), "after the tour, Home is Home");
+
+    // Skip: the head pal is still hired, nothing else, and it says where the tour lives.
+    fx.shared["crew.settings"] = { owner: "Sam", welcome: { state: "new", beat: 0 } };
+    fx.shared.crew = { bots: [] }; fx.spaces = []; fx.calls.length = 0; fx.toasts.length = 0; clicks.clear();
+    const k = new Home();
+    await run((cx) => k.init({}, cx));
+    await run((cx) => draw(k, cx));
+    await run((cx) => draw(k, cx));
+    await click("wel-skip");
+    assert.equal(mark().state, "skipped");
+    assert.deepEqual(hires().map((c) => c.slice(1, 3)), [["hire", "--god"]], "Skip leaves you with a head pal and nobody else");
+    assert.match(fx.toasts.at(-1).body, /gear menu: Welcome tour/);
+
+    // No brain installed: nobody is hired, and screen 3 asks for one and can check again.
+    fx.shared["crew.settings"] = { owner: "Sam", welcome: { state: "new", beat: 0 } };
+    fx.known = []; fx.calls.length = 0; clicks.clear();
+    const nb = new Home();
+    await run((cx) => nb.init({}, cx));
+    await run((cx) => draw(nb, cx));
+    await run((cx) => draw(nb, cx));
+    await click("wel-go");
+    assert.equal(hires().length, 0, "no brain: the head pal waits");
+    fx.shared["crew.settings"] = { ...fx.shared["crew.settings"], welcome: { state: "new", beat: 2 } };
+    clicks.clear();
+    await run((cx) => draw(nb, cx));
+    assert.ok(!clicks.has("wel-f-other"), "no brain: no folder list");
+    fx.known = [{ key: "claude", name: "Claude Code", installed: true }];
+    await click("wel-go");
+    assert.equal(mark().beat, 2, "Check again stays on the screen");
+    assert.equal(nb.wel.headBrain?.key, "claude", "Check again found the brain");
+
+    // An install from before the tour (no mark) never shows it; the gear menu replays it.
+    fx.shared["crew.settings"] = { owner: "Sam" };
+    assert.ok(!crewjs.welcomePending());
+    assert.ok(crewjs.appMenuItems().some((x) => x.id === "welcome" && x.label === "Welcome tour"));
+    fx.calls.length = 0;
+    crewjs.replayWelcome();
+    assert.equal(mark().state, "open");
+    assert.equal(mark().replay, true);
+    assert.ok(fx.calls.some((c) => c[1] === "layout.select" && c[2].includes("home-view")), "the replay opens Home");
+    // A replay with pals: "You have 1 pal. Hire another?", and the head pal isn't hired again.
+    fx.spaces = [{ id: "s0", name: "Orchestrator", tabs: [] }, { id: "sw", name: "Weather App", tabs: [] }];
+    fx.shared.crew = { bots: [{ id: "bh", name: "Orchestrator", space: "s0", god: true }, { id: "bw", name: "Weather App", space: "sw" }] };
+    fx.calls.length = 0; clicks.clear();
+    const rp = new Home();
+    await run((cx) => rp.init({}, cx));
+    await run((cx) => draw(rp, cx));
+    await run((cx) => draw(rp, cx));
+    await click("wel-go");
+    assert.equal(hires().length, 0, "a replay doesn't hire a second head pal");
+    fx.shared["crew.settings"] = { owner: "Sam" };
+  }
   Date.now = realNow;
   console.log("home view: ok");
 } finally {

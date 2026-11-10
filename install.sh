@@ -252,9 +252,25 @@ fi
 # Settings: who the pals work for (your git name, else your username) and bypass (off). Set once;
 # change them in About → Settings (pal settings changes them only with the owner's click from the app).
 mkdir -p "$home/data"
+first_install=""
 if [[ ! -f "$home/data/crew-settings.json" ]]; then
-  python3 -c 'import sys, json; sys.path.insert(0, sys.argv[1]); import crewlib; json.dump({"owner": crewlib._default_owner(), "bypass": False}, open(sys.argv[2], "w"), indent=2)' \
-    "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json"
+  # A first install: the welcome tour starts by itself on Home ("welcome": "new"; RECIPE "The
+  # welcome tour"). An install that was already here has no mark, and the tour waits in the gear menu.
+  # Pals on record without a settings file is an install from before settings: not a first one.
+  python3 - "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json" "$home/shared.json" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import crewlib
+try:
+    had = bool(json.load(open(sys.argv[3])).get("crew", {}).get("bots"))
+except (OSError, ValueError, AttributeError):
+    had = False
+s = {"owner": crewlib._default_owner(), "bypass": False}
+if not had:
+    s["welcome"] = {"state": "new", "beat": 0}
+json.dump(s, open(sys.argv[2], "w"), indent=2)
+PY
+  grep -q '"welcome"' "$home/data/crew-settings.json" && first_install=1
 fi
 # Codex pals get the Desk's MCP server (desk_check …) on their own command line, from here.
 python3 - "$home/data/crew-settings.json" "$bin/crew-mcp" <<'PY'
@@ -412,7 +428,11 @@ HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record-installed "$sr
 
 echo "installed Project Pals $version into $home"
 [[ -d "$backup" ]] && echo "previous copies: $backup"
-if [[ -n "$was_shown" ]]; then herdr-app do layout.switch '{"name":"pals"}' >/dev/null 2>&1 && echo "switched Herdr to the pals layout"; fi
+if [[ -n "$was_shown" || -n "$first_install" ]]; then herdr-app do layout.switch '{"name":"pals"}' >/dev/null 2>&1 && echo "switched Herdr to the pals layout"; fi
+if [[ -n "$first_install" ]]; then
+  head="$(HERDR_APP_HOME="$home" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; print(crewlib.settings()["head"])' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo Orchestrator)"
+  echo "Open Herdr (the pals layout: Ctrl+Shift+L): $head is waiting on Home to show you around."
+fi
 
 if command -v herdr-app >/dev/null; then
   fail=0

@@ -916,6 +916,46 @@ the root (a hash, or JSON with those fields); `export: true` marks it. Anything 
 hash is ignored, with a warning.
 Home reads only while it shows: files every 4 s, `pal desk ls --all --json --done` every 10 s.
 
+### The welcome tour
+
+Every install starts with the head pal, and it shows a new user around (T76; DeNon's pick "A · On
+Home", 2026-11-09; mock: `data/crew-boards/onboarding`). It's drawn by `crew-home/welcome.js` with
+the words in `crew-home/welcome-text.js`: fixed text with the head pal's and the owner's names
+filled in, never written by a model.
+
+- **Seven screens on Home, one message and one main button each** (Enter; ← or K goes back):
+  hello ("Hello, I'm the Orchestrator. I'm the pal that oversees every other pal…") → what a pal
+  is → hire your first pal → what Home is → talk to me (T opens its terminal) → you stay in
+  charge (the approval gate) → done. Progress dashes and "3 of 7" on top; **Skip the tour** on
+  every screen but the last. While it shows, it has the whole page.
+- **When it shows.** `install.sh` writes `"welcome": {"state": "new"}` into `crew-settings.json`
+  only when it creates that file and no pals are on record: a first install. It then switches Herdr
+  to the `pals` layout and ends with "Open Herdr …: <Head> is waiting on Home to show you around."
+  The sidebar opens Home once per window while the mark is "new". An install that was already
+  there has no mark and never gets the tour by itself. **Welcome tour** in the gear menu (and the
+  command bar) replays it (`state: "open"`). Done and Skip write "done" / "skipped"; the screen
+  number is saved at each step, so a tour left halfway resumes there.
+- **Before any click it only looks:** the installed brains (Herdr's `knownAgents`, the hire
+  dialog's list; the head pal gets Claude Code, else Antigravity, else Codex, else the first
+  installed; click the name on screen 1 for another) and `pal welcome folders`: git folders one
+  level into `~/Projects`, `~/code`, `~/src`, `~/dev`, `~/repos`, `~/work` and `~/git`, newest
+  first, five at most, without folders that already have a pal. Names and dates only: no file
+  inside a project is opened.
+- **The first click hires the head pal** (Show me around, and Skip too): `pal hire --god --harness
+  <brain>`, when there isn't one and a brain is installed. `pal hire --god` now starts it in
+  `data/crew-god`, where its brief is. The tour sends it nothing.
+- **Screen 3 hires the first pal on your click:** `pal hire "<Folder Name>" --harness <brain>
+  --folder <path>`, named after the folder ("weather-app" → "Weather App"). Your view stays on
+  the tour; the button reads "Hiring …" and then the screen says it's hired. "Choose another
+  folder…" opens the hire dialog. "Not now" carries on without one.
+- **Variants.** No brain installed: screen 3 says to install one and has **Check again**. No
+  folders found: only "Choose a folder…". A replay with pals: "You have N pals. Hire another?",
+  and the head pal isn't hired twice. Screen 6 promises the gate only where it holds (Claude Code
+  and Antigravity CLI pals with the helpers installed) and says so for other brains or
+  `--no-helpers`.
+- **Never automatic:** a second pal, routines, bypassed permissions, anything on the network.
+- `pal welcome` says where the tour stands; it changes nothing.
+
 ### The Chief (0.4.2)
 
 The owner's chief of staff, above the head pal (design and mockups: `data/crew-boards/chief/`; DeNon
@@ -1350,8 +1390,13 @@ factories level.
   says "All caught up"; "What happened today ›" opens the drawer on Today.
 
 - `./install.sh` ends with "all Project Pals mods pass herdr-app check", and switching to the
-  `pals` layout shows the sidebar with the head pal on top (once one is hired:
-  `pal hire --god`, which takes the name from settings).
+  `pals` layout shows the sidebar with the head pal on top (once one is hired: the welcome
+  tour's first click on a new install, or `pal hire --god`, which takes the name from settings).
+- A first `./install.sh` (no `crew-settings.json`, no pals on record) ends with "… is waiting on
+  Home to show you around", and Home shows "Welcome · 1 of 7". **Show me around** hires the head
+  pal; screen 3's **Hire <Pal>** makes that pal's space on the picked folder without moving your
+  view; the last screen's button marks it done and Home says "All caught up". A second install
+  doesn't bring the tour back; the gear menu's **Welcome tour** does.
 - `pal team` lists every space as a pal.
 - `pal hire Test --harness claude` makes a space named Test, and your view doesn't move.
 - `pal-room new demo --with "A#x" "B#y"` opens a room in Rooms, and `pal-room say demo "@A hi"`
