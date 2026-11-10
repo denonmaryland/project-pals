@@ -860,7 +860,9 @@ export default class CrewRoster extends View {
     // the list is every topic, as it always was.
     const views = anyAreas() ? areaViews(space.name, ordered, hasAgent) : null;
     const viewId = views ? (views.some((v) => v.id === this.areaView?.[space.id]) ? this.areaView[space.id] : LIVE_VIEW) : null;
-    const inView = views ? views.find((v) => v.id === viewId).tabs : ordered;
+    // (Never trust the chosen id to be there: a view that isn't must fall back to Live, not fail the
+    // whole sidebar's render. A sandbox run with a forced id showed exactly that failure.)
+    const inView = views ? (views.find((v) => v.id === viewId) ?? views[0]).tabs : ordered;
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : inView;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);

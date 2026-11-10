@@ -1044,6 +1044,10 @@ try {
     // A view that goes away (its last topic was unfiled) falls back to Live.
     roster.areaView.s50 = "a-gone00";
     assert.deepEqual(rowsOf(heroOfBig()), ["a1", "a3", "a5"]);
+    // A pal that has no such area (the choice is per pal, but be sure): Live, and no throw.
+    roster.areaView.s51 = "a-rel001";
+    assert.doesNotThrow(() => roster.heroCard({ space: plain, bot: crew.botOf(plain) }, t, d, 304), "an unknown view never fails the render");
+    delete roster.areaView.s51;
     // A search looks through every topic, whatever the view.
     roster.areaView.s50 = "a-rel001"; roster.chSearchOpen = true; roster.chSearch = { value: () => "notes", set_value() {}, focus() {} };
     assert.deepEqual(rowsOf(heroOfBig()), ["a8"], "search finds a topic outside the shown area");
