@@ -14,7 +14,7 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL,
   toggleChief, withoutChief, isChiefRec } from "./crew.js";
@@ -841,8 +841,9 @@ export default class CrewRoster extends View {
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
     // No "+N more" in the header (DeNon, 2026-11-08: "Topics 18" says it; the cut fifth row, the
     // pill and the fixed box show there's more).
-    const ROWS = 4, ROW = 30, SID = "hero-ch-list";
-    const BOX = ROWS * ROW + 12;
+    // The rows sit in a recessed well (sunk "deep": T75): 1 px of edge and PAD px above the first row.
+    const ROWS = 4, ROW = 30, PAD = 4, SID = "hero-ch-list";
+    const BOX = ROWS * ROW + 12, INNER = BOX - 2;
     const sc = scrollState(SID);
     // Folded (the chevron, DeNon 2026-11-08): just this header, with what's working or asks you in
     // words. One remembered state for every pal ("heroTopicsFolded" in crew-settings.json), so the
@@ -884,8 +885,9 @@ export default class CrewRoster extends View {
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
       const lane = deskLane(space.name, channelName(tab));
-      return div().h(ROW).flex_none().pb(2).pr(11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
-        .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+      // The shown topic is a raised tile in the well (raisedTile).
+      return div().h(ROW).flex_none().pb(2).pr(13).child(h_flex().id(`hero-ch-${tab.id}`).relative().h(28).pl(6).pr(8).gap(8).items_center().rounded(5).cursor_pointer()
+        .when(on, (el) => raisedTile(d, el)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
         .child(topicMark(tab))
@@ -905,27 +907,27 @@ export default class CrewRoster extends View {
     // moves the quick actions or the Pals list under it (DeNon, 2026-11-08). Fewer rows leave the
     // rest blank, with a faint "+ New channel" row after the last when there's room (not while
     // searching).
-    const box = v_flex().h(BOX).flex_none().overflow_hidden();
-    const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+    const box = sunk(d, "deep").flex().flex_col().h(BOX).mx(8).flex_none();
+    const newRow = (first = false) => div().h(ROW + (first ? PAD : 0)).flex_none().pb(2).pr(13).pl(4).when(first, (el) => el.pt(PAD)).child(h_flex().id("hero-ch-new").h(28).pl(6).pr(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
       .child(svg(`${ICON}/ds-plus.svg`).size(11).flex_none().text_color(d.fg4))
       .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New topic")));
     if (!list.length) {
       if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No topic matches "${this.chSearch.value().trim()}"`));
-      else box.child(newRow());
+      else box.child(newRow(true));
       return v_flex().pt(4).child(head).child(box);
     }
-    const n = list.length, h = n > ROWS ? BOX : n * ROW;
+    const n = list.length, h = n > ROWS ? INNER : PAD + n * ROW;
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
     // A new pal or search starts at the top; then the shown topic is brought into view.
     const listKey = `${space.id}|${q}`;
     if (this.chListKey !== listKey) { this.chListKey = listKey; scrollTo(SID, 0); }
     sc.view = h;
-    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act * ROW, ROW); }
-    // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
+    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act ? PAD + act * ROW : 0, act ? ROW : PAD + ROW); }
+    // Past four, the well shows four rows and the top of the fifth, cut at its edge: the cut row says
     // there's more, and the pill thumb shows where you are.
-    box.child(scrollArea(d, SID, v_flex().pl(8).children(list.map(row))).h(h).flex_none().w_full());
+    box.child(scrollArea(d, SID, v_flex().pl(4).pt(PAD).children(list.map(row))).h(h).flex_none().w_full());
     if (n < ROWS && !q) box.child(newRow());
     return v_flex().pt(4).child(head).child(box);
   }
