@@ -67,7 +67,7 @@ try {
     export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = (o) => { (fx.overlays ??= []).push(o); return "ov1"; }, nextCommand = () => new Promise(() => {}), closeOverlay = () => { fx.closed++; };
     export const hc = exec, readTextFile = async (p) => (fx.files ?? {})[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => fx.known ?? [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   cpSync(join(root, "mods", "crew-home", "main.js"), join(dir, "crew-home.mjs"));
   for (const f of ["welcome.js", "welcome-text.js"]) copyFileSync(join(root, "mods", "crew-home", f), join(dir, f));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);

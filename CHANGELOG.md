@@ -2,6 +2,15 @@
 
 ## Unreleased (0.4.2)
 
+- **Pal look: colour presets for your pals and their laptop screens.** Settings → Pal look. Pick
+  who gets which colour: each its own (as before, and still the default), all one colour, a
+  two-, three- or four-colour split down your list (8 pals are 4 + 4, 3 + 3 + 2 or 2 + 2 + 2 + 2),
+  by brain, by state, by project or factory, or your theme's own colours. Pick what the laptop
+  screens do, separately: the state's light (as before), the pal's colour, its contrast pair, or
+  one colour for all. The dialog says how well the two read together and previews a made-up crew
+  of 1, 4, 8 or 12 as you click. A colour you picked for one pal is never lost: it shows under
+  Each its own. The choice is kept in your settings, which updates don't touch.
+
 - **A welcome from your head pal.** A new install now starts with the Orchestrator: open Herdr
   and it's on Home with a short tour, seven screens of one message each. It says who it is, what a
   pal is, offers to hire your first pal on one of your project folders (it finds the brains you

@@ -8,7 +8,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces } from "herdr";
-import { botOf, updateBot, writeArt, petOf, ds, tone, sheet, sheetHeader, sheetBody, sheetField, sheetFooter, pebble, SWATCHES, validHex, normHex } from "./crew.js";
+import { botOf, updateBot, writeArt, petOf, palLook, ds, tone, sheet, sheetHeader, sheetBody, sheetField, sheetFooter, pebble, SWATCHES, validHex, normHex } from "./crew.js";
+import { isDefaultLook, PET_LOOKS, SCREEN_LOOKS } from "./pallook.js";
 import { petSpec, petFiles, petPath, PET_SPECIES, BARE_VIEW } from "./pets.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -24,7 +25,8 @@ export default class CrewLook extends View {
     const space = spaces().find((s) => s.id === props()?.space);
     this.bot = space ? botOf(space) : null;
     const p = this.bot ? petOf(this.bot) : null;
-    this.draft = p ? { species: p.species, acc: [...p.acc], eyes: p.eyes, color: this.bot?.look?.color ?? p.color } : null;
+    // The colour is the pal's own (not a Pal look preset's): saving must never write a preset's colour onto the pal.
+    this.draft = p ? { species: p.species, acc: [...p.acc], eyes: p.eyes, color: this.bot?.look?.color ?? petOf(this.bot, null).color } : null;
     this.hex = InputState.new({ placeholder: "#a28cf0", value: this.draft?.color ?? "" });
     this.hex.on("change", (_e, cx) => { const v = this.hex.value(); if (validHex(v)) this.set({ color: normHex(v) }, cx, false); });
     this.drawn = new Set();
@@ -91,6 +93,10 @@ export default class CrewLook extends View {
     const close = () => closeOverlay(props()?.overlay);
     if (!this.bot || !this.draft) return div().p(24).bg(d.bg1).text_color(d.fg2).child("That pal is gone.");
     const spec = this.spec();
+    // A Pal look preset is on: say so, since the list shows the preset's colours, not this one.
+    const preset = palLook();
+    const presetNote = isDefaultLook(preset) ? null : div().text_size(11.5).line_height("16px").text_color(d.fg2)
+      .child(`Pal look is set to ${[preset.pets !== "own" ? PET_LOOKS.find((x) => x.id === preset.pets).name : null, preset.screen !== "state" ? `screens: ${SCREEN_LOOKS.find((x) => x.id === preset.screen).name}` : null].filter(Boolean).join(", ")}, so the list shows that. This is the pal's own colour, used under Each its own (Settings → Pal look).`);
     const section = (title, right = null) => h_flex().items_center().justify_between().pt(4)
       .child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child(title))
       .when(Boolean(right), (el) => el.child(right));
@@ -137,6 +143,7 @@ export default class CrewLook extends View {
         .child(states)
         .child(section("Species")).child(species)
         .child(section("Colour", div().w(120).child(sheetField(d, Input.new(this.hex).w_full().text_size(12).text_color(d.fg1))))).child(swatches)
+        .when(Boolean(presetNote), (el) => el.child(presetNote))
         .child(section("Wears (up to two)")).child(wears)
         .child(section("Eyes")).child(eyes)
         .child(h_flex().pt(2).child(pebble(d, { id: "lk-reset", label: "Reset to its default", onClick: () => this.reset() }))))

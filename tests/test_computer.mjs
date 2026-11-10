@@ -69,7 +69,7 @@ try {
     export const readTextFile = async (p) => fx.files[p] ?? null, writeTextFile = async () => {}, knownAgents = async () => [];
     export const props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {}), focused = () => null;
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods", "crew-computer", "main.js"), join(dir, "crew-computer.mjs"));
   copyFileSync(join(root, "mods", "crew-computer-app", "main.js"), join(dir, "crew-computer-app.mjs"));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
