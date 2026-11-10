@@ -16,6 +16,8 @@ export default class CrewDuplicate extends View {
     this.newCategory = InputState.new({ placeholder: "New category" });
     this.brief = TextareaState.new({ placeholder: "What's it for? Its first task (optional)", rows: 2 });
     this.brief.set_auto_grow(2, 6);
+    // Opened from a pal's board (Start a topic on a task, New topic… from the message box): the brief comes filled in.
+    if (props()?.brief) this.brief.set_value(String(props().brief));
     for (const s of [this.channel, this.newCategory, this.brief]) s.on("change", (_e, cx) => cx.notify());
     this.channel.on("submit", (_e, cx) => this.go(cx));
     const cats = this.categories();

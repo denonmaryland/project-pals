@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (after 0.4.2)
+
+- **A pal's board.** Click a pal and, before any terminal, you see its topics as cards in four
+  columns by what each one waits for: Needs you (with the buttons to answer right there), Working,
+  Resting and Up next (tasks nobody has picked up). Each card has a sentence or two in the pal's own
+  words, how long it has run or waited, and its branch with + and −. The message box under the
+  columns says who it talks to; it sends to the topic you clicked, or adds a task. Clicking a topic
+  and every key still go straight to terminals, Esc goes to the terminal, and the app menu's
+  "Clicking a pal opens…" brings the old click back. Ctrl+Shift+U opens it for the shown pal.
+
 ## Unreleased (0.4.2)
 
 - **Pal look: colour presets for your pals and their laptop screens.** Settings → Pal look. Pick

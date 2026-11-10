@@ -2310,9 +2310,43 @@ def home_answer_to(spaces, x, answer):
     return f"told {dest} ({what}) · card {card['id']}"
 
 
+def board_data(today, space, rec, name, tasks, cards):
+    """Read what the board adds to Today (bin/crewboard.py): the feed, held approvals, Home asks, each
+    topic's line from its session file, its branch, crewd's stalled marks and blocked topics' questions."""
+    import datetime
+    import crewboard
+    import crewchat
+    import crewcomputer
+    links = crewchat.links()
+    wts = rec.get("worktrees") or {}
+    lines, branches, msgs = {}, {}, {}
+    for t in today["topics"]:
+        tab = next((x for x in space.get("tabs", []) if chan(x) == t["topic"]), None)
+        if t.get("terminal") and t["state"] not in ("shell",):
+            lines[t["topic"]] = crewboard.read_line(t["terminal"], t["state"], links)
+        wt = (wts.get(tab["name"]) or wts.get("#" + t["topic"])) if tab else None
+        if wt:
+            branches[t["topic"]] = crewboard.branch_facts(wt)
+        if t["state"] == "blocked" and t.get("terminal"):
+            msgs[t["terminal"]] = ((term_info(t["terminal"]) or {}).get("status") or {}).get("msg") or ""
+    desk = []
+    for c in cards:
+        try:
+            at = int(datetime.datetime.fromisoformat(str(c.get("updated") or c.get("created") or "")).timestamp() * 1000)
+        except ValueError:
+            at = 0
+        desk.append({**c, "at_ms": at})
+    return crewboard.board_view(today, tasks=tasks, cards=desk, feed=crewcomputer.read_feed(3),
+                                approvals=crewguard.all_requests(), asks=crewhome.load()["items"], lines=lines,
+                                branches=branches, stalled=load_json(DATA / "crew-health.json", {}).get("stalled") or {},
+                                msgs=msgs, now_ms=now_ms())
+
+
 def cmd_computer(spaces, rest):
-    """pal computer [Pal] [today|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
-    What a pal's Computer shows (crew-boards/pal-computer/design.md). Read-only: it's a view."""
+    """pal computer [Pal] [today|board|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
+    What a pal's Computer shows (crew-boards/pal-computer/design.md), and its board (`board`: Today
+    grown with what each topic waits for, its line, branch and what it needs from the owner;
+    crew-boards/pal-page/design.md). Read-only: it's a view."""
     import crewbrain
     import crewcomputer
     import crewdesk
@@ -2320,14 +2354,14 @@ def cmd_computer(spaces, rest):
     import crewroutines
     import crewsleep
     import crewtasks
-    views = ("today", "todo", "calendar", "journal", "pages")
+    views = ("today", "board", "todo", "calendar", "journal", "pages")
     pos, o = opts(rest, ("start", "days"), ("json",))
     view = next((p for p in pos if p in views), "today")
     who = [p for p in pos if p not in views]
     space, rec, name = pal_of(spaces, " ".join(who) if who else None)
     tasks = crewtasks.load()["tasks"]
     cards = [c for _, c in crewdesk.mine(name)]
-    if view in ("today", "todo"):
+    if view in ("today", "todo", "board"):
         if view == "todo":
             out = crewcomputer.todo(name, tasks, cards)
         else:
@@ -2337,6 +2371,8 @@ def cmd_computer(spaces, rest):
             asleep = {t.get("terminal") for t in space.get("tabs", []) for t in t.get("terminals", []) if t
                       and crewsleep.slept(t.get("terminal"))}
             out = crewcomputer.today_view(name, space, live, tasks, cards, mission, asleep)
+            if view == "board":
+                out = board_data(out, space, rec, name, tasks, cards)
     elif view == "calendar":
         import datetime
         try:
@@ -2360,7 +2396,14 @@ def cmd_computer(spaces, rest):
         print(json.dumps(out, ensure_ascii=False))
         return
     # A short human read; the desktop and the Chief use --json.
-    if view == "today":
+    if view == "board":
+        for n in out["needs"]:
+            print(f"needs you  {n['kind']:<9} {('#' + n['topic']) if n['topic'] else name:<16} {n['title']}")
+        for t in out["topics"]:
+            print(f"  #{t['topic']:<14} {t['state']:<8} waits for {t['waits_for']:<8} " + ((t.get('line') or {}).get('text') or ''))
+        for r in out["up_next"]:
+            print(f"  up next: {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
+    elif view == "today":
         print(f"{name}'s computer · today" + (f"\nfocus: {out['focus']}" if out["focus"] else ""))
         for t in out["topics"]:
             print(f"  #{t['topic']:<14} {t['state']:<8} " + (f"{t['task']['id']} {t['task']['title']}" if t["task"] else ""))

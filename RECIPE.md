@@ -1254,6 +1254,51 @@ is a task's optional due date and the memory folder's `pages/`.
 - **For pals and the Chief:** `pal computer [Pal] [today|todo|calendar|journal|pages] --json`; the
   Chief may run it (read-only).
 
+### A pal's board (after 0.4.2)
+
+Click a pal and, before any terminal, you see what it's doing and what it needs from you
+(crew-boards/pal-page/design.md, DeNon's pick G · Board, T108). It's a view: it stores nothing.
+
+- **Opening it:** a click on a pal in the sidebar (not the head pal: that's Home), the pal menu's
+  **Board**, "This pal's board" in the app menu, or Ctrl+Shift+U (`crew-roster.board`, bound only
+  if free) for the shown pal. The center stack shows `pal-view` (`crew-palboard`). A click on the
+  pal whose board is up, Esc, or the board's Terminal button goes to its terminal. **A click on a
+  topic and every key (Alt+1…9, the picker) still go straight to terminals**; when a key shows
+  another pal while a board is up, the center goes back to the terminal. The app menu's "Clicking a
+  pal opens its board / terminal" (`palClick` in crew-settings.json) brings the old click back.
+- **Four columns, by what a topic waits for.** *Needs you:* one card per thing it needs from you,
+  the longest wait first: a held approval (Approve / Decline, the Inbox's click), a Home ask (its
+  options, its pick first), a needs-you Desk card (Done / Open in Desk), a prompt in its terminal
+  ("Answer in the terminal": the board never presses Yes for you). Waiting for you wins over every
+  other state: a finished topic whose push is held sits here, and its card says it finished. A
+  question plainly put to another pal isn't yours: that topic rests, marked "Asks a pal".
+  *Working:* topics with a turn running, the longest-running first. *Resting:* finished and idle
+  topics, the newest finish first ("New" until you've had the board up since), then the asleep
+  ones; past four, each shrinks to one line. *Up next:* the pal's open tasks no topic has claimed,
+  three at most, with Start a topic (the new-topic dialog, the task as its brief) and a link to the
+  Tasks list. An empty Needs you or Up next folds to a 34 px rail.
+- **A topic's card:** state dot, `#topic`, how long (working) or when it finished; one or two
+  sentences in the pal's own words with where they came from ("its words this turn", "the lead of
+  its last reply", "what it was asked") and when; its task and branch with + and −; "Stuck N min"
+  when crewd marked it stalled; a blocked task's reason. Click a card to aim the message box at
+  it; the aimed card shows Terminal and Pop out (Wake when asleep).
+- **The sentences are the pal's own**, read from the end of its session file (Claude Code,
+  Antigravity); no second model writes them. Headings, lists, code and one-word lines are skipped
+  and a sentence is never cut in the middle. A pal without a readable session (Codex today) shows
+  its task instead.
+- **The message box** says who it goes to: "To #topic", or "A task for <Pal>". To a topic it is a
+  Desk card from you (`pal desk send`, with a click token), handed over between two of its steps;
+  **Interrupt** (Ctrl+Enter) sends it now. Your message and its receipt show on the topic's card.
+  A task lands in Up next (`pal task add --for`). "New topic…" opens the new-topic dialog with the
+  text as its brief. Enter sends, Shift+Enter is a new line.
+- **Keys** (while you aren't typing): Esc the aimed topic's terminal; R reviews what needs you one
+  at a time (1–4 press that card's buttons, → or j the next, ← or k back, Esc stops); / or Enter
+  the message box. Esc in the box leaves the box first.
+- **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read every 5 s while shown. It
+  is Today's view (`crewcomputer.today_view`) grown with each topic's `waits_for`, `needs`,
+  `since`, `line`, `branch`, `stuck` and `blocked`, the pal's `needs` and `up_next`. Today itself
+  stays the small read.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
