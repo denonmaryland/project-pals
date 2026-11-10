@@ -26,11 +26,13 @@ try {
       const p = new Proxy(function () {}, {
         get: (t, k) => {
           if (k === "then") return undefined;
+          // Herdr's elements are single-use: changing one after it went into a parent fails the render.
+          if (t.__attached && typeof k === "string" && !k.startsWith("__")) throw new Error(\`element changed after it was added to a parent (.\${k})\`);
           if (k === "when") return (c, f) => (c ? f(p) : p);
           if (k === "id") return (id) => { p.__id = id; return p; };
           if (k === "on_click") return (f) => { if (p.__id) clicks.set(p.__id, f); return p; };
-          if (k === "child") return (c) => { if (typeof c === "string") texts.push(c); else if (c === undefined || c === null) throw new Error("child(undefined)"); return p; };
-          if (k === "children") return (cs) => { for (const c of cs) { if (typeof c === "string") texts.push(c); else if (c === undefined || c === null) throw new Error("children: undefined"); } return p; };
+          if (k === "child") return (c) => { if (typeof c === "string") texts.push(c); else if (c === undefined || c === null) throw new Error("child(undefined)"); else c.__attached = true; return p; };
+          if (k === "children") return (cs) => { for (const c of cs) { if (typeof c === "string") texts.push(c); else if (c === undefined || c === null) throw new Error("children: undefined"); else c.__attached = true; } return p; };
           if (k === "__id") return t.__id;
           return () => p;
         },

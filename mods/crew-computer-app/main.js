@@ -292,13 +292,15 @@ export default class CrewComputerApp extends View {
     for (const day of x.days) {
       list.child(div().text_size(12).font_weight(600).text_color(d.fg1).child(dayDate(new Date(`${day.day}T12:00:00`))));
       for (const e of day.entries) {
+        // Built whole before it's added: Herdr's elements are single-use, and one changed after it
+        // went into a parent fails the render (the live look, T81).
         const box = v_flex().gap(2).pl(10).border_l_1().border_color(d.lineStrong);
-        list.child(v_flex().gap(4)
-          .child(div().text_size(11).font_family(d.mono).text_color(d.fg3).child([e.time, e.channel ? `#${e.channel}` : "", e.task ?? "", e.took ?? ""].filter(Boolean).join(" · ")))
-          .child(box));
         if (e.did) box.child(step("✓", d.ok, "did", e.did, null));
         for (const h of e.hiccups) box.child(step("!", d.warnText, "hiccup", h.text.replace(/\s*\(cost:[^)]*\)\s*$/, ""), h.cost ? `~${h.cost}m` : ""));
         if (e.lesson) box.child(step("◆", "#8A5CF0", "lesson", e.lesson, null));
+        list.child(v_flex().gap(4)
+          .child(div().text_size(11).font_family(d.mono).text_color(d.fg3).child([e.time, e.channel ? `#${e.channel}` : "", e.task ?? "", e.took ?? ""].filter(Boolean).join(" · ")))
+          .child(box));
       }
     }
     if (!x.days.length) list.child(note(d, "No notebook entries yet."));
