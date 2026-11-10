@@ -21,7 +21,10 @@ try {
     writeFileSync(join(dir, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
     writeFileSync(join(dir, "node_modules", name, "index.js"), src);
   };
-  // An element records what it's given and refuses any method gpui-kit doesn't have.
+  // An element records what it's given and refuses any method gpui-kit doesn't have. Like Herdr's,
+  // it is single-use: changing one after it went into a parent, or giving it a second parent, throws
+  // (T102's rocker was added to the pet's box before it was filled, and Herdr's real sidebar stopped
+  // drawing with "element `div` was already added to a parent"; herdr-app check never drew it).
   mod("gpui-kit", `
     const OK = new Set(${JSON.stringify(METHODS)});
     export function el(kind, arg) {
@@ -30,7 +33,10 @@ try {
         if (k === "node") return t;
         if (typeof k !== "string" || k === "then") return undefined;
         if (!OK.has(k)) throw new Error("not a gpui-kit method: ." + k + "()");
+        if (t.attached && k !== "node") throw new Error("single-use: ." + k + "() on a " + t.kind + " (id " + (t.args.id?.[0] ?? "?") + ") already added to a parent");
         return (...a) => {
+          const att = (c) => { if (c && typeof c === "object" && c.node) { if (c.node.attached) throw new Error("single-use: " + c.node.kind + " (id " + (c.node.args.id?.[0] ?? "?") + ") added to a second parent"); c.node.attached = true; } };
+          if (k === "child") att(a[0]); else if (k === "children") for (const c of a[0]) att(c);
           t.calls.push(k);
           t.args[k] = a;
           if (k === "child") { if (a[0] != null) t.kids.push(a[0]); }
@@ -837,7 +843,8 @@ try {
     assert.ok(pool.args.top[0] >= 0, "and starts inside it");
     // Scroll fades: none while everything fits; the bottom one while there's more below; both in the middle; the top one at the end.
     const sc = crew.scrollState("fade-test");
-    const fades = () => ids(crew.scrollArea(d, "fade-test", hero, { fade: "side" })).map((n) => n.args.id[0]);
+    // A fresh card each time: an element goes into one parent only.
+    const fades = () => ids(crew.scrollArea(d, "fade-test", roster.heroCard({ space: busy, bot }, t, d, 304), { fade: "side" })).map((n) => n.args.id[0]);
     Object.assign(sc, { view: 200, content: 200, y: 0 });
     assert.deepEqual(fades().filter((x) => x === "fade-top" || x === "fade-bottom"), [], "everything fits: no fade");
     Object.assign(sc, { view: 200, content: 500, y: 0 });
