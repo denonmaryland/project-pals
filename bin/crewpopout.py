@@ -79,8 +79,11 @@ def build_home(dest, app_home, terminal, props):
     (dest / "shared.json").write_text(json.dumps({"layout": "popout", "frame.welcomed": "finished"}))
     settings = crewlib.load_json(app_home / "settings.json", {})
     keep = {k: settings[k] for k in ("theme", "zoom", "font_ligatures", "minimum_contrast") if k in settings}
-    keep["sounds"] = False
+    keep["sounds"] = {"enabled": False}      # the main window already makes the sounds (a struct: a bare false is refused)
     (dest / "settings.json").write_text(json.dumps(keep))
+    notes = app_home / "update-notes.json"   # else a fresh home greets with Herdr's "Updated to …" toast
+    if notes.is_file():
+        shutil.copy(notes, dest / "update-notes.json")
     if (app_home / "themes").is_dir():
         shutil.copytree(app_home / "themes", dest / "themes")
     return dest

@@ -30,6 +30,7 @@ def app_home(root):
     (app / "settings.json").write_text(json.dumps({"theme": "omarchy", "zoom": 0.9, "sounds": True}))
     (app / "shared.json").write_text(json.dumps({"layout": "pals", "crew": {"secret": 1}}))
     (app / "keys.json").write_text("{}")
+    (app / "update-notes.json").write_text(json.dumps({"last_run": "0.1.14"}))
     return app
 
 
@@ -66,7 +67,8 @@ class Pure(unittest.TestCase):
         self.assertTrue((dest / "mods" / "crew-roster" / "icons" / "pin.svg").exists())
         self.assertTrue((dest / "themes" / "omarchy.json").exists())
         self.assertEqual(json.loads((dest / "shared.json").read_text()), {"layout": "popout", "frame.welcomed": "finished"})
-        self.assertEqual(json.loads((dest / "settings.json").read_text()), {"theme": "omarchy", "zoom": 0.9, "sounds": False})
+        self.assertEqual(json.loads((dest / "settings.json").read_text()), {"theme": "omarchy", "zoom": 0.9, "sounds": {"enabled": False}})
+        self.assertEqual(json.loads((dest / "update-notes.json").read_text()), {"last_run": "0.1.14"})
         self.assertFalse((dest / "keys.json").exists())     # none of the owner's keys or crew state
         self.assertEqual(json.loads((dest / "layouts" / "popout.json").read_text())["children"][1]["content"], {"terminal": "t7"})
         # A second build replaces the first, and the owner's own app home is untouched.
