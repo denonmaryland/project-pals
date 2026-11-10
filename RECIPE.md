@@ -1295,7 +1295,10 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
 - **Keys** (while you aren't typing): Esc the aimed topic's terminal; R reviews what needs you one
   at a time (1–4 press that card's buttons, → or j the next, ← or k back, Esc stops); / or Enter
   the message box. Esc in the box leaves the box first.
-- **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read every 5 s while shown. It
+- **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read only while shown and only
+  when it's due: on showing, after your own click or message, when a topic's state or one of the
+  files behind what needs you changed (checked with one `stat` every 5 s), else every 15 s while a
+  topic works and every 60 s when none does. A topic's branch is read only while a pal runs in it. It
   is Today's view (`crewcomputer.today_view`) grown with each topic's `waits_for`, `needs`,
   `since`, `line`, `branch`, `stuck` and `blocked`, the pal's `needs` and `up_next`. Today itself
   stays the small read.

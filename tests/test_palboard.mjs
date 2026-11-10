@@ -63,6 +63,7 @@ try {
         if (args[0] === "desk" && args[1] === "send") return { stdout: JSON.stringify({ card: { id: "c-9", to: args[2] }, what: "queued" }), stderr: "", code: 0 };
         return { stdout: "ok\\n", stderr: "", code: 0 };
       }
+      if (name === "stat") return { stdout: fx.stat ?? "100 100 100 100", stderr: "", code: 0 };
       return { stdout: "", stderr: "", code: 0 };
     };
     export const hc = async () => ({ stdout: "", stderr: "", code: 0 });
@@ -184,6 +185,32 @@ try {
   for (const id of ["pb-col-you", "pb-col-working", "pb-col-resting", "pb-col-next", "pb-need-a-1", "pb-need-h-1", "pb-topic-checkout", "pb-topic-refunds", "pb-task-T45", "pb-box", "pb-to"]) assert.ok(ids.has(id), id);
   assert.ok(!ids.has("pb-topic-docs") && !ids.has("pb-topic-perf"), "a topic that waits for you shows as its need, once");
   assert.ok(!ids.has("pb-now"), "Interrupt only shows for a working topic");
+
+  // ── re-reading: only when something changed, or the last read is old ──
+  { const reads = () => pals().filter((x) => x[0] === "computer").length;
+    b.check(cx); await tick();                                         // the first check notes what it looks like, and reads
+    const n0 = reads();
+    b.check(cx); await tick(); b.check(cx); await tick();
+    assert.equal(reads(), n0, "nothing changed and the read is fresh: no pal command, just one stat");
+    assert.deepEqual(fx.calls.filter((x) => x[0] === "stat").at(-1).slice(1, 3), ["-c", "%Y"]);
+    assert.ok(fx.calls.filter((x) => x[0] === "stat").at(-1).some((a) => a.endsWith("/data/crew-home/home.json")));
+    fx.stat = "100\n100\n101\n100\n";                                 // an approval arrived
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 1, "a watched file changed: read now");
+    fx.spaces[1].tabs[1].status = "working";                           // a topic started a turn
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 2, "a topic's state changed: read now");
+    b.readAt = Date.now() - 16000;                                     // a topic is working: its words move on
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 3, "15 s with a topic working: read");
+    const calm = data(); for (const t of calm.topics) if (t.state === "working") t.state = "idle";
+    b.data = calm; b.readAt = Date.now() - 16000;
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 3, "nothing working: 16 s isn't old yet");
+    b.readAt = Date.now() - 61000;
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 4, "a minute: read");
+    b.loading = false; b.reload(cx); await tick(); }
 
   // ── the owner's clicks: with a click token, the exact command ──
   clicks.get("pb-a-1-0")(null, cx);                                   // Approve

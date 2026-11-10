@@ -13,12 +13,15 @@
 // two of its steps; Interrupt sends it now), or adds a task that lands in Up next.
 // Keys (while you aren't typing): Esc the aimed topic's terminal, R review what needs you one at a
 // time (1–4 pick a button, → skip, Esc stop), / the message box.
-// Data: `pal computer <pal> board --json` (bin/crewboard.py), read only while shown, every 5 s.
+// Data: `pal computer <pal> board --json` (bin/crewboard.py), read only while shown, and only when
+// it's due: on showing, after your own click or message, when something changed (a topic's state,
+// or the files behind what needs you: one `stat` every 5 s), else every 15 s while a topic works
+// (its words move on) and every 60 s when none does.
 // Herdr's elements are single-use: every card is built whole before it goes into its column.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { theme, spaces, shared, nextCommand, notify, openOverlay, settings } from "herdr";
+import { theme, spaces, shared, nextCommand, notify, openOverlay, settings, exec, appHome } from "herdr";
 import {
   ds, botOf, crewCli, ownerCli, openTerminal, boardMode, boardPal, boardColumns, waited, pebble, keyCap, scrollArea,
   showComputer, hasComputer, showDesk, showTabs, popOut, owner, harnessName, shortTime, shortDate, wantsTo,
@@ -30,6 +33,10 @@ const tabOf = (space, topic) => space?.tabs.find((x) => x.name.replace(/^#/, "")
 const RAIL = 34, GAP = 10, PAD = 28;
 const HEAD_H = 100, BOX_H = 76;   // the header's height, and the box's without its text rows
 const QUIET_SHOWN = 3;            // topics not running shown before "N more not running"
+// How often the board is re-read when nothing has changed (ms), and the files whose change means
+// something on it did: Home's asks, the tasks, held approvals (the folder), crewd's stalled marks.
+const CHECK_MS = 5000, WORKING_MS = 15000, QUIET_MS = 60000;
+const WATCHED = ["crew-home/home.json", "crew-tasks.json", "crew-approvals", "crew-health.json"];
 const WEIGHT = { you: 1.24, working: 1.24, resting: 0.8, next: 0.8 };
 const KIND = { approval: "Approval", ask: "Ask", prompt: "Prompt", card: "Card" };
 const STATE_WORD = { working: "working", blocked: "asks you", done: "finished", idle: "resting", asleep: "asleep", shell: "no pal running" };
@@ -61,7 +68,9 @@ export default class CrewPalBoard extends View {
     this.input.on("submit", (e, cx) => { if (!e?.shift) cx.timer.after(0, (cx) => this.send(cx)); });
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
-    cx.timer.every(5000, (cx) => { if (boardMode()) this.reload(cx); });
+    this.readAt = 0;         // when the board was last read
+    this.sig = null;         // what it looked like then (see signature)
+    cx.timer.every(CHECK_MS, (cx) => { if (boardMode()) this.check(cx); });
     cx.timer.every(30000, (cx) => { if (boardMode()) cx.notify(); });   // the ages
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "focus") this.handle.focus(); cx.notify(); } });
   }
@@ -78,8 +87,32 @@ export default class CrewPalBoard extends View {
         const x = JSON.parse(await crewCli(["computer", pal, "board", "--json"]));
         if (x.pal === this.pal()) { this.data = x; this.err = null; }
       } catch (e) { this.err = String(e?.message ?? e); }
+      this.readAt = Date.now();
       this.loading = false;
       cx.notify();
+    });
+  }
+
+  // What a change on the board would show up in, cheaply: each topic's state as Herdr reports it,
+  // and when the watched files last changed (one `stat`, no pal command).
+  async signature() {
+    const space = this.space();
+    const states = space ? space.tabs.map((x) => `${x.id}:${x.status ?? ""}`).join(",") : "";
+    let files = "";
+    try { files = (await exec("stat", ["-c", "%Y", ...WATCHED.map((f) => `${appHome()}/data/${f}`)], { timeout: 3000 })).stdout.trim().replace(/\s+/g, ","); } catch { /* none yet */ }
+    return `${states}|${files}`;
+  }
+  // The 5 s tick: read again only when something changed, or the last read is old (15 s while a
+  // topic works, since its words move on without any state changing; 60 s when none does).
+  check(cx) {
+    if (this.loading || this.checking) return;
+    this.checking = true;
+    cx.spawn(async (cx) => {
+      const sig = await this.signature();
+      this.checking = false;
+      const working = (this.data?.topics ?? []).some((t) => t.state === "working");
+      const old = Date.now() - this.readAt >= (working ? WORKING_MS : QUIET_MS);
+      if (sig !== this.sig || old || !this.data) { this.sig = sig; this.reload(cx); }
     });
   }
 
