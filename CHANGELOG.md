@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (after 0.4.2)
+## Unreleased (0.4.2)
 
 - **A welcome from your head pal.** A new install now starts with the Orchestrator: open Herdr
   and it's on Home with a short tour, seven screens of one message each. It says who it is, what a
@@ -10,8 +10,6 @@
   it on any screen; replay it from the gear menu (Welcome tour). Installs that already have pals
   aren't interrupted. The head pal is hired on your first click, and `pal hire --god` now starts
   it in the folder with its brief. A first install also switches Herdr to the `pals` layout.
-
-## Unreleased (0.4.2)
 
 - **Pop out: a topic in its own window you can pin.** "Pop out" (the bar of Home's chat window, and
   "Pop out to a window" on a terminal's right-click) opens that topic's live terminal in a small
