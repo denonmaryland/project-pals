@@ -74,6 +74,7 @@ CONFIGS = {"keys.json": KEYS, "claude-settings.json": CLAUDE, "agy-hooks.json": 
 INSTALL_KEYS = {"ctrl-shift-i": "crew-roster.profile", "ctrl-shift-space": "crew-header.search",
                 "ctrl-shift-d": "crew-header.drop", "ctrl-shift-h": "crew-roster.home", "ctrl-shift-j": "crew-roster.chief",
                 "ctrl-shift-g": "crew-roster.factory", "ctrl-shift-y": "crew-roster.computer",
+                "ctrl-shift-u": "crew-roster.board",
                 "ctrl-shift-m": "crew-roster.mode"}
 CLAUDE_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "Stop")
 AGY_KEY = "project-pals"
