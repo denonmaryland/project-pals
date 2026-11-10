@@ -725,7 +725,74 @@ try {
     assert.ok(!/setInterval|timer\.every\([^)]*pulse/.test(readFileSync(join(root, "lib/crew.js"), "utf8")), "no pulse timer");
     fixtures.agents = keep.agents; fixtures.spaces = keep.spaces; fixtures.shared["crew.settings"] = {};
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; the working dot's pulse)");
+  // ── Room rows: the members' heads, overlapping, instead of "#" (T101, DeNon's pick B) ─────────
+  {
+    const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
+    const mk = (name, channel) => ({ name, channel, bot: { name, harness: "claude", awake: true } });
+    const chips = (el) => el.node.kids.map((k) => k.node);
+    // Three pals: three round 24 px chips, 16 px apart (so they overlap by 8), edged in the row's colour.
+    let el = crew.roomHeads(d, [mk("Orca", "ops"), mk("Softly", "main"), mk("Tiles", "ui")], d.bg1, t);
+    let c = chips(el);
+    assert.equal(c.length, 3);
+    assert.deepEqual(c.map((n) => n.args.left[0]), [0, 16, 32], "each 16 px along");
+    assert.ok(c.every((n) => n.args.size[0] === 24 && n.args.rounded[0] === 12 && n.calls.includes("overflow_hidden") && n.args.border_color[0] === d.bg1), "round chips cut out of the row");
+    assert.equal(el.node.args.w[0], 24 + 2 * 16, "the icon is as wide as its chips");
+    assert.equal(el.node.args.tooltip[0], "Orca #ops, Softly #main, Tiles #ui", "hover names every member");
+    assert.ok(c.every((n) => n.kids.length === 1), "one head in each");
+    // Two members: two heads. A pal with two topics in the room counts once.
+    assert.equal(chips(crew.roomHeads(d, [mk("Orca", "ops"), mk("Softly", "main")], d.bg1, t)).length, 2);
+    el = crew.roomHeads(d, [mk("Orca", "ops"), mk("Orca", "general"), mk("Softly", "main")], d.sel, t);
+    assert.equal(chips(el).length, 2, "one head per pal");
+    assert.ok(el.node.args.tooltip[0].includes("Orca #ops, Orca #general"), "the tooltip still lists both topics");
+    assert.equal(chips(el)[0].args.border_color[0], d.sel, "on the shown room the edge is the selection's colour");
+    // Five pals: three heads and "+2".
+    el = crew.roomHeads(d, ["A", "B", "C", "D", "E"].map((x) => mk(x, "x")), d.bg1, t);
+    c = chips(el);
+    assert.equal(c.length, 4);
+    assert.ok(text({ node: c[3] }).includes("+2") && c[3].args.left[0] === 48, "then +N for the rest");
+    assert.equal(el.node.args.w[0], 24 + 3 * 16);
+    // Nobody yet: one quiet chip, so names still line up.
+    el = crew.roomHeads(d, [], d.bg1, t);
+    assert.ok(chips(el).length === 1 && el.node.args.tooltip[0] === "Nobody is in this room yet");
+    // A pal whose pet is drawn shows its own small head (pets.js small: the "-s" tile), so Pal look colours apply.
+    const bot = crew.botOf(fixtures.spaces[0]);
+    const pet = crew.petOf(bot);
+    if (pet) {
+      const keep = fixtures.shared["crew.pets"];
+      fixtures.shared["crew.pets"] = [...(keep ?? []), (await import(url("pets.js"))).petKey(pet)];
+      const img = all(crew.roomHeads(d, [{ name: bot.name, channel: "x", bot }], d.bg1, t)).find((n) => n.kind === "image");
+      assert.ok(img && /-rest-s\.svg$/.test(img.arg), `the pal's own small head (${img?.arg})`);
+      fixtures.shared["crew.pets"] = keep;
+    }
+    // The sidebar's room rows, drawn for real (open and folded): the heads, the name, no "#", no count.
+    {
+      const { el: mkEl } = await import(url("node_modules/gpui-kit/index.js"));
+      const keepCrew = fixtures.shared.crew;
+      fixtures.shared.crew = { ...keepCrew, rooms: [{ id: "r1", name: "launch", members: [{ space: "s1", tab: "t1" }, { space: "s2", tab: "t5" }] }, { id: "r2", name: "empty-room", members: [] }] };
+      fixtures.shared["crew.settings"] = {};
+      const list = mkEl("div");
+      roster.extras(list, [], 0, d);
+      const rowsDrawn = ids(list).filter((n) => /^room-r\d$/.test(n.args.id?.[0] ?? ""));
+      assert.equal(rowsDrawn.length, 2, "both rooms draw");
+      const launch = rowsDrawn[0];
+      assert.ok(text({ node: launch }).includes("launch") && !text({ node: launch }).includes("#"), "the name, and no #");
+      const icon = launch.kids[0].node;
+      assert.ok(icon.args.tooltip[0].includes("Project Pals - Herdr Mod #indicators") && icon.args.tooltip[0].includes("Orca #general"), `its members on hover (${icon.args.tooltip[0]})`);
+      assert.equal(icon.kids.length, 2, "two members: two heads");
+      assert.equal(launch.kids.length, 2, "the icon and the name: no count");
+      fixtures.shared["crew.settings"] = { roomsFolded: true };
+      const folded = mkEl("div");
+      roster.extras(folded, [], 0, d);
+      assert.equal(ids(folded).filter((n) => /^room-r\d$/.test(n.args.id?.[0] ?? "")).length, 0, "folded: no room rows");
+      assert.ok(ids(folded).some((n) => n.args.id?.[0] === "rooms-head"), "folded: the header stays");
+      fixtures.shared.crew = keepCrew; fixtures.shared["crew.settings"] = {};
+    }
+    // And in the source: no "#", no count.
+    const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
+    const rowSrc = src.slice(src.indexOf("if (!roomsFolded()) list.children(rs.map"), src.indexOf("if (!roomsFolded()) list.children(rs.map") + 900);
+    assert.ok(rowSrc.includes("roomHeads(d, roomMembers(room)") && !rowSrc.includes('child("#")') && !rowSrc.includes("roomMembers(room).length"), "room rows: heads, no # and no count");
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; the working dot's pulse; room heads)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

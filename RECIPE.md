@@ -736,6 +736,15 @@ rectangular segments and tags.
   the rooms away or shows them; folded is the header alone. Remembered as `roomsFolded` in
   crew-settings.json (`saveUiSettings`, as the Topics list's fold). From the keyboard:
   `crew-roster.rooms-fold` (no key bound by default).
+  **Room rows** (T101, DeNon's pick B, 2026-11-10: with a "#" a room read like a topic): 32px,
+  the room's group-chat icon then its name; no "#" and no member count. The icon
+  (`crew.js roomHeads`) is the member pals' heads as round 24px chips (#161617, a 2px edge in
+  the row's own colour so they look cut out of each other) overlapping by 8px: at most three,
+  then a "+N" chip for the pals beyond. Each pal once, however many of its topics are in the
+  room. A head is the pal's own small pet head (`pets.js` small tile, 20x16, so Pal look
+  colours apply), its mascot until the pet is drawn. Hover names every member ("Orca #ops,
+  …"). An empty room shows one quiet "0" chip so names line up. No unread mark: rooms don't
+  track unread messages.
 - **Status strip** (24px, the sidebar's last row): a quiet gear at its left end and, when any,
   **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while
   an approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared

@@ -14,7 +14,7 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
   toggleChief, withoutChief, isChiefRec, toggleComputer } from "./crew.js";
@@ -716,13 +716,14 @@ export default class CrewRoster extends View {
     const rs = rooms();
     if (rs.length) {
       list.child(this.roomsHeader(rs, d));
-      if (!roomsFolded()) list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(6).px(8).rounded(d.r.md).cursor_pointer()
+      if (!roomsFolded()) list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(8).px(8).rounded(d.r.md).cursor_pointer()
         .when(shownRoom()?.id === room.id, (el) => el.bg(d.sel))
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { showRoom(room.id); cx.notify(); })
-        .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg4).child("#"))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(d.body).child(room.name))
-        .child(div().text_size(11).text_color(d.fg4).child(String(roomMembers(room).length)))));
+        // No "#" (that's a topic's): the members' heads, overlapping, say it's a group (T101). They
+        // stand in for the member count too.
+        .child(roomHeads(d, roomMembers(room), shownRoom()?.id === room.id ? d.sel : d.bg1))
+        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(shownRoom()?.id === room.id ? d.fg1 : d.body).child(room.name))));
     }
   }
 
