@@ -21,7 +21,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, exec, appHome, home } from "herdr";
 import { ownerCli, ds, tone, channelName, URGENCIES, urgencyColor, sheet, sheetHeader, sheetBody, sheetFooter, sheetSelect, sheetToggle,
-  sheetPanel, sheetPanelBox, sheetOption, sheetRow } from "./crew.js";
+  sheetPanel, sheetPanelBox, sheetOption, sheetRow, withoutChief } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const STORE = "data/crew-attachments";
@@ -71,7 +71,7 @@ export default class CrewDeskDrop extends View {
     const out = [];
     if (autoOk()) out.push({ to: AUTO, label: "Auto", sub: "a pal picks it" });
     out.push({ to: ROUTE, label: "To route", sub: spaces().length ? "I'll pick" : "no pals yet" });
-    for (const s of spaces()) {
+    for (const s of withoutChief()) {
       out.push({ to: s.name, label: s.name, sub: "the pal: the rules pick a topic" });
       for (const t of s.tabs ?? []) out.push({ to: `${s.name}#${channelName(t)}`, label: `${s.name} #${channelName(t)}`, sub: t.status && t.status !== "idle" ? t.status : null });
     }

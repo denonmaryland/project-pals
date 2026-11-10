@@ -50,6 +50,8 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
 Hiring
   pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--topic general] [--folder DIR] [--machine M] [--task T]
   pal hire --partner [Name]         the idea partner (MUSE by default): you riff, it drafts cards you Send
+  (the owner, from Project Pals: hire --chief [Name], the Chief: a pop-up chief of staff that only reads
+   and hands work to the head pal's #ops; Ctrl+Shift+J)
   pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
                                      a new topic (a tab); --worktree gives it its own git branch and folder.
                                      pal channel is the same command (topics were called channels before 0.4.0)
@@ -239,12 +241,24 @@ def watch_start(bot, channel, brain="its brain", wait=20):
     return False
 
 
+def without_chief(spaces, recs):
+    """The pals without the Chief: it's the owner's pop-up, not a pal to message, and its screen is
+    the owner's conversation. One line says it's there."""
+    import crewchief
+    chief = crewchief.record(recs)
+    if not chief:
+        return spaces
+    print(f"({chief['name']}, {OWNER}'s chief of staff, is in its pop-up: it takes no messages; it reads, and hands work to {crewchief.inbox_label()})")
+    return [s for s in spaces if not crewchief.is_chief_space(s, recs)]
+
+
 def cmd_bots(spaces):
     if not spaces:
         print('no pals yet: open a space in Herdr, or hire one: pal hire "Name" --folder ~/Projects/x')
         return
     recs = records()
     me, _ = whoami(spaces)
+    spaces = without_chief(spaces, recs)
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
         r = record_of(s, recs)
         apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
@@ -266,6 +280,7 @@ def cmd_overview(spaces, deep=False):
     stalled, trust, drafts = health.get("stalled", {}), health.get("trust", {}), health.get("drafts", {})
     waiting = []
     print(f"# The Project Pals, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
+    spaces = without_chief(spaces, recs)
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
         r = record_of(s, recs)
         apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
@@ -433,6 +448,8 @@ def target(spaces, spec):
 
 
 def cmd_tell(spaces, spec, text, now=False):
+    import crewchief
+    crewchief.refuse_target(spec, "messages")
     space, tab, t = target(spaces, spec)
     who = crewdesk.sender(spaces)
     me, name = who["me"], who["name"]
@@ -457,6 +474,8 @@ def cmd_tell(spaces, spec, text, now=False):
 
 
 def cmd_ask(spaces, spec, text, timeout):
+    import crewchief
+    crewchief.refuse_target(spec, "questions")
     space, tab, t = target(spaces, spec)
     deadline = time.time() + timeout
     who = crewdesk.sender(spaces)
@@ -915,6 +934,9 @@ def cmd_task(spaces, rest):
         if not pos:
             die('pal task add "<title>" [--for Pal] [--after T1,T2]')
         deps = [d.strip() for d in (o.get("after") or "").split(",") if d.strip()]
+        if o.get("for"):
+            import crewchief
+            crewchief.refuse_target(o["for"], "tasks")
         t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"))
         print(f"added {crewtasks.line(t)}")
     elif sub in ("ls", "list"):
@@ -963,6 +985,8 @@ def cmd_task(spaces, rest):
         if me:
             print('Anything slow along the way? Note it: pal notebook "did: …" --hiccup "… (cost: ~15m)" --lesson "…"')
     elif sub == "assign" and len(args) >= 2:
+        import crewchief
+        crewchief.refuse_target(args[1], "tasks")
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, assignee=args[1])))
     elif sub == "cancel" and args:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="cancelled")))
@@ -1162,12 +1186,17 @@ def cmd_desk(spaces, rest):
             die("send what? pal desk send <to> \"text\" (or -F file)")
         urgency = o.get("urgency") or ("now" if o.get("now") else "soon" if o.get("soon") else "low" if o.get("low") else "normal")
         to = pos[0]
+        import crewchief
         auto = to.lower() == "auto"
-        if to.lower() in ("route", "to route", "auto"):
+        if crewchief.caller_is_chief():
+            to = crewchief.send_target(to, spaces)   # only ever <head>#ops
+            auto = False
+        elif to.lower() in ("route", "to route", "auto"):
             to = ""
         elif to.lower() in (OWNER.lower(), "owner"):
             to = OWNER
         else:
+            crewchief.refuse_target(to)
             space, tab = find(to, spaces)
             to = f"{space['name']}#{chan(tab)}" if "#" in to else space["name"]
             if who["me"] and to.lower() == who["me"].lower():
@@ -1323,6 +1352,8 @@ def cmd_routine(spaces, rest):
         pos, o = opts(args, ("name", "channel"))
         if len(pos) < 3:
             die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]')
+        import crewchief
+        crewchief.refuse_target(pos[0], "routines (a scheduled prompt is a push)")
         space, _ = find(pos[0], spaces)
         r = crewroutines.add(space["name"], pos[1], " ".join(pos[2:]), o.get("name"), o.get("channel", "routines"), by=name)
         print(f"added {r['id']} {r['name']}: {space['name']} #{r['channel']}, {crewroutines.describe(r['rule'])}"
@@ -2337,6 +2368,12 @@ def main(argv):
         prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
+    # The Chief (crew-boards/chief/design.md) only reads and hands work to the head pal's #ops.
+    import crewchief
+    if crewchief.caller_is_chief():
+        why = crewchief.cli_refusal(cmd, rest)
+        if why:
+            die(why)
     if cmd == "room":
         os.execvp("pal-room", ["pal-room", *rest])
     if cmd == "primer":
@@ -2392,9 +2429,26 @@ def main(argv):
         pos, o = opts(rest, ("lines", "n"))
         cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
     elif cmd == "hire" and rest:
-        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner"))
+        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner", "chief"))
         if not pos and o.get("god"):
             pos = [settings()["head"]]
+        if o.get("chief"):
+            # The Chief (crew-boards/chief/design.md): the owner's chief of staff, above the head pal.
+            # Only the owner hires it (the pop-up's Hire button, a click), at most one, in its own home
+            # with its brief, in #chief, on Opus unless a model is given.
+            import crewchief
+            require_owner("hiring the Chief")
+            if crewchief.record():
+                die(f"you already have a Chief: {crewchief.name()}")
+            pos = pos or [crewchief.NAME]
+            home = crewchief.render(chief=" ".join(pos))
+            if not home:
+                die("the Chief's brief isn't installed (run ./install.sh)")
+            o["folder"] = str(home)
+            o["role"] = crewchief.ROLE
+            o.setdefault("channel", "chief")
+            if (o.get("harness") or "claude") == "claude":
+                o.setdefault("model", "opus")
         if o.get("partner"):
             # The idea partner, MUSE (Desk §13): its own home with its brief, the Idea partner role, and
             # Sonnet unless a model is given.
@@ -2413,7 +2467,10 @@ def main(argv):
         if o.get("folder"):
             o["folder"] = os.path.abspath(os.path.expanduser(o["folder"]))
         out = request("hire", spaces, name=" ".join(pos), **o)
-        print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
+        if o.get("chief"):
+            print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. It lives in its pop-up: Ctrl+Shift+J; nothing is sent to it but your words there.")
+        else:
+            print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
     elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.4.0
@@ -2433,6 +2490,9 @@ def main(argv):
                   f"pick another with --harness)")
         watch_start(out["bot"], out["channel"], brain)
     elif cmd == "invite" and len(rest) >= 2:
+        import crewchief
+        for w in rest[1:]:
+            crewchief.refuse_target(w, "room invites")
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):
             print(f"added {', '.join(out['added'])} to #{rest[0].lstrip('#')} (briefed)")

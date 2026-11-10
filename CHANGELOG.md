@@ -7,6 +7,14 @@
   desktop window of its own. On Hyprland it floats, its bar has a Pin button (every workspace;
   Omarchy's Super+O works on it too), it resizes freely with the terminal following, and its size,
   place and pin are remembered per topic. Closing the window never stops the pal.
+- **The pocket pets are redrawn.** Each pal has a lit, rounded body with a real face (eyes, mouth,
+  cheeks), its species has its own marks (a fox's tail tip, an owl's beak, a pup's muzzle), and
+  what it wears stands out from the body. The laptop is now a proper open laptop seen from the
+  front corner, and its screen shows the state: code while working, a tick when done, a question
+  mark when it asks you, a branch for an open PR, an x for closing, an exclamation mark when stuck,
+  and a shut lid while asleep. Small pets (in lists, rooms and menus) show the head alone, so they
+  stay sharp. Tails and raised arms are no longer cut off at the left edge. Every pet is drawn
+  again the first time the new version runs.
 - **Check for updates says what it found, and when.** About and the update dialog show GitHub's
   newest version and the time they asked ("You have 0.4.0. GitHub's newest: 0.4.1 · checked
   15:48"). Left open, they ask again every 10 minutes, so an About open since the last update no

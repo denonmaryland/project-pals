@@ -15,6 +15,7 @@ import { spaces, agents, theme, props, closeOverlay, openOverlay, run, setShared
 import {
   botOf, ds, tone, crew, taskFor, loadOps, palMenuItems, appMenuItems, sleepers, wakePal, mascotEl, mood, channelName, statusWord,
   showTabs, openPanel, taskTitle, channelOrder, SEARCH_HINT, recessedField, keyCap, COMMAND_PAD,
+  withoutChief, isChiefRec,
 } from "./crew.js";
 import { search, pieces } from "./search.js";
 
@@ -82,7 +83,7 @@ export default class CrewCommand extends View {
   // Everything a query searches.
   index(space, bot) {
     const items = [];
-    const all = spaces();
+    const all = withoutChief();   // the Chief has its own row (Chief, Ctrl+Shift+J)
     const ags = agents();
     for (const s of all) {
       const b = botOf(s);
@@ -97,7 +98,7 @@ export default class CrewCommand extends View {
           words: what ? [what] : [], go: () => CrewCommand.go(s, t) });
       }
     }
-    for (const rec of sleepers(all, crew())) {
+    for (const rec of sleepers(spaces(), crew()).filter((r) => !isChiefRec(r))) {
       items.push({ group: "Pals", id: `zz-${rec.id}`, label: rec.name, sub: "asleep", pet: rec, asleep: true, hint: "wake", go: () => wakePal(rec) });
     }
     const spaceOfPal = (name) => all.find((s) => s.name.toLowerCase() === String(name ?? "").split("#")[0].trim().toLowerCase());

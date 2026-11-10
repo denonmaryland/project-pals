@@ -114,7 +114,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   species (8), colour (16 swatches or a hex), what it wears (none or up to two of 10; a third
   replaces the older one) and its eyes (9), each choice shown as a resting thumbnail of the pet with
   it; Reset to its default, Cancel, Save (stores `pet` {species, acc, eyes} and `look.color`). No
-  laptop choice: every state uses the profile laptop. (The folder mascots' `mascot-art.js` is gone.)
+  laptop choice: every state uses the same three-quarter laptop, and its screen shows the state
+  (code while working, a tick for done, ? for asks you, a branch for PR open, a merge, an x for
+  closing, ! for stuck; shut while asleep). Under 46 px wide (`SMALL_BELOW`) a pet shows its head
+  alone (`tileSvg`'s `small`, the `-s` files), with no paw frame or bits: the whole scene is a
+  smudge at those sizes. (Redrawn 2026-11-09: lit bodies with faces, pale accessories, the laptop.
+  The folder mascots' `mascot-art.js` is gone.)
 - **Scrolling** (DeNon, 2026-11-08: round scrollbars, not Herdr's hard-cut rectangle). A mod can't
   shape Herdr's scrollbar (no radius or width; its colours come from the theme) or read where a
   scroll area is, so every area our mods scroll is our own (`crew.js scrollArea`): it clips its
@@ -899,6 +904,56 @@ the root (a hash, or JSON with those fields); `export: true` marks it. Anything 
 hash is ignored, with a warning.
 Home reads only while it shows: files every 4 s, `pal desk ls --all --json --done` every 10 s.
 
+### The Chief (0.4.2)
+
+The owner's chief of staff, above the head pal (design and mockups: `data/crew-boards/chief/`; DeNon
+picked direction A, the Split deck, and "Build it" on Home, 2026-11-09). Orca is both the owner's chat
+partner and the switchboard; the Chief is a separate, calm agent the owner summons, which reads the
+whole crew and hands work down, so the owner's thinking isn't interrupted by pal traffic.
+
+- **Hiring:** `pal hire --chief [Name]` takes the owner's click (the pop-up's **Hire the Chief**; a pal,
+  a plain shell or a hand-written request can't: `require_owner`, and the roster's hire handler refuses
+  `chief` from a pal's terminal). At most one. Its home is `data/crew-chief` with its brief
+  (`chief/AGENTS.md`, rendered with `{{OWNER}}`, `{{HEAD}}`, `{{CHIEF}}`, and `{{HEAD}}#ops` as the head
+  pal's inbox topic) and `priorities.md`, `decisions.md`, `watch.md` (seeded once, never overwritten);
+  topic `#chief`, Opus unless a model is given; record `chief: true`, role "Chief of staff".
+- **Hidden:** the sidebar (pals, Asleep, the needs count), Home, the Desk's pal list and To options,
+  the quick-drop, the command bar's pal list, `pal team` and `pal overview` leave it out (`withoutChief`
+  in `crew.js`, `without_chief` in `bin/crew`; the CLI prints one line saying it's in its pop-up). Its
+  screen is the owner's conversation.
+- **It only pulls** (`bin/crewchief.py`): nothing reaches it. `crewdesk.create` / `move` refuse a card
+  to it, `crewlib.enqueue` refuses its terminal, crewd drops anything in its queue folder and sends it no
+  callback or notebook nudge, and `pal tell / ask / task add --for / task assign / routine add / invite`
+  and `pal-room new` refuse it by name ("doesn't take … Put it on Home or tell <head>#<inbox>").
+- **What it may run:** from its terminal, `pal` does only the reads (overview, team, feed, peek, home,
+  desk ls/open/sent/stats, task ls/show/ready, memory, remember, notebook, skill ls/show, routine
+  ls/log, mission show, diff) and `pal desk send`, which always goes to the head pal's inbox topic
+  (T60's `head_topic`, else `#ops`, else the topic it shows); naming another pal or head topic is
+  refused. Its own tool calls (`crew-hook pre-tool-use`, checked only once a Chief is hired): no
+  `hc send/keys/…`, no git subcommand that changes anything, no `pal` command it couldn't run, no
+  `crew-room`/`crewd`/`herdr-app`, no file write outside `data/crew-chief`. Denied, with why.
+- **The pop-up** (`toggleChief`, `crew-roster.chief`, **Ctrl+Shift+J**, bound by install.sh when free
+  and taken out by the uninstaller; also "Chief" in the gear menu and command bar): a Herdr window
+  (`key: "chief"`, `keep: true`, so it comes back where it was dropped and after a restart). Split
+  (1180×760, default): a 470 px column of the bar (`crew-chief-bar`, 34 px: pet, name, "pulls only",
+  Compact · Split · Full, ×) over the Chief's terminal, beside the dashboard (`crew-chief`). Compact
+  (480×640): the bar, the dashboard cut to its read and counts (196 px), the terminal. Full: 94% × 92%.
+  No live Chief: the bar over the dashboard's "No Chief yet · Hire" or "asleep · Wake it" (woken with
+  the view held, then the window rebuilds around its terminal). The same key or × closes it; Esc
+  doesn't (it's the terminal's). Its id lives in shared `crew.chief.win`; a kept window that comes
+  back stamps its new id there.
+- **The keyboard:** Herdr can't give a window's terminal the keyboard from code (spike 2026-11-09), and
+  `pane.focus` on the Chief's terminal would show its hidden space, so it's never called. The dashboard
+  (`focusable`) takes the keyboard on open in its **Ask** field; Enter sends the line into the Chief's
+  terminal with `hc send`, as the owner typing there. Clicking the terminal works too.
+- **The dashboard** (stage 1, "Factory"; numbers and states from data, never a model): the Chief's
+  read (`priorities.md`'s list items, and "Watching:" from `watch.md`, labelled), a strip (working,
+  stuck, needs you, held, next release), every awake pal (not the Chief) with up to four topics
+  (status dot, `#topic`, what it's on; a click closes the pop-up and opens the topic) and "Asleep: …",
+  Needs you and stuck (the roster's `crew.needs`; Open Home ›), Shipping (public, installed here,
+  next), and the cards it handed the head pal with their status. Reads only while open: files every
+  4 s, the Desk every 10 s. Drilling into a pal or topic (design stages 2-3) is later.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
@@ -921,6 +976,8 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`, `crew-update` (props `check`),
     `crew-attach`, `crew-tasks` (props `space`). The installer retires the old `crew-tell`.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
+  - Window: the Chief's pop-up, a layout of `crew-chief-bar` (props `size`), the Chief's terminal
+    and `crew-chief` (props `size`, `compact`; `focusable`).
   - Every mod gets `lib/crew.js` (the shared model) and `lib/pets.js` copied in.
 - **Herdr functions:**
   - Data: `spaces`, `panes`, `agents`, `layout`, `shared`/`setShared` (`crew`,

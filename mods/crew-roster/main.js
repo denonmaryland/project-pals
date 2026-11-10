@@ -15,7 +15,8 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL } from "./crew.js";
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL,
+  toggleChief, withoutChief, isChiefRec } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
@@ -97,7 +98,7 @@ export default class CrewRoster extends View {
       try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
       // What needs DeNon, for the status bar's "N need you", with why each counts (published only
       // when it changes, reasons included).
-      const n = needsOf(spaces(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
+      const n = needsOf(withoutChief(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
       if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
       cx.notify();
     });
@@ -132,6 +133,8 @@ export default class CrewRoster extends View {
         else if (c === "profile") togglePanel(panelTab());
         // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
         else if (c === "home") toggleHome();
+        // Ctrl+Shift+J: the Chief's pop-up (again: closes it).
+        else if (c === "chief") toggleChief();
         cx.notify();
       }
     });
@@ -242,14 +245,14 @@ export default class CrewRoster extends View {
 
   render() {
     const t = tone(theme());
-    const all = spaces();
-    const ps = panes();
     const c = crew();
+    const all = withoutChief(spaces(), c);   // the Chief lives in its pop-up, not the sidebar
+    const ps = panes();
     const only = shared("crew.demo");
     const rows = (only ? all.filter((s) => only.includes(s.name)) : all).map((space) => ({ space, bot: botOf(space, c, ps) }))
       // The head pal sits above everyone; then whoever needs you most.
       .sort((x, y) => (y.bot.god ? 1 : 0) - (x.bot.god ? 1 : 0) || (STATUS_RANK[y.space.status] ?? 0) - (STATUS_RANK[x.space.status] ?? 0) || x.space.index - y.space.index);
-    const asleep = sleepers(all, c);
+    const asleep = sleepers(spaces(), c).filter((b) => !isChiefRec(b));
     // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
@@ -917,7 +920,7 @@ export default class CrewRoster extends View {
     const bot = spaces().map((sp) => botOf(sp)).find((b) => b.id === dg.id);
     const o = dg.over;
     if (bot && o.id !== bot.id) {
-      const rows = spaces().map((sp) => ({ space: sp, bot: botOf(sp) }));
+      const rows = withoutChief().map((sp) => ({ space: sp, bot: botOf(sp) }));
       const sec = palSections(rows).find((x) => (x.group?.id ?? null) === (o.gid ?? null));
       const ids = (sec?.rows ?? []).map((r) => r.bot.id).filter((id) => id !== bot.id);
       let before = null;

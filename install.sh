@@ -143,11 +143,12 @@ fi
 # panel, 2026-11-08), ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
 # it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
 # crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
-# crew-roster.home (Home, the head pal's page; free in both too). Each only when
+# crew-roster.home (Home, the head pal's page; free in both too) and ctrl-shift-j → crew-roster.chief
+# (the Chief's pop-up; free in both, checked 2026-11-09). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home"; do
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
@@ -311,6 +312,15 @@ python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib
 if [[ -f "$src/partner/AGENTS.md" ]]; then
   install -m 644 "$src/partner/AGENTS.md" "$HOME/.local/lib/herdr-crew/partner-AGENTS.md"
   python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_partner()' "$HOME/.local/lib/herdr-crew"
+fi
+# The Chief's brief (crew-boards/chief/design.md): its home is data/crew-chief, made by the owner's
+# pal hire --chief. Re-rendered here only once there is one (its notes files are never touched).
+if [[ -f "$src/chief/AGENTS.md" ]]; then
+  install -m 644 "$src/chief/AGENTS.md" "$HOME/.local/lib/herdr-crew/chief-AGENTS.md"
+  if [[ -d "$home/data/crew-chief" ]]; then
+    [[ -f "$home/data/crew-chief/AGENTS.md" ]] && { mkdir -p "$backup/crew-chief"; cp -a "$home/data/crew-chief/AGENTS.md" "$backup/crew-chief/"; }
+    python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewchief; crewchief.render()' "$HOME/.local/lib/herdr-crew"
+  fi
 fi
 
 # The Desk (every pal's cards): data/crew-desk with its README and trays, the desk settings that are

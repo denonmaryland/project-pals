@@ -507,6 +507,8 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None,
     """A new card on `to`'s desk ('Pal#topic', 'Pal', the owner, or '' for To route). Returns it."""
     if kind not in KINDS:
         raise DeskError(f"kind is one of {', '.join(KINDS)}")
+    import crewchief
+    crewchief.refuse_target(to)   # the Chief takes no cards: it pulls (crew-boards/chief/design.md)
     if urgency not in URGENCY:
         raise DeskError(f"urgency is one of {', '.join(URGENCY)}")
     if urgency == "now" and from_kind != "owner":
@@ -540,6 +542,8 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None,
 
 def move(cid, to, by, via, note=""):
     """Pass a card to another desk: the same card (same id and receipts), a new folder and `to`."""
+    import crewchief
+    crewchief.refuse_target(to)
     path = need(cid)
     src = path.parent.parent.name
     dst = folder_of(to)
