@@ -93,7 +93,7 @@ export default class CrewHome extends View {
       try { this.installs = jsonLines(await read(INSTALLS_FILE)).reverse(); } catch {}
       try { this.install = JSON.parse((await read("data/crew-install.json")) ?? "{}") ?? {}; } catch { this.install = {}; }
       try { this.update = JSON.parse((await read("data/crew-update.json")) ?? "{}") ?? {}; } catch { this.update = {}; }
-      try { this.feed = jsonLines((await exec("tail", ["-n", "800", `${data}/crew-feed.jsonl`], { timeout: 5000 })).stdout); } catch {}
+      try { this.feed = jsonLines((await exec("tail", ["-n", "1600", `${data}/crew-feed.jsonl`], { timeout: 5000 })).stdout); } catch {}
       try { this.ops = await loadOps(); } catch {}
       try { this.reports = await blockedReports(this.reports); } catch {}
       if (desk || Date.now() - this.deskAt > 10000) {
