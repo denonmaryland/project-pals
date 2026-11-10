@@ -692,38 +692,52 @@ try {
     assert.ok(!ids({ node: h }).some((n) => n.args.id?.[0] === "rooms-dot"), "quiet rooms: no dot");
     fixtures.shared["crew.settings"] = {};
   }
-  // ── The working dot pulses only while the pal's topics are folded away (T100, DeNon 2026-11-10):
-  // the looks with a state dot (Table: beside the pet; Two tight lines: on it). ─────────────────
+  // ── A working pal rocks; its dot is steady (T102, DeNon 2026-11-10: this replaced T100's pulsing
+  // dot). Wherever the sprite is drawn (petEl), boxed or open, big or a small head. ─────────────
   {
-    const keep = { agents: fixtures.agents, spaces: fixtures.spaces };
-    const busy = { ...fixtures.spaces[0], id: "s30", name: "Busy Pal", status: "working", tabs: [{ id: "t30", name: "build", status: "working", changed_at: Date.now(), active: true }, { id: "t31", name: "notes", status: "idle", changed_at: 1 }] };
-    const asks = { ...busy, id: "s31", name: "Asking Pal", status: "blocked", tabs: [{ id: "t32", name: "q", status: "blocked", changed_at: Date.now(), active: true }, { id: "t33", name: "w", status: "working", changed_at: 1 }] };
-    const calm = { ...busy, id: "s32", name: "Calm Pal", status: "idle", tabs: [{ id: "t34", name: "main", status: "idle", changed_at: 1, active: true }] };
-    fixtures.spaces = [busy, asks, calm];
-    fixtures.panes = [...fixtures.panes, ...["t30", "t32", "t33", "t34"].map((tab, i) => ({ tab, terminal: `z${i}`, program: { agent: true, key: "claude", name: "Claude Code" } }))];
-    fixtures.agents = [{ space: "s30", tab: "t30", status: "working" }, { space: "s31", tab: "t32", status: "blocked" }, { space: "s31", tab: "t33", status: "working" }, { space: "s32", tab: "t34", status: "idle" }];
     const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
-    const dots = (space) => all(roster.palRow({ space, bot: crew.botOf(space) }, t, d, null)).filter((n) => n.calls.includes("rounded") && (n.args.size?.[0] === 7 || n.args.size?.[0] === 9) && n.args.bg);
-    const loops = (space) => all(roster.palRow({ space, bot: crew.botOf(space) }, t, d, null)).filter((n) => n.calls.includes("loop"));
-    for (const look of ["table", "tight"]) {
-      // Folded (Trees off): the working pal's blue dot pulses, opacity only, slowly.
-      fixtures.shared["crew.settings"] = { palList: look, palTrees: false };
-      const dot = dots(busy).find((n) => n.args.bg[0] === d.info);
-      assert.ok(dot, `${look}: the working pal has a blue dot`);
-      assert.deepEqual(dot.args.loop, ["opacity", { from: 1, to: 0.45, period: 2600 }], `${look} folded: it pulses, 1 to 0.45 and back in 2.6 s`);
-      assert.equal(loops(busy).length, 1, `${look} folded: only the dot moves`);
-      // A pal that asks you (amber) or rests: steady, even with a topic working under it.
-      assert.equal(loops(asks).filter((n) => n.args.size).length, 0, `${look} folded: an amber dot doesn't pulse`);
-      assert.equal(loops(calm).length, 0, `${look} folded: a resting pal's dot is steady`);
-      // Unfolded (Trees on): the topic rows say who's working, so the dot is steady, and so are their marks.
-      fixtures.shared["crew.settings"] = { palList: look };
-      assert.ok(ids(roster.palRow({ space: busy, bot: crew.botOf(busy) }, t, d, null)).some((n) => n.args.id?.[0]?.includes("-tp-")), `${look}: the tree shows`);
-      assert.ok(dots(busy).some((n) => n.args.bg[0] === d.info), `${look} unfolded: the blue dot is there`);
-      assert.equal(loops(busy).length, 0, `${look} unfolded: nothing pulses`);
+    const pets = await import(url("pets.js"));
+    const bot = crew.botOf(fixtures.spaces[0]);
+    const pet = crew.petOf(bot);
+    assert.ok(pet, "the fixture pal has a pet");
+    const sway = (el) => all(el).filter((n) => n.args.loop?.[0] === "left");
+    for (const [w, open] of [[75, true], [75, false], [150, true], [32, true], [32, false], [20, false], [240, true]]) {
+      const el = crew.petEl(pet, "work", w, undefined, { open });
+      const s = sway(el);
+      assert.equal(s.length, 1, `${w}px ${open ? "open" : "boxed"}: one swaying wrapper`);
+      const [, pol] = s[0].args.loop;
+      assert.ok(pol.from === -crew.rockPx(w) && pol.to === crew.rockPx(w) && pol.period === 2600 && !pol.easing, `${w}px: side to side and back in 2.6 s, eased (the default)`);
+      assert.ok(crew.rockPx(w) >= 0.75 && crew.rockPx(w) <= 3, `${w}px: a gentle ${crew.rockPx(w)} px`);
+      assert.ok(s[0].args.w[0] === w && s[0].calls.includes("absolute"), "the wrapper fills the pet's box");
+      // Every sprite layer is inside it (the pet, its paw, its bits), so they move as one; the box itself doesn't.
+      const imgs = all(el).filter((n) => n.kind === "image" && /crew-pets|bits/.test(String(n.arg)));
+      const inside = all({ node: s[0] }).filter((n) => n.kind === "image");
+      assert.ok(imgs.length >= 1 && imgs.every((n) => inside.includes(n)), `${w}px ${open ? "open" : "boxed"}: all ${imgs.length} sprite layers sway together`);
+      assert.ok(!el.node.calls.includes("loop"), "the box keeps still");
+      // Not working: nothing sways. Working but told to keep still: nothing sways.
+      for (const st of ["rest", "done", "ask"]) assert.equal(sway(crew.petEl(pet, st, w, undefined, { open })).length, 0, `${w}px ${st}: still`);
+      assert.equal(sway(crew.petEl(pet, "work", w, undefined, { open, rock: false })).length, 0, `${w}px: rock off keeps a working pet still`);
     }
-    // No timer of ours drives it: the loop is the renderer's (gpui-kit `loop`), declared once per dot.
-    assert.ok(!/setInterval|timer\.every\([^)]*pulse/.test(readFileSync(join(root, "lib/crew.js"), "utf8")), "no pulse timer");
-    fixtures.agents = keep.agents; fixtures.spaces = keep.spaces; fixtures.shared["crew.settings"] = {};
+    assert.equal(crew.rockPx(75), 1.5); assert.equal(crew.rockPx(20), 0.75); assert.equal(crew.rockPx(400), 3);
+    // In the sidebar: a working pal's row sways its pet (Trees on or off), a resting pal's doesn't, and no dot pulses.
+    const keep = { agents: fixtures.agents, spaces: fixtures.spaces, pets: fixtures.shared["crew.pets"], panes: fixtures.panes };
+    const busy = { ...fixtures.spaces[0], id: "s30", status: "working", tabs: [{ id: "t30", name: "build", status: "working", changed_at: Date.now(), active: true }] };
+    const calm = { ...fixtures.spaces[0], id: "s32", status: "idle", tabs: [{ id: "t34", name: "main", status: "idle", changed_at: 1, active: true }] };
+    fixtures.spaces = [busy, calm];
+    fixtures.panes = [...keep.panes, { tab: "t30", terminal: "z0", program: { agent: true, key: "claude", name: "Claude Code" } }, { tab: "t34", terminal: "z1", program: { agent: true, key: "claude", name: "Claude Code" } }];
+    fixtures.agents = [{ space: "s30", tab: "t30", status: "working" }, { space: "s32", tab: "t34", status: "idle" }];
+    for (const sp of [busy, calm]) { const p = crew.petOf(crew.botOf(sp)); fixtures.shared["crew.pets"] = [...(fixtures.shared["crew.pets"] ?? []), pets.petKey(p)]; }
+    for (const look of ["large", "table", "tight"]) for (const trees of [true, false]) {
+      fixtures.shared["crew.settings"] = trees ? { palList: look } : { palList: look, palTrees: false };
+      const rowOf = (sp) => roster.palRow({ space: sp, bot: crew.botOf(sp) }, t, d, null);
+      assert.equal(sway(rowOf(busy)).length, 1, `${look} trees ${trees}: the working pal's pet rocks`);
+      assert.equal(sway(rowOf(calm)).length, 0, `${look} trees ${trees}: a resting pal is still`);
+      const dots = all(rowOf(busy)).filter((n) => n.calls.includes("rounded") && (n.args.size?.[0] === 7 || n.args.size?.[0] === 9) && n.args.bg);
+      assert.ok(dots.every((n) => !n.calls.includes("loop")), `${look} trees ${trees}: the dot is steady`);
+    }
+    // No timer of ours drives it.
+    assert.ok(!/setInterval/.test(readFileSync(join(root, "lib/crew.js"), "utf8")), "no timer for the rocking");
+    fixtures.agents = keep.agents; fixtures.spaces = keep.spaces; fixtures.shared["crew.pets"] = keep.pets; fixtures.panes = keep.panes; fixtures.shared["crew.settings"] = {};
   }
   // ── Room rows: the members' heads, overlapping, instead of "#" (T101, DeNon's pick B) ─────────
   {
@@ -792,7 +806,7 @@ try {
     const rowSrc = src.slice(src.indexOf("if (!roomsFolded()) list.children(rs.map"), src.indexOf("if (!roomsFolded()) list.children(rs.map") + 900);
     assert.ok(rowSrc.includes("roomHeads(d, roomMembers(room)") && !rowSrc.includes('child("#")') && !rowSrc.includes("roomMembers(room).length"), "room rows: heads, no # and no count");
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; the working dot's pulse; room heads)");
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

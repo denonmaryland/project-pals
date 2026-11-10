@@ -722,14 +722,19 @@ rectangular segments and tags.
   EVERY working agent (`crew.js workingEverywhere`): all pals and topics, on every machine, in
   every factory, not just the shown factory's list. Its tooltip names them (the first eight,
   then "+N more"), each with its machine and, with 2+ factories, its factory.
-  **The working dot pulses while the topics are folded** (T100, DeNon 2026-11-10): in the looks
-  with a state dot (Table: beside the pet; Two tight lines: on it), a working pal's blue dot
-  swings in opacity 1 → 0.45 and back every 2.6s, eased, no size change, but ONLY while no tree
-  shows under that pal (Trees folded or off): then the dot is the one sign of work there. With
-  the tree showing it is steady, as are amber/green/grey dots and the topic rows' own marks. It
-  is gpui-kit's native `loop` (about 30fps, only while drawn): render never runs for it and no
-  timer of ours exists, so it costs no redraws of the sidebar. Herdr exposes no reduced-motion
-  setting to mods, so there is nothing to respect yet (watch-out: add it when it does).
+  **A working pal rocks** (T102, DeNon 2026-11-10; it replaced T100's pulsing dot, which is
+  steady again): while a pal's pet is in its "work" state the whole sprite (pet, tapping paw,
+  drifting bits) sways from side to side and back every 2.6s, eased, and is still the moment
+  it stops working. Everywhere the pet is drawn (`crew.js petEl`: pal rows, the hero, the
+  folded rail's heads, Home, the Chief), boxed or open, big or a small head; the box, its edge
+  and the saber don't move. The sway is 1.5px each way at the 75px row size, scaled with the
+  pet and kept between 0.75 and 3px (`rockPx`). gpui-kit can't rotate an element (its native
+  `loop` moves opacity, width, height, left and top only), so it is a sway, not a tilt about
+  the base. It is that native `loop` on one wrapper around the sprite's layers (about 30fps,
+  only while drawn): render never runs for it and no timer of ours exists. `petEl`'s
+  `rock: false` keeps a working pet still. Herdr exposes no reduced-motion setting to mods
+  (watch-out: honour it when it does). Room heads and stock mascots (a pal whose pet isn't
+  drawn yet) don't rock.
   **Rooms fold** (T99, DeNon 2026-11-09): the sidebar's Rooms header is a button: "Rooms", how
   many, a dot while a room is busy (amber: a topic in it asks you; blue: one is working; rooms
   don't track unread messages, so that is what "news" means here), and a chevron. A click folds
