@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { bashVerb, describe as step, diffCount, fit, gist, relPath, shownCommand, testSummary, wrap } from './timeline'
+import { clampWords, describe as step, diffCount, duration, fit, gist, relPath, shellStep, shownCommand, testSummary, wrap } from './timeline'
 
 // ── the line each call becomes ──
 
@@ -12,17 +12,38 @@ test('read, edit, search, test: icon, verb, target, short result', async () => {
   expect(edit).toEqual({ icon: '✎', verb: 'edit', target: 'LoginButton.tsx', result: '+1 −2', tone: 'edit' })
 
   const t = step('Bash', { command: 'cd /w && npm test -- auth.spec.ts' }, { stdout: ' ✓ auth.spec.ts (12 tests)\n      Tests  12 passed (12)\n', stderr: '', interrupted: false }, {})
-  expect(t).toEqual({ icon: '✓', verb: 'test', target: 'npm test -- auth.spec.ts', result: '12 passed', tone: 'ok' })
+  expect(t).toEqual({ icon: '✓', verb: 'test', target: 'auth.spec.ts', result: '12 passed', tone: 'ok' })
 
   const run = step('Bash', { command: 'pal-room say x "hi"' }, { stdout: 'posted to #x\n', stderr: '', interrupted: false }, {})
-  expect(run.verb).toBe('pal')
-  expect(run.result).toBe('posted to #x')
+  expect(run).toMatchObject({ verb: 'run', target: 'pal-room say x "hi"', result: 'posted to #x' })
 })
 
 test('running, errored and interrupted calls', async () => {
   expect(step('Read', { file_path: '/a/b' }, undefined, { isRunning: true })).toMatchObject({ icon: '●', result: '…', tone: 'live' })
   expect(step('Bash', { command: 'make' }, 'Error: Exit code 2\nmake: *** No rule', { isErrored: true })).toMatchObject({ icon: '✗', result: 'Exit code 2', tone: 'err' })
   expect(step('Bash', { command: 'sleep 9' }, 'Interrupted', { isInterrupted: true })).toMatchObject({ icon: '◌', result: 'interrupted' })
+})
+
+test('a shell command reads as what it touched (MUSE review 1)', async () => {
+  const c = { cwd: '/w' }
+  expect(shellStep('cat -n src/cart.js', c)).toMatchObject({ verb: 'read', target: 'src/cart.js' })
+  expect(shellStep('cat package.json; ls', c)).toMatchObject({ verb: 'read', target: 'package.json +1' })
+  expect(shellStep("sed -n '1,40p' /w/src/a.ts | head -5", c)).toMatchObject({ verb: 'read', target: 'src/a.ts' })
+  expect(shellStep('head -50 src/*.js test/*.js', c)).toMatchObject({ verb: 'read', target: 'src/*.js +1' })
+  expect(shellStep('for f in src/a.js src/b.js; do echo "== $f"; cat -n $f; done', c)).toMatchObject({ verb: 'read', target: 'src/a.js +1' })
+  expect(shellStep('grep -rn "useSession" src | head', c)).toMatchObject({ verb: 'search', target: '"useSession" in src' })
+  expect(shellStep('rg -e "a|b" -g "*.ts"', c)).toMatchObject({ verb: 'search', target: '"a|b"' })
+  expect(shellStep('npm test 2>&1 | tail -40; ls src test', c)).toMatchObject({ verb: 'test', target: 'npm test' })
+  expect(shellStep('npx vitest run test/auth.spec.ts', c)).toMatchObject({ verb: 'test', target: 'auth.spec.ts' })
+  expect(shellStep("sed -i 's/i <= n/i < n/' src/cart.js && npm test 2>&1 | grep -E 'pass|fail'", c)).toMatchObject({ verb: 'edit', target: 'cart.js', withTest: true })
+  expect(shellStep("cat >> test/cart.test.js <<'EOF'\ntest('x', () => {})\nEOF\nnpm test", c)).toMatchObject({ verb: 'edit', target: 'cart.test.js', withTest: true })
+  expect(shellStep('git status --short', c)).toMatchObject({ verb: 'run', target: 'git status --short' })
+  expect(shellStep('cd /w && make build 2>&1 | tail -20', c)).toMatchObject({ verb: 'run', target: 'make build' })
+  // an edit and a test: one line, the edit's verb, the test's result
+  const fix = step('Bash', { command: "sed -i 's/<=/</' src/cart.js && npm test" }, { stdout: 'ℹ pass 3\nℹ fail 0\n', stderr: '', interrupted: false }, {}, c)
+  expect(fix).toEqual({ icon: '✓', verb: 'edit', target: 'cart.js', result: '3 passed', tone: 'ok' })
+  const read = step('Bash', { command: 'cat -n src/cart.js' }, { stdout: '1 a\n2 b\n', stderr: '', interrupted: false }, {}, c)
+  expect(read).toMatchObject({ icon: '▸', verb: 'read', result: '2 lines' })
 })
 
 test('other tools still get a line', async () => {
@@ -42,8 +63,9 @@ test('helpers', async () => {
   expect(shownCommand("cat >> t.js <<'EOF'\ntest('x')\nEOF\nnpm test 2>&1 | tail -20")).toBe('npm test')
   expect(shownCommand('make a\nmake b')).toBe('make a …')
   expect(step('Grep', { pattern: 'x' }, { mode: 'content', numFiles: 0, numLines: 6 }, {}).result).toBe('6 hits')
-  expect(bashVerb('git status --short')).toBe('git')
-  expect(bashVerb('python3 -m unittest discover -s tests')).toBe('test')
+  expect(duration(26400)).toBe('26s')
+  expect(duration(64000)).toBe('1m 4s')
+  expect(clampWords('one two three four five six', 9, 2)).toEqual(['one two', 'three…'])
   expect(diffCount({ gitDiff: { additions: 3, deletions: 7 } })).toEqual({ add: 3, del: 7 })
   expect(gist('It reads session state twice. Then it renders.')).toBe('It reads session state twice')
   expect(fit('src/auth/components/LoginButton.tsx', 20)).toBe('src/auth/…Button.tsx')
@@ -60,11 +82,12 @@ const engine = (on: any) =>
   })
 
 async function asPal($: any, on: any) {
-  mock.clock(on)
+  const clock = mock.clock(on)
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HC_TERMINAL_ID' ? 't9' : e.name === 'HOME' ? '/h' : undefined }))
   on('command.register', () => ({ value: { command: 'desk' } }))
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  return clock
 }
 
 const toolUse = (surface: 'terminal' | 'desktop', props: Record<string, unknown>) => ({
@@ -141,11 +164,26 @@ test('the engine\'s thinking summary becomes the dim thinking line; prose stays 
   const line = await ui.find({ type: 'Button', key: 'thought' })
   expect(line?.text).toContain('thinking')
   expect(line?.text).toContain('All three tests crash at cart.js:5')
-  expect(line?.text).not.toContain('off-by-one')
+  expect(line?.text).toContain('off-by-one')
   await ui.press({ key: 'thought' })
-  expect((await ui.find({ type: 'Text', text: /off-by-one/ }))?.text).toContain('off-by-one')
+  expect((await ui.findAll({ type: 'Text', text: /off-by-one/ })).length).toBeGreaterThan(1)
   await ui.unmount()
   ui = await $.ui.mount(row({ text: 'Fixed. It subscribed twice.' }))
   expect((await ui.find({ type: 'Text', text: /engine row/ }))?.text).toBe('engine row')
+  await ui.unmount()
+})
+
+test('the closing line counts the turn\'s steps', async ($, on) => {
+  engine(on)
+  on('tool.call', () => ({ result: { stdout: '', stderr: '' } }))
+  on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  const clock = await asPal($, on)
+  await $.turn.start({ text: 'go', turnId: 't' } as any)
+  for (const id of ['a', 'b', 'c']) await $.tool.call({ tool: 'Bash', command: 'true', tool_use_id: id } as any)
+  await clock.advance(26000)
+  await $.turn.complete({ turnId: 't', reason: 'answer', answer: 'ok', text: '' } as any)
+  const ui = await $.ui.mount({ plugin: 'pals', component: 'TurnDuration', surface: 'terminal', requestId: 'd1', props: { word: 'Cooked', durationMs: 26400 } } as any)
+  expect((await ui.find({ type: 'Text', text: /Cooked/ }))?.text).toMatch(/^✻ Cooked for 26s · 3 steps/)
   await ui.unmount()
 })

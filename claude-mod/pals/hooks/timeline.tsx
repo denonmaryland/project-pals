@@ -19,7 +19,9 @@
 // - Pals only (HC_TERMINAL_ID, as the rest of the mod). PALS_TIMELINE=0 turns it off. Fail open:
 //   every hook here hands the row back to the engine when it throws.
 
-import { memberOf, read, update } from 'claude-code'
+import { atom, memberOf, read, update } from 'claude-code'
+
+import type { TurnSteps } from '../types'
 
 // ── DS colours (docs/cli-mods/proposal.md §3, MUSE's mockup) ──
 export const C = {
@@ -120,16 +122,126 @@ export function shownCommand(cmd: string): string {
 }
 
 const TEST_CMD = /(^|[\s/;&|(])(pytest|vitest|jest|mocha|unittest|go test|cargo test|bun test|deno test|(?:npm|pnpm|yarn)(?: run)? test|plugin test|node --test|node tests?\/)/
+const TEST_FILE = /(\.(test|spec)\.\w+$|(^|\/)test_[^/]+\.py$|_test\.(go|py)$)/
 
-export function bashVerb(cmd: string): string {
-  if (TEST_CMD.test(cmd)) return 'test'
-  const c = cmd.replace(/^\s*cd\s+\S+\s*&&\s*/, '').trim()
-  const w = c.split(/\s+/)[0] ?? ''
-  if (w === 'git' || w === 'gh') return w
-  if (/^(pal|pal-room|crew|crew-room)$/.test(w)) return 'pal'
-  if (/^(tsc|eslint|ruff|mypy|shellcheck)$/.test(w) || / plugin validate\b|py_compile|--check\b|bash -n\b/.test(c)) return 'check'
-  if (/^(ls|cat|head|tail|sed|grep|rg|find|wc|stat|tree|less)$/.test(w)) return 'look'
-  return 'run'
+// ── what a shell command touched ──
+
+type Seg = { words: string[]; raw: string; redirect?: string }
+
+// A command line → its simple commands: quote-aware, heredoc bodies dropped, only the first command
+// of a pipeline (the rest are filters: `| tail -40`, `| grep x`).
+export function segments(cmd: string): Seg[] {
+  const kept: string[] = []
+  let end: string | null = null
+  for (const l of cmd.split('\n')) {
+    if (end !== null) { if (l.trim() === end) end = null; continue }
+    kept.push(l)
+    const m = /<<-?\s*['"]?([\w-]+)['"]?/.exec(l)
+    if (m) end = m[1]
+  }
+  const text = kept.join('\n')
+  const parts: string[] = []
+  let cur = '', q = '', piped = false
+  for (let k = 0; k < text.length; k++) {
+    const ch = text[k], nx = text[k + 1]
+    if (q) { if (ch === q) q = ''; if (!piped) cur += ch; continue }
+    if (ch === "'" || ch === '"') { q = ch; if (!piped) cur += ch; continue }
+    if (ch === '\n' || ch === ';' || (ch === '&' && nx === '&') || (ch === '|' && nx === '|')) {
+      parts.push(cur); cur = ''; piped = false
+      if (ch !== '\n' && ch !== ';') k++
+      continue
+    }
+    if (ch === '|' ) { piped = true; continue }
+    if (!piped) cur += ch
+  }
+  parts.push(cur)
+  const out: Seg[] = []
+  for (const part of parts) {
+    let raw = part.trim()
+    if (!raw) continue
+    const redirect = /(?:^|\s)\d?>>?\s*([^\s&|;<>]+)/.exec(raw)?.[1]
+    raw = raw.replace(/\d?>>?\s*&?[^\s&|;<>]+/g, '').replace(/<<-?\s*['"]?[\w-]+['"]?/g, '').replace(/\s+/g, ' ').trim()
+    const words = (raw.match(/'[^']*'|"[^"]*"|\S+/g) ?? []).map(w => w.replace(/^(['"])(.*)\1$/, '$2'))
+    while (words.length && (/^\w+=/.test(words[0]) || ['sudo', 'time', 'exec', 'do', 'then', 'else', 'nice', 'command'].includes(words[0]))) words.shift()
+    if (!words.length || ['done', 'fi', 'esac', '{', '}', '(', ')'].includes(words[0])) continue
+    out.push({ words, raw, redirect: redirect && redirect !== '/dev/null' ? redirect : undefined })
+  }
+  return out
+}
+
+type Kind = 'test' | 'edit' | 'run' | 'search' | 'read'
+type Touch = { kind: Kind; files: string[]; pattern?: string; shown: string }
+
+const READERS = new Set(['cat', 'head', 'tail', 'less', 'more', 'bat', 'nl', 'wc', 'stat', 'file', 'xxd', 'od', 'jq', 'diff', 'cmp'])
+const NOISE = new Set(['cd', 'echo', 'printf', 'export', 'set', 'true', 'false', ':', 'sleep', 'unset', 'local', 'read', 'shift', 'source', '.', 'exit', 'return', 'pwd', 'clear'])
+
+function argsOf(words: string[], valueFlags: string[] = []): string[] {
+  const out: string[] = []
+  for (let k = 1; k < words.length; k++) {
+    const w = words[k]
+    if (valueFlags.includes(w)) { k++; continue }
+    if (w.startsWith('-') && w !== '-') continue
+    out.push(w)
+  }
+  return out
+}
+
+function touchOf(seg: Seg, loop: string[]): Touch | null {
+  const w = seg.words, cmd = (w[0] ?? '').split('/').pop() ?? ''
+  const files = (xs: string[]) => xs.flatMap(x => (x.includes('$') ? loop : [x])).filter(x => x && !/^\d+$/.test(x))
+  if (TEST_CMD.test(seg.raw)) return { kind: 'test', files: files(w.slice(1)).filter(f => TEST_FILE.test(f)), shown: shownCommand(seg.raw) }
+  if (cmd === 'for') { const k = w.indexOf('in'); if (k > 0) loop.push(...w.slice(k + 1).filter(x => x !== 'do')); return null }
+  if (seg.redirect && (cmd === 'cat' || NOISE.has(cmd))) return { kind: 'edit', files: [seg.redirect], shown: seg.raw }
+  if (NOISE.has(cmd) || ['if', 'while', 'until', 'case', 'wait', 'test', '['].includes(cmd)) return null
+  if (cmd === 'tee') return { kind: 'edit', files: files(argsOf(w)), shown: seg.raw }
+  if (cmd === 'sed' || cmd === 'perl') {
+    const inPlace = w.some(x => /^-[a-zA-Z]*i/.test(x) || x === '--in-place' || /^-pi/.test(x))
+    const hasE = w.includes('-e')
+    const args = argsOf(w, ['-e', '-f'])
+    const rest = hasE ? args : args.slice(1) // the first plain argument is the script
+    return { kind: inPlace ? 'edit' : 'read', files: files(rest), shown: seg.raw }
+  }
+  if (cmd === 'awk') return { kind: 'read', files: files(argsOf(w, ['-F', '-v', '-f']).slice(1)), shown: seg.raw }
+  if (READERS.has(cmd)) return { kind: 'read', files: files(argsOf(w)), shown: seg.raw }
+  if (cmd === 'ls' || cmd === 'tree' || cmd === 'du') { const f = files(argsOf(w, ['-L', '-I'])); return { kind: 'read', files: f.length ? f : ['.'], shown: seg.raw } }
+  if (['grep', 'rg', 'ag', 'ack', 'egrep', 'fgrep'].includes(cmd) || (cmd === 'git' && w[1] === 'grep')) {
+    const ws = cmd === 'git' ? w.slice(1) : w
+    const e = ws.indexOf('-e')
+    const args = argsOf(ws, ['-e', '-f', '-m', '-A', '-B', '-C', '--max-count', '--glob', '-g', '-t', '--type', '--include', '--exclude'])
+    const pattern = e > 0 ? ws[e + 1] : args[0]
+    return { kind: 'search', files: files(e > 0 ? args : args.slice(1)), pattern, shown: seg.raw }
+  }
+  if (cmd === 'find' || cmd === 'fd') {
+    const n = Math.max(w.indexOf('-name'), w.indexOf('-iname'), w.indexOf('-path'))
+    return { kind: 'search', files: [], pattern: n > 0 ? w[n + 1] : argsOf(w)[0], shown: seg.raw }
+  }
+  return { kind: 'run', files: [], shown: shownCommand(seg.raw) }
+}
+
+export type ShellStep = { kind: Kind; verb: string; target: string; withTest: boolean }
+
+// A Bash call → one verb and what it touched: an edit and a test in one command is the edit (its
+// result the test's); a test outranks reads; an unknown command outranks reads and searches.
+export function shellStep(cmd: string, ctx: Ctx = {}): ShellStep {
+  const loop: string[] = []
+  const touches = segments(cmd).map(sg => touchOf(sg, loop)).filter((t): t is Touch => t !== null)
+  const of = (k: Kind) => touches.filter(t => t.kind === k)
+  const tests = of('test'), edits = of('edit'), runs = of('run'), searches = of('search'), reads = of('read')
+  const rel = (f: string) => relPath(f, ctx.cwd, ctx.home)
+  const list = (fs: string[], name: (f: string) => string) => {
+    const u = [...new Set(fs.map(name))]
+    return u.length ? u[0] + (u.length > 1 ? ` +${u.length - 1}` : '') : ''
+  }
+  if (edits.length) return { kind: 'edit', verb: 'edit', target: list(edits.flatMap(t => t.files), base) || edits[0].shown, withTest: tests.length > 0 }
+  if (tests.length) return { kind: 'test', verb: 'test', target: list(tests.flatMap(t => t.files), base) || tests[0].shown, withTest: true }
+  if (runs.length) return { kind: 'run', verb: 'run', target: runs[0].shown + (runs.length > 1 ? ' …' : ''), withTest: false }
+  if (searches.length) {
+    const s = searches[0]
+    const where = list(s.files, rel)
+    return { kind: 'search', verb: 'search', target: `${s.pattern ? `"${s.pattern}"` : ''}${where ? ` in ${where}` : ''}`.trim(), withTest: false }
+  }
+  if (reads.length) return { kind: 'read', verb: 'read', target: list(reads.flatMap(t => t.files), rel) || '.', withTest: false }
+  return { kind: 'run', verb: 'run', target: shownCommand(cmd), withTest: false }
 }
 
 type Ctx = { cwd?: string; home?: string }
@@ -160,7 +272,7 @@ export function describe(tool: string, input: unknown, output: unknown, flags: {
       break
     }
     case 'Glob': {
-      verb = 'find'; target = str(i.pattern) + (i.path ? ` in ${path(i.path)}` : '')
+      verb = 'search'; target = str(i.pattern) + (i.path ? ` in ${path(i.path)}` : '')
       if (typeof o.numFiles === 'number') result = plural(o.numFiles, 'file')
       else if (Array.isArray(o.filenames)) result = plural(o.filenames.length, 'file')
       break
@@ -172,27 +284,27 @@ export function describe(tool: string, input: unknown, output: unknown, flags: {
       break
     }
     case 'Write': {
-      icon = '✎'; verb = 'write'; tone = 'edit'; target = base(str(i.file_path))
+      icon = '✎'; verb = 'edit'; tone = 'edit'; target = base(str(i.file_path))
       const d = diffCount(output)
       if (o.type === 'create') result = `new · ${plural(str(i.content).split('\n').length, 'line')}`
       else if (d) result = `+${d.add} −${d.del}`
       break
     }
     case 'Bash': {
-      verb = bashVerb(str(i.command)); target = shownCommand(str(i.command)); tone = 'run'
-      if (verb === 'test' && output !== undefined) {
-        const s = testSummary(text)
-        if (s && /failed/.test(s)) { result = s; icon = '✗'; tone = 'err' }
-        else if (s) { result = s; icon = '✓'; tone = 'ok' }
-      }
-      if (!result && output !== undefined) {
-        const n = text.split('\n').filter(l => l.trim()).length
-        const l = lastLine(text)
-        if (o.backgroundTaskId) result = 'in background'
+      const sh = shellStep(str(i.command), ctx)
+      verb = sh.verb; target = sh.target
+      tone = sh.kind === 'edit' ? 'edit' : sh.kind === 'run' ? 'run' : 'look'
+      if (sh.kind === 'edit') icon = '✎'
+      const n = text.split('\n').filter(l => l.trim()).length
+      if (output !== undefined) {
+        const t = sh.withTest ? testSummary(text) : null
+        if (t) { result = t; icon = /failed/.test(t) ? '✗' : '✓'; tone = /failed/.test(t) ? 'err' : 'ok' }
+        else if (o.backgroundTaskId) result = 'in background'
         else if (o.interrupted) result = 'interrupted'
-        else if (!n) result = 'done'
-        else if (verb !== 'test' && n <= 3 && l.length <= 48) result = l
-        else result = plural(n, 'line')
+        else if (sh.kind === 'read') result = n ? plural(n, 'line') : ''
+        else if (sh.kind === 'search') result = plural(n, 'hit')
+        else if (sh.kind === 'run') { const l = lastLine(text); result = !n ? 'done' : n <= 3 && l.length <= 40 ? l : plural(n, 'line') }
+        else if (sh.kind === 'test') result = n ? plural(n, 'line') : 'done'
       }
       break
     }
@@ -240,6 +352,11 @@ export function rawLines(tool: string, input: unknown, output: unknown): RawLine
     }
     return out
   }
+  if (tool === 'Bash') {
+    const cmd = str(obj(input).command).split('\n').map((t, n) => ({ text: `${n ? '  ' : '$ '}${t}`, kind: 'meta' as const }))
+    const body = outputText(output).replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '')
+    return [...cmd, ...(body ? body.split('\n').map(t => ({ text: t.replace(/\t/g, '  ') })) : [])]
+  }
   if (tool === 'Write' && typeof obj(input).content === 'string') return str(obj(input).content).split('\n').map(text => ({ text: `+${text}`, kind: 'add' as const }))
   const text = outputText(output).replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '')
   return text ? text.split('\n').map(t => ({ text: t.replace(/\t/g, '  ') })) : [{ text: '(no output)', kind: 'meta' }]
@@ -280,17 +397,51 @@ const toneColor = (t: Tone) => ({ look: C.body, edit: C.work, ok: C.done, run: C
 const VERB_W = 9
 const INDENT = 2 // the rail and its space
 
+const TARGET_W = 40 // the target column; results line up after it (MUSE's review 1)
+
+// The target column's width at this terminal width.
+export function targetWidth(columns: number): number {
+  return Math.max(12, Math.min(TARGET_W, columns - INDENT - 2 - VERB_W - 18))
+}
+
+// Up to `lines` lines of `w` columns, cut at a word, "…" when there's more.
+export function clampWords(text: string, w: number, lines: number): string[] {
+  const all = wrap(text.replace(/\s+/g, ' ').trim(), w)
+  if (all.length <= lines) return all
+  const out = all.slice(0, lines)
+  let last = out[lines - 1]
+  while ([...last].length + 1 > w && last.includes(' ')) last = last.slice(0, last.lastIndexOf(' '))
+  out[lines - 1] = `${last.replace(/[\s,;:.]+$/, '')}…`
+  return out
+}
+
 function stepLine(el: any, key: string, step: Step, columns: number, onPress: () => void) {
   const { Button, Text } = el
-  const room = Math.max(8, columns - INDENT - 2 - VERB_W - (step.result ? [...step.result].length + 2 : 0) - 2)
   const isThink = step.tone === 'think'
+  const lead = INDENT + 2 + VERB_W
+  if (isThink) {
+    // Thinking: the summary's words, up to two lines, cut at a word.
+    const [one, two] = clampWords(step.target, Math.max(12, columns - lead - 1), 2)
+    return (
+      <Button key={key} plain onPress={onPress}>
+        <Text color={C.gutter}>┊ </Text>
+        <Text color={C.think}>{step.icon} </Text>
+        <Text color={C.think}>{step.verb.padEnd(VERB_W)}</Text>
+        <Text color={C.meta} italic>{one}</Text>
+        {two ? <Text color={C.gutter}>{'\n┊ '}</Text> : ''}
+        {two ? <Text color={C.meta} italic>{' '.repeat(lead - INDENT)}{two}</Text> : ''}
+      </Button>
+    )
+  }
+  const tw = targetWidth(columns)
+  const target = step.result ? fit(step.target, tw).padEnd(tw) : fit(step.target, columns - lead - 1)
   return (
     <Button key={key} plain onPress={onPress}>
       <Text color={C.gutter}>┊ </Text>
       <Text color={toneColor(step.tone)}>{step.icon} </Text>
-      <Text color={isThink ? C.think : C.meta}>{step.verb.padEnd(VERB_W)}</Text>
-      <Text color={isThink ? C.meta : C.body} italic={isThink}>{fit(step.target, room)}</Text>
-      {step.result ? <Text color={step.tone === 'err' ? C.err : C.meta}>{'  '}{step.result}</Text> : ''}
+      <Text color={C.meta}>{step.verb.padEnd(VERB_W)}</Text>
+      <Text color={C.body}>{target}</Text>
+      {step.result ? <Text color={step.tone === 'err' ? C.err : step.tone === 'ok' ? C.done : C.meta}>{'  '}{fit(step.result, Math.max(6, columns - lead - tw - 3))}</Text> : ''}
     </Button>
   )
 }
@@ -329,6 +480,35 @@ export async function timelineStart($: any, cwd: string | undefined) {
   } catch { /* defaults */ }
 }
 
+// ── the closing line: "Cooked for 26s · 9 steps" ──
+
+const turns = atom({ plugin: 'pals', key: 'turns' } as const, [], { shape: 'turns-1' })
+const T = { startedAt: 0, steps: 0, inTurn: false }
+
+export async function timelineTurnStart($: any) {
+  T.startedAt = await $.clock.now(); T.steps = 0; T.inTurn = true
+}
+
+export async function timelineTurnEnd($: any) {
+  if (!T.inTurn) return
+  const now = await $.clock.now()
+  const done = { ms: now - T.startedAt, steps: T.steps, at: now }
+  T.inTurn = false
+  await update($, turns, (list: TurnSteps[]) => [...(list ?? []), done].slice(-60))
+}
+
+export function duration(ms: number): string {
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+function clock(at: number): string {
+  try { return new Date(at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) } catch { return '' }
+}
+
 type Call = { id: string; tool: string; input: unknown; output: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean }
 
 // The lines for some calls: each call, and its raw output when opened.
@@ -350,7 +530,7 @@ async function thoughtRow($: any, e: any, el: any) {
   const columns = e.viewport?.columns ?? 100
   const text = String(e.props.text ?? '').trim()
   const open = await read($, memberOf(isOpen, e))
-  const rows = [stepLine(el, 'thought', { icon: '◇', verb: 'thinking', target: gist(text), result: '', tone: 'think' }, columns,
+  const rows = [stepLine(el, 'thought', { icon: '◇', verb: 'thinking', target: text.replace(/[`*_]/g, ''), result: '', tone: 'think' }, columns,
     () => void update($, memberOf(isOpen, e), (v: boolean | undefined) => !v))]
   if (open) rows.push(rawBlock(el, 'thought-raw', wrap(text, Math.max(20, columns - 8)).map(t => ({ text: t, kind: 'meta' as const })), columns))
   return rows
@@ -381,6 +561,25 @@ export function registerTimeline(on: any, isPal: Gate) {
     if (!live() || e.props.isSummary !== true || !String(e.props.text ?? '').trim()) return next(e)
     const el = $.ui.resolve(e)
     return <el.Box flexDirection="column">{await thoughtRow($, e, el)}</el.Box>
+  }).catch(passOnError)
+
+  // Count the main loop's calls, for the closing line.
+  on('tool.call', ($: any, e: any, next: any) => {
+    if (e.agentId === undefined && T.inTurn) T.steps++
+    return next(e)
+  }).catch(passOnError)
+
+  // The turn's closing line, with its steps: "✻ Cooked for 26s · 9 steps · done 6:11 PM".
+  on('ui.render', { component: 'TurnDuration' }, async ($: any, e: any, next: any) => {
+    const p = e.props
+    if (!live() || p.isExpanded || p.waitingFor) return next(e)
+    const list: TurnSteps[] = (await read($, turns)) ?? []
+    let best: TurnSteps | undefined
+    for (const t of list) if (Math.abs(t.ms - p.durationMs) < 3000 && (!best || Math.abs(t.ms - p.durationMs) < Math.abs(best.ms - p.durationMs))) best = t
+    if (!best || !best.steps) return next(e)
+    const { Text } = $.ui.resolve(e)
+    const at = clock(best.at)
+    return <Text color={C.meta}>✻ {p.word} for {duration(p.durationMs)} · {plural(best.steps, 'step')}{at ? ` · done ${at}` : ''}</Text>
   }).catch(passOnError)
 
   // "Read 3 files, searched 2 patterns" → a line per call.
