@@ -953,7 +953,141 @@ try {
     assert.deepEqual(order(), ["Delta", "Gamma", "Beta", "Alpha"], "with a group made too: before Beta in Unassigned");
     fixtures.spaces = keep.spaces; fixtures.shared["crew.marks"] = keep.marks; fixtures.shared.crew = keep.crew; fixtures.shared["crew.settings"] = {};
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges; drag to reorder)");
+  // ── Topic areas in the Topics list (T105 stage 2, DeNon's pick B: an area switcher in one row
+  // of chips over the same four-row list). ───────────────────────────────────────────────────
+  {
+    const keep = { spaces: fixtures.spaces, agents: fixtures.agents, panes: fixtures.panes, areas: fixtures.shared["crew.areas"] };
+    const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
+    const tab = (id, name, status, changed = 1, active = false) => ({ id, name, status, changed_at: changed, active });
+    const big = { ...fixtures.spaces[0], id: "s50", name: "Big Pal", status: "working", tabs: [
+      tab("a1", "rel-harden", "idle", 50, true), tab("a2", "rel-docs", "idle", 40), tab("a3", "topics-look", "working", 90), tab("a4", "pal-looks", "idle", 10),
+      tab("a5", "desk", "blocked", 80), tab("a6", "landing", "idle", 5), tab("a7", "scratch", "idle", 3), tab("a8", "old-notes", "idle", 2)] };
+    const plain = { ...fixtures.spaces[1], id: "s51", name: "Plain Pal", tabs: [tab("p1", "general", "idle", 1, true)] };
+    fixtures.spaces = [big, plain];
+    // Awake (an agent running): rel-harden, topics-look, desk. The rest are asleep.
+    fixtures.panes = ["a1", "a3", "a5", "p1"].map((t, i) => ({ tab: t, terminal: `y${i}`, program: { agent: true, key: "claude", name: "Claude Code" } }));
+    fixtures.agents = [{ space: "s50", tab: "a3", status: "working" }, { space: "s50", tab: "a5", status: "blocked" }, { space: "s50", tab: "a1", status: "idle" }];
+    const store = crew.cleanAreas({ pals: { "big pal": { areas: [{ id: "a-rel001", name: "Releases" }, { id: "a-side01", name: "Sidebar and look" }, { id: "a-empty1", name: "Empty" }, { id: "bad", name: "x" }],
+      topics: { "rel-harden": "a-rel001", "#rel-docs": "a-rel001", "topics-look": "a-side01", "Pal_Looks": "a-side01", desk: "a-gone00", "": "a-rel001" } }, Nobody: { areas: [] }, Odd: 3 } });
+    // The store, cleaned as the command-line side cleans it.
+    assert.deepEqual(Object.keys(store.pals), ["big pal"], "pals with no areas, and junk, are dropped");
+    assert.deepEqual(store.pals["big pal"].areas.map((a) => a.name), ["Releases", "Sidebar and look", "Empty"]);
+    assert.deepEqual(store.pals["big pal"].topics, { "rel-harden": "a-rel001", "rel-docs": "a-rel001", "topics-look": "a-side01", Pal_Looks: "a-side01" }, "dangling filings are dropped");
+    assert.deepEqual(crew.cleanAreas(null), { pals: {} }); assert.deepEqual(crew.cleanAreas("x"), { pals: {} });
+    assert.equal(crew.areaOfTopic("Big Pal", "#pal-looks", store).name, "Sidebar and look", "names match as pal names do (case, - and _)");
+    assert.equal(crew.areaOfTopic("Big Pal", "desk", store), null);
+    assert.equal(crew.anyAreas(store), true); assert.equal(crew.anyAreas({ pals: {} }), false);
+    // The views, in chip order. Live: every awake topic and the one on screen. Empty areas are left out.
+    const awake = new Set(["a1", "a3", "a5"]), has = (t) => awake.has(t.id);
+    const views = crew.areaViews("Big Pal", big.tabs, has, store);
+    assert.deepEqual(views.map((v) => [v.id, v.name, v.tabs.map((t) => t.name).join(",")]), [
+      ["live", "Live", "rel-harden,topics-look,desk"],
+      ["a-rel001", "Releases", "rel-harden,rel-docs"],
+      ["a-side01", "Sidebar and look", "topics-look,pal-looks"],
+      ["none", "Unsorted", "desk,landing,scratch,old-notes"],
+      ["all", "All", big.tabs.map((t) => t.name).join(",")]]);
+    assert.deepEqual(views.map((v) => [v.working, v.asks]), [[1, 1], [0, 0], [1, 0], [0, 1], [1, 1]], "each view knows what works and what asks in it");
+    assert.ok(views[0].tabs.some((t) => t.status === "blocked"), "a topic that needs you is always in Live, whatever its area");
+    // Nothing awake: Live is the shown topic and the four most recently active, so it's never empty.
+    assert.deepEqual(crew.areaViews("Big Pal", big.tabs, () => false, store)[0].tabs.map((t) => t.name), ["rel-harden", "rel-docs", "topics-look", "desk"]);
+    // A pal with no areas of its own, once anyone has areas: Live and All only.
+    assert.deepEqual(crew.areaViews("Plain Pal", plain.tabs, () => true, store).map((v) => v.id), ["live", "all"]);
+
+    // In the sidebar. No areas anywhere: no chip row, the list is every topic (as before).
+    Object.assign(roster, { width: 304, chSearch: { value: () => "", set_value() {}, focus() {} }, chSearchOpen: false, areaView: {}, areaX: {}, areaShownKey: null });
+    delete fixtures.shared["crew.areas"]; fixtures.shared["crew.settings"] = {};
+    const heroOfBig = () => roster.heroCard({ space: big, bot: crew.botOf(big) }, t, d, 304);
+    // (The list keeps its own order: what asks you, then what works, then the rest; compare as sets.)
+    const rowsOf = (h) => ids(h).filter((n) => /^hero-ch-a\d$/.test(n.args.id?.[0] ?? "")).map((n) => n.args.id[0].slice(8)).sort();
+    let h = heroOfBig();
+    assert.ok(!ids(h).some((n) => n.args.id?.[0] === "hero-areas"), "no areas anywhere: no chip row");
+    assert.equal(rowsOf(h).length, 8, "and every topic is listed");
+    const artH = (x) => all(x).filter((n) => n.args.h && !n.args.id?.[0]?.startsWith("hero-ch-")).map((n) => n.args.h[0]).join(",");
+    // With areas: one 26 px chip row, Live chosen, the list is the Live view.
+    fixtures.shared["crew.areas"] = store;
+    h = heroOfBig();
+    const chipRow = ids(h).find((n) => n.args.id?.[0] === "hero-areas");
+    assert.ok(chipRow && chipRow.args.h[0] === 26, "a 26 px row of chips");
+    const track = ids(h).find((n) => n.args.id?.[0] === "hero-areas-track");
+    assert.ok(track.calls.includes("overflow_hidden") && track.calls.includes("on_scroll_wheel") && track.args.h[0] === 22, "one row, clipped, scrolled sideways by the wheel");
+    const chipIds = () => ids(heroOfBig()).filter((n) => n.args.id?.[0]?.startsWith("hero-area-")).map((n) => n.args.id[0].slice(10));
+    assert.deepEqual(chipIds(), ["live", "a-rel001", "a-side01", "none", "all"]);
+    assert.deepEqual(rowsOf(h), ["a1", "a3", "a5"], "Live: the awake topics");
+    const chipOf = (hh, id) => ids(hh).find((n) => n.args.id?.[0] === `hero-area-${id}`);
+    assert.equal(chipOf(h, "live").args.bg[0], d.me, "the chosen chip is filled");
+    assert.equal(chipOf(h, "a-rel001").args.bg[0], d.raised);
+    assert.ok(text({ node: chipOf(h, "a-side01") }).includes("Sidebar and look") && text({ node: chipOf(h, "a-side01") }).includes("2"), "a chip: the name and how many");
+    const dotOf = (n) => n.kids.map((k) => k.node).find((x) => x.args.size?.[0] === 6)?.args.bg[0] ?? null;
+    assert.equal(dotOf(chipOf(h, "a-side01")), d.info, "a blue dot: something in it works");
+    assert.equal(dotOf(chipOf(h, "none")), d.warn, "an amber dot: something in it asks you");
+    assert.equal(dotOf(chipOf(h, "a-rel001")), null, "quiet: no dot");
+    assert.match(chipOf(h, "none").args.tooltip[0], /Unsorted: 4 topics, 1 needs you/);
+    // The header still counts every topic.
+    assert.ok(text({ node: ids(h).find((n) => n.args.id?.[0] === "hero-ch-head") }).includes("8"), "Topics still says 8");
+    // A click on a chip shows that area; the choice is per pal and is remembered while the app runs.
+    let notes = 0;
+    chipOf(h, "a-rel001").args.on_click[0]({}, { notify() { notes++; } });
+    assert.equal(notes, 1);
+    h = heroOfBig();
+    assert.deepEqual(rowsOf(h), ["a1", "a2"], "Releases: its two topics");
+    assert.equal(chipOf(h, "a-rel001").args.bg[0], d.me);
+    chipOf(h, "all").args.on_click[0]({}, { notify() {} });
+    assert.equal(rowsOf(heroOfBig()).length, 8, "All: every topic");
+    // A view that goes away (its last topic was unfiled) falls back to Live.
+    roster.areaView.s50 = "a-gone00";
+    assert.deepEqual(rowsOf(heroOfBig()), ["a1", "a3", "a5"]);
+    // A search looks through every topic, whatever the view.
+    roster.areaView.s50 = "a-rel001"; roster.chSearchOpen = true; roster.chSearch = { value: () => "notes", set_value() {}, focus() {} };
+    assert.deepEqual(rowsOf(heroOfBig()), ["a8"], "search finds a topic outside the shown area");
+    roster.chSearchOpen = false; roster.chSearch = { value: () => "", set_value() {}, focus() {} };
+    // Every pal gets the row once areas exist, so the hero is the same height whichever pal shows.
+    roster.areaView = {};
+    const hPlain = roster.heroCard({ space: plain, bot: crew.botOf(plain) }, t, d, 304);
+    assert.deepEqual(ids(hPlain).filter((n) => n.args.id?.[0]?.startsWith("hero-area-")).map((n) => n.args.id[0].slice(10)), ["live", "all"], "a pal with no areas: Live and All");
+    assert.equal(ids(hPlain).find((n) => n.args.id?.[0] === "hero-areas").args.h[0], 26);
+    const boxH = (x) => all(x).find((n) => n.args.h?.[0] === 132 && n.args.bg?.[0] === "#030304");
+    assert.ok(boxH(hPlain) && boxH(heroOfBig()), "and the well is still its fixed 132 px for both");
+    // The wheel slides the chips when they don't fit, and never past the ends; at 304 px these five need more room than there is.
+    roster.areaX = {}; roster.areaShownKey = null;
+    const tr = () => ids(heroOfBig()).find((n) => n.args.id?.[0] === "hero-areas-track");
+    const strip = (n) => n.kids[0].node.args.left[0];
+    assert.equal(strip(tr()), -0, "starts at the left");
+    let moved = 0;
+    tr().args.on_scroll_wheel[0]({ delta: { x: 0, y: -60 } }, { notify() { moved++; }, stop_propagation() {} });
+    assert.ok(moved === 1 && strip(tr()) === -60, "the wheel slides the chips");
+    tr().args.on_scroll_wheel[0]({ delta: { x: -5000, y: 0 } }, { notify() {}, stop_propagation() {} });
+    const end = -strip(tr());
+    assert.ok(end > 60 && end < 400, `it stops at the end (${end})`);
+    tr().args.on_scroll_wheel[0]({ delta: { x: 5000, y: 0 } }, { notify() {}, stop_propagation() {} });
+    assert.equal(strip(tr()), -0, "and at the start");
+    // Choosing the last chip brings it into view.
+    roster.areaView = { s50: "all" };
+    assert.ok(-strip(tr()) > 0, "the chosen chip is scrolled into view");
+    // Folded: the header alone, no chips.
+    fixtures.shared["crew.settings"] = { heroTopicsFolded: true };
+    assert.ok(!ids(heroOfBig()).some((n) => n.args.id?.[0] === "hero-areas"), "folded: no chip row");
+    fixtures.shared["crew.settings"] = {};
+    // A renamed topic: the roster says so, once, and only for a topic that is filed.
+    roster.tabNames = undefined; roster.areaView = {};
+    roster.followRenames();
+    assert.equal(roster.tabNames.get("a2"), "rel-docs");
+    fixtures.spaces = [{ ...big, tabs: big.tabs.map((x) => x.id === "a2" ? { ...x, name: "release-docs" } : x.id === "a7" ? { ...x, name: "scratchpad" } : x) }, plain];
+    const ran = []; const realExec = fixtures.exec;
+    roster.followRenames();
+    assert.equal(roster.tabNames.get("a2"), "release-docs", "the new name is remembered");
+    assert.equal(roster.tabNames.get("a7"), "scratchpad");
+    fixtures.spaces = [plain]; roster.followRenames();
+    assert.ok(!roster.tabNames.has("a2") && roster.tabNames.has("p1"), "closed topics are forgotten");
+    void ran; void realExec; void artH;
+    // The topic's right-click menu: an "Area: …" row once the pal has areas, opening the list.
+    const menuSrc = readFileSync(join(root, "mods/crew-menu/main.js"), "utf8");
+    assert.match(menuSrc, /when\(areasOf\(space\.name\)\.areas\.length > 0, \(el\) => el\.child\(line\(\)\)\s*\.child\(item\("m-area"/, "the Area row shows only when the pal has areas");
+    assert.match(menuSrc, /if \(p\.what === "area"\)[\s\S]{0,700}fileTopic\(space\.name, channelName\(tab\), a\.id \? a\.name : null\)/, "the list files the topic, or unfiles it");
+    Object.assign(fixtures, { spaces: keep.spaces, agents: keep.agents, panes: keep.panes });
+    if (keep.areas === undefined) delete fixtures.shared["crew.areas"]; else fixtures.shared["crew.areas"] = keep.areas;
+    roster.areaView = {}; roster.areaX = {};
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges; drag to reorder; topic areas)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

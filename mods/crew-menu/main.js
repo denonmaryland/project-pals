@@ -14,6 +14,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
+  areasOf, areaOfTopic, fileTopic,
   canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
   crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview,
   powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL,
@@ -111,6 +112,17 @@ export default class CrewMenu extends View {
 
     if (!space) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That's gone."));
 
+    // A topic's area: the pal's areas and Unsorted, the current one ticked (T105).
+    if (p.what === "area") {
+      const tab = space?.tabs.find((x) => x.id === p.tab);
+      if (!tab) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That topic is gone."));
+      const cur = areaOfTopic(space.name, channelName(tab))?.id ?? null;
+      root.child(title(`#${channelName(tab)} · area`));
+      for (const a of [...areasOf(space.name).areas, { id: null, name: "Unsorted" }]) {
+        root.child(item(`m-area-${a.id ?? "none"}`, cur === a.id ? "check" : null, a.name, () => { if (cur !== a.id) fileTopic(space.name, channelName(tab), a.id ? a.name : null); }));
+      }
+      return root;
+    }
     if (p.what === "tab") {
       const tab = space.tabs.find((x) => x.id === p.tab);
       if (!tab) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That topic is gone."));
@@ -139,6 +151,12 @@ export default class CrewMenu extends View {
         .child(moves("m-move", (dir) => canMoveChannel(space, tab, dir), (dir) => moveChannel(space, tab, dir)))
         .child(div().px(10).pt(8).pb(4).text_size(12).text_color(t.dim).child("Color"))
         .child(h_flex().px(8).pb(6).gap(4).flex_wrap().child(swatch(null)).children(TAB_COLORS.map((k) => swatch(k))))
+        // Area (T105): which of the pal's areas this topic is filed under; a click opens the list
+        // (its own small menu, so this one doesn't grow by a row per area). Only once the pal has
+        // areas (made with `pal topic area`, or by the pal sorting its own topics).
+        .when(areasOf(space.name).areas.length > 0, (el) => el.child(line())
+          .child(item("m-area", "ds-tree", `Area: ${areaOfTopic(space.name, channelName(tab))?.name ?? "Unsorted"}`,
+            () => openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "area", space: space.id, tab: tab.id } }))))
         .child(line())
         .child(item("m-rename", null, "Rename", () => renameChannel(tab)))
         .child(item("m-close", "x", "Close topic", () => run("tab.close", { id: tab.id }), t.blocked));

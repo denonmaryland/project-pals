@@ -777,8 +777,29 @@ rectangular segments and tags.
   area only unfiles its topics. Topics are filed by name, so a renamed topic keeps its area
   only when `pal topic area renamed <Pal> <old> <new>` is called (the app will, in stage 2).
   Watch-out: nothing may ever resolve an address through an area. `tests/test_areas.py`.
-  Still to come: the sidebar's chip row and Live view (2), the pal proposing its own sort (3),
-  the Shelf (4), area headings in the topic picker and on the pal's page (5).
+  Stage 2 (the sidebar). The roster shares the file as `crew.areas` (`crew.js syncAreas`, with
+  the settings, every 3s). Until any pal has an area, the Topics list is exactly as before. Once
+  one does, EVERY pal's Topics list gets one 26px row of chips between its header and the well
+  (one row whatever the pal has, so the hero's height never differs between pals), and the
+  list shows one view at a time (`areaViews`), in chip order: **Live** (the default: every
+  topic with an agent running, and the one on screen; when nothing is awake, the shown one and
+  the four most recently active), the pal's areas that have topics, **Unsorted** (when the pal
+  has areas and some topics aren't filed), **All**. A topic that needs you is awake, so it is
+  always in Live: nothing that needs you can hide in an area. A chip (22px, r11, #161617; the
+  chosen one #22364A with a blue edge) is the view's name, its count, and a 6px dot while
+  something in it works (blue) or asks you (amber); its tooltip says the counts. More chips
+  than fit slide sideways with the wheel or a trackpad swipe (clamped; widths are estimated at
+  5.9px a character, for the limits only), and the chosen chip is brought into view. The choice
+  is per pal and lasts while the app runs (it starts at Live). "Topics N" still counts every
+  topic; a search looks through all of them whatever the view; folded, there are no chips.
+  Right-click a topic → "Area: <name>" (only when the pal has areas) opens its own small list
+  (`crew-menu` `what: "area"`: the areas and Unsorted, the current one ticked) that files it
+  through `pal topic area set`. The roster follows renames (`followRenames`: it remembers each
+  tab's name and calls `pal topic area renamed` when a filed one changes). Watch-outs: a new
+  topic made while an area shows is NOT filed into it yet; areas can't be made from the app
+  yet (use `pal topic area add`, or wait for stage 3).
+  Still to come: the pal proposing its own sort (3), the Shelf (4), area headings in the topic
+  picker and on the pal's page (5).
   **Rooms fold** (T99, DeNon 2026-11-09): the sidebar's Rooms header is a button: "Rooms", how
   many, a dot while a room is busy (amber: a topic in it asks you; blue: one is working; rooms
   don't track unread messages, so that is what "news" means here), and a chevron. A click folds

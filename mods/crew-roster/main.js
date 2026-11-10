@@ -14,7 +14,8 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, toolStrip, deskMode, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, toolStrip, deskMode,
+  anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
   toggleChief, withoutChief, isChiefRec, toggleComputer } from "./crew.js";
@@ -81,6 +82,8 @@ export default class CrewRoster extends View {
     const sync = () => cx.spawn(async (cx) => {
       try { await syncSettings(); } catch {}
       try { await syncFactories(); } catch {}
+      try { await syncAreas(); } catch {}
+      this.followRenames();
       if (!this.laidOut && applyLayout()) { this.laidOut = true; cx.notify(); }
       // A first install: the welcome tour opens on Home by itself, once per window (it resumes at
       // the screen it was left on). A replay from the gear menu shows Home itself.
@@ -850,7 +853,14 @@ export default class CrewRoster extends View {
     const ps = panes(), withAgent = agentTabs(ps), hasAgent = (x) => withAgent.has(x.id);
     const ordered = channelOrder(space, bot, ps);
     const q = this.chSearchOpen ? this.chSearch.value().trim().toLowerCase() : "";
-    const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
+    // Areas (T105, DeNon's pick B): once anyone has filed a topic, the list shows one view at a
+    // time, chosen from a row of chips: Live (the default), one of this pal's areas, Unsorted, or
+    // All. A search looks through every topic whatever the view. No areas anywhere: no chips, and
+    // the list is every topic, as it always was.
+    const views = anyAreas() ? areaViews(space.name, ordered, hasAgent) : null;
+    const viewId = views ? (views.some((v) => v.id === this.areaView?.[space.id]) ? this.areaView[space.id] : LIVE_VIEW) : null;
+    const inView = views ? views.find((v) => v.id === viewId).tabs : ordered;
+    const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : inView;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
     // No "+N more" in the header (DeNon, 2026-11-08: "Topics 18" says it; the cut fifth row, the
@@ -889,6 +899,7 @@ export default class CrewRoster extends View {
           .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
     }
     if (folded) return v_flex().pt(4).child(head);
+    const chips = views ? this.areaChips(space, views, viewId, d) : null;
     // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
     // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
     // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
@@ -929,13 +940,13 @@ export default class CrewRoster extends View {
     if (!list.length) {
       if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No topic matches "${this.chSearch.value().trim()}"`));
       else box.child(newRow(true));
-      return v_flex().pt(4).child(head).child(box);
+      return v_flex().pt(4).child(head).when(Boolean(chips), (el) => el.child(chips)).child(box);
     }
     const n = list.length, h = n > ROWS ? INNER : PAD + n * ROW;
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
     // A new pal or search starts at the top; then the shown topic is brought into view.
-    const listKey = `${space.id}|${q}`;
+    const listKey = `${space.id}|${q}|${viewId ?? ""}`;
     if (this.chListKey !== listKey) { this.chListKey = listKey; scrollTo(SID, 0); }
     sc.view = h;
     if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act ? PAD + act * ROW : 0, act ? ROW : PAD + ROW); }
@@ -943,7 +954,67 @@ export default class CrewRoster extends View {
     // there's more, and the pill thumb shows where you are.
     box.child(scrollArea(d, SID, v_flex().pl(4).pt(PAD).children(list.map(row)), { fade: "well" }).h(h).flex_none().w_full());
     if (n < ROWS && !q) box.child(newRow());
-    return v_flex().pt(4).child(head).child(box);
+    return v_flex().pt(4).child(head).when(Boolean(chips), (el) => el.child(chips)).child(box);
+  }
+
+  // The area chips (T105): ONE 26 px row whatever the pal has (DeNon: "one row of chips"), so the
+  // hero is the same height for every pal. More chips than fit scroll sideways with the wheel (or a
+  // trackpad's sideways swipe); the chosen chip is brought into view when it changes. A chip: the
+  // view's name, how many topics, and a dot while one in it works (blue) or asks you (amber). The
+  // chosen one is filled. Widths are estimated (areaChipW) for the scroll's limits only.
+  areaChips(space, views, viewId, d) {
+    const GAP = AREA_CHIP_GAP, PADX = 8;
+    const widths = views.map(areaChipW);
+    const total = widths.reduce((a, w) => a + w, 0) + GAP * (views.length - 1);
+    const room = Math.max(120, (this.width ?? 304) - 2 * PADX);
+    const max = Math.max(0, total + 12 - room);
+    const xs = this.areaX ??= {};
+    let x = Math.max(0, Math.min(max, xs[space.id] ?? 0));
+    // Bring the chosen chip into view when the choice (or the pal) changes.
+    const at = views.findIndex((v) => v.id === viewId);
+    const key = `${space.id}|${viewId}`;
+    if (this.areaShownKey !== key) {
+      this.areaShownKey = key;
+      const left = widths.slice(0, at).reduce((a, w) => a + w + GAP, 0), right = left + widths[at];
+      if (left < x) x = left; else if (right > x + room) x = right - room;
+      x = Math.max(0, Math.min(max, x));
+    }
+    xs[space.id] = x;
+    const chip = (v) => {
+      const on = v.id === viewId;
+      const dot = v.asks ? d.warn : v.working ? d.info : null;
+      const what = [`${v.tabs.length} topic${v.tabs.length === 1 ? "" : "s"}`, v.working && `${v.working} working`, v.asks && `${v.asks} need${v.asks === 1 ? "s" : ""} you`].filter(Boolean).join(", ");
+      return h_flex().id(`hero-area-${v.id}`).h(22).flex_none().items_center().gap(5).px(8).rounded(11).cursor_pointer()
+        .bg(on ? d.me : d.raised).border_1().border_color(on ? d.meEdge + "66" : d.line)
+        .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+        .tooltip(`${v.name}: ${what}`)
+        .on_click((_e, cx) => { (this.areaView ??= {})[space.id] = v.id; cx.notify(); })
+        .child(div().flex_none().text_size(11).line_height("14px").font_weight(500).text_color(on ? d.actFg : d.fg2).child(v.name))
+        .child(div().flex_none().text_size(11).line_height("14px").text_color(on ? d.infoText : d.fg4).child(String(v.tabs.length)))
+        .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot)));
+    };
+    return div().id("hero-areas").h(26).flex_none().px(PADX).pb(4)
+      .child(div().id("hero-areas-track").relative().h(22).overflow_hidden()
+        .on_scroll_wheel((e, cx) => {
+          const dx = (e.delta?.x || e.delta?.y || 0) / (Number(settings().zoom) || 1);
+          const next = Math.max(0, Math.min(max, (xs[space.id] ?? 0) - dx));
+          if (next !== xs[space.id]) { xs[space.id] = next; cx.stop_propagation(); cx.notify(); }
+        })
+        .child(h_flex().absolute().left(-Math.round(x)).top(0).h(22).gap(GAP).children(views.map(chip))));
+  }
+
+  // Topics filed under areas are filed by name (crewareas), so a rename has to be followed: the
+  // roster remembers each tab's name and, when one changes, says so (only for a topic that is filed).
+  followRenames() {
+    const names = this.tabNames ??= new Map();
+    const live = new Set();
+    for (const sp of spaces()) for (const tab of sp.tabs) {
+      live.add(tab.id);
+      const now = channelName(tab), was = names.get(tab.id);
+      if (was !== undefined && was !== now) topicRenamed(sp.name, was, now).catch(() => {});
+      names.set(tab.id, now);
+    }
+    for (const id of [...names.keys()]) if (!live.has(id)) names.delete(id);
   }
 
   // Put a pal to sleep (the hero's moon; the same as its menu's): keep its record (folder, brain,
