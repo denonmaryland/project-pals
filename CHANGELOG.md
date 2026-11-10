@@ -8,6 +8,9 @@
   longer says "up to date" after a new release. The button always asks GitHub afresh. A check that
   fails says so ("Couldn't check for updates", and why) instead of showing the old answer as new,
   and every check is a line in `data/crew-update.log`.
+- Pals editing the Desk's own code (`mods/crew-desk/…`) are no longer held for your approval as if
+  they were writing Desk cards. Writes into the cards themselves are still held, including through
+  a link that leads into them.
 
 ## 0.4.1: sleep, wake and a clean uninstall
 
