@@ -739,13 +739,16 @@ try {
     assert.equal(el.node.args.w[0], 24 + 2 * 16, "the icon is as wide as its chips");
     assert.equal(el.node.args.tooltip[0], "Orca #ops, Softly #main, Tiles #ui", "hover names every member");
     assert.ok(c.every((n) => n.kids.length === 1), "one head in each");
-    // Two members: two heads. A pal with two topics in the room counts once.
+    // Two members: two heads. One head per member (a seat), so a pal with several topics in the
+    // room shows once for each: three topics of one pal is a three-member room, not a one-member one.
     assert.equal(chips(crew.roomHeads(d, [mk("Orca", "ops"), mk("Softly", "main")], d.bg1, t)).length, 2);
+    assert.equal(chips(crew.roomHeads(d, [mk("Pals", "factories"), mk("Pals", "chief"), mk("Pals", "factories-chief")], d.bg1, t)).length, 3, "three seats of one pal: three heads");
     el = crew.roomHeads(d, [mk("Orca", "ops"), mk("Orca", "general"), mk("Softly", "main")], d.sel, t);
-    assert.equal(chips(el).length, 2, "one head per pal");
+    assert.equal(chips(el).length, 3, "one head per seat");
     assert.ok(el.node.args.tooltip[0].includes("Orca #ops, Orca #general"), "the tooltip still lists both topics");
     assert.equal(chips(el)[0].args.border_color[0], d.sel, "on the shown room the edge is the selection's colour");
-    // Five pals: three heads and "+2".
+    // Five members (here two pals' seats among them): three heads and "+2".
+    assert.ok(text({ node: chips(crew.roomHeads(d, [mk("A", "1"), mk("A", "2"), mk("B", "1"), mk("B", "2"), mk("C", "1")], d.bg1, t))[3] }).includes("+2"), "+N counts members, not pals");
     el = crew.roomHeads(d, ["A", "B", "C", "D", "E"].map((x) => mk(x, "x")), d.bg1, t);
     c = chips(el);
     assert.equal(c.length, 4);
