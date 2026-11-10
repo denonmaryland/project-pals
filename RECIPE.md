@@ -170,8 +170,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     with a topic working or asking you unfolds its live topics under its row, asks you first,
     then working, then done, latest first, at most four and a 20px "+N more". They sit in a soft
     recessed channel (DeNon's pick, 2026-11-09, T75; `crew.js sunk "soft"`) that starts at the
-    look's text column (`palstyles.js textLeft`): r7, no edge, a shade darker than the sidebar
-    (#0B0B0C), a dark line inside its top with a shadow that fades down over 15px, a very faint
+    look's text column (`palstyles.js textLeft`): r7, no edge, well darker than the sidebar
+    (#070708; deepened after the first real screenshots, DeNon 2026-11-09), a dark line inside its top with a shadow that fades down over 15px, a very faint
     light line at the bottom (gpui-kit has no gradients or inner shadows, so these are 1 to 8px
     bands in a clipped box). Each topic row is 24px: the mark (the chosen working indicator, an
     amber dot when it asks you, a check when done) in a 16px slot on the left, the colour bar,
@@ -414,7 +414,7 @@ rectangular segments and tags.
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
     rows (`#`, the name, the working indicator or an amber dot, a green check or when it last changed), up to
     four, in a recessed well (DeNon's pick, 2026-11-09, T75; `crew.js sunk "deep"`): 8px in from
-    each side, r8, #060607 with a dark edge, a shadow under its top that fades over 15px and a
+    each side, r8, #030304 with a dark edge, a shadow under its top that fades over 31px and a
     faint light line at the bottom; the rows start 4px down and 4px in. The shown topic is a
     raised tile (`raisedTile`: #1A1A1C, r5, a light line inside its top, a small shadow). The box
     is ALWAYS four rows plus the 12px peek (132px, edge included), whatever the pal has,

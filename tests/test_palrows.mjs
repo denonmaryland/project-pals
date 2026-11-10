@@ -159,7 +159,7 @@ try {
       // that fades down) and a faint light line at the bottom.
       const well = box.kids[0].node;
       assert.equal(box.kids.length, 1, `${st.id}: the tree is one well`);
-      assert.ok(well.calls.includes("overflow_hidden") && well.args.rounded?.[0] === 7 && well.args.bg?.[0] === "#0B0B0C" && !well.calls.includes("border_1"), `${st.id}: a soft well, no edge`);
+      assert.ok(well.calls.includes("overflow_hidden") && well.args.rounded?.[0] === 7 && well.args.bg?.[0] === "#070708" && !well.calls.includes("border_1"), `${st.id}: a soft well, no edge`);
       const shade = well.kids.map((k) => k.node).filter((n) => n.calls.includes("absolute"));
       assert.ok(shade.length >= 3 && shade[0].args.top?.[0] === 0 && shade[0].args.h?.[0] === 1 && shade.at(-1).args.bottom?.[0] === 0, `${st.id}: the well's shade and bottom line`);
       assert.ok(sub.every((n) => well.kids.some((k) => k.node === n)), `${st.id}: the topic rows are in the well`);
@@ -221,7 +221,7 @@ try {
     assert.ok(b && b.calls.includes("flex_none") && b.calls.includes("overflow_hidden"), `${space.tabs.length} channels: the channel box is always 4 rows + the peek (132 px)`);
     // The box is a recessed well (DeNon's pick, 2026-11-09, T75): darker than the sidebar, a dark
     // edge, rounded, inset 8 px each side, the shade under its top edge drawn first.
-    assert.ok(b.args.bg?.[0] === "#060607" && b.calls.includes("border_1") && b.args.rounded?.[0] === 8 && b.args.mx?.[0] === 8, `${space.tabs.length} channels: the Topics list is a deep well`);
+    assert.ok(b.args.bg?.[0] === "#030304" && b.calls.includes("border_1") && b.args.rounded?.[0] === 8 && b.args.mx?.[0] === 8, `${space.tabs.length} channels: the Topics list is a deep well`);
     assert.ok(b.kids[0].node.calls.includes("absolute") && b.kids[0].node.args.top?.[0] === 0, "the well's shade is under the rows");
   }
   const outline = (p) => shape(p).replace(/h\[(30|120|90|60)\]/g, "h[list]");
