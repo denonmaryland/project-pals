@@ -743,10 +743,11 @@ rectangular segments and tags.
   `crew-roster.rooms-fold` (no key bound by default).
   **Room rows** (T101, DeNon's pick B, 2026-11-10: with a "#" a room read like a topic): 32px,
   the room's group-chat icon then its name; no "#" and no member count. The icon
-  (`crew.js roomHeads`) is the member pals' heads as round 24px chips (#161617, a 2px edge in
+  (`crew.js roomHeads`) is the members' heads as round 24px chips (#161617, a 2px edge in
   the row's own colour so they look cut out of each other) overlapping by 8px: at most three,
-  then a "+N" chip for the pals beyond. Each pal once, however many of its topics are in the
-  room. A head is the pal's own small pet head (`pets.js` small tile, 20x16, so Pal look
+  then a "+N" chip for the members beyond. One head per member (a seat: a pal's topic), so a pal
+  with three topics in a room shows three times and it reads as a three-member room (not each
+  pal once: that made a one-pal room look like one member). A head is the pal's own small pet head (`pets.js` small tile, 20x16, so Pal look
   colours apply), its mascot until the pet is drawn. Hover names every member ("Orca #ops,
   …"). An empty room shows one quiet "0" chip so names line up. No unread mark: rooms don't
   track unread messages.
