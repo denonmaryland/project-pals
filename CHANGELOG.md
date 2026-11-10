@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (after 0.4.2)
+## 0.4.2 — 2026-11-10
 
 - **A pal's board.** Click a pal and, before any terminal, you see its topics as cards in four
   columns by what each one waits for: Needs you (with the buttons to answer right there), Working,
@@ -10,7 +10,6 @@
   and every key still go straight to terminals, Esc goes to the terminal, and the app menu's
   "Clicking a pal opens…" brings the old click back. Ctrl+Shift+U opens it for the shown pal.
 
-## Unreleased (0.4.2)
 
 - **Pal look: colour presets for your pals and their laptop screens.** Settings → Pal look. Pick
   who gets which colour: each its own (as before, and still the default), all one colour, a
