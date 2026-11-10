@@ -1273,8 +1273,9 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   other state: a finished topic whose push is held sits here, and its card says it finished. A
   question plainly put to another pal isn't yours: that topic rests, marked "Asks a pal".
   *Working:* topics with a turn running, the longest-running first. *Resting:* finished and idle
-  topics, the newest finish first ("New" until you've had the board up since), then the asleep
-  ones; past four, each shrinks to one line. *Up next:* the pal's open tasks no topic has claimed,
+  topics, the newest finish first ("New" until you've had the board up since); past four, each
+  shrinks to one line. Under them, "Not running · N": the asleep topics and the ones with no pal in
+  them, one line each, three shown and the rest behind "N more not running" (a pal can have dozens). *Up next:* the pal's open tasks no topic has claimed,
   three at most, with Start a topic (the new-topic dialog, the task as its brief) and a link to the
   Tasks list. An empty Needs you or Up next folds to a 34 px rail.
 - **A topic's card:** state dot, `#topic`, how long (working) or when it finished; one or two
@@ -1294,7 +1295,10 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
 - **Keys** (while you aren't typing): Esc the aimed topic's terminal; R reviews what needs you one
   at a time (1–4 press that card's buttons, → or j the next, ← or k back, Esc stops); / or Enter
   the message box. Esc in the box leaves the box first.
-- **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read every 5 s while shown. It
+- **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read only while shown and only
+  when it's due: on showing, after your own click or message, when a topic's state or one of the
+  files behind what needs you changed (checked with one `stat` every 5 s), else every 15 s while a
+  topic works and every 60 s when none does. A topic's branch is read only while a pal runs in it. It
   is Today's view (`crewcomputer.today_view`) grown with each topic's `waits_for`, `needs`,
   `since`, `line`, `branch`, `stuck` and `blocked`, the pal's `needs` and `up_next`. Today itself
   stays the small read.

@@ -135,7 +135,10 @@ class Branch(unittest.TestCase):
         g("add", "b.txt"); g("commit", "-q", "-m", "add b")
         (d / "a.txt").write_text("one\n2\nthree\nfour\nfive\n")       # not committed yet
         f = crewboard.branch_facts({"path": str(d), "branch": "crew/x", "base": "main"})
-        self.assertEqual(f, {"name": "crew/x", "base": "main", "ahead": 2, "changed": 1, "added": 4, "removed": 1})
+        self.assertEqual(f, {"name": "crew/x", "base": "main", "ahead": 2, "added": 4, "removed": 1})
+        calls = []
+        crewboard.branch_facts({"path": str(d), "branch": "crew/x", "base": "main"}, git=lambda p, *a: calls.append(a) or "0")
+        self.assertEqual(len(calls), 2, "two git calls a topic: the board is re-read while it's up")
 
     def test_no_worktree_or_a_broken_one_is_none(self):
         import crewboard
@@ -184,7 +187,7 @@ class Board(unittest.TestCase):
             cards=[{"id": "c-1", "status": "needs you", "to": "Juniper#notes", "title": "Pick a name", "from": "Juniper#notes", "at_ms": T0 - 200},
                    {"id": "c-2", "status": "working", "to": "Juniper#notes", "title": "not waiting", "at_ms": 3}],
             lines={"checkout": {"text": "The fix is in.", "from": "turn", "at": T0 - 100, "asked": None}},
-            branches={"checkout": {"name": "crew/checkout", "base": "main", "ahead": 3, "changed": 2, "added": 22, "removed": 7}},
+            branches={"checkout": {"name": "crew/checkout", "base": "main", "ahead": 3, "added": 22, "removed": 7}},
             stalled={"t2": {"since": T0 - 25 * 60000, "bot": "Juniper", "channel": "api-tests"}},
             msgs={"t3": "Keep the image CDN, or serve the images ourselves?"}, now_ms=T0)
         base.update(kw)

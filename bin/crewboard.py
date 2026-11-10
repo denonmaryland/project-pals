@@ -9,7 +9,8 @@ about a topic's state. On top of that it adds, per topic:
   since      when its state began (the feed's working / finished / blocked events)
   line       one or two sentences in the pal's own words, read from its session file, with where
              they came from (`from`: turn, reply, asked) and when. No second model writes them.
-  branch     its worktree's branch against its base: commits ahead, files changed, lines + and −
+  branch     its worktree's branch against its base: commits ahead, lines + and − (two git calls,
+             and only for topics with a pal running: a pal can have dozens of dormant branches)
   stuck      minutes, when crewd marked it stalled; blocked: its blocked task and the reason
 
 and for the pal: `needs` (all of them, oldest first, so the longest wait is on top) and `up_next`
@@ -148,24 +149,22 @@ def _git(path, *args):
 
 
 def branch_facts(wt, git=_git):
-    """{name, base, ahead, changed, added, removed} for a topic's worktree ({path, branch, base});
-    None when it has none or git can't answer in time. Lines count everything since the branch left
-    its base, committed or not."""
+    """{name, base, ahead, added, removed} for a topic's worktree ({path, branch, base}); None when
+    it has none or git can't answer in time. Lines count everything since the branch left its base,
+    committed or not (git diff --merge-base: the work tree against where the branch forked)."""
     if not wt or not wt.get("path"):
         return None
     p, base = wt["path"], wt.get("base") or "main"
     try:
-        mb = git(p, "merge-base", base, "HEAD").strip()
-        ahead = int(git(p, "rev-list", "--count", f"{mb}..HEAD").strip() or 0)
+        ahead = int(git(p, "rev-list", "--count", f"{base}..HEAD").strip() or 0)
         added = removed = 0
-        for l in git(p, "diff", "--numstat", mb).splitlines():
+        for l in git(p, "diff", "--numstat", "--merge-base", base).splitlines():
             a, r_, _f = (l.split("\t", 2) + ["", ""])[:3]
             added += int(a) if a.isdigit() else 0
             removed += int(r_) if r_.isdigit() else 0
-        changed = sum(1 for l in git(p, "status", "--porcelain").splitlines() if l.strip())
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
-    return {"name": wt.get("branch") or "", "base": base, "ahead": ahead, "changed": changed, "added": added, "removed": removed}
+    return {"name": wt.get("branch") or "", "base": base, "ahead": ahead, "added": added, "removed": removed}
 
 
 def _topic_of(spec):

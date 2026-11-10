@@ -2325,7 +2325,8 @@ def board_data(today, space, rec, name, tasks, cards):
         if t.get("terminal") and t["state"] not in ("shell",):
             lines[t["topic"]] = crewboard.read_line(t["terminal"], t["state"], links)
         wt = (wts.get(tab["name"]) or wts.get("#" + t["topic"])) if tab else None
-        if wt:
+        # Branch facts cost two git calls each: only for topics with a pal running in them.
+        if wt and t["state"] not in ("shell", "asleep"):
             branches[t["topic"]] = crewboard.branch_facts(wt)
         if t["state"] == "blocked" and t.get("terminal"):
             msgs[t["terminal"]] = ((term_info(t["terminal"]) or {}).get("status") or {}).get("msg") or ""

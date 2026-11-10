@@ -63,6 +63,7 @@ try {
         if (args[0] === "desk" && args[1] === "send") return { stdout: JSON.stringify({ card: { id: "c-9", to: args[2] }, what: "queued" }), stderr: "", code: 0 };
         return { stdout: "ok\\n", stderr: "", code: 0 };
       }
+      if (name === "stat") return { stdout: fx.stat ?? "100 100 100 100", stderr: "", code: 0 };
       return { stdout: "", stderr: "", code: 0 };
     };
     export const hc = async () => ({ stdout: "", stderr: "", code: 0 });
@@ -153,6 +154,7 @@ try {
   assert.deepEqual(cols.resting.map((t) => t.topic), ["notes", "refunds"], "finished topics, then the asleep ones");
   assert.equal(cols.resting[0].fresh, true, "it finished after you last looked");
   assert.equal(cols.resting[1].fresh, false);
+  assert.deepEqual(cols.resting.map((t) => t.quiet), [false, true], "asleep (and topics with no pal in them) are the quiet ones");
   assert.deepEqual([cols.next.length, cols.nextTotal], [2, 4]);
   { const d2 = data(); d2.needs.push({ kind: "prompt", id: "f", topic: "notes", title: "Atlas, can you review the copy?", since: NOW - min });
     const c2 = c.boardColumns(d2, { who: "DeNon", pals: ["Orca", "Juniper", "Atlas"] });
@@ -174,15 +176,41 @@ try {
   assert.deepEqual(lastPal(), ["computer", "Juniper", "board", "--json"]);
   reset();
   b.render(cx);
-  for (const want of ["NEEDS YOU · 2", "WORKING · 2", "RESTING · 2", "UP NEXT · 4", "2 need you", "2 working", "Focus: checkout ships to beta on Friday",
+  for (const want of ["NEEDS YOU · 2", "WORKING · 2", "UP NEXT · 4", "2 need you", "2 working", "Focus: checkout ships to beta on Friday",
     "The fix is in, and it's writing the test for a late reply.", "#checkout", "git push origin crew/docs", "waiting 9 min", "waiting 1 h 37 m",
     "Keep the image CDN, or serve the images ourselves?", "Its pick: Keep the CDN. It's the smaller change.", "+212", "−87", "T45", "due Wed", "2 more",
-    "Blocked: needs the mail provider's test key", "STUCK 25 MIN", "ASLEEP", "To #perf"]) assert.ok(texts.includes(want), `the board shows “${want}”`);
+    "Blocked: needs the mail provider's test key", "STUCK 25 MIN", "RESTING · 1", "NOT RUNNING · 1", "To #perf"]) assert.ok(texts.includes(want), `the board shows “${want}”`);
   assert.ok(texts.some((x) => x.startsWith("It wants to ") && x.includes("Rewrote the setup guide.")), "an approval says what it lets through, and the topic's own words");
   assert.ok(texts.some((x) => x.startsWith("its words this turn · ") && x.endsWith("asked by you")));
   for (const id of ["pb-col-you", "pb-col-working", "pb-col-resting", "pb-col-next", "pb-need-a-1", "pb-need-h-1", "pb-topic-checkout", "pb-topic-refunds", "pb-task-T45", "pb-box", "pb-to"]) assert.ok(ids.has(id), id);
   assert.ok(!ids.has("pb-topic-docs") && !ids.has("pb-topic-perf"), "a topic that waits for you shows as its need, once");
   assert.ok(!ids.has("pb-now"), "Interrupt only shows for a working topic");
+
+  // ── re-reading: only when something changed, or the last read is old ──
+  { const reads = () => pals().filter((x) => x[0] === "computer").length;
+    b.check(cx); await tick();                                         // the first check notes what it looks like, and reads
+    const n0 = reads();
+    b.check(cx); await tick(); b.check(cx); await tick();
+    assert.equal(reads(), n0, "nothing changed and the read is fresh: no pal command, just one stat");
+    assert.deepEqual(fx.calls.filter((x) => x[0] === "stat").at(-1).slice(1, 3), ["-c", "%Y"]);
+    assert.ok(fx.calls.filter((x) => x[0] === "stat").at(-1).some((a) => a.endsWith("/data/crew-home/home.json")));
+    fx.stat = "100\n100\n101\n100\n";                                 // an approval arrived
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 1, "a watched file changed: read now");
+    fx.spaces[1].tabs[1].status = "working";                           // a topic started a turn
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 2, "a topic's state changed: read now");
+    b.readAt = Date.now() - 16000;                                     // a topic is working: its words move on
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 3, "15 s with a topic working: read");
+    const calm = data(); for (const t of calm.topics) if (t.state === "working") t.state = "idle";
+    b.data = calm; b.readAt = Date.now() - 16000;
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 3, "nothing working: 16 s isn't old yet");
+    b.readAt = Date.now() - 61000;
+    b.check(cx); await tick();
+    assert.equal(reads(), n0 + 4, "a minute: read");
+    b.loading = false; b.reload(cx); await tick(); }
 
   // ── the owner's clicks: with a click token, the exact command ──
   clicks.get("pb-a-1-0")(null, cx);                                   // Approve
@@ -300,9 +328,29 @@ try {
   b.loading = false; b.reload(cx); await tick();
   reset(); b.render(cx);
   assert.ok(ids.has("pb-rail-you") && ids.has("pb-rail-next") && !ids.has("pb-col-you") && !ids.has("pb-col-next"));
-  assert.ok(texts.includes("Nothing needs you") && texts.includes("Nothing is running right now.") && texts.includes("RESTING · 6"));
+  assert.ok(texts.includes("Nothing needs you") && texts.includes("Nothing is running right now.") && texts.includes("RESTING · 5") && texts.includes("NOT RUNNING · 1"));
   b.key({ keystroke: "r" }, cx);
   assert.equal(b.review, null, "nothing to review");
+
+  // ── a pal with dozens of topics not running (asleep, or no pal in them): they fold past three ──
+  { const d4 = data();
+    for (let i = 0; i < 27; i++) d4.topics.push({ topic: `old-${i}`, state: i % 2 ? "shell" : "asleep", terminal: `z${i}`, task: null, waits_for: "nothing", needs: [], since: 0, finished_at: 0, line: null, branch: null, stuck: 0, blocked: null });
+    fx.board = d4; }
+  b.loading = false; b.reload(cx); await tick();
+  reset(); b.render(cx);
+  assert.ok(texts.includes("NOT RUNNING · 28") && texts.includes("25 more not running"), "three show, the rest fold");
+  assert.equal([...ids].filter((x) => x.startsWith("pb-topic-old-")).length, 2, "refunds and two of the old ones");
+  assert.ok(texts.includes("No pal is running in it.") && texts.includes("no pal"));
+  clicks.get("pb-quiet-more")(null, cx);
+  reset(); b.render(cx);
+  assert.equal([...ids].filter((x) => x.startsWith("pb-topic-old-")).length, 27, "one click shows them all");
+  assert.ok(texts.includes("Show fewer"));
+  clicks.get("pb-quiet-more")(null, cx);
+  clicks.get("pb-topic-old-20")?.(null, cx);
+  b.setAim(fx.spaces[1], "old-20", cx);
+  reset(); b.render(cx);
+  assert.ok(ids.has("pb-topic-old-20"), "the aimed one shows even when folded");
+  b.setAim(fx.spaces[1], "checkout", cx);
 
   // ── a key switches to another pal while the board is up: back to the terminal ──
   fx.board = data(); b.loading = false; b.reload(cx); await tick();
