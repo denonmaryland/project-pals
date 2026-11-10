@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, props, shared } from "herdr";
-import { ds, tone, chiefOf, botOf, chiefSpace, petOf, petReady, petEl, petState, mascotEl, resizeChief, closeChief, CHIEF_NAME } from "./crew.js";
+import { ds, tone, chiefOf, botOf, chiefSpace, chiefState, petOf, petReady, petEl, petState, mascotEl, resizeChief, closeChief, CHIEF_NAME } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
@@ -22,7 +22,8 @@ export default class CrewChiefBar extends View {
     const pet = petOf(bot);
     const face = pet && petReady(pet) ? petEl(pet, petState(bot, "calm"), 28, 22, { open: true }) : mascotEl(bot, "calm", 20, tone(theme()));
     const size = p.size ?? shared("crew.chief.win")?.size ?? "split";
-    const sub = !rec ? "not hired yet" : !space ? "asleep" : "pulls only · nothing is sent to it but your words";
+    const state = chiefState();
+    const sub = !rec ? "not hired yet" : state === "starting" ? "starting…" : state !== "awake" ? "asleep" : "pulls only · nothing is sent to it but your words";
     const seg = h_flex().flex_none().rounded(d.r.xs).border_1().border_color(d.lineMid).overflow_hidden();
     SIZES.forEach(([k, label], i) => {
       seg.child(stop(div().id(`chief-size-${k}`).px(7).h(20).flex().items_center().cursor_pointer()

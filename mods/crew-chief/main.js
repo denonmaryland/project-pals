@@ -18,7 +18,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { theme, props, shared, setShared, agents, readTextFile, appHome, hc, notify } from "herdr";
 import {
-  ds, tone, scrollArea, withoutChief, botOf, crew, chiefOf, chiefTerminal, petOf, petReady, petEl, petState, mascotEl, mood,
+  ds, tone, scrollArea, withoutChief, botOf, crew, chiefOf, chiefTerminal, chiefShell, chiefState, petOf, petReady, petEl, petState, mascotEl, mood,
   statusColor, channelName, taskTitle, homeData, jsonLines, HOME_FILE, INSTALLS_FILE, loadOps, loadDesk, showHome,
   openTerminal, closeChief, resizeChief, wakeChief, ownerCli, headName, CHIEF_NAME, pebble,
 } from "./crew.js";
@@ -65,11 +65,14 @@ export default class CrewChief extends View {
     if (id && st.id !== id) setShared("crew.chief.win", { ...st, id, size: props()?.size ?? st.size ?? "split" });
     this.reload(cx, true);
     cx.timer.every(4000, (cx) => {
-      // Woken (or hired) while open: rebuild the window around its terminal.
-      if (!this.hadTerminal && chiefTerminal()) { resizeChief(props()?.size ?? "split"); return; }
+      // Woken (or hired) while open: rebuild the window around its terminal, as soon as it has one
+      // (before its agent reports: the trust question is answered there).
+      const shell = chiefShell();
+      if (shell && shell !== this.shell) { this.shell = shell; resizeChief(props()?.size ?? "split"); return; }
+      this.shell = shell;
       this.reload(cx);
     });
-    this.hadTerminal = Boolean(chiefTerminal());
+    this.shell = chiefShell();
   }
 
   reload(cx, desk = false) {
@@ -260,7 +263,20 @@ export default class CrewChief extends View {
   }
   empty(d, t) {
     const rec = chiefOf();
+    const state = chiefState();
     const asleep = Boolean(rec);
+    // Its space is open but no agent reports yet (T96): its terminal is in this window. Never offer
+    // to wake a Chief that's starting: Claude Code is most likely asking whether to trust its folder.
+    if (state === "starting" || state === "resting") {
+      const starting = state === "starting";
+      return v_flex().size_full().items_center().justify_center().gap(10).px(32).bg(d.bg1)
+        .when(!props()?.compact, (el) => el.child(this.face({ ...rec, awake: starting, starting }, 96, 74, t)))
+        .child(div().text_size(props()?.compact ? 14 : 16).font_weight(600).text_color(d.fg1).child(starting ? `${rec.name} is starting` : `${rec.name} is asleep`))
+        .child(div().max_w(420).text_size(12.5).line_height("18px").text_color(d.fg2).text_center()
+          .child(starting ? "Its terminal is in this window. If Claude Code asks whether to trust the folder, click the terminal and answer it there; this fills in once it's up."
+            : "Its terminal is in this window. Wake it to talk; it resumes right there."))
+        .when(!starting, (el) => el.child(pebble(d, { id: "chief-go", label: "Wake it", primary: true, onClick: () => wakeChief() })));
+    }
     return v_flex().size_full().items_center().justify_center().gap(10).px(32).bg(d.bg1)
       .child(this.face(rec ? { ...rec, awake: false } : { name: CHIEF_NAME, awake: false }, 96, 74, t))
       .child(div().text_size(16).font_weight(600).text_color(d.fg1).child(asleep ? `${rec.name} is asleep` : `No ${CHIEF_NAME} yet`))

@@ -1026,8 +1026,13 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   (1180×760, default): a 470 px column of the bar (`crew-chief-bar`, 34 px: pet, name, "pulls only",
   Compact · Split · Full, ×) over the Chief's terminal, beside the dashboard (`crew-chief`). Compact
   (480×640): the bar, the dashboard cut to its read and counts (196 px), the terminal. Full: 94% × 92%.
-  No live Chief: the bar over the dashboard's "No Chief yet · Hire" or "asleep · Wake it" (woken with
-  the view held, then the window rebuilds around its terminal). The same key or × closes it; Esc
+  No Chief, or its space closed: the bar over the dashboard's "No Chief yet · Hire" or "asleep · Wake
+  it" (woken with the view held, then the window rebuilds around its terminal). **Its space open but
+  no agent reporting** (T96): the window still shows its terminal (`chiefShell`: Claude Code on "trust
+  this folder?" reports nothing, and that question is answered right there), and the dashboard says
+  "starting" with no button for 10 minutes after the hire, then "asleep · Wake it", which wakes it in
+  its own terminal (`pal wake`). No wake opens a space for a pal whose space is open (`wakePal`
+  refuses: the first build called a starting Chief asleep, and Wake made a second Chief space). The same key or × closes it; Esc
   doesn't (it's the terminal's). Its id lives in shared `crew.chief.win`; a kept window that comes
   back stamps its new id there.
 - **The keyboard:** Herdr can't give a window's terminal the keyboard from code (spike 2026-11-09), and
@@ -1402,6 +1407,11 @@ is a task's optional due date and the memory folder's `pages/`.
   point the owner at the tab: a toast from the hire handler, a notice from `pal hire` / `pal topic`,
   and crewd's `trust` entry in the feed, the overview's "Waiting on" and a note to the head pal.
   Never answer it: trusting a folder is the owner's call, even with permissions bypassed.
+  One question, one notice (T96): crewd keeps what it announced (`trust_told` in `crew-health.json`)
+  until the terminal is past its start or gone for `TRUST_GRACE` (60 s), so a screen that doesn't
+  read for a tick, a terminal missing from one `hc ls`, or a crewd restart never announce it again;
+  a screen that reads without the question takes it off "Waiting on" at once. The Chief's notice
+  points at its pop-up, not a tab (its space is hidden).
 - **Never type over someone's draft:** messages are pasted into a pal's terminal and Enter is
   pressed. If its Claude Code input box holds unsent text (the owner typing), that text would go out
   glued to the message, so nothing is typed in while it's there: crewd keeps the messages queued,

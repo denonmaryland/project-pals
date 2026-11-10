@@ -146,6 +146,65 @@ try {
   clicks.get("cht-t2")?.();
   assert.ok(fx.calls.some((x) => x[0] === "run" && x[1] === "tab.select" && x[2].includes("t2")));
 
+  // ── T96: on Claude Code's trust question no agent reports yet. That's "starting", not asleep: the
+  // window still shows its terminal (the question is answered there), nothing offers to wake it, and
+  // no wake ever opens a second space while the first is open. ──
+  const newSpaces = () => fx.calls.filter((x) => x[0] === "run" && x[1] === "space.new").length;
+  const agentPanes = fx.panes;
+  const setChief = (extra) => { fx.shared.crew = { bots: fx.shared.crew.bots.map((b) => (b.chief ? { id: b.id, name: b.name, space: b.space, chief: true, role: b.role, ...extra } : b)) }; };
+  fx.panes = fx.panes.map((p) => (p.terminal === "tC" ? { tab: "tc", terminal: "tC", program: { agent: false, key: "bash" } } : p));
+  setChief({ hired: Date.now() });
+  assert.equal(c.chiefTerminal(), null);
+  assert.equal(c.chiefShell(), "tC");
+  assert.equal(c.chiefState(), "starting");
+  c.openChief("split");
+  assert.deepEqual(fx.overlays.at(-1).layout.children[0].children[1].content, { terminal: "tC" }, "its terminal is in the window before its agent reports");
+  clicks.clear();
+  fx.props = { size: "split" };
+  dash.render(cx);
+  assert.equal(clicks.has("chief-go"), false, "a starting Chief is never offered Wake");
+  fx.props = { size: "compact", compact: true };
+  dash.render(cx);
+  new Bar().render();
+  await c.wakeChief();
+  await c.wakePal(c.chiefOf());
+  assert.equal(newSpaces(), 0, "no second space while its space is open");
+  assert.equal(c.chiefOf().space, "sC", "and its record still points at its space");
+  // Asleep in place (its space open, hired long ago): Wake resumes it in its own terminal (pal wake)
+  setChief({ hired: Date.now() - 3600e3 });
+  assert.equal(c.chiefState(), "resting");
+  fx.props = { size: "split" };
+  dash.render(cx);
+  fx.calls.length = 0;
+  clicks.get("chief-go")?.(null, cx);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(newSpaces(), 0);
+  const woke = fx.calls.find((x) => x[0] === "sh" && x.includes("wake"));
+  assert.ok(woke && woke.includes("Chief") && woke.includes("--notify"), "Wake goes through pal wake: " + JSON.stringify(fx.calls));
+  // The window open before the Chief has a terminal: it's rebuilt around the terminal as soon as there is one
+  fx.panes = fx.panes.filter((p) => p.terminal !== "tC");
+  let every = null;
+  const dash2 = new Dash();
+  dash2.init(fx.props, { ...cx, timer: { after: () => {}, every: (_ms, f) => { every = f; } } });
+  const before = fx.overlays.length;
+  every(cx);
+  assert.equal(fx.overlays.length, before);
+  fx.panes = [...fx.panes, { tab: "tc", terminal: "tC", program: { agent: false, key: "bash" } }];
+  every(cx);
+  assert.equal(fx.overlays.length, before + 1, "rebuilt once its terminal exists");
+  assert.deepEqual(fx.overlays.at(-1).layout.children[0].children[1].content, { terminal: "tC" });
+  every(cx);
+  assert.equal(fx.overlays.length, before + 1, "and only once");
+  // Its space closed: Wake opens it again, once
+  const open = fx.spaces;
+  fx.spaces = fx.spaces.filter((s) => s.id !== "sC");
+  assert.equal(c.chiefState(), "closed");
+  await c.wakeChief();
+  assert.equal(newSpaces(), 1);
+  fx.spaces = open; fx.panes = agentPanes; fx.calls.length = 0;
+  setChief({});
+  assert.equal(c.chiefState(), "awake");
+
   // Asleep, and not hired: the empty state (Wake / Hire)
   fx.panes = fx.panes.filter((p) => p.terminal !== "tC");
   assert.equal(c.chiefTerminal(), null);

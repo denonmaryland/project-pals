@@ -69,6 +69,12 @@ def is_chief_space(space, recs=None):
     return is_chief(r)
 
 
+def trust_notice(bot):
+    """The trust question on the Chief's terminal: its space is hidden, so there's no tab to open."""
+    return (f"{bot} is waiting on Claude Code's 'trust this folder?' question. Its terminal is in its "
+            f"pop-up (Ctrl+Shift+J): answer it there yourself (only you can decide to trust a folder).")
+
+
 def is_chief_terminal(terminal, terms=None, recs=None):
     """Does this terminal run in the Chief's space? (Its hc 'where' names the space.)"""
     if not terminal:
