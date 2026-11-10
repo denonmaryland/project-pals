@@ -70,9 +70,14 @@ Hiring
                                      that topic's session when it can vouch for it, else fresh (it says why)
 
 Work
-  pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
+  pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"] [--due fri]
   pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
             | assign T Pal | cancel T | reopen T
+  pal task due T <when|none>         when: fri, tomorrow, 2026-11-14, +3d, fri 17:00 (a pal: its own tasks)
+  pal computer [Pal] [today|todo|calendar|journal|pages] [--json] [--start D] [--days N]
+                                     what a pal's Computer shows (read-only)
+  pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
+                                     its freeform pages (a pal writes its own), in its Computer's Notes
   pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
@@ -374,7 +379,8 @@ def cmd_feed(spaces, show_all, n):
     cursors = load_json(DATA / "crew-feed-cursors.json", {})
     since = 0 if show_all else cursors.get(who, now_ms() - 6 * 3600 * 1000)
     lines = FEED.read_text().splitlines() if FEED.exists() else []
-    events = [e for e in (json.loads(l) for l in lines if l.strip()) if e.get("at", 0) > since][-n:]
+    # "working" (a turn starting) only bounds the Computer's calendar blocks; the feed shows "finished".
+    events = [e for e in (json.loads(l) for l in lines if l.strip()) if e.get("at", 0) > since and e.get("kind") != "working"][-n:]
     for e in events:
         k = e["kind"]
         where = f"{e.get('bot', '')}" + (f" #{e['channel']}" if e.get("channel") else "")
@@ -938,14 +944,15 @@ def cmd_task(spaces, rest):
     me, name = whoami(spaces)
     sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
     if sub == "add":
-        pos, o = opts(args, ("for", "after", "body", "check"))
+        pos, o = opts(args, ("for", "after", "body", "check", "due"))
         if not pos:
-            die('pal task add "<title>" [--for Pal] [--after T1,T2]')
+            die('pal task add "<title>" [--for Pal] [--after T1,T2] [--due fri]')
         deps = [d.strip() for d in (o.get("after") or "").split(",") if d.strip()]
         if o.get("for"):
             import crewchief
             crewchief.refuse_target(o["for"], "tasks")
-        t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"))
+        due = crewtasks.parse_due(o["due"]) if o.get("due") else None
+        t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"), due=due)
         print(f"added {crewtasks.line(t)}")
     elif sub in ("ls", "list"):
         board = crewtasks.load()["tasks"]
@@ -962,7 +969,8 @@ def cmd_task(spaces, rest):
     elif sub == "show" and args:
         t = crewtasks.get(crewtasks.load(), args[0])
         print(crewtasks.line(t))
-        print(f"by {t['by']}, {ago(t['created'])}" + (f"\ncheck: {t['check']}" if t.get("check") else ""))
+        print(f"by {t['by']}, {ago(t['created'])}" + (f"\ncheck: {t['check']}" if t.get("check") else "")
+              + (f"\ndue: {t['due']} ({crewtasks.due_label(t['due'])})" if t.get("due") else ""))
         if t["body"]:
             print(t["body"])
         for n in t["notes"]:
@@ -996,12 +1004,19 @@ def cmd_task(spaces, rest):
         import crewchief
         crewchief.refuse_target(args[1], "tasks")
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, assignee=args[1])))
+    elif sub == "due" and len(args) >= 2:
+        # The owner sets any task's due date; a pal only its own (assigned to it, claimed by it, or made by it).
+        t = crewtasks.get(crewtasks.load(), args[0])
+        if me and not any(crewtasks.same(t.get(k) or "", me) for k in ("assignee", "claimed_by", "by_spec")):
+            die(f"{t['id']} isn't yours: only its pal or the owner can set its due date")
+        due = crewtasks.parse_due(" ".join(args[1:]))
+        print(crewtasks.line(crewtasks.update(t["id"], spaces, me, name, due=due)))
     elif sub == "cancel" and args:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="cancelled")))
     elif sub == "reopen" and args:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="open")))
     else:
-        die("pal task add|ls|ready|show|claim|note|block|done|assign|cancel|reopen (see crew --help)")
+        die("pal task add|ls|ready|show|claim|note|block|done|due|assign|cancel|reopen (see crew --help)")
 
 
 # ── the Desk (docs/desk/design.md) ────────────────────────────────────────────────────────────
@@ -1159,6 +1174,13 @@ def cmd_desk(spaces, rest):
         card = crewdesk.move(card["id"], to, by, via, " ".join(args[2:]) or "")
         card, t, what = crewdesk.deliver(card, spaces)
         print(f"passed {card['id']} to {card['to']}: {what}")
+    elif sub == "due" and len(args) >= 2:
+        # The owner sets any task's due date; a pal only its own (assigned to it, claimed by it, or made by it).
+        t = crewtasks.get(crewtasks.load(), args[0])
+        if me and not any(crewtasks.same(t.get(k) or "", me) for k in ("assignee", "claimed_by", "by_spec")):
+            die(f"{t['id']} isn't yours: only its pal or the owner can set its due date")
+        due = crewtasks.parse_due(" ".join(args[1:]))
+        print(crewtasks.line(crewtasks.update(t["id"], spaces, me, name, due=due)))
     elif sub == "cancel" and args:
         _, card = desk_card(args[0])
         desk_may(card, who, "cancel", sender_ok=True)
@@ -2211,6 +2233,124 @@ def home_answer_to(spaces, x, answer):
     return f"told {dest} ({what}) · card {card['id']}"
 
 
+def cmd_computer(spaces, rest):
+    """pal computer [Pal] [today|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
+    What a pal's Computer shows (crew-boards/pal-computer/design.md). Read-only: it's a view."""
+    import crewbrain
+    import crewcomputer
+    import crewdesk
+    import crewnotebook
+    import crewroutines
+    import crewsleep
+    import crewtasks
+    views = ("today", "todo", "calendar", "journal", "pages")
+    pos, o = opts(rest, ("start", "days"), ("json",))
+    view = next((p for p in pos if p in views), "today")
+    who = [p for p in pos if p not in views]
+    space, rec, name = pal_of(spaces, " ".join(who) if who else None)
+    tasks = crewtasks.load()["tasks"]
+    cards = [c for _, c in crewdesk.mine(name)]
+    if view in ("today", "todo"):
+        if view == "todo":
+            out = crewcomputer.todo(name, tasks, cards)
+        else:
+            d = crewbrain.brain_dir(name, {**rec, "folder": rec.get("folder") or space.get("folder")})
+            mission = crewbrain.parse_mission(crewbrain.read(d, "mission.md"))
+            live = hc_terminals()
+            asleep = {t.get("terminal") for t in space.get("tabs", []) for t in t.get("terminals", []) if t
+                      and crewsleep.slept(t.get("terminal"))}
+            out = crewcomputer.today_view(name, space, live, tasks, cards, mission, asleep)
+    elif view == "calendar":
+        import datetime
+        try:
+            start = datetime.date.fromisoformat(o["start"]) if o.get("start") else None
+        except ValueError:
+            die("--start takes a date: 2026-11-09")
+        today = datetime.date.today()
+        start = start or today - datetime.timedelta(days=today.weekday())
+        days = max(1, min(42, int(o.get("days") or 7)))
+        s_ms = int(datetime.datetime.combine(start, datetime.time()).timestamp() * 1000)
+        e_ms = s_ms + days * crewcomputer.DAY_MS
+        routines = crewroutines.load()
+        runs = {r["id"]: crewcomputer.routine_runs(r, s_ms, e_ms) for r in routines if crewcomputer.norm(r.get("bot") or "") == crewcomputer.norm(name)}
+        feed_days = max(8, (today - start).days + 2)
+        out = crewcomputer.calendar(name, crewcomputer.read_feed(feed_days), tasks, routines, start, days, next_runs=runs)
+    elif view == "journal":
+        out = {"pal": name, "days": crewnotebook.days(name, int(o.get("days") or 7)), "week": crewnotebook.week(name)}
+    else:
+        out = {"pal": name, "pages": crewcomputer.pages(name), "folder": str(crewcomputer.pages_dir(name))}
+    if o.get("json"):
+        print(json.dumps(out, ensure_ascii=False))
+        return
+    # A short human read; the desktop and the Chief use --json.
+    if view == "today":
+        print(f"{name}'s computer · today" + (f"\nfocus: {out['focus']}" if out["focus"] else ""))
+        for t in out["topics"]:
+            print(f"  #{t['topic']:<14} {t['state']:<8} " + (f"{t['task']['id']} {t['task']['title']}" if t["task"] else ""))
+        for r in out["next"]:
+            print(f"  next: {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
+        print(f"  desk: {out['desk']['open']} open" + (f", {out['desk']['needs_you']} need you" if out["desk"]["needs_you"] else ""))
+    elif view == "todo":
+        for k in ("doing", "next", "blocked", "done_today"):
+            for r in out[k]:
+                print(f"{k.replace('_', ' '):<10} {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
+        for c in out["cards"]:
+            print(f"card       {c['id']} [{c['status']}] {c['title']}")
+    elif view == "calendar":
+        for e in sorted(out["events"], key=lambda e: e.get("start") or e.get("at") or 0):
+            if e["kind"] == "work":
+                print(f"{time.strftime('%a %H:%M', time.localtime(e['start'] / 1000))}-{time.strftime('%H:%M', time.localtime(e['end'] / 1000))} #{e['topic']} worked")
+            elif e["kind"] == "due":
+                print(f"{e['day']} {e['task']} due: {e['title']}")
+            else:
+                print(f"{time.strftime('%a %H:%M', time.localtime(e['at'] / 1000))} {e['kind']} {e.get('task') or e.get('name') or e.get('routine') or ''}")
+    elif view == "journal":
+        for d in out["days"]:
+            print(f"{d['day']}: {len(d['entries'])} entries")
+    else:
+        print("\n".join(p["name"] for p in out["pages"]) or f"(no pages yet: {out['folder']})")
+
+
+def cmd_page(spaces, rest):
+    """pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
+    A pal's freeform pages (crew-memory/<pal>/pages/*.md), shown in its Computer's Notes. A pal writes
+    only its own; the owner edits any in Notes' folder (Obsidian or an editor)."""
+    import crewbrain
+    import crewcomputer
+    sub, args = (rest[0], rest[1:]) if rest and rest[0] in ("ls", "show", "write", "rm") else ("ls", rest)
+    if sub == "-F":
+        sub = "ls"
+    pos, o = opts(args, ("pal", "file"), ())
+    if sub == "ls":
+        _, _, name = pal_of(spaces, (pos[0] if pos else None) or o.get("pal"))
+        print("\n".join(p["name"] for p in crewcomputer.pages(name)) or f"(no pages for {name} yet)")
+        return
+    if not pos:
+        die(f'pal page {sub} "<title>"')
+    title = " ".join(pos)
+    if sub == "show":
+        _, _, name = pal_of(spaces, o.get("pal"))
+        path = crewcomputer.page_path(name, title)
+        if not path.exists():
+            die(f"{name} has no page called '{title}'")
+        print(path.read_text())
+        return
+    space, _ = my_bot(spaces)
+    if not space:
+        die("only a pal writes pages (its own); edit any page in its Computer's Notes folder")
+    path = crewcomputer.page_path(space["name"], title)
+    if sub == "rm":
+        if not path.exists():
+            die(f"no page called '{title}'")
+        path.unlink()
+        print(f"removed {space['name']}'s page '{title}'")
+        return
+    text = file_opt(o)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    crewbrain.write(path.parent, path.name, text if text.endswith("\n") else text + "\n")
+    print(f"wrote {space['name']}'s page '{title}' ({len(text)} characters)")
+
+
 def cmd_popout(spaces, rest):
     """pal popout: a topic's live terminal in its own desktop window (bin/crewpopout.py). Putting a
     window on the owner's desktop, pinning it or closing it is the owner's click; ls is anyone's."""
@@ -2625,6 +2765,10 @@ def main(argv):
             print(crewwelcome.status(settings()))
     elif cmd == "popout":
         cmd_popout(spaces, rest)
+    elif cmd == "computer":
+        cmd_computer(spaces, rest)
+    elif cmd in ("page", "pages"):
+        cmd_page(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":

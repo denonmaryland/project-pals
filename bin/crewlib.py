@@ -3,7 +3,7 @@
 Everything lives under ~/.config/herdr-app/data (HERDR_APP_HOME picks another home):
   crew-queue/<terminal>/*.json   messages waiting for a pal's turn to end (crewd delivers them)
   crew-daemon.json               crewd's heartbeat
-  crew-feed.jsonl                what happened: finished, blocked, stalled, approvals, tasks
+  crew-feed.jsonl                what happened: working (a turn starts), finished, blocked, stalled, approvals, tasks
   crew-delegations.json          who asked whom for what (results flow back to the asker)
   crew-routines.json             scheduled prompts; crew-routines.log.jsonl their runs
   crew-tasks.json                the task board
