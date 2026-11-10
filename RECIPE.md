@@ -1175,7 +1175,9 @@ Home reads only while it shows: files every 4 s, `pal desk ls --all --json --don
   body, `to`, `urgency` and `expires` in an editor (an "edited by hand" receipt); edits to `status`,
   `from*`, `proof` or the receipts are put back from `events.jsonl` (crewd, every minute, or
   `pal desk check`). A file that doesn't parse is left exactly as it is and listed as unreadable.
-  Pals writing into `crew-desk` are held (`desk-write`, shell and edit tools). Only the card's pal
+  Pals writing into `crew-desk` are held (`desk-write`, shell and edit tools; `crewguard.into_place`).
+  A `crew-desk` folder right under `mods/` is the Desk's source code, not its cards, and isn't held
+  unless it resolves through a link into the real data folder (T68). Only the card's pal
   (any topic), the owner, or its sender (cancel, while queued or held) changes a card.
 - **The card format is parsed twice** (`crewdesk.parse` and `parseCard` in crew.js): change both
   and the fixtures in `tests/fixtures/desk/` together. A body line that is exactly `## Receipts` or

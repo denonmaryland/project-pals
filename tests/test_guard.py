@@ -351,6 +351,58 @@ class OwnerGate(unittest.TestCase):
         self.assertIsNone(rule("ls ~/.config/herdr-app/data/crew-clicks"))
 
 
+class DeskSourceIsNotDeskCards(unittest.TestCase):
+    """T68 (2026-11-09, a-24cc2d, a-867e72): editing the Desk's mods in a worktree
+    (mods/crew-desk/main.js) was held as "writes into the Desk's cards". Only the data folder
+    (data/crew-desk, or anywhere that resolves into it through a link) is the cards."""
+    WT = "/home/x/.config/herdr-app/data/crew-worktrees/pp/t63"
+
+    def test_the_desk_mods_are_code(self):
+        for cmd in [
+            f"edit {self.WT}/mods/crew-desk/main.js",
+            f"edit {self.WT}/mods/crew-desk-drop/main.js",
+            "edit /home/x/.config/herdr-app/mods/crew-desk/main.js",
+            "sed -i 's/a/b/' mods/crew-desk/main.js",
+            "echo x > mods/crew-desk/notes.txt",
+            "cp /tmp/main.js mods/crew-desk/main.js",
+            f"cp lib/crew.js {self.WT}/mods/crew-desk/crew.js",
+            "python3 -c \"open('mods/crew-desk/main.js','w').write('x')\"",
+        ]:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_the_cards_are_still_held(self):
+        for cmd in [
+            f"edit {Q}/crew-desk/helper/open/a.md",
+            "echo x > ~/.config/herdr-app/data/crew-desk/helper/open/a.md",
+            "cp t.md data/crew-desk/helper/open/",
+            "echo x > $D/crew-desk/helper/open/a.md",                         # a variable we can't expand
+            f"python3 -c \"open('{Q}/crew-desk/helper/open/a.md','w').write('x')\"",
+            "python3 -c \"open('data/crew-desk/.owner-ledger.jsonl','a').write('x')\"",
+            f"edit {self.WT}/mods/crew-desk/../../data/crew-desk/x/open/a.md",   # normalised first
+        ]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
+
+    def test_a_link_into_the_cards_is_held(self):
+        # crewguard's DATA is this test's CREW_DATA: a mods/ folder that is really a link to the cards.
+        real = Path(TMP) / "crew-desk"
+        (real / "helper" / "open").mkdir(parents=True, exist_ok=True)
+        wt = Path(tempfile.mkdtemp(prefix="pals-wt-"))
+        (wt / "mods").mkdir()
+        (wt / "mods" / "crew-desk").symlink_to(real)
+        (wt / "mods" / "notes").symlink_to(real)
+        self.assertEqual(rule(f"edit {wt}/mods/crew-desk/helper/open/a.md"), "desk-write")
+        self.assertEqual(rule(f"echo x > {wt}/mods/notes/helper/open/a.md"), "desk-write")
+        self.assertIsNone(rule(f"echo x > {wt}/mods/other.txt"))
+
+    def test_the_hook_asks_the_same_question_for_edits(self):
+        self.assertTrue(crewguard.into_place(f"{Q}/crew-desk/helper/open/a.md", {"crew-desk"}))
+        self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk/main.js", {"crew-desk"}))
+        self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk-drop/main.js", {"crew-desk"}))
+        hook = (Path(__file__).resolve().parent.parent / "bin" / "crew-hook").read_text()
+        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk"})', hook)
+        self.assertNotIn('f"/{d}/" in path', hook)
+
+
 Q = "/home/x/.config/herdr-app/data"
 
 
