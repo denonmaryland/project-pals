@@ -4,7 +4,7 @@
 // that throws fails here; `herdr-app check` only builds the empty roster, never these rows.
 // Run: node tests/test_palrows.mjs
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -809,7 +809,77 @@ try {
     const rowSrc = src.slice(src.indexOf("if (!roomsFolded()) list.children(rs.map"), src.indexOf("if (!roomsFolded()) list.children(rs.map") + 900);
     assert.ok(rowSrc.includes("roomHeads(d, roomMembers(room)") && !rowSrc.includes('child("#")') && !rowSrc.includes("roomMembers(room).length"), "room rows: heads, no # and no count");
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads)");
+  // ── No hard edges (T103, DeNon 2026-11-10): the hero's floor glow ends inside its image and the
+  // image ends with the art; scroll areas fade at an end while there is more beyond it. ─────────
+  {
+    const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
+    // The floor glows: every one reaches zero opacity inside its 300x80 image, on the bottom, top and right.
+    for (const f of readdirSync(join(root, "mods/crew-roster/icons")).filter((x) => /^pet-floor-.*\.svg$/.test(x))) {
+      const svg = readFileSync(join(root, "mods/crew-roster/icons", f), "utf8");
+      const m = /gradientUnits="userSpaceOnUse" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" gradientTransform="translate\(0 ([\d.]+)\) scale\(1 ([\d.]+)\) translate\(0 -([\d.]+)\)"/.exec(svg);
+      assert.ok(m, `${f}: an ellipse in the image's own pixels`);
+      const [cx, cy, r, , ky] = m.slice(1).map(Number);
+      assert.ok(cy + r * ky < 80 && cy - r * ky > 0 && cx + r < 300, `${f}: the glow ends inside the image (bottom ${cy + r * ky}, top ${cy - r * ky}, right ${cx + r})`);
+      assert.match(svg, /<stop offset="1" [^>]*stop-opacity="0"\/>/, `${f}: and it ends at nothing`);
+    }
+    // In the hero the pool's image ends exactly where the art does.
+    fixtures.shared["crew.settings"] = {};
+    const busy = { ...fixtures.spaces[0], id: "s40", status: "working", tabs: Array.from({ length: 9 }, (_, i) => ({ id: `u${i}`, name: `topic${i}`, status: i ? "idle" : "working", changed_at: 1, active: i === 0 })) };
+    const keepA = fixtures.agents, keepP = fixtures.shared["crew.pets"], keepPanes = fixtures.panes;
+    fixtures.agents = [{ space: "s40", tab: "u0", status: "working" }];
+    fixtures.panes = [...keepPanes, { tab: "u0", terminal: "zz", program: { agent: true, key: "claude", name: "Claude Code" } }];
+    const bot = crew.botOf(busy);
+    fixtures.shared["crew.pets"] = [...(keepP ?? []), (await import(url("pets.js"))).petKey(crew.petOf(bot))];
+    const hero = roster.heroCard({ space: busy, bot }, t, d, 304);
+    const art = ids(hero).find((n) => n.args.id?.[0] === "hero-art"), pool = ids(hero).find((n) => n.args.id?.[0] === "hero-pool");
+    assert.ok(pool, "a working pal has its pool of light");
+    assert.equal(pool.args.top[0] + pool.args.h[0], art.args.h[0], "the pool's image ends with the art: nothing lit is cut off above Topics");
+    assert.ok(pool.args.top[0] >= 0, "and starts inside it");
+    // Scroll fades: none while everything fits; the bottom one while there's more below; both in the middle; the top one at the end.
+    const sc = crew.scrollState("fade-test");
+    const fades = () => ids(crew.scrollArea(d, "fade-test", hero, { fade: "side" })).map((n) => n.args.id[0]);
+    Object.assign(sc, { view: 200, content: 200, y: 0 });
+    assert.deepEqual(fades().filter((x) => x === "fade-top" || x === "fade-bottom"), [], "everything fits: no fade");
+    Object.assign(sc, { view: 200, content: 500, y: 0 });
+    assert.deepEqual(fades().filter((x) => x === "fade-top" || x === "fade-bottom"), ["fade-bottom"], "at the top: only the bottom fades");
+    sc.y = 120;
+    assert.deepEqual(fades().filter((x) => x === "fade-top" || x === "fade-bottom"), ["fade-top", "fade-bottom"], "in the middle: both");
+    sc.y = 300;
+    assert.deepEqual(fades().filter((x) => x === "fade-top" || x === "fade-bottom"), ["fade-top"], "at the end: only the top");
+    // A fade is a clipped strip of unscaled 64 px tiles of the surface's colour, with no handlers, under the pill.
+    sc.y = 120;
+    const area = crew.scrollArea(d, "fade-test", hero, { fade: "well" }).node;
+    const strip = area.kids.map((k) => k.node).filter((n) => /^fade-(top|bottom)$/.test(n.args.id?.[0] ?? ""));
+    assert.equal(strip.length, 2);
+    for (const n of strip) {
+      const edge = n.args.id[0].slice(5);
+      assert.ok(n.calls.includes("overflow_hidden") && n.args.h[0] === crew.FADE[edge] && n.args[edge]?.[0] === 0, `${edge}: on that edge, ${crew.FADE[edge]} px`);
+      assert.ok(!n.calls.some((c) => c.startsWith("on_")), `${edge}: takes no pointer events`);
+      const imgs = all({ node: n }).filter((x) => x.kind === "image");
+      assert.equal(imgs.length, crew.FADE.tiles);
+      assert.ok(imgs.every((x) => x.arg.endsWith(`fade-well-${edge}.svg`) && x.args.w[0] === 64 && x.args.h[0] === crew.FADE[edge]), `${edge}: tiles at their own size`);
+      assert.ok((crew.FADE.tiles - 1) * 63 + 64 >= 440, "the tiles cover the widest sidebar");
+    }
+    const order = area.kids.map((k) => k.node.args.id?.[0] ?? "");
+    assert.ok(order.indexOf("fade-bottom") < order.indexOf("fade-test-thumb") && order.indexOf("fade-test-content") < order.indexOf("fade-top"), "over the rows, under the pill");
+    // The images exist for both surfaces, dark and light, and go from the surface's colour to clear.
+    for (const [name, hex] of [["side", "#0E0E0F"], ["well", "#030304"], ["side-light", "#F7F7F8"], ["well-light", "#E6E6E9"]]) for (const edge of ["top", "bottom"]) {
+      const svg = readFileSync(join(root, `mods/crew-roster/icons/fade-${name}-${edge}.svg`), "utf8");
+      const ops = [...svg.matchAll(/stop-color="(#[0-9A-F]{6})" stop-opacity="([\d.]+)"/g)].map((m) => [m[1], Number(m[2])]);
+      assert.ok(ops.length === 3 && ops.every(([c]) => c === hex), `fade-${name}-${edge}: the surface's colour`);
+      assert.deepEqual([ops[0][1], ops[2][1]], edge === "top" ? [1, 0] : [0, 1], `fade-${name}-${edge}: solid at the edge, clear inside`);
+      assert.match(svg, new RegExp(`width="64" height="${crew.FADE[edge]}"`));
+    }
+    assert.equal(crew.ds({ background: "#0E0E0F" }).bg1, "#0E0E0F"); assert.equal(crew.ds({ background: "#FFFFFF" }).bg1, "#F7F7F8");
+    // The two sidebar scroll areas ask for them: the list on the sidebar, the Topics list on its well.
+    const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
+    assert.match(src, /scrollArea\(d, "crew-list", inner, \{ fade: "side" \}\)/);
+    assert.match(src, /scrollArea\(d, SID, [^\n]*\{ fade: "well" \}\)/);
+    // And the hero's own Topics list, nine topics: a bottom fade over the cut fifth row.
+    assert.ok(ids(hero).some((n) => n.args.id?.[0] === "hero-ch-list"), "the Topics list draws");
+    fixtures.agents = keepA; fixtures.shared["crew.pets"] = keepP; fixtures.panes = keepPanes;
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

@@ -722,6 +722,22 @@ rectangular segments and tags.
   EVERY working agent (`crew.js workingEverywhere`): all pals and topics, on every machine, in
   every factory, not just the shown factory's list. Its tooltip names them (the first eight,
   then "+N more"), each with its machine and, with 2+ factories, its factory.
+  **No hard edges** (T103, DeNon 2026-11-10: "see this hard cutoff? we need to fix stuff like
+  that"): nothing lit or coloured in the sidebar ends in a straight line, and no row is cut in
+  half without a fade. (1) The hero's pool of light: each `pet-floor-<state>.svg` is an ellipse
+  set in the image's own pixels that reaches zero opacity a pixel inside the image on the top,
+  bottom and right, and the hero draws that image so it ends exactly at the art's bottom edge
+  (it used to be 15% blue where its image ended, in a line above "Topics"). (2) Scroll areas
+  can fade their ends (`crew.js scrollArea(d, id, content, { fade })`): while there is more
+  above, a 16px fade over the top edge; while there is more below, a 22px one over the bottom;
+  none when everything fits. The sidebar's list fades to the sidebar's colour (`fade: "side"`),
+  the Topics list to its well's (`fade: "well"`), so the cut fifth row there and the last row
+  at the window's bottom melt away instead of being sliced. gpui-kit has no gradients or masks,
+  so a fade is a small SVG (`icons/fade-<surface>[-light]-<top|bottom>.svg`, 64px wide, the
+  surface's colour from solid to clear) drawn at its own size and repeated across in a clipped
+  strip: eight tiles a fade, no stretching, no handlers (rows under it still take the pointer),
+  under the pill, and only while there is something to fade. Watch-out: a new surface colour
+  needs its own pair of fade images, and a scroll area on a tinted surface must name it.
   **A working pal rocks** (T102, DeNon 2026-11-10; it replaced T100's pulsing dot, which is
   steady again): while a pal's pet is in its "work" state the whole sprite (pet, tapping paw,
   drifting bits) sways from side to side and back every 2.6s, eased, and is still the moment

@@ -642,7 +642,7 @@ export default class CrewRoster extends View {
       // A pal drag ends on release anywhere in the list, and is dropped if the pointer leaves it.
       .on_mouse_up("left", (_e, cx) => this.drop(cx))
       .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
-    const scroller = (inner) => scrollArea(d, "crew-list", inner).flex_1().min_h(0);
+    const scroller = (inner) => scrollArea(d, "crew-list", inner, { fade: "side" }).flex_1().min_h(0);
     if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
@@ -776,7 +776,10 @@ export default class CrewRoster extends View {
     // Depth without an edge: a soft radial aura behind the sprite, fading out to nothing.
     art.child(div().absolute().left(SX - 14).top(NB - 14).w(SW + 28).h(H + 24).child(image(`${ICON}/pet-aura.svg`).w(SW + 28).h(H + 24)));
     // The pool, drawn as an image so it sits behind the pet (Herdr draws svg() elements over images).
-    if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
+    // Its glow reaches zero by the image's bottom edge (the SVG's ellipse ends a pixel inside it),
+    // and the image ends exactly at the art's bottom edge: nothing lit is cut off in a line above
+    // "Topics" (T103; the glow used to be 15% blue where its image ended, 8 px below the art).
+    if (lit) art.child(div().id("hero-pool").absolute().left(0).top(FY + 6 - 72).w(W).h(72)
       .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
       .child(image(`${ICON}/pet-floor-${state}.svg`).w(W).h(72)));
     art.child(div().absolute().left(SX).top(NB - 4).child(ready ? petEl(p, state, SW, H, { open: true })
@@ -940,7 +943,7 @@ export default class CrewRoster extends View {
     if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act ? PAD + act * ROW : 0, act ? ROW : PAD + ROW); }
     // Past four, the well shows four rows and the top of the fifth, cut at its edge: the cut row says
     // there's more, and the pill thumb shows where you are.
-    box.child(scrollArea(d, SID, v_flex().pl(4).pt(PAD).children(list.map(row))).h(h).flex_none().w_full());
+    box.child(scrollArea(d, SID, v_flex().pl(4).pt(PAD).children(list.map(row)), { fade: "well" }).h(h).flex_none().w_full());
     if (n < ROWS && !q) box.child(newRow());
     return v_flex().pt(4).child(head).child(box);
   }
