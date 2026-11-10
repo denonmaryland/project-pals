@@ -30,7 +30,8 @@
   wears has a clean edge against the body, and the head pal's crown is white dots like the rest of
   the pet, not a yellow shape. The laptop has a real keyboard deck and a lid whose
   screen faces the pal and glows in the state's colour (code scrolls while it works; the lid is
-  shut while it sleeps). Small pets (in lists, rooms and menus) show the head alone, so they stay
+  shut while it sleeps; the three dots that used to float up off it while a pal worked are gone,
+  since the screen's glow says it). Small pets (in lists, rooms and menus) show the head alone, so they stay
   sharp. Tails and raised arms are no longer cut off at the left edge, and the floating marks
   (z, sparkle, ?) are whole dots. Every pet is drawn again the first time the new version runs.
 
