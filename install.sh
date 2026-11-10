@@ -146,11 +146,12 @@ fi
 # crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
 # crew-roster.home (Home, the head pal's page; free in both too) and ctrl-shift-j → crew-roster.chief
 # (the Chief's pop-up; free in both, checked 2026-11-09) and ctrl-shift-g → crew-roster.factory (the
-# factory switcher, T66; free in both, checked the same day). Each only when
+# factory switcher, T66; free in both, checked the same day) and ctrl-shift-y → crew-roster.computer
+# (the shown pal's Computer, T81; free in both, checked 2026-11-09). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher"; do
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher" "ctrl-shift-y crew-roster.computer the pal Computer"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"

@@ -17,7 +17,7 @@ import {
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL,
-  toggleChief, withoutChief, isChiefRec } from "./crew.js";
+  toggleChief, withoutChief, isChiefRec, toggleComputer } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
@@ -142,6 +142,8 @@ export default class CrewRoster extends View {
         else if (c === "chief") toggleChief();
         // Ctrl+Shift+G: the factory switcher.
         else if (c === "factory" || c === "factories") openFactoryMenu();
+        // Ctrl+Shift+Y: the shown pal's Computer (again: back to the topic).
+        else if (c === "computer") toggleComputer();
         cx.notify();
       }
     });

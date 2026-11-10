@@ -109,7 +109,8 @@
                   "content": {
                     "mod": "crew-home"
                   }
-                }
+                },
+            { "id": "pc-view", "type": "block", "content": { "mod": "crew-computer" } }
               ]
             },
             {
