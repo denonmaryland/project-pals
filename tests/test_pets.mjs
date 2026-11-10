@@ -40,8 +40,11 @@ for (const e of EYES) for (const pose of ["work", "rest", "done", "stuck"]) well
 // The working frames differ (the paw and the screen), the laptop is shut asleep, and the head has none.
 assert.notEqual(tileSvg({ species: "kit", pose: "work", scheme: idScheme("#ff9e72", "work") }, { bare: true }).replace(/t\d+/g, "t"),
   tileSvg({ species: "kit", pose: "work", tap: true, scheme: idScheme("#ff9e72", "work") }, { bare: true }).replace(/t\d+/g, "t"));
-const has = (spec, fill) => pal(spec).some((l) => l.fill === fill);
-assert.ok(has({ species: "kit", pose: "work" }, "screen"));
-assert.ok(!has({ species: "kit", pose: "rest" }, "screen"), "asleep: lid shut");
-assert.ok(!has({ species: "kit", pose: "work", avatar: true }, "metal"), "head: no laptop");
+const lit = (spec) => pal(spec).some((l) => l.sglow);
+assert.ok(lit({ species: "kit", pose: "work" }));
+assert.ok(!lit({ species: "kit", pose: "rest" }), "asleep: lid shut");
+assert.ok(!lit({ species: "kit", pose: "work", avatar: true }), "head: no laptop");
+// One LED world (DeNon, 2026-11-09): the laptop and what a pal wears are dots, never solid shapes; no mouths.
+for (const pose of PET_STATES) for (const l of pal({ species: "kit", acc: ["phones", "glasses"], pose })) if (l.fill === "body") assert.ok(l.mask, `${pose}: body-coloured shapes are LEDs`);
+assert.ok(!pal({ species: "kit", pose: "work" }).some((l) => l.stroke === "ink" && /Q/.test(l.d) && !l.fill && l.sw < 2.5), "no mouth");
 console.log("pets ok");
