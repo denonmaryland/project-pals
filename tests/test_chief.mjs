@@ -158,6 +158,15 @@ try {
   const hire = fx.calls.find((x) => x[0] === "pal" && x[1] === "hire");
   assert.ok(hire && hire.includes("--chief") && hire.includes("--click"), "Hire is the owner's click: " + JSON.stringify(hire));
 
+  // Grok T69: the role alone isn't the Chief (the hire dialog offers it to anyone).
+  assert.equal(c.isChiefRec({ name: "Staffer", role: "Chief of staff" }), false);
+  assert.equal(c.isChiefRec({ name: "Chief", chief: "yes" }), false);
+  assert.equal(c.isChiefRec({ name: "Chief", chief: true }), true);
+  fx.shared.crew = { bots: [{ id: "b0", name: "Orca", space: "s0", god: true }, { id: "bS", name: "Staffer", space: "sS", role: "Chief of staff" }] };
+  fx.spaces = [{ id: "s0", name: "Orca", tabs: [] }, { id: "sS", name: "Staffer", tabs: [] }];
+  assert.equal(c.chiefOf(), null);
+  assert.deepEqual(c.withoutChief().map((s) => s.name), ["Orca", "Staffer"]);
+
   assert.deepEqual(notesItems("x\n- a\n* b\n3) c\n  - d\ntext"), ["a", "b", "c", "d"]);
   console.log("test_chief.mjs: ok");
 } finally {

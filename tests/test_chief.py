@@ -252,6 +252,36 @@ class TheChiefsToolCalls(unittest.TestCase):
         self.assertIsNone(hook(env, "tW", "Bash", {"command": "hc send tO 'hi'"}))
 
 
+class TheRoleIsNotTheChief(unittest.TestCase):
+    """Grok T69: the hire dialog offers the role "Chief of staff" to any pal, with no click. Such a pal
+    stays an ordinary pal: messaged, listed, unrestricted, and it doesn't block pal hire --chief."""
+
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+        shared = self.root / "app" / "shared.json"
+        bots = [{k: v for k, v in b.items() if k != "chief"} for b in BOTS]   # "Chief" keeps only the role
+        shared.write_text(json.dumps({"crew": {"bots": bots}}))
+
+    def test_an_ordinary_pal(self):
+        self.assertEqual(py(self.env, "import crewchief; print(json.dumps([crewchief.record(), crewchief.name(), crewchief.is_chief_pal('Chief'), crewchief.is_chief_terminal('tC')]))"),
+                         [None, None, False, False])
+        r = pal(self.env, "tell", "Chief", "hello", term="tW")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(list((self.data / "crew-queue" / "tC").glob("*.json")))
+        r = pal(self.env, "team", term="tW")
+        self.assertIn("#chief", r.stdout)
+        self.assertNotIn("is in its pop-up", r.stdout)
+        self.assertIsNone(hook(self.env, "tC", "Bash", {"command": "hc send tW 'hi'"}))
+        r = pal(self.env, "tell", "Worker", "hi from the staffer", term="tC")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_it_doesnt_block_the_real_chief(self):
+        # pal hire --chief stops at "you already have a Chief" only when a record says chief: true.
+        r = pal(self.env, "hire", "--chief", term=None)
+        self.assertNotIn("already have a Chief", r.stderr + r.stdout)
+        self.assertIn("click", r.stderr + r.stdout)   # it gets as far as asking for the owner's click
+
+
 class Hiring(unittest.TestCase):
     def test_only_the_owner_hires_it(self):
         root, env, data = sandbox(chief=False)

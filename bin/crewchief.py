@@ -39,9 +39,10 @@ SEEDS = {
 
 
 def is_chief(record):
-    """Is this pal record the Chief (hired with pal hire --chief)?"""
-    r = record or {}
-    return bool(r.get("chief")) or str(r.get("role", "")).strip().lower() == ROLE.lower()
+    """Is this pal record the Chief? Only `chief: true` says so, which only the owner's clicked
+    `pal hire --chief` sets. The role text never counts: the hire dialog offers "Chief of staff" to any
+    pal (Grok T69)."""
+    return (record or {}).get("chief") is True
 
 
 def record(recs=None):
