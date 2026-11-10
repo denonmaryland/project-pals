@@ -186,15 +186,26 @@ class WhatTheChiefMayRun(unittest.TestCase):
     def test_desk_send_goes_only_to_the_heads_ops(self):
         r = pal(self.env, "desk", "send", "Worker", "do the thing", term="tC")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("only to Boss#ops", r.stderr)
+        self.assertIn("only to Boss's inbox (Boss#ops)", r.stderr)
         r = pal(self.env, "desk", "send", "Boss#general", "do the thing", term="tC")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("not #general", r.stderr)
+        self.assertIn("Boss#ops (its inbox), not #general", r.stderr)
         for to in ("Boss", "Boss#ops", "route", "auto"):
             r = pal(self.env, "desk", "send", to, f"What: x via {to}  Why: y  Done when: z", "--task", term="tC")
             self.assertEqual(r.returncode, 0, r.stderr)
         got = py(self.env, "import crewdesk; print(json.dumps(sorted({c['to'] for _, c in crewdesk.cards(where=('open', 'done'))})))")
         self.assertEqual(got, ["Boss#ops"])
+
+    def test_the_target_is_the_heads_inbox_topic_from_the_roster(self):
+        # T60: the owner set the head pal's inbox topic (head_topic); the Chief's cards follow it.
+        st = json.loads((self.data / "crew-settings.json").read_text())
+        (self.data / "crew-settings.json").write_text(json.dumps({**st, "head_topic": "general"}))
+        r = pal(self.env, "desk", "send", "Boss", "What: x", term="tC")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Boss#general", r.stdout)
+        r = pal(self.env, "desk", "send", "Boss#ops", "What: y", term="tC")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Boss#general (its inbox)", r.stderr)
 
     def test_a_head_without_ops_gets_it_on_its_first_topic(self):
         sp = [dict(s) for s in SPACES]

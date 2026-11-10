@@ -246,7 +246,7 @@ export default class CrewChief extends View {
   handedRows(d) {
     const list = this.handed();
     const out = [this.label(d, `Handed to ${headName()}`)];
-    if (!list.length) out.push(div().text_size(12.5).text_color(d.fg2).child(`Nothing yet. When you agree on something, ${this.chiefName()} hands it to ${headName()}#ops as a card.`));
+    if (!list.length) out.push(div().text_size(12.5).text_color(d.fg2).child(`Nothing yet. When you agree on something, ${this.chiefName()} hands it to ${headName()}#${shared("crew.settings")?.head_topic || "ops"} (its inbox) as a card.`));
     else out.push(this.rows(d, list.map((k) => [this.tag(d, k.id, "chief"), div().flex_1().min_w(0).truncate().text_size(12.5).text_color(d.body).child(k.title ?? ""),
       this.tag(d, k.status ?? "?", k.status === "done" ? "ok" : OPEN.includes(k.status) && k.status !== "held" ? "plain" : "warn"),
       div().w(36).flex_none().text_size(11.5).text_color(d.fg3).child(ago(Date.parse(k.created ?? "") || 0))])));

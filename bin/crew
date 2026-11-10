@@ -243,7 +243,7 @@ def without_chief(spaces, recs):
     chief = crewchief.record(recs)
     if not chief:
         return spaces
-    print(f"({chief['name']}, {OWNER}'s chief of staff, is in its pop-up: it takes no messages; it reads, and hands work to {crewchief.HEAD}#{crewchief.OPS})")
+    print(f"({chief['name']}, {OWNER}'s chief of staff, is in its pop-up: it takes no messages; it reads, and hands work to {crewchief.inbox_label()})")
     return [s for s in spaces if not crewchief.is_chief_space(s, recs)]
 
 

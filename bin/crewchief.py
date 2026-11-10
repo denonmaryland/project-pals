@@ -24,7 +24,13 @@ ROLE = "Chief of staff"
 NAME = "Chief"
 HOME_DIR = DATA / "crew-chief"
 TEMPLATE = Path.home() / ".local" / "lib" / "herdr-crew" / "chief-AGENTS.md"
-OPS = "ops"   # the head pal's switchboard topic (T60): the Chief's one way down
+OPS = "ops"   # the fallback when the owner hasn't set the head pal's inbox topic (T60, pal settings head-topic)
+
+
+def inbox_label():
+    """'Orca#ops': where the Chief's cards go, for messages (the head pal's inbox topic, else #ops)."""
+    from crewlib import head_topic
+    return f"{HEAD}#{head_topic() or OPS}"
 SEEDS = {
     "priorities.md": "# Priorities\n\nThe 3-5 things that matter now, each with why and a check date. The pop-up's dashboard shows this file.\n",
     "decisions.md": f"# Decisions\n\n{OWNER}'s calls made in the Chief's pop-up, quoted and dated. Append only.\n",
@@ -94,7 +100,7 @@ def refuse_target(spec, what="a card"):
     """Raise when `spec` names the Chief: it takes no cards, messages, rooms or routines."""
     if is_chief_pal(spec):
         raise CrewError(f"the {NAME} doesn't take {what}: it only reads, when {OWNER} opens it. "
-                        f"Put it on Home (pal home …) or tell {HEAD}#{OPS}.")
+                        f"Put it on Home (pal home …) or tell {inbox_label()}.")
 
 
 # ── what the Chief may run ─────────────────────────────────────────────────────────────────────
@@ -123,16 +129,17 @@ def cli_refusal(cmd, rest):
         if allowed is None or sub in allowed:
             return None
         if cmd == "desk" and sub not in allowed:
-            return (f"the {NAME} reads the Desk and sends cards to {HEAD}#{OPS}; it doesn't take, close or move cards. "
-                    f"Hand it down: pal desk send \"{HEAD}#{OPS}\" \"…\" --task")
+            return (f"the {NAME} reads the Desk and sends cards to {inbox_label()}; it doesn't take, close or move cards. "
+                    f"Hand it down: pal desk send \"{inbox_label()}\" \"…\" --task")
     return (f"the {NAME} doesn't run `pal {cmd}{(' ' + rest[0]) if rest else ''}`: it reads, advises {OWNER} and hands work to "
-            f"{HEAD}#{OPS} (pal desk send \"{HEAD}#{OPS}\" \"what, why, done when\" --task). {HEAD} does the rest.")
+            f"{inbox_label()} (pal desk send \"{inbox_label()}\" \"what, why, done when\" --task). {HEAD} does the rest.")
 
 
 def send_target(to, spaces):
-    """The one place the Chief's cards may go: the head pal's #ops (its first topic when it has no #ops).
-    Returns the 'Pal#topic' to use, or raises."""
-    from crewlib import find, chan
+    """The one place the Chief's cards may go: the head pal's inbox topic from the roster (T60's
+    head_topic, set by the owner; today Orca#ops), else its #ops, else the topic it shows. Returns the
+    'Pal#topic' to use, or raises."""
+    from crewlib import find, chan, head_inbox
     head = next((s for s in spaces if (records().get(s["id"]) or {}).get("god")), None) \
         or next((s for s in spaces if norm(s["name"]) == norm(HEAD)), None)
     if not head:
@@ -146,12 +153,16 @@ def send_target(to, spaces):
         except CrewError:
             space = None
         if not space or space["id"] != head["id"]:
-            raise CrewError(f"the {NAME} hands work only to {head['name']}#{OPS}, who routes it; not to {pal}.")
-    names = [chan(t) for t in head["tabs"]]
-    ops = next((n for n in names if n.lower() == OPS), None)
-    if topic and topic.lower() != OPS and ops:
-        raise CrewError(f"the {NAME} hands work to {head['name']}#{OPS}, not #{topic} ({OWNER} talks to {head['name']} there).")
-    return f"{head['name']}#{ops or (topic if topic in names else names[0])}"
+            raise CrewError(f"the {NAME} hands work only to {head['name']}'s inbox ({inbox_label()}), who routes it; not to {pal}.")
+    tabs = head["tabs"]
+    inbox = head_inbox(head) or next((t for t in tabs if chan(t).lower() == OPS), None) \
+        or next((t for t in tabs if t.get("active")), None) or (tabs[0] if tabs else None)
+    if not inbox:
+        raise CrewError(f"{head['name']} has no topic to hand this to; tell {OWNER}.")
+    want = chan(inbox)
+    if topic and topic.lower().lstrip("#") != want.lower():
+        raise CrewError(f"the {NAME} hands work to {head['name']}#{want} (its inbox), not #{topic}.")
+    return f"{head['name']}#{want}"
 
 
 # ── the Chief's own tool calls (Claude Code PreToolUse) ───────────────────────────────────────
@@ -191,7 +202,7 @@ def hook_refusal(tool, inp, cwd=None):
         path = inp.get("file_path") or inp.get("notebook_path") or ""
         if path and not _inside_home(path, cwd):
             return (f"the {NAME} writes only in its own folder ({_home()}): priorities.md, decisions.md, watch.md and "
-                    f"notes. Hand changes to {HEAD}#{OPS} with pal desk send.")
+                    f"notes. Hand changes to {inbox_label()} with pal desk send.")
         return None
     if tool != "Bash":
         return None
@@ -212,7 +223,7 @@ def hook_refusal(tool, inp, cwd=None):
             sub = rest[j] if j < len(rest) else ""
             tail = " " + " ".join(rest[j + 1:])
             if sub not in GIT_READS or (sub in GIT_READ_ONLY_FORMS and GIT_READ_ONLY_FORMS[sub].search(tail)):
-                return f"the {NAME} reads git (log, status, diff, show, branch…) but doesn't change it (git {sub}). Hand it to {HEAD}#{OPS}."
+                return f"the {NAME} reads git (log, status, diff, show, branch…) but doesn't change it (git {sub}). Hand it to {inbox_label()}."
         if head in PAL_NAMES:
             sub = rest[0] if rest else ""
             why = cli_refusal(sub, rest[1:])
@@ -221,11 +232,11 @@ def hook_refusal(tool, inp, cwd=None):
         if head in OTHER_PALS:
             if head.endswith("-room") and rest and rest[0] in ("read", "ls", "list", "--help", "-h"):
                 continue
-            return f"the {NAME} doesn't run {head} (rooms, crewd, the app): it reads and hands work to {HEAD}#{OPS}."
+            return f"the {NAME} doesn't run {head} (rooms, crewd, the app): it reads and hands work to {inbox_label()}."
     for target in crewguard.write_targets(cmd):
         if target and not target.startswith("/dev/") and not _inside_home(target, cwd):
             return (f"the {NAME} writes only in its own folder ({_home()}); not {target}. "
-                    f"Hand changes to {HEAD}#{OPS} with pal desk send.")
+                    f"Hand changes to {inbox_label()} with pal desk send.")
     return None
 
 
@@ -240,7 +251,9 @@ def render(template=None, chief=None):
     HOME_DIR.mkdir(parents=True, exist_ok=True)
     st = settings()
     chief = chief or name() or NAME
-    text = src.read_text().replace("{{OWNER}}", st["owner"]).replace("{{HEAD}}", st["head"]).replace("{{CHIEF}}", chief)
+    # The brief's "{{HEAD}}#ops" (and {{INBOX}}) is the head pal's inbox topic, whatever the owner set.
+    text = src.read_text().replace("{{HEAD}}#ops", "{{INBOX}}").replace("{{INBOX}}", inbox_label())
+    text = text.replace("{{OWNER}}", st["owner"]).replace("{{HEAD}}", st["head"]).replace("{{CHIEF}}", chief)
     (HOME_DIR / "AGENTS.md").write_text(text)
     (HOME_DIR / "CLAUDE.md").write_text("@AGENTS.md\n")
     for f, seed in SEEDS.items():
@@ -255,4 +268,4 @@ def primer(chief, ch):
             f"pop-up {OWNER} opens with Ctrl+Shift+J; nothing is ever sent to you but {OWNER}'s own words. "
             f"Your brief is AGENTS.md in this folder: read it. Pull what you need (pal overview, pal feed --all, "
             f"pal home --json, pal desk ls --all, pal task ls --all, pal peek, git log/status) and hand work down with "
-            f"pal desk send \"{HEAD}#{OPS}\" \"…\" --task. You're in #{ch}.")
+            f"pal desk send \"{inbox_label()}\" \"…\" --task. You're in #{ch}.")
