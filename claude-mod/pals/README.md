@@ -13,7 +13,8 @@ above the prompt, and adds `/desk`.
 The work timeline (`hooks/timeline.tsx`) draws the pal's work as one calm line per tool call: icon,
 verb, target and a short result (`▸ read src/a.ts 84 lines`, `✎ edit a.ts +3 −7`, `✓ test npm test
 12 passed`). The engine's thinking summaries between calls become dim `◇ thinking` lines, and the
-agent's prose stays as Claude Code draws it. Click a line to open its raw output in place. ctrl+o
+agent's prose stays as Claude Code draws it. An edit of 4 changed lines or fewer shows them under its
+line. Click a line to open its raw output in place. ctrl+o
 still shows Claude Code's own rows. Questions, plans and to-do lists keep their own rows. If
 anything in it fails, Claude Code draws its normal rows. Set `PALS_TIMELINE=0` in a pal's
 environment to turn it off.
