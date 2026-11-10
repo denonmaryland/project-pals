@@ -469,7 +469,7 @@ function stepLine(el: any, key: string, step: Step, columns: number, onPress: ()
   )
 }
 
-function rawBlock(el: any, key: string, lines: RawLine[], columns: number) {
+function rawBlock(el: any, key: string, lines: RawLine[], columns: number, dim = false) {
   const { Box, Text } = el
   const shown = lines.slice(0, RAW_ROWS)
   const more = lines.length - shown.length
@@ -477,7 +477,7 @@ function rawBlock(el: any, key: string, lines: RawLine[], columns: number) {
   return (
     <Box key={key} flexDirection="column">
       {shown.map((l, n) => (
-        <Text key={`${key}-${n}`}><Text color={C.gutter}>┊   │ </Text><Text color={l.kind === 'add' ? C.add : l.kind === 'del' ? C.del : C.meta}>{fit(l.text, w)}</Text></Text>
+        <Text key={`${key}-${n}`}><Text color={C.gutter}>┊   │ </Text><Text color={l.kind === 'add' ? C.add : l.kind === 'del' ? C.del : C.meta} dimColor={dim}>{fit(l.text, w)}</Text></Text>
       ))}
       {more > 0 ? <Text><Text color={C.gutter}>┊   │ </Text><Text color={C.meta} italic>… {plural(more, 'more line')} · ctrl+o shows all</Text></Text> : ''}
     </Box>
@@ -547,7 +547,7 @@ async function stepRows($: any, e: any, el: any, calls: Call[]) {
     if (open && c.output !== undefined) out.push(rawBlock(el, `${c.id}-raw`, rawLines(c.tool, c.input, c.output), columns))
     else if (!c.isErrored && !c.isInterrupted) {
       const small = smallDiff(c.tool, c.output)
-      if (small) out.push(rawBlock(el, `${c.id}-diff`, small, columns))
+      if (small) out.push(rawBlock(el, `${c.id}-diff`, small, columns, true)) // dimmed: the line above is the step
     }
   }
   return out
