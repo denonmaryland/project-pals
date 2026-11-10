@@ -12,7 +12,7 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
@@ -834,7 +834,9 @@ export default class CrewRoster extends View {
   // show; more scroll. Click switches, right-click is the channel menu.
   heroChannels(space, bot, d) {
     // Pinned first, then your arrangement or the smart order (channelOrder).
-    const ordered = channelOrder(space, bot);
+    // One panes() read for the whole list (see agentTabs).
+    const ps = panes(), withAgent = agentTabs(ps), hasAgent = (x) => withAgent.has(x.id);
+    const ordered = channelOrder(space, bot, ps);
     const q = this.chSearchOpen ? this.chSearch.value().trim().toLowerCase() : "";
     const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
@@ -858,7 +860,7 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
-      const live = bot.awake ? ordered.filter((x) => tabHasAgent(x)) : [];
+      const live = bot.awake ? ordered.filter(hasAgent) : [];
       const working = live.filter((x) => x.status === "working").length, asks = live.filter((x) => x.status === "blocked").length;
       const summary = [String(ordered.length), working && `${working} working`, asks && `${asks} need${asks === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
       head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
@@ -891,11 +893,11 @@ export default class CrewRoster extends View {
         .child(topicMark(tab))
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
-          .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
+          .text_color(on ? d.fg1 : hasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
         .when(tabPinned(tab), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
         // The Desk: "N waiting" or "held 12m" when cards wait for this topic (crew.desk, from the header).
         .when(Boolean(lane?.open), (el) => el.child(deskLaneMark(d, lane)))
-        .child(!tabHasAgent(tab) ? noAgentTag(d)
+        .child(!hasAgent(tab) ? noAgentTag(d)
           : st === "working" ? workingMark(d)
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
