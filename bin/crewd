@@ -33,6 +33,7 @@ import crewroutines
 import crewupdate
 import crewguard
 import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
+import crewchief  # the Chief: nothing is ever typed into it (crew-boards/chief/design.md)
 import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
 import crewsleep  # pals put to sleep in place (their markers)
 
@@ -247,6 +248,8 @@ class Crewd:
         # One note per sender: several things asked of the same turn share one reply.
         by_sender = {}
         for d in fire:
+            if crewchief.is_chief_terminal(d.get("from")):
+                continue   # the Chief pulls: it sees how its cards went on its dashboard, not in its terminal
             by_sender.setdefault(d["from"], []).append(d)
         lines = screen(addr) if what != "blocked" and by_sender else []
         for sender, ds in by_sender.items():
@@ -354,6 +357,11 @@ class Crewd:
             if not items:
                 continue
             t = terms.get(addr)
+            if crewchief.is_chief_terminal(addr, terms):
+                # The Chief only pulls: whatever got here (a hand-written file?) is dropped, never typed.
+                for f, _ in items:
+                    f.unlink(missing_ok=True)
+                continue
             if not t or t.get("state") != "live":
                 # The terminal is gone: drop what was waiting for it.
                 if t is None or t.get("state") == "finished":
@@ -453,7 +461,7 @@ class Crewd:
             last = self.nudged.get(addr, 0) if hasattr(self, "nudged") else 0
             if not hasattr(self, "nudged"):
                 self.nudged = {}
-            if mins < 15 or time.time() - last < 3600:
+            if mins < 15 or time.time() - last < 3600 or crewchief.is_chief_terminal(addr):
                 return
             self.nudged[addr] = time.time()
             enqueue(addr, f"You were stuck about {mins}m in #{ch}. If something was missing (a tool, a skill, a rule, context, "

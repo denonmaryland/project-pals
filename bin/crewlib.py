@@ -121,6 +121,11 @@ def save_settings(**changes):
     save_json(SETTINGS, s)
     render_god()
     render_partner()
+    try:
+        import crewchief
+        crewchief.render()
+    except Exception:
+        pass
     return settings()
 
 
@@ -573,6 +578,9 @@ def enqueue(terminal, text, sender=None, kind="msg", not_before=0.0, urgent=Fals
     Without crewd running, it's typed in now (after not_before)."""
     if not terminal:
         raise CrewError("no terminal")
+    import crewchief
+    if crewchief.is_chief_terminal(terminal):
+        raise CrewError(f"{terminal} is the {crewchief.NAME}'s: nothing is typed into it but {OWNER}'s own words in its pop-up")
     item = {"id": new_id(), "at": now_ms(), "terminal": terminal, "from": sender, "kind": kind,
             "text": text, "not_before": int(not_before * 1000) if not_before else 0, "urgent": urgent, **(meta or {})}
     if daemon_alive():
