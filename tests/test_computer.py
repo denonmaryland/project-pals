@@ -128,6 +128,18 @@ class Views(unittest.TestCase):
         self.assertEqual(tv["focus"], "beta on Friday")
         self.assertEqual([r["id"] for r in tv["next"]], ["T41"])
 
+    def test_a_split_topic_reads_its_agent_not_the_shell(self):
+        import crewcomputer
+        # #checkout split: a shell first, the agent second (an idle agent may report no app).
+        space = {"name": "Juniper", "tabs": [{"name": "#checkout", "terminals": [{"terminal": "s1"}, {"terminal": "a1"}]},
+                                             {"name": "#notes", "terminals": [{"terminal": "s2"}]}]}
+        live = {"s1": {"state": "live", "agent": "bash"}, "a1": {"state": "live", "agent": "claude", "status": "working"},
+                "s2": {"state": "live", "agent": "zsh"}}
+        tv = crewcomputer.today_view("Juniper", space, live, [], [], {}, today=MON)
+        states = {t["topic"]: (t["state"], t["terminal"]) for t in tv["topics"]}
+        self.assertEqual(states["checkout"], ("working", "a1"))
+        self.assertEqual(states["notes"], ("shell", "s2"))
+
     def test_work_blocks_from_the_feed(self):
         import crewcomputer
         h = lambda hh, mm=0: int(datetime.datetime.combine(MON, datetime.time(hh, mm)).timestamp() * 1000)

@@ -17,7 +17,7 @@ import re
 import time
 from pathlib import Path
 
-from crewlib import DATA, FEED, memory_dir, norm
+from crewlib import DATA, FEED, is_agent, memory_dir, norm
 
 OPEN = ("open", "claimed", "blocked")
 DAY_MS = 86400000
@@ -70,10 +70,15 @@ def topics_now(space, live, tasks, asleep=()):
     for tab in space.get("tabs", []):
         name = tab["name"][1:] if tab["name"].startswith("#") else tab["name"]
         terms = [x for x in tab.get("terminals", []) if x]
-        agent = next((x for x in terms if x.get("app")), None) or (terms[0] if terms else None)
-        st = (live.get((agent or {}).get("terminal")) or {}).get("status")
+        # The topic's agent pane even when it's split with shells (crewlib.lead's rule): one that
+        # reports an app, else one herdr-core says runs an agent, else the first.
+        agent = next((x for x in terms if x.get("app")), None) \
+            or next((x for x in terms if is_agent(live.get(x.get("terminal")))), None) or (terms[0] if terms else None)
+        info = live.get((agent or {}).get("terminal")) or {}
         addr = (agent or {}).get("terminal")
-        state = "asleep" if addr in asleep else (st or ("idle" if (agent or {}).get("app") else "shell"))
+        st = info.get("status")
+        running = bool((agent or {}).get("app")) or is_agent(info)
+        state = "asleep" if addr in asleep else (st or ("idle" if running else "shell"))
         task = next((t for t in tasks if t["status"] in OPEN and str(t.get("claimed_by") or t.get("assignee") or "").lower()
                      == f"{space['name']}#{name}".lower()), None)
         out.append({"topic": name, "state": state, "terminal": (agent or {}).get("terminal"),
