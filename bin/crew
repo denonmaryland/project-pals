@@ -2425,7 +2425,10 @@ def main(argv):
         if o.get("folder"):
             o["folder"] = os.path.abspath(os.path.expanduser(o["folder"]))
         out = request("hire", spaces, name=" ".join(pos), **o)
-        print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
+        if o.get("chief"):
+            print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. It lives in its pop-up: Ctrl+Shift+J; nothing is sent to it but your words there.")
+        else:
+            print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
     elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.4.0
