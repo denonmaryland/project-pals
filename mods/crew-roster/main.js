@@ -14,16 +14,15 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, toolStrip, deskMode, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
   toggleChief, withoutChief, isChiefRec, toggleComputer } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
-// The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
-// with their names (about 32 px more each) from this sidebar width up: 16 of padding, three labeled
-// pebbles, four 6 px gaps and the two 28 px icon pebbles need 384.
-const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390;
+// The hero's tool strip shows Inbox / Tasks / Desk with their names from this sidebar width up
+// (each slot is a fifth of the strip; under this a name would truncate to "In…").
+const HERO_LABELS_AT = 390;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
 // Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
@@ -795,16 +794,11 @@ export default class CrewRoster extends View {
         .child(bot.name)))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
-    // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    // Inbox, Tasks and Desk are icon + count pebbles of one fixed width (DeNon via Orca, 2026-11-08:
-    // five pebbles at the 304 px sidebar truncated the labels to "In…" / "Ta…"); their names are in
-    // the tooltips, and show on the pebbles only once the sidebar is wide enough for all three
-    // (HERO_LABELS_AT). Each keeps a fixed count slot, a spacer takes what's left, and profile and the
-    // moon stay icon-only on the right: a count appearing or a pal switch never moves anything.
+    // The tools are one recessed strip (toolStrip, T106): five equal slots, the open view a raised
+    // tile. Inbox, Tasks and Desk show their names once the sidebar is wide enough for all three
+    // (HERO_LABELS_AT; at 304 px a name would truncate to "In…"), their counts only when there are
+    // any, and a hairline sets them apart from Profile and the last slot.
     const labels = (w ?? 0) >= HERO_LABELS_AT;
-    const quick = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, slot: 18,
-      w: labels ? HERO_PEBBLE_LABELED : HERO_PEBBLE, extra: count ? (count > 99 ? "99+" : count) : null, onClick: action,
-      tooltip: tip, ...more });
     // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
     // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
     // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
@@ -815,30 +809,34 @@ export default class CrewRoster extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
-      .child(h_flex().px(8).pt(12).gap(6)
-        .child(quick("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
-          needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null }))
+      .child(div().px(8).pt(12).child(toolStrip(d, [
+        { id: "hero-inbox", icon: "ds-inbox", label: labels ? "Inbox" : null, count: needs, countColor: d.warnText, active: this.view() === "you",
+          onClick: () => setShared("crew.view", this.view() === "you" ? "bots" : "you"),
+          tooltip: needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you" },
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
-        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
-        .child(quick("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
-          mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
+        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task). A dialog, so never "open".
+        { id: "hero-tasks", icon: "ds-tasks", label: labels ? "Tasks" : null, count: mine,
+          onClick: () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }),
+          tooltip: mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}` },
         // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
-        // the Desk view on this pal.
-        // The head pal's Desk is its Home (Orca's call, 2026-11-08): there the pebble opens Home.
-        .child(quick("hero-desk", "ds-tell", "Desk", () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)), desk?.open ?? 0,
-          desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting",
-          { extraColor: desk?.held ? d.warnText : null }))
-        .child(div().flex_1().min_w(0))
+        // the Desk view on this pal. The head pal's Desk is its Home (Orca's call, 2026-11-08): there
+        // the slot opens Home, and the last slot is the one that shows Home as open.
+        { id: "hero-desk", icon: "ds-tell", label: labels ? "Desk" : null, count: desk?.open ?? 0, countColor: desk?.held ? d.warnText : null,
+          active: deskMode() && !(bot.god && hasHome()),
+          onClick: () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)),
+          tooltip: desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting" },
+        "|",
         // Profile: the right-side profile panel (again: closes it); the name above opens it too.
-        .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
-        // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head pal, which never sleeps (its menu has no
-        // Sleep either). There it's Home (a terminal icon, primary, while Home shows: back to the
-        // topic), in the same slot, so the row is the same width for every pal and fits a narrow
-        // sidebar (a sixth pebble pushed the moon off at 281 px). Ctrl+Shift+H does the same.
-        .child(bot.god && hasHome()
-          ? pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(), onClick: () => toggleHome(),
-            tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })
-          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: CLOSE_LABEL })));
+        { id: "hero-profile", icon: "ds-user", active: panelOpen(), onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" },
+        // The last slot: Close pal (end its space; Sleep in place is in its menus), except on the head
+        // pal, which never sleeps (its menu has no Sleep either). There it's Home (a terminal icon
+        // while Home shows: back to the topic), in the same slot, so the strip is the same for every
+        // pal. Ctrl+Shift+H does the same.
+        bot.god && hasHome()
+          ? { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", active: homeMode(), onClick: () => toggleHome(),
+            tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` }
+          : { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: CLOSE_LABEL },
+      ])));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a

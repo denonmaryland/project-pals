@@ -479,12 +479,18 @@ rectangular segments and tags.
     one), then a grid of 44px tiles with live 24px previews per group; a click applies at once,
     Done keeps it, Cancel or Esc puts back the one you had.
     No dragging: Herdr's lists have no row drag, so there is no hover pin either; each row takes its
-    own click and right-click. Then four quick actions as subtle "pebbles" (Inbox and
-    Tasks share the row evenly, flex-basis 0, and each keeps an 18px slot for its count even at zero,
-    so no count or pal switch changes their widths; Profile and Sleep are 28px squares) (one flat #1B1B1E face, a 6% white
-    hairline inside the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest
-    shadow, 28px, r7, 9px side padding; hover a shade lighter, press a shade darker, nothing moves;
-    `pebble()` in crew.js): Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; an inbox icon,
+    own click and right-click. Then the tools, as one **recessed strip** (T106, DeNon's pick 2, 2026-11-10: the row of
+    raised pebbles here "could look so much better"; `crew.js toolStrip`): a sunk track in the
+    Topics well's look (`sunk "strip"`: #030304, a dark edge, a 7px shadow under its top, r9,
+    36px, 3px in) holding five equal slots (they share the track equally, flex-basis 0; 28px, r6):
+    Inbox, Tasks, Desk, a 1x16 hairline, Profile, and Close pal (Home on the head pal). A slot is
+    its icon, centred, with its count beside it only when there is one, so a count or a pal
+    switch never changes a width. The open view's slot is a raised tile exactly like the shown
+    topic above it (`raisedTile`): Inbox while the sidebar shows it, Desk while the Desk view
+    shows, Profile while its panel is open, Home while Home shows; Tasks is a dialog and Close
+    pal an action, so they never are. Other slots light on hover. Names (Inbox, Tasks, Desk)
+    show from a 390px sidebar; under that they are in the tooltips. The slots:
+    Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; an inbox icon,
     the sidebar's Inbox view, a second click goes back to the pals; its count is what needs you,
     the status bar's "N need you" from shared `crew.needs`, amber #F0C04A when any, blank at zero;
     New topic is still the list's "+ New topic" row, the command bar and the right-click menu), Tasks with this pal's open count, an icon-only Profile (the profile panel, below;
