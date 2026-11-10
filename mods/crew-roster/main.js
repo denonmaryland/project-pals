@@ -16,7 +16,7 @@ import {
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL,
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
   toggleChief, withoutChief, isChiefRec } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -83,6 +83,9 @@ export default class CrewRoster extends View {
       try { await syncSettings(); } catch {}
       try { await syncFactories(); } catch {}
       if (!this.laidOut && applyLayout()) { this.laidOut = true; cx.notify(); }
+      // A first install: the welcome tour opens on Home by itself, once per window (it resumes at
+      // the screen it was left on). A replay from the gear menu shows Home itself.
+      if (this.laidOut && !this.welcomed && welcomeMark()?.state === "new" && hasHome()) { this.welcomed = true; showHome(); cx.notify(); }
     });
     sync();
     cx.timer.every(3000, () => sync());

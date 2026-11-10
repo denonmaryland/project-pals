@@ -30,6 +30,9 @@
 //   stuck ones, what's open on the head pal's desk: Home is its Desk), Releases (public / installed
 //   + build / next, queued, deploys) and Parked (Unpark, Drop).
 //
+// - The welcome tour (welcome.js; RECIPE "The welcome tour"): on a first install, and from the gear
+//   menu's Welcome tour, seven screens in the head pal's voice take the page until done or skipped.
+//
 // Nothing jumps (DeNon's fixed-height rule): every row has a fixed height, counts and ages sit in
 // fixed right-aligned slots, text truncates, and lists scroll on their own (our pill thumb).
 // Data is read only while Home shows: every 4 s (files) and 10 s (the desk), and at once when shown.
@@ -42,8 +45,9 @@ import {
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
   openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
   severalFactories, currentFactory, inFactory, homeItemShown,
-  withoutChief,
+  withoutChief, welcomePending,
 } from "./crew.js";
+import { welcomeView, welcomeKey } from "./welcome.js";
 
 const ICON = "mods/crew-roster/icons";
 const CARD = 76, ROW = 36, PROW = 48, AGE_W = 52, DRAWER_W = 420;
@@ -663,6 +667,8 @@ export default class CrewHome extends View {
   }
 
   key(e, list, cx) {
+    // The welcome tour has the page, and its own keys.
+    if (welcomePending()) { if (welcomeKey(this, e, cx)) { cx.stop_propagation(); cx.notify(); } return; }
     const k = e.keystroke;
     const n = this.mode === "review" ? this.current(list) : null;
     // Esc: the chat window first (Home keeps its id), then the drawer, then review ↔ list.
@@ -837,6 +843,8 @@ export default class CrewHome extends View {
       // Its width, in design pixels: narrow, the review's top bar shows only the key caps.
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.w ?? 0) - w) > 1) { this.w = w; cx.notify(); } })
       .on_mouse_down("left", () => this.handle.focus());
+    // The welcome tour (a first install, or replayed from the gear menu) has the whole page.
+    if (welcomePending()) return root.child(welcomeView(this, d, t, cx));
     if (needs.length && this.mode === "review") {
       return root.child(this.review(d, t, needs)).when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
     }

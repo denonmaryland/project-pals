@@ -45,6 +45,8 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  pal welcome                       where the welcome tour stands (it runs on Home; replay it from the gear menu)
+  pal welcome folders [--json]      the project folders the tour would suggest for a new pal (names and dates only)
   pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
                                     crew is the default one; until you make another, nothing changes
   pal factory new NAME [--template project-crew|platform-lanes] [--foreman Pal] [--foreman-topic T]
@@ -2523,6 +2525,13 @@ def main(argv):
         pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner", "chief"))
         if not pos and o.get("god"):
             pos = [settings()["head"]]
+        if o.get("god"):
+            # The head pal lives where its brief is (data/crew-god, rendered by install.sh), so
+            # whatever brain runs it reads the brief. A folder given by hand wins.
+            from crewlib import render_god
+            render_god()
+            if (HOME / "data" / "crew-god" / "AGENTS.md").exists():
+                o.setdefault("folder", str(HOME / "data" / "crew-god"))
         if o.get("chief"):
             # The Chief (crew-boards/chief/design.md): the owner's chief of staff, above the head pal.
             # Only the owner hires it (the pop-up's Hire button, a click), at most one, in its own home
@@ -2601,6 +2610,19 @@ def main(argv):
         cmd_desk(spaces, rest)
     elif cmd == "home":
         cmd_home(spaces, rest)
+    elif cmd == "welcome":
+        # The welcome tour (RECIPE "The welcome tour"). Read-only from here: the tour runs on Home.
+        import crewwelcome
+        pos, o = opts(rest, (), ("json",))
+        if pos[:1] == ["folders"]:
+            taken = [b.get("folder") for b in records().values() if b.get("folder")]
+            found = crewwelcome.folders(taken=taken)
+            if o.get("json"):
+                print(json.dumps(found, ensure_ascii=False))
+            else:
+                print("\n".join(f"{f['show']}  ({f['name']})" for f in found) or "no project folders found in the usual places")
+        else:
+            print(crewwelcome.status(settings()))
     elif cmd == "popout":
         cmd_popout(spaces, rest)
     elif cmd == "routine":
