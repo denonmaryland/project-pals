@@ -1,11 +1,13 @@
 // Review a worktree channel's branch: its files and diff against the branch it came from.
 // Click a line to comment on it; "Send to #channel" hands the notes to that channel (delivered
-// when its turn ends), and "Land" merges the branch into the project (pal land).
+// when its turn ends), and "Land" merges the branch into the project (pal land). For a branch of
+// Project Pals itself, "Try it live" runs it in your own install first (T90: pal update try; the
+// trial strip then has Back and Land).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, spaces, settings } from "herdr";
-import { crewCli, ownerCli, channelName, botOf, mascotEl, a, tone, ds, scrollArea, thumbFor } from "./crew.js";
+import { crewCli, ownerCli, channelName, botOf, mascotEl, a, tone, ds, scrollArea, thumbFor, liveStart } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 20;
@@ -110,6 +112,20 @@ export default class CrewReview extends View {
     });
   }
 
+  // Run this branch in the live install (the owner's click). It reloads the mods, this dialog's too,
+  // so it's left running on its own and the dialog closes: the trial strip and a toast take over.
+  tryLive(cx) {
+    const tg = this.target();
+    if (!tg || !this.data) return;
+    cx.spawn(async () => {
+      try {
+        await liveStart("try", [tg.spec]);
+        notify({ title: `Starting a trial of ${this.data.branch}`, body: `Checking it, then installing it over what's running${this.data.dirty ? ". Its uncommitted changes aren't part of it" : ""}. Back puts back what was there.`, level: "info", timeout: 6000 });
+        closeOverlay(props().overlay);
+      } catch (e) { notify({ title: "Couldn't start the trial", body: String(e.message ?? e).slice(0, 300), level: "warning", timeout: 8000 }); }
+    });
+  }
+
   key(e, cx) {
     if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
   }
@@ -207,6 +223,12 @@ export default class CrewReview extends View {
           .on_click((_e, cx) => this.send(cx))
           .child(div().text_size(13).text_color(this.comments.length ? t.foreground : t.dim)
             .child(`Send ${this.comments.length || ""} to #${channelName(tg.tab)}`.replace("  ", " "))))
+        // Only for a branch of Project Pals itself (its installer is in the diff's project).
+        .when(Boolean(d?.pals), (el) => el.child(div().id("rv-try").px(16).py(9).rounded(4).cursor_pointer()
+          .bg(a(tk.warn, "1f")).border_1().border_color(a(tk.warn, "66")).hover((s) => s.opacity(0.86))
+          .tooltip("Run this branch in your own Project Pals now. A strip at the top says so, with Back and Land.")
+          .on_click((_e, cx) => this.tryLive(cx))
+          .child(div().text_size(13).font_medium().text_color(tk.warnText).child("Try it live"))))
         .child(div().id("rv-land").px(18).py(9).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
           .on_click((_e, cx) => this.land(cx))
           .child(div().text_size(13).font_medium().text_color(t.solid_foreground).child(`Land on ${d?.base ?? "base"}`))));

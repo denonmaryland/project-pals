@@ -10,6 +10,7 @@ harnesses without a pre-command hook aren't gated."""
 import hashlib
 import os
 import re
+import subprocess
 import time
 
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
@@ -84,6 +85,12 @@ DEFAULT = {
         # refuses a key from inside a Herdr terminal as well; this holds the attempt and tells the owner.
         {"name": "helper-key", "why": "reaches for a trusted helper's key or name (those are the owner's assistants', not a pal's)",
          "check": "helper-keys", "pattern": r"$^"},
+        # The Live channel (T90): while the owner has it on, whatever lands on the branch it follows is
+        # installed into their running Project Pals at once. So moving that branch by hand (git
+        # update-ref refs/heads/main …, git branch -f main …) needs the click a landing needs. Off
+        # (Stable, the default), this rule holds nothing. pal land is the way, held by "land".
+        {"name": "live-branch", "why": "moves the branch the Live channel installs from (land it instead: pal land)",
+         "check": "moves-live-branch", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -872,14 +879,92 @@ def run_strings(cmd):
     return [c for c in out if c and c.strip()]
 
 
-CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
-          "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers}
+# ─── The branch the Live channel follows (T90) ──────────────────────────────────────────────────
+HOOK_CWD = None   # the folder the command runs in, when the hook knows it (bin/crew-hook sets it)
+# git subcommands that move the branch that's checked out where they run.
+MOVES_HEAD = {"commit", "merge", "reset", "pull", "rebase", "cherry-pick", "revert", "am"}
+
+
+def _checked_out(folder):
+    """(branch, the checkout's main folder) for a folder inside a git checkout, else (None, None)."""
+    try:
+        r = subprocess.run(["git", "-C", folder, "rev-parse", "--abbrev-ref", "HEAD", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None, None
+    out = r.stdout.split("\n") if r.returncode == 0 else []
+    if len(out) < 2:
+        return None, None
+    common = out[1].strip()
+    return out[0].strip(), (os.path.dirname(common) if os.path.basename(common) == ".git" else common)
+
+
+def moves_live_branch(cmd):
+    """While the Live channel is on (crew-settings.json "channel": "live"), a git command that moves
+    the branch it follows:
+      by name, anywhere: update-ref refs/heads/<b> (or --stdin: what it moves can't be read),
+        branch -f / -M / -C <b>, switch -C <b>, checkout -B <b>, worktree add -B <b>, and a
+        fetch / pull / push refspec that writes it (x:<b>);
+      or by being run in a checkout of the followed repo that is on that branch: commit, merge, reset,
+        pull, rebase, cherry-pick, revert, am (the folder is the hook's, a `cd` before it or git -C).
+    As with the rest of the gate, this catches the plain ways, not a pal set on getting around it."""
+    s = load_json(DATA / "crew-settings.json", {})
+    if s.get("channel") != "live":
+        return False
+    import shlex
+    branch = s.get("live_branch") or "main"
+    repo = os.path.realpath(s["live_repo"]) if s.get("live_repo") else None
+    cwd = HOOK_CWD
+    for seg in commands(cmd):
+        if _help(seg):
+            continue
+        w = normal_words(seg)
+        if len(w) == 2 and w[0] == "cd" and not w[1].startswith("-"):
+            cwd = os.path.normpath(os.path.join(cwd or "", os.path.expanduser(w[1]))) if cwd or os.path.isabs(os.path.expanduser(w[1])) else None
+            continue
+        if len(w) < 2 or w[0] != "git":
+            continue
+        sub, args = w[1], w[2:]
+        names = [a for a in args if not a.startswith("-")]
+        flag = lambda letters: any(re.fullmatch(rf"-[a-zA-Z]*[{letters}][a-zA-Z]*", a) for a in args)
+        if sub == "update-ref" and (f"refs/heads/{branch}" in args or "--stdin" in args):
+            return True
+        # git branch -f <branch> [start]: the branch moved is the first name (the second is where to).
+        if sub == "branch" and names[:1] == [branch] and (flag("fMC") or "--force" in args):
+            return True
+        if sub in ("switch", "checkout", "worktree") and any(
+                args[i + 1:i + 2] == [branch] for i, a in enumerate(args)
+                if a in ("--force-create", "-C", "-B") or (sub != "worktree" and re.fullmatch(r"-[a-zA-Z]*[CB]", a))):
+            return True
+        if sub in ("fetch", "pull", "push") and any(re.search(rf":(refs/heads/)?{re.escape(branch)}$", a) for a in names):
+            return True
+        if sub in MOVES_HEAD and repo:
+            # Where it runs: git -C <dir> (dropped by normal_words, so read from the segment), else the folder.
+            try:
+                raw = shlex.split(seg)
+            except ValueError:
+                raw = seg.split()
+            at = cwd
+            for i, a in enumerate(raw[:-1]):
+                if a == "-C" and "git" in [os.path.basename(x) for x in raw[:i]] and sub not in raw[:i]:
+                    d = os.path.expanduser(raw[i + 1])
+                    at = d if os.path.isabs(d) else (os.path.join(at, d) if at else None)
+            if at:
+                on, root = _checked_out(at)
+                if on == branch and root and os.path.realpath(root) == repo:
+                    return True
+    return False
 
 
 def _help(seg):
     """`pal land --help`, `git push --help`: asking how it works runs nothing."""
     return "--help" in normal_words(seg)[1:]
+
+
+CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
+          "click-writes": writes_click, "queue-writes": writes_queue,
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers,
+          "moves-live-branch": moves_live_branch}
 
 
 def matches(cmd, _depth=0):

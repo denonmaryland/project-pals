@@ -24,6 +24,19 @@
   },
   "children": [
     {
+      "id": "crew-live",
+      "type": "block",
+      "size": {
+        "px": 32
+      },
+      "min": 32,
+      "max": 32,
+      "hidden": true,
+      "content": {
+        "mod": "crew-live"
+      }
+    },
+    {
       "id": "body",
       "type": "row",
       "divider": {

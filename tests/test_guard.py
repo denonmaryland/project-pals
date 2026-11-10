@@ -702,3 +702,90 @@ class UninstallRule(unittest.TestCase):
             self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
         finally:
             crewguard.POLICY.unlink(missing_ok=True)
+
+
+class LiveBranch(unittest.TestCase):
+    """T90: while the owner's Live channel is on, what lands on the followed branch is installed into
+    their running Project Pals at once, so moving that branch by hand needs the click a landing needs.
+    With the channel off (Stable, the default) nothing here is held."""
+    SETTINGS = Path(TMP) / "crew-settings.json"
+    MOVES = [
+        "git update-ref refs/heads/main abc1234",
+        "git -C ~/Projects/project-pals update-ref -m 'land x' refs/heads/main abc1234 def5678",
+        "cd /repo && git update-ref refs/heads/main $(git rev-parse HEAD)",
+        "git branch -f main crew/x",
+        "git branch --force main HEAD",
+        "git -C /repo branch -M main",
+        "env GIT_DIR=/r/.git git update-ref refs/heads/main abc1234",
+        "bash -c 'git update-ref refs/heads/main abc1234'",
+        # The other plain ways (the independent review's list).
+        "git fetch . crew/x:main", "git fetch . crew/x:refs/heads/main", "git pull . crew/x:main",   # (git push . x:main is "push" already)
+        "git switch -C main crew/x", "git checkout -B main crew/x", "git switch --force-create main",
+        "git worktree add -B main ../m crew/x",
+        "echo 'update refs/heads/main abc1234' | git update-ref --stdin",
+    ]
+    FREE = [
+        "git update-ref refs/heads/crew/x abc1234", "git branch -f crew/x main", "git branch main-backup main",
+        "git branch --list main", "git log main..HEAD", "git rev-parse refs/heads/main", "git merge-base main HEAD",
+        "git update-ref --help", "grep -n 'update-ref refs/heads/main' bin/crew", "git commit -m 'update-ref refs/heads/main'",
+        "git worktree add -b crew/y ../y main", "git fetch origin main", "git fetch . main:crew/x", "git switch main",
+        "git checkout main", "git switch -c crew/z main", "git checkout -b crew/z main", "git pull . main:crew/x",
+    ]
+
+    def tearDown(self):
+        self.SETTINGS.unlink(missing_ok=True)
+        crewguard.HOOK_CWD = None
+
+    def test_held_while_the_channel_is_live(self):
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main"}))
+        for cmd in self.MOVES:
+            self.assertEqual(rule(cmd), "live-branch", cmd)
+        for cmd in self.FREE:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_the_followed_branch_is_the_one_held(self):
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "release"}))
+        self.assertEqual(rule("git update-ref refs/heads/release abc1234"), "live-branch")
+        self.assertIsNone(rule("git update-ref refs/heads/main abc1234"))
+
+    def test_nothing_is_held_on_stable(self):
+        for settings in (None, {"channel": "stable"}, {"owner": "Sam"}):
+            if settings is None:
+                self.SETTINGS.unlink(missing_ok=True)
+            else:
+                self.SETTINGS.write_text(json.dumps(settings))
+            for cmd in self.MOVES:
+                self.assertIsNone(rule(cmd), cmd)
+
+    def test_a_commit_in_a_checkout_of_the_followed_branch(self):
+        """commit / merge / reset … move whatever branch is checked out where they run: held when
+        that's the followed branch of the followed checkout, free on a topic's branch or elsewhere."""
+        import subprocess
+        t = Path(tempfile.mkdtemp(prefix="pals-livebranch-"))
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
+               "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
+        git = lambda *a, at=None: subprocess.run(["git", "-C", str(at or t / "repo"), *a], env=env, check=True, capture_output=True)
+        (t / "repo" / "sub").mkdir(parents=True)
+        git("init", "-q", "-b", "main")
+        git("commit", "-q", "--allow-empty", "-m", "one")
+        git("worktree", "add", "-q", "-b", "crew/x", str(t / "wt"), "main")
+        (t / "other").mkdir()
+        git("init", "-q", "-b", "main", at=t / "other")
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main", "live_repo": str(t / "repo")}))
+        moves = ("git commit -am x", "git merge crew/x", "git reset --hard HEAD~1", "git cherry-pick abc1234", "git pull . crew/x", "git rebase crew/x")
+        crewguard.HOOK_CWD = str(t / "repo" / "sub")
+        for cmd in moves:
+            self.assertEqual(rule(cmd), "live-branch", cmd)
+        for cmd in ("git status", "git log -3", "git diff", "git add -A", "git stash list"):
+            self.assertIsNone(rule(cmd), cmd)
+        crewguard.HOOK_CWD = str(t / "wt")           # a topic's worktree: its own branch
+        for cmd in moves:
+            self.assertIsNone(rule(cmd), cmd)
+        self.assertEqual(rule(f"git -C {t / 'repo'} commit -am x"), "live-branch", "git -C names the folder")
+        self.assertEqual(rule(f"cd {t / 'repo'} && git merge crew/x"), "live-branch", "and so does a cd before it")
+        self.assertEqual(rule("cd ../repo && git commit -m x"), "live-branch", "a relative cd, from the hook's folder")
+        crewguard.HOOK_CWD = str(t / "other")        # another project that happens to be on main
+        for cmd in moves:
+            self.assertIsNone(rule(cmd), cmd)
+        crewguard.HOOK_CWD = None                    # no folder known: nothing to go on
+        self.assertIsNone(rule("git commit -am x"))

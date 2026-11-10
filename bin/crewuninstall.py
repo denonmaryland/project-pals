@@ -96,7 +96,7 @@ UNIT = USER / ".config" / "systemd" / "user" / "herdr-crew.service"
 RETIRED_MODS = ("crew-rail", "crew-chat", "crew-prompt", "crew-palrail", "crew-tabs", "crew-side", "crew-tell")
 # Install's bookkeeping in data/: not pals' data, so it goes even without --purge.
 BOOKKEEPING = ("crew-install.json", "crew-footprint.json", "crew-originals", "crew-clicks", "crew-update.json",
-               "crew-update-run.json", "crew-statusline-original")
+               "crew-update-run.json", "crew-live.json", "crew-statusline-original")
 # What `record` notes the existence of (created by install when missing), deepest last.
 WATCHED = [USER / ".claude", CLAUDE, USER / ".claude" / "skills", USER / ".codex" / "skills",
            USER / ".gemini", USER / ".gemini" / "config", AGY, USER / ".gemini" / "config" / "skills",

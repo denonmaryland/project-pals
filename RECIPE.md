@@ -421,6 +421,74 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   A local `./install.sh` over an existing install takes the same kind of snapshot first
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
   recent install, not an older release update.
+- **The Live channel and Try it live** (T90): About › Settings' first row is **Update channel**, a
+  two-cell switch: **Stable** (the default: the releases above) or **Live** (green when on). Live
+  installs what lands on `main` in the owner's own checkout, as it lands: crewd asks git for the
+  branch's head every 3 s (`crewupdate.follow_due`) and, when it isn't the build that's running,
+  starts `pal update follow` in a systemd scope of its own (a swap may restart crewd). Follow
+  exports that commit (`git archive`, into `~/.cache/project-pals/live/`, with a `BUILD` file),
+  runs the quick checks (the scripts and JSON parse, the JS tests pass, every mod loads with
+  `herdr-app check` on a staged copy: seconds), snapshots what's installed
+  (`update-from-<version>-live-*.tar.gz`, the last 5 kept), runs `install.sh --from-live
+  --keep-crewd`, and checks the build came up: `pal version` runs, and `herdr-app status` reports
+  no new error naming a `crew-` mod or the layout. crewd restarts only when its own code changed
+  (its file, the `crew*.py` it imports or its unit), and must be active with a fresh heartbeat
+  within 20 s. Anything failing after the snapshot puts the snapshot back by itself (and deletes
+  it: it equals what's installed again, and would make the next Roll back a no-op). A commit that
+  fails (before or after the swap) is **held**: not tried again until the branch moves. Putting a
+  snapshot back writes only the files that differ, a mod's `main.js` last, and restarts crewd only
+  when its code differs. The snapshot also holds the Chief's and the idea partner's rendered briefs
+  and the shipped pal-desk skill, so Back restores those too.
+  The installer writes only files whose content changed (`cmp`, `rsync --checksum` without times),
+  so only the mods that changed reload; `main.js` still goes last in a mod that changed.
+  A toast says what happened, once per swap (the status bar reads `data/crew-live.json`): "main
+  b6c982c is live" with the commit's subject and "reloaded about, status in place, crewd
+  restarted", or a warning that it didn't go live and what was put back. The status strip shows a
+  green dot and "live · b6c982c" on its right, in the release pill's place (just "live" when the
+  strip is too narrow; amber, with the reason in the tooltip, while a commit is held). About's header reads "Version 0.4.1 · main b6c982c · 53 commits after
+  v0.4.1" and its status card "Live: following main" with the last landing.
+  The full Python suite (minutes) runs after the swap, in the background (`pal update run-tests`,
+  its result in `crew-live.json` `tests`); a failure is a warning toast and red in About, and holds
+  a trial's Land, but doesn't take a running build away. `live_tests` in `crew-settings.json`
+  makes it `"before"` (the swap waits for it) or `"off"`.
+  **Try it live** is a button on Review, beside Land, for a branch of Project Pals itself (`pal
+  diff --json` says `pals`): `pal update try <Pal#topic>` installs the branch's last commit the
+  same way and keeps the snapshot from before it. While a branch is tried, a 32 px strip runs
+  across the top of the window (the layout's `crew-live` block, hidden otherwise; DeNon's pick, Home
+  h-0a897a): an amber square, "Trying", the branch and commit in mono, "· tests running | passed |
+  failed: … · since 20:41", then **Back** and **Land on main** (the branch's own base, if not
+  main). The status strip says "trying crew/x" in amber (or just "trying"). The Live channel waits during a trial. Back
+  (`pal update back`) restores the snapshot, then Live catches up with main. Trying a second branch
+  on top keeps the first snapshot, so Back, and About's Roll back during a trial, both return to
+  the build from before any trial. Land runs `pal land <Pal#topic> --at <the tried commit>`: a
+  branch that got a commit since the trial started is refused ("has moved since"), so one click
+  never lands code that wasn't looked at. A tried branch that lands on the followed branch ends the
+  trial and that branch is installed once, whatever the channel, so what runs is what landed (on
+  Stable that brings in everything landed on main, not only this branch). Failing tests turn the
+  strip red and hold its Land.
+  About's footer has **Back to stable (X)** while a build that isn't a release is running: it asks
+  in place, then `pal update stable` sets the channel to Stable, ends any trial and installs the
+  newest release (Roll back brings the build before it back); if GitHub can't be reached or the
+  release doesn't install, nothing is given up: the channel and a trial stay as they were. Roll
+  back on the Live channel holds the commit it undid. The status bar's release pill isn't shown on
+  Live or during a trial, and `pal update apply` refuses there (Back to stable is the way).
+  Switching the channel, Try it live, Back and Back to stable need the owner's click (a one-time
+  token); a pal is refused, and `pal update follow` (no arguments: it only ever installs the
+  followed branch's head, and only while the channel is on) refuses a pal's terminal. While the
+  channel is Live, the gate's `live-branch` rule holds a pal moving that branch, because moving it
+  is installing, so it takes the click a landing takes: by name (`git update-ref refs/heads/main`
+  or `--stdin`, `branch -f` / `-M` / `-C main`, `switch -C main`, `checkout -B main`, `worktree add
+  -B main`, a fetch or pull refspec `x:main`), and `commit`, `merge`, `reset`, `pull`, `rebase`,
+  `cherry-pick`, `revert` and `am` run in a checkout of the followed repo that is on that branch
+  (the hook passes the folder; a `cd` before it and `git -C` count). On Stable the rule holds
+  nothing. Like the rest of the gate it catches the plain ways, not a pal set on getting round it.
+  `pal update run-tests` (the background suite) only runs for the build a swap just announced.
+  `pal land` no longer needs the project folder to be on the base branch: where the base is checked
+  out (the folder or a worktree) it merges there; where it's checked out nowhere it merges with
+  `git merge-tree --write-tree`, commits with `commit-tree` and moves the branch with `update-ref`
+  only if it's still where it was. No checkout is touched. A branch that's on the base already
+  lands nothing ("is on main already") instead of making an empty merge.
+  `pal version` and `pal update status` say the build, the channel, a trial and a held commit.
 - **Supported Herdr** (T48): `pals.json` `"herdr"` gives `{min, tested, below}` for `app` (herdr-app)
   and `core` (hc): 0.1.8 / 0.1.14 / 0.2 and 0.1.11 / 0.1.19 / 0.2. `install.sh` runs
   `bin/crewcompat.py` first: outside min..below (or a missing / unreadable version) it prints a
@@ -1496,7 +1564,9 @@ record; the owner turns it on again in the sheet.
   a helper's line and each record row say), copied into every mod by install.sh like the rest.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
-    `crew-composer` (rooms), `crew-status`, `crew-profile` (the profile panel; `focusable`).
+    `crew-composer` (rooms), `crew-status`, `crew-profile` (the profile panel; `focusable`),
+    `crew-live` (the trial strip: the root column's first block, 32 px, hidden until `crew-status`
+    shows it with `layout.show` while `crew-live.json` has `trying`).
     Popups: `crew-appmenu` (the gear), `crew-termmenu`, `crew-palmenu` (props `space`), `crew-command` (props `space`; `at` the header's field). Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`), `crew-room-new`, `crew-routines`,
@@ -1528,6 +1598,17 @@ record; the owner turns it on again in the sheet.
 
 ## Watch out
 
+- **A swap started by crewd must outlive crewd** (T90): installing may restart it, and systemd
+  kills a unit's whole process group. `crewupdate.detach` starts `pal update follow` (and the
+  background tests) with `systemd-run --user`, a unit of its own; without a systemd user session it
+  falls back to a new session, and there's no crewd to restart anyway. The updater restarts crewd
+  itself, last, after recording the swap (`install.sh --keep-crewd`).
+- **Rewriting an unchanged file reloads its mod** (T90): Herdr reloads on any save, so a plain `cp`
+  of 30 mods closed every open dialog on each install. `install.sh` compares content first and
+  doesn't set times; tests/test_live.py checks an untouched mod's `main.js` keeps its mtime.
+- **`herdr-app` and `systemctl` reach the live session whatever `HOME` says.** tests/test_live.py
+  runs the whole Live and trial story in a throwaway home with fakes of both in front on `PATH`,
+  and its fake `herdr-app check` / `status` are what fail a "broken" build.
 - **Owner decisions need the owner's click** (Codex review H1): approve / deny, accepting or
   declining a proposal, `pal agents apply`, `pal mission set`, `pal brain where` / `write`. The mod
   writes a one-time token for exactly that command line into `data/crew-clicks/` (`ownerCli` in
@@ -1886,6 +1967,17 @@ record; the owner turns it on again in the sheet.
   nothing; after Approve the same line goes on to the checks; `--dry-run` asks nobody. A plain
   shell's `pal home done <a pal's ask>` is refused; the asker's is shown as Withdrawn
   (`tests/test_owner_step.py`, `tests/test_home.py`).
+- With About's Update channel on Live, a commit landed on main in your checkout shows in the open
+  window within about 20 s without restarting anything: a "main <commit> is live" toast names what
+  reloaded, a dialog of a mod that didn't change stays open, and `pal version` says "running: main
+  <commit>". A commit whose mod doesn't load never reaches the install; one that installs but
+  doesn't come up is put back by itself; either is held until main moves. Review's Try it live on
+  a topic's branch puts the amber strip across the top; Back restores what was running, Land on
+  main merges it without touching the project folder's checkout, and is refused if the branch got
+  a commit after the trial started. From a pal's terminal, `pal settings channel live`, `pal update
+  try`, `back` and `stable` are refused, and with Live on, a pal's `git update-ref refs/heads/main
+  …` is held for the Inbox.
+
 - Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
   `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
   closes it and the asker gets "Re h-…: A" as a card from the owner. With nothing waiting, Home

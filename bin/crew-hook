@@ -208,6 +208,7 @@ def pre_tool_use(event):
     else:
         return
     import crewguard
+    crewguard.HOOK_CWD = event.get("cwd") or None   # where it runs: the live-branch rule asks which branch is checked out there
     if not crewguard.matches(cmd):
         return
     me = crew_bot()
@@ -253,6 +254,7 @@ def agy_pre_tool_use(event):
     args = tc.get("args") or {}
     cmd = str(args.get("CommandLine") or args.get("command") or "")
     import crewguard
+    crewguard.HOOK_CWD = args.get("Cwd") or args.get("cwd") or event.get("cwd") or None
     if not crewguard.matches(cmd):
         return
     me = crew_bot()

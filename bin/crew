@@ -136,6 +136,12 @@ Updates
   pal version                       what's installed
   pal update [check|apply|rollback] [--json]
                                      check GitHub for a newer release, install it, or put the previous one back
+  pal update status [--json]        the build that's running (branch, commit), the channel, a trial
+  pal update try <Pal#topic> | back | stable
+                                     the owner's (Review → Try it live; the trial strip's Back; About → Back to
+                                     stable): run a topic's branch in the live install, put back what was there,
+                                     or go back to the newest release. On the Live channel (About → Update channel)
+                                     crewd installs what lands on main by itself (pal update follow)
   pal uninstall [--purge] [--dry-run] [--json]
                                      take Project Pals out (the owner's: About → Uninstall): everything it added,
                                      nothing of yours; pals' data stays unless --purge (--dry-run: just list it)
@@ -759,7 +765,9 @@ def diff_data(wt):
     untracked = [l for l in git(p, "ls-files", "--others", "--exclude-standard").splitlines() if l]
     return {"branch": wt["branch"], "base": wt["base"], "path": p, "files": files, "untracked": untracked,
             "commits": git(p, "log", "--oneline", f"{mb}..HEAD").splitlines(), "patch": git(p, "diff", mb),
-            "dirty": bool(git(p, "status", "--porcelain"))}
+            "dirty": bool(git(p, "status", "--porcelain")),
+            # A branch of Project Pals itself: Review offers "Try it live" (T90).
+            "pals": bool(crewupdate.is_project(p, "HEAD"))}
 
 
 def cmd_diff(spaces, spec, mode):
@@ -778,7 +786,18 @@ def cmd_diff(spaces, spec, mode):
         print(d["patch"])
 
 
-def cmd_land(spaces, spec, check=None):
+def base_checkout(repo, base):
+    """The folder where `base` is checked out (the project folder or one of its worktrees), or None."""
+    path = None
+    for line in git(repo, "worktree", "list", "--porcelain", check=False).splitlines():
+        if line.startswith("worktree "):
+            path = line[9:]
+        elif line == f"branch refs/heads/{base}" and path and os.path.isdir(path):
+            return path
+    return None
+
+
+def cmd_land(spaces, spec, check=None, at=None):
     space, tab = find(spec, spaces)
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
@@ -795,30 +814,68 @@ def cmd_land(spaces, spec, check=None):
     if git(wt["path"], "status", "--porcelain"):
         die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
     repo = wt["repo"]
+    msg = f"Land {wt['branch']} ({space['name']} #{chan(tab)})"
+    # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
+    # since isn't what the owner looked at, so it doesn't land on that click.
+    tip_now = git(repo, "rev-parse", "--verify", f"refs/heads/{wt['branch']}")
+    if at and not (re.fullmatch(r"[0-9a-f]{7,40}", at) and tip_now.startswith(at)):
+        die(f"{wt['branch']} has moved since ({tip_now[:7]} now, {at[:7]} then), so it wasn't landed: look at it again (Review → Try it live) first")
+
+    def conflicted(text):
+        x = lead(tab)
+        if x:
+            try:
+                enqueue(x["terminal"], f"[pal] Your branch {wt['branch']} couldn't land on {wt['base']}: it conflicts. "
+                        f"Rebase it on {wt['base']} (git rebase {wt['base']}), fix the conflicts, commit, and say when it's ready.",
+                        sender="crew", kind="land")
+            except CrewError:
+                pass
+        die(f"couldn't land {wt['branch']}: it conflicts with {wt['base']} (nothing changed). "
+            f"The topic was asked to rebase.\n{text[-800:]}")
     with locked(f"land-{slug(repo)}"):  # one landing per project at a time: a simple merge queue
-        if git(repo, "branch", "--show-current") != wt["base"]:
-            die(f"{repo} isn't on {wt['base']}; switch it back before landing")
-        if [l for l in git(repo, "status", "--porcelain", "--untracked-files=no").splitlines() if l]:
-            die(f"{repo} has uncommitted changes of its own; commit or stash them before landing")
         if check:
             r = subprocess.run(["sh", "-c", check], cwd=wt["path"], capture_output=True, text=True, timeout=1800)
             if r.returncode != 0:
                 die(f"the check failed, so nothing was landed:\n" + "\n".join((r.stdout + r.stderr).strip().splitlines()[-30:]))
-        r = subprocess.run(["git", "-C", repo, "merge", "--no-ff", wt["branch"], "-m",
-                            f"Land {wt['branch']} ({space['name']} #{chan(tab)})"], capture_output=True, text=True)
-        if r.returncode != 0:
-            subprocess.run(["git", "-C", repo, "merge", "--abort"], capture_output=True)
-            conflicts = (r.stdout + r.stderr).strip()
-            x = lead(tab)
-            if x:
-                try:
-                    enqueue(x["terminal"], f"[pal] Your branch {wt['branch']} couldn't land on {wt['base']}: it conflicts. "
-                            f"Rebase it on {wt['base']} (git rebase {wt['base']}), fix the conflicts, commit, and say when it's ready.",
-                            sender="crew", kind="land")
-                except CrewError:
-                    pass
-            die(f"couldn't land {wt['branch']}: it conflicts with {wt['base']} (merge aborted, nothing changed). "
-                f"The topic was asked to rebase.\n{conflicts[-800:]}")
+        # Where the base branch is checked out (the project folder, or another worktree), the merge
+        # happens there, so its files follow. Where it's checked out nowhere (the project folder is on
+        # a topic's branch, as it often is), the merge is made without any checkout: git merge-tree
+        # writes the merged tree, and the branch moves to a merge commit only if it's still where it was.
+        where = base_checkout(repo, wt["base"])
+        old = git(repo, "rev-parse", "--verify", f"refs/heads/{wt['base']}")
+        tip = git(repo, "rev-parse", "--verify", f"refs/heads/{wt['branch']}")
+        if tip != tip_now:
+            die(f"{wt['branch']} moved while this was landing it; nothing changed. Try again.")
+        # Everything on the branch is on the base already: nothing to merge (and no empty merge commit).
+        already = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", tip, old], capture_output=True).returncode == 0
+        if already:
+            pass
+        elif where:
+            if [l for l in git(where, "status", "--porcelain", "--untracked-files=no").splitlines() if l]:
+                die(f"{where} (on {wt['base']}) has uncommitted changes of its own; commit or stash them before landing")
+            r = subprocess.run(["git", "-C", where, "merge", "--no-ff", tip, "-m", msg], capture_output=True, text=True)
+            if r.returncode != 0:
+                subprocess.run(["git", "-C", where, "merge", "--abort"], capture_output=True)
+                conflicted((r.stdout + r.stderr).strip())
+        else:
+            r = subprocess.run(["git", "-C", repo, "merge-tree", "--write-tree", "--messages", old, tip], capture_output=True, text=True)
+            if r.returncode == 1:
+                conflicted(r.stdout.strip())
+            if r.returncode != 0:
+                die(f"couldn't merge {wt['branch']} into {wt['base']}; nothing changed: {(r.stderr or r.stdout).strip()[-300:]}")
+            tree = r.stdout.split()[0]
+            commit = git(repo, "commit-tree", tree, "-p", old, "-p", tip, "-m", msg)
+            git(repo, "update-ref", "-m", f"pal land: {wt['branch']}", f"refs/heads/{wt['base']}", commit, old)
+    # A branch that was being tried in the live install: the trial is over, and the base it landed on
+    # is installed once, so what runs is what landed (bin/crewupdate.py).
+    try:
+        if crewupdate.landed(wt["branch"], wt["base"]):
+            crewupdate.detach([str(Path.home() / ".local" / "bin" / "pal"), "update", "follow", "--json"], "project-pals-live")
+    except Exception:
+        pass
+    if already:
+        print(f"{wt['branch']} is on {wt['base']} already; nothing to land")
+        return
     x = lead(tab)
     if x:
         try:
@@ -2507,7 +2564,8 @@ def cmd_settings(rest):
     if not rest:
         st = settings()
         print(f"owner: {st['owner']}\nhead pal: {st['head']}\nhead pal's inbox topic: {'#' + head_topic() if head_topic() else 'none (the topic it shows, else its first tab)'}"
-              f"\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
+              f"\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}"
+              + f"\nupdate channel: {'Live (follows ' + crewupdate.channel()['branch'] + ' in ' + str(crewupdate.channel()['repo']) + ')' if crewupdate.channel()['channel'] == 'live' else 'Stable (GitHub releases)'}")
         return
     # Changing one is the owner's: a click in Project Pals (About, Settings → Desk). A missing or
     # unknown terminal ID isn't the owner (Grok review H1).
@@ -2524,6 +2582,18 @@ def cmd_settings(rest):
         st = save_settings(bypass=val == "on")
     elif key == "llm" and val in ("auto", "claude", "agy"):
         st = save_settings(llm=val)
+    elif key == "channel" and val.split()[:1] in (["live"], ["stable"]):
+        # T90: Stable follows GitHub's releases; Live installs what lands on main in the owner's own
+        # checkout (crewd watches it). --repo says where that is when it can't be found.
+        pos, o = opts(rest[1:], ("repo",))
+        try:
+            folders = [f for f in ((record_of(sp, records()).get("folder") or sp.get("folder")) for sp in herdr_spaces()) if f]
+        except CrewError:
+            folders = []
+        c = crewupdate.set_channel(pos[0], o.get("repo"), folders)
+        update_log(f"channel set to {c['channel']}" + (f" (follows {c['branch']} in {c['repo']})" if c["channel"] == "live" else ""))
+        print(f"update channel: Live (follows {c['branch']} in {c['repo']})" if c["channel"] == "live" else "update channel: Stable (GitHub releases)")
+        return
     elif key in ("head-topic", "head_topic"):
         # T60: where everything pushed to the head pal goes ("" or "none": as before, the topic it shows, else its first tab).
         topic = "" if val.lower() in ("", "none", "off") else val.lstrip("#").strip()
@@ -2558,7 +2628,7 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings head-topic ops|none | pal settings bypass on|off | pal settings llm auto|claude|agy | pal settings desk.<key> <value> (pal settings desk lists them)')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings head-topic ops|none | pal settings bypass on|off | pal settings llm auto|claude|agy | pal settings channel live|stable [--repo folder] | pal settings desk.<key> <value> (pal settings desk lists them)')
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'} · llm: {st.get('llm', 'auto')}")
@@ -2579,48 +2649,129 @@ def update_log(msg):
 
 
 def cmd_update(rest):
-    sub = next((a for a in rest if not a.startswith("--")), "check")
+    """pal update check | apply | rollback (releases), and the Live channel (T90, bin/crewupdate.py):
+    status, follow (crewd's: install what landed on the followed branch), try <Pal#topic> (run a
+    topic's branch in the live install), back (end the trial), stable (back to the newest release)."""
+    pos = [a for a in owner_args() if not a.startswith("--")]
+    sub = pos[1] if len(pos) > 1 else "check"
     as_json = "--json" in rest
     who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
-    if sub in ("apply", "rollback"):
-        update_log(f"{sub} started by {who}, installed {crewupdate.installed().get('version', '?')}")
-    # Installing or rolling back code is the owner's call: a click in Project Pals (About, Update now),
-    # never a pal's, and not anyone hc doesn't call a pal (Grok review H1).
-    if sub in ("apply", "rollback"):
+    owners = ("apply", "rollback", "try", "back", "stable")    # the owner's click
+    swaps = owners + ("follow",)                               # these change what's installed
+    if sub in ("status", "run-tests"):
+        if sub == "status":
+            d = crewupdate.describe()
+            print(json.dumps(d) if as_json else version_line(d))
+        elif len(pos) == 4:
+            if ME and is_bot_terminal(ME):
+                die("the updater runs a build's tests itself after a swap")
+            print(json.dumps(crewupdate.run_tests(pos[2], pos[3])))
+        else:
+            die("pal update run-tests <exported build> <commit> (the updater starts this itself)")
+        return
+    if sub in swaps:
+        update_log(f"{sub} started by {who}, installed {crewupdate.installed().get('version', '?')} {crewupdate.running_hash()}")
+    # Installing or rolling back code is the owner's call: a click in Project Pals (About, Update now,
+    # Review's Try it live, the trial strip's Back), never a pal's, and not anyone hc doesn't call a
+    # pal (Grok review H1).
+    if sub in owners:
         if not click_of():
             update_log(f"{sub} refused: no click from Project Pals")
-        require_owner(f"updates are {OWNER}'s to install (About → Update)")
-    if sub in ("apply", "rollback"):
-        crewupdate.run_state(fresh=True, action=sub, state="running", step="starting", started=time.time(), pid=os.getpid(),
-                             **{"from": crewupdate.installed().get("version")})
+        require_owner(f"updates are {OWNER}'s to install (About → Update)" if sub in ("apply", "rollback", "stable")
+                      else f"trying a branch in the live install is {OWNER}'s (Review → Try it live)")
+    # Follow takes no arguments: it installs the followed branch's newest commit, and only while the
+    # owner has the Live channel on. crewd runs it; a pal has no reason to.
+    if sub == "follow" and ME and is_bot_terminal(ME):
+        update_log("follow refused: asked from a pal's terminal")
+        die(f"crewd installs what lands by itself while {OWNER}'s Live channel is on; nothing for a pal to run")
+    state = {"on": False}
+    t0 = time.time()
+
+    def begin():
+        if not state["on"]:
+            state["on"] = True
+            crewupdate.run_state(fresh=True, action=sub, state="running", step="starting", started=time.time(), pid=os.getpid(),
+                                 **{"from": crewupdate.installed().get("version")})
+    say = (lambda *_: None) if as_json else print
+    step = lambda m: (begin(), update_log(m), say(m), crewupdate.run_state(state="running", step=m))
+    if sub in owners:
+        begin()
     try:
         if sub == "check":
             out = crewupdate.check()
             update_log(f"check by {who}: GitHub's newest is {out.get('latest') or 'none'} (installed {out.get('current')})")
         elif sub == "apply":
-            say = (lambda *_: None) if as_json else print
-            out = crewupdate.apply(log=lambda m: (update_log(m), say(m), crewupdate.run_state(state="running", step=m)))
+            # A release over the Live channel would be replaced by main again a moment later, and
+            # over a trial it would leave the trial's record behind: Back to stable is the way.
+            now = crewupdate.live_state().get("trying")
+            if now or crewupdate.channel()["channel"] == "live":
+                raise CrewError((f"you're trying {now.get('branch')}: Back first (the strip at the top)" if now
+                                 else "the update channel is Live (it follows your own main)") + "; About → Back to stable installs the newest release")
+            with update_lock():
+                out = crewupdate.apply(log=step)
         elif sub == "rollback":
-            say = (lambda *_: None) if as_json else print
-            out = {"ok": True, "restored": str(crewupdate.rollback(log=lambda m: (update_log(m), say(m))))}
+            with update_lock():
+                trial = crewupdate.live_state().get("trying")
+                before = crewupdate.running_hash()
+                # During a trial, Roll back means what Back means: the build from before the trial
+                # (the newest snapshot may be a second branch tried on top of the first).
+                snap = (trial or {}).get("snapshot")
+                snap = snap if snap and os.path.isfile(snap) else None
+                out = {"ok": True, "restored": str(crewupdate.rollback(snap, log=lambda m: (update_log(m), say(m))))}
+                crewupdate.live_save(trying=None, tests=None, pending=None)
+                # On the Live channel, a rolled-back head commit would be installed again at once:
+                # hold it until the branch moves. (After a trial there's nothing to hold: main catches up.)
+                c = crewupdate.channel()
+                if not trial and c["channel"] == "live" and c["repo"]:
+                    try:
+                        head = crewupdate.ref_hash(c["repo"], c["branch"])
+                        if crewupdate.same_commit(head, before) and not crewupdate.same_commit(head, crewupdate.running_hash()):
+                            crewupdate.live_save(hold={"hash": head[:12], "why": f"rolled back by {OWNER}", "at": time.time()})
+                            out["held"] = head[:12]
+                    except CrewError:
+                        pass
+        elif sub == "follow":
+            # crewd's follow gives way to an install that's running (it asks again); the one a landing
+            # started waits its turn, or the landed branch would never be installed on Stable.
+            with update_lock(wait=crewupdate.live_state().get("pending") == "land") as free:
+                out = crewupdate.follow(log=step) if free else {"ok": True, "updated": False, "message": "another update is running"}
+        elif sub == "try":
+            if len(pos) != 3:
+                die("pal update try <Pal#topic> (from Review's Try it live)")
+            space, tab = find(pos[2], herdr_spaces())
+            wt = worktree_of(space, tab)
+            with update_lock():
+                out = crewupdate.try_branch(crewupdate.repo_root(wt["path"]) or wt["repo"], wt["branch"], f"{space['name']}#{chan(tab)}", log=step, into=wt["base"])
+            if git(wt["path"], "status", "--porcelain", check=False):
+                out["note"] = "the topic has uncommitted changes; they aren't in the trial"
+        elif sub == "back":
+            with update_lock():
+                out = crewupdate.back(log=step)
+        elif sub == "stable":
+            with update_lock():
+                out = crewupdate.stable(log=step)
         else:
-            die("pal update check | apply | rollback [--json]")
+            die("pal update check | apply | rollback | status | try <Pal#topic> | back | stable [--json]")
     except CrewError as e:
         if sub == "check":
             update_log(f"check by {who} failed: {e}")
-        if sub in ("apply", "rollback"):
+        if sub in swaps:
             update_log(f"{sub} failed: {e}")
-            crewupdate.run_state(state="failed", error=str(e))
+            if state["on"]:
+                crewupdate.run_state(state="failed", error=str(e))
+            if sub in ("follow", "try", "back", "stable"):
+                crewupdate.note_failure(sub, e, t0)
         if as_json:
             print(json.dumps({"ok": False, "error": str(e)}))
             sys.exit(1)
         raise
     except Exception as e:
-        if sub in ("apply", "rollback"):
+        if sub in swaps:
             update_log(f"{sub} crashed: {type(e).__name__}: {e}")
-            crewupdate.run_state(state="failed", error=f"{type(e).__name__}: {e}")
+            if state["on"]:
+                crewupdate.run_state(state="failed", error=f"{type(e).__name__}: {e}")
         raise
-    if sub in ("apply", "rollback"):
+    if sub in swaps and (state["on"] or out.get("updated")):
         update_log(f"{sub} done: {json.dumps(out)}")
         crewupdate.run_state(state="done", step=None, version=out.get("version") or crewupdate.installed().get("version"),
                              updated=out.get("updated", sub == "rollback"), backup=out.get("backup"))
@@ -2633,10 +2784,55 @@ def cmd_update(rest):
             print(f"{out['latest']} is out (installed: {out['current']}). Update with: pal update apply\n\n{out.get('notes', '')}")
         else:
             print(f"up to date ({out['current']})")
-    elif sub == "apply":
-        print(out.get("message") or f"updated to {out['version']}")
-    else:
+    elif sub == "rollback":
         print(f"put back {out['restored']}")
+    elif sub == "back":
+        print(f"back on what was running before the trial ({out['restored']})")
+    elif out.get("message") or not out.get("updated"):
+        print(out.get("message") or "nothing to do")
+    elif sub in ("follow", "try"):
+        print(f"{'trying' if sub == 'try' else 'live:'} {out['branch']} {out['hash'][:7]}"
+              + (f" · reloaded {len(out['reloaded'])} mod{'s' if len(out['reloaded']) != 1 else ''}" if out.get("reloaded") is not None else "")
+              + (" · crewd restarted" if out.get("crewd") else "") + (f"\n{out['note']}" if out.get("note") else ""))
+    else:
+        print(f"updated to {out['version']}")
+
+
+@contextlib.contextmanager
+def update_lock(wait=True):
+    """One install, roll back, follow or trial at a time. wait=False: yields False when one is running."""
+    import fcntl
+    DATA.mkdir(parents=True, exist_ok=True)
+    with open(DATA / ".live-update.lock", "w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def version_line(d):
+    """What's running: 'main b6c982c, 53 commits after v0.4.1 · Live: follows main in ~/x'."""
+    build = ""
+    if d.get("hash"):
+        build = f"{d.get('branch') or 'a build'} {d['hash'][:7]}" + (" with uncommitted changes" if d.get("dirty") else "")
+        if d.get("tag") and d.get("ahead"):
+            build += f", {d['ahead']} commit{'s' if d['ahead'] != 1 else ''} after {d['tag']}"
+    lines = [f"running: {build or 'release ' + str(d.get('version') or '?')}"]
+    if d.get("trying"):
+        lines.append(f"trying {d['trying'].get('branch')} (Back restores what was there)")
+    repo = str(d.get("repo") or "").replace(str(Path.home()), "~")
+    lines.append(f"channel: Live (follows {d.get('follows')} in {repo})" if d.get("channel") == "live" else "channel: Stable (GitHub releases)")
+    if d.get("hold"):
+        lines.append(f"held: {d['hold'].get('hash', '')[:7]} isn't installed until {d.get('follows')} moves ({d['hold'].get('why', '')})")
+    t = d.get("tests") or {}
+    if t.get("state") and crewupdate.same_commit(t.get("hash", ""), d.get("hash") or "-"):
+        lines.append(f"tests: {t['state']}" + (f" ({t['detail']})" if t.get("detail") else ""))
+    return "\n".join(lines)
 
 
 def cmd_uninstall(rest):
@@ -3161,6 +3357,7 @@ def main(argv):
     if cmd == "version":
         ins = crewupdate.installed()
         print(f"{ins.get('name', 'Project Pals')} {ins.get('version', '?')} ({ins.get('source', '?')}, from {ins.get('repo', '?')})")
+        print(version_line(crewupdate.describe()))
         # The Herdr on PATH now, against the range this version was released for (pals.json "herdr").
         import crewcompat
         c = crewcompat.check({"herdr": (ins.get("herdr") or {}).get("range")})
@@ -3346,8 +3543,8 @@ def main(argv):
         pos, o = opts(rest, (), ("stat", "json"))
         cmd_diff(spaces, pos[0], "json" if o.get("json") else "stat" if o.get("stat") else "full")
     elif cmd == "land" and rest:
-        pos, o = opts(rest, ("check",))
-        cmd_land(spaces, pos[0], o.get("check"))
+        pos, o = opts(rest, ("check", "at"))
+        cmd_land(spaces, pos[0], o.get("check"), o.get("at"))
     else:
         die(__doc__)
 

@@ -11,11 +11,20 @@
 // (statusFit): the gear, needs you, the update pill ("Update · X", else just "Update"). If the pill
 // doesn't fit, the gear's tooltip says an update is out. Folded to the rail it is empty (the rail
 // has its own gear).
+// The Live channel and trials (T90): on the right, in the pill's place, "trying crew/x" in amber
+// while a branch is tried, or a green dot and "live · b6c982c" while the Live channel follows main
+// (the release pill isn't offered then: Back to stable in About is how a release comes back). Being
+// always there, this is also the mod that shows and hides the trial strip (the layout's crew-live
+// block) and toasts each swap, once: what went live and what had to restart, or that the last good
+// build was put back.
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { theme, openOverlay, shared, setShared, settings } from "herdr";
-import { ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY, appMenuSpec, needsTooltip } from "./crew.js";
+import { theme, openOverlay, shared, setShared, settings, layout, run, notify } from "herdr";
+import { ds, tone, readUpdate, updateSnoozed, crewCli, UPDATE_CHECK_EVERY, appMenuSpec, needsTooltip,
+  readLive, buildName, buildLine, liveTests, swapToast } from "./crew.js";
+
+const findNode = (n, id) => { if (n?.id === id) return n; for (const c of [...(n?.children ?? []), ...(n?.floating ?? [])]) { const f = findNode(c, id); if (f) return f; } return null; };
 
 // How wide a piece of 11 px Inter draws, near enough to decide what fits (a little generous).
 export const textW = (s) => Math.ceil(String(s).length * 5.9);
@@ -38,8 +47,39 @@ export default class CrewStatus extends View {
     this.w = 304;
     this.update = null;
     this.lastCheck = 0;
+    this.live = null;
+    this.liveKey = "";
     this.refresh(cx);
     cx.timer.every(5000, (cx) => this.refresh(cx));
+    this.followLive(cx);
+    cx.timer.every(2000, (cx) => this.followLive(cx));
+  }
+
+  // The Live channel and trials, from the updater's files, every 2 s (a few small reads). Redrawn only
+  // on a change. The trial strip is shown exactly while a branch is tried; each swap toasts once (the
+  // last one toasted is kept in this copy's localStorage, so a reload doesn't repeat it, and the first
+  // run only notes it).
+  followLive(cx) {
+    cx.spawn(async (cx) => {
+      const live = await readLive().catch(() => null);
+      if (!live) return;
+      const strip = findNode(layout(), "crew-live");
+      if (strip && Boolean(strip.hidden) === Boolean(live.trying)) run(live.trying ? "layout.show" : "layout.hide", { id: "crew-live" });
+      let seen = null;
+      try { seen = JSON.parse(localStorage.getItem("live-seen") ?? "null"); } catch { seen = null; }
+      const tests = liveTests(live);
+      const now = { swap: live.last?.id ?? null, failed: tests?.state === "failed" ? live.tests.hash : null };
+      if (seen && now.swap && now.swap !== seen.swap && Date.now() / 1000 - (live.last.at ?? 0) < 600) {
+        const toast = swapToast(live.last);
+        if (toast) notify(toast);
+      }
+      if (seen && now.failed && now.failed !== seen.failed) {
+        notify({ title: `Tests fail on ${buildName(live.build) ?? "this build"}`, body: `${tests.detail || "The full suite didn't pass."} It's still running; Roll back in About puts the build before it back.`, level: "warning", timeout: 20000 });
+      }
+      if (JSON.stringify(now) !== JSON.stringify(seen)) { try { localStorage.setItem("live-seen", JSON.stringify(now)); } catch { /* shown again after a reload, at worst */ } }
+      const key = JSON.stringify([live.channel, live.build?.hash, live.build?.branch, live.trying?.branch, live.hold?.hash, live.busy?.action, tests?.state]);
+      if (key !== this.liveKey) { this.liveKey = key; this.live = live; cx.notify(); }
+    });
   }
 
   refresh(cx) {
@@ -74,7 +114,15 @@ export default class CrewStatus extends View {
     // The update pill: quiet (no colour but a small blue dot), gone for 3 days after "Later".
     const u = this.update;
     const running = u?.run?.state === "running";
-    const pill = running ? `Updating to ${u.latest ?? "…"}` : u?.available && !updateSnoozed(u.latest) ? `Update · ${u.latest}` : "";
+    // What's running, when it isn't a plain release: a trial (amber), else the Live channel's commit.
+    // It takes the pill's place: releases aren't offered on Live or during a trial.
+    const live = this.live;
+    const held = !live?.trying && live?.channel === "live" ? live.hold?.hash : null;
+    const following = live?.busy?.action === "follow";
+    const chip = live?.trying ? `trying ${live.trying.branch}`
+      : live?.channel === "live" ? (following ? `installing ${live.follows}…` : `live · ${String(live.build?.hash ?? live.follows).slice(0, 7)}`) : "";
+    const chipShort = live?.trying ? "trying" : "live";
+    const pill = chip ? "" : running ? `Updating to ${u.latest ?? "…"}` : u?.available && !updateSnoozed(u.latest) ? `Update · ${u.latest}` : "";
 
     // What fits, most important first. With needs-you beside it the gear has a separator.
     const keep = statusFit([
@@ -82,6 +130,8 @@ export default class CrewStatus extends View {
       needsText && { key: "needs", w: STRIP.gap + 1 + 12 + textW(needsText) },
       pill && { key: "pill", w: 30 + textW(pill) },
       pill && !running && { key: "pillShort", w: 30 + textW("Update"), alt: "pill" },
+      chip && { key: "chip", w: 12 + textW(chip) },
+      chip && { key: "chipShort", w: 12 + textW(chipShort), alt: "chip" },
     ].filter(Boolean), this.w);
     const pillShown = keep.has("pill") || keep.has("pillShort");
 
@@ -107,6 +157,16 @@ export default class CrewStatus extends View {
         .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-update", kind: "dialog", width: 480 }); })
         .child(running ? svg("mods/crew-roster/icons/spinner.svg").size(10).text_color(d.info).spin(900) : dot(d.info))
         .child(text(keep.has("pill") ? pill : "Update", d.fg2)));
+    }
+    if (keep.has("chip") || keep.has("chipShort")) {
+      const amber = Boolean(live.trying || held);
+      items.push(h_flex().id(live.trying ? "crew-trying" : "crew-live-chip").flex_none().items_center().gap(6).cursor_pointer()
+        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-about", kind: "dialog", width: 480 }); })
+        .tooltip(live.trying ? `Running ${live.trying.branch} (${String(live.trying.hash ?? "").slice(0, 7)}), not what's landed. Back on the strip at the top puts back what was there.`
+          : held ? `${live.follows} ${String(held).slice(0, 7)} isn't installed: ${live.hold.why ?? "it didn't come up"}. It's tried again when ${live.follows} moves.`
+          : `Live: what you land on ${live.follows} is installed as you land it${buildLine(live.build) ? ` · running ${buildLine(live.build)}` : ""}`)
+        .child(following && !live.trying ? svg("mods/crew-roster/icons/spinner.svg").size(10).text_color(d.info).spin(900) : dot(amber ? d.warn : d.ok))
+        .child(text(keep.has("chip") ? chip : chipShort, amber ? d.warnText : d.fg2)));
     }
     return root.children(items);
   }

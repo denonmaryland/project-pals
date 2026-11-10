@@ -2,11 +2,16 @@
 // Check for updates asks GitHub (crewd and the status bar also check every 6 hours); Update downloads the release,
 // backs up the current files, installs it and checks every mod, putting the old version back if
 // anything fails. Roll back restores the last backup. Pals, rooms and memory are never touched.
+// The update channel (T90): Stable is those releases; Live installs what you land on main in your own
+// checkout, as you land it (crewd watches it; bin/crewupdate.py). The header says which build is
+// running (branch, commit), the status card what last went live, and Back to stable puts the newest
+// release back. Switching the channel and Back to stable are the owner's click, like Update.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, ownerCli, checkDue, checkLine, checkedAt, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle, palLook, openPalLook } from "./crew.js";
+import { crewCli, ownerCli, checkDue, checkLine, checkedAt, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle, palLook, openPalLook,
+  readLive, buildName, buildLine, liveTests, swapLine, liveStart } from "./crew.js";
 import { PET_LOOKS, SCREEN_LOOKS } from "./pallook.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -22,6 +27,8 @@ export default class CrewAbout extends View {
     this.state = {};
     this.busy = null;      // "check" | "update" | "rollback" | "uninstall"
     this.confirmUninstall = false;   // Uninstall asks once more, in place, before it runs
+    this.confirmStable = false;      // and so does Back to stable
+    this.live = null;                // readLive(): the build that's running, the channel, a trial
     this.error = null;
     this.backups = 0;
     // Settings: who the pals work for, and whether new pals start with permissions bypassed.
@@ -56,6 +63,7 @@ export default class CrewAbout extends View {
       try { this.state = JSON.parse((await readTextFile(`${d}/crew-update.json`)) ?? "{}"); } catch { this.state = {}; }
       // Trusted helpers (T116): who's on, for the Settings row (the list holds fingerprints, never a key).
       try { this.helpers = Object.entries(JSON.parse((await readTextFile(`${d}/crew-helpers/helpers.json`)) ?? "{}").helpers ?? {}); } catch { this.helpers = []; }
+      this.live = await readLive().catch(() => null);
       // About asks GitHub again whenever the last answer is over 10 minutes old, open or opening
       // (crewd checks only every 6 hours), so a new release shows its Update button without a "Check
       // for updates" click first, even in an About left open since the last update (T64).
@@ -137,6 +145,35 @@ export default class CrewAbout extends View {
     });
   }
 
+  setChannel(name, cx) {
+    if (this.savingChannel || (this.live?.channel ?? "stable") === name) return;
+    this.savingChannel = true;
+    this.error = null;
+    cx.spawn(async (cx) => {
+      try {
+        await ownerCli(["settings", "channel", name]);
+        notify(name === "live"
+          ? { title: "Live: following main", body: "What you land on main is installed as you land it. Stable switches it off.", level: "success", timeout: 5000 }
+          : { title: "Stable: releases only", body: "What's running stays until the next release; nothing follows main.", level: "success", timeout: 5000 });
+      } catch (e) { this.error = String(e.message ?? e); }
+      this.savingChannel = false;
+      this.load(cx);
+    });
+  }
+
+  // Back to stable reinstalls the newest release over this dialog's own mod, so it's left running on
+  // its own (like the update dialog's Update now); a toast says how it went.
+  backToStable(cx) {
+    this.confirmStable = false;
+    cx.spawn(async () => {
+      try {
+        await liveStart("stable");
+        notify({ title: `Going back to release ${this.state.latest ?? ""}`.trim(), body: "Downloading it and installing it over what's running.", level: "info", timeout: 6000 });
+        closeOverlay(props().overlay);
+      } catch (e) { notify({ title: "Couldn't go back to stable", body: String(e.message ?? e).slice(0, 300), level: "warning", timeout: 8000 }); }
+    });
+  }
+
   setBypass(on, cx) {
     cx.spawn(async () => {
       try { await ownerCli(["settings", "bypass", on ? "on" : "off"]); }
@@ -152,7 +189,11 @@ export default class CrewAbout extends View {
     const t = tone(theme());
     const ins = this.ins, st = this.state;
     const current = ins.version ?? "?";
-    const available = st.latest && newer(st.latest, current);
+    const tk = ds(t);
+    const live = this.live, onLive = live?.channel === "live";
+    const tests = liveTests(live);
+    // On the Live channel the releases aren't what's offered: the card says what went live instead.
+    const available = !onLive && !live?.trying && st.latest && newer(st.latest, current);
     const button = (id, label, primary, action, disabled) => div().id(id).px(16).py(8).rounded(4).cursor_pointer()
       .bg(disabled ? a(t.foreground, "10") : primary ? t.solid : a(t.foreground, "10")).hover((s) => s.opacity(0.88))
       .on_click(disabled ? () => {} : action)
@@ -163,7 +204,8 @@ export default class CrewAbout extends View {
       .child(sheetFace(headPet(), t, 52))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(17).font_medium().text_color(t.foreground).child(ins.name ?? "Project Pals"))
-        .child(div().truncate().text_size(12.5).text_color(t.dim).child(`Version ${current}${ins.repo ? ` · ${ins.repo}` : ""}`)))
+        // The build that's running: its branch and commit when it isn't a plain release (T90).
+        .child(div().truncate().text_size(12.5).text_color(t.dim).child(`Version ${current}${buildLine(ins.build) ? ` · ${buildLine(ins.build)}` : ins.repo ? ` · ${ins.repo}` : ""}`)))
       .child(div().id("about-x").size(28).rounded(8).flex().items_center().justify_center().cursor_pointer()
         .hover((s) => s.bg(a(t.foreground, "10"))).on_click(() => closeOverlay(props().overlay))
         .child(svg(`${ICON}/x.svg`).size(13).text_color(t.dim)));
@@ -175,7 +217,19 @@ export default class CrewAbout extends View {
     else if (this.busy === "rollback") { title = "Putting the previous version back…"; sub = ""; }
     else if (this.busy === "uninstall") { title = "Uninstalling Project Pals…"; sub = "Herdr switches to its main layout when it's done"; }
     else if (this.confirmUninstall) { title = "Uninstall Project Pals?"; sub = "Takes out its layout, mods, commands, Claude Code and Antigravity hooks, shortcuts and crewd. Your own settings go back to how they were; your pals' data (pals, memory, the Desk, tasks) stays."; color = t.blocked; }
+    else if (this.confirmStable) { title = `Go back to release ${st.latest ?? ""}?`.replace(" ?", "?"); sub = `Puts the newest release back over ${buildName(ins.build) ?? "this build"} and stops following main. Everything landed since that release goes with it until it's released; Roll back brings this build back.`; color = t.blocked; }
     else if (this.error) { title = "That didn't work"; sub = this.error; color = t.blocked; }
+    // A trial, then the Live channel: what's running and what last went live (T90).
+    else if (live?.trying) { title = `Trying ${live.trying.branch}`; sub = `Since ${checkedAt(live.trying.since ?? 0)}${tests ? ` · ${tests.label}${tests.state === "failed" && tests.detail ? `: ${tests.detail}` : ""}` : ""}. Back on the strip at the top puts back ${buildName(live.trying.base) ?? "what was running"}.`; color = tk.warnText; }
+    else if (onLive && live.busy?.action === "follow") { title = `Installing ${live.follows}…`; sub = live.busy.step ?? ""; }
+    else if (onLive && live.hold) { title = `${live.follows} ${String(live.hold.hash).slice(0, 7)} isn't running`; sub = `${live.hold.why ?? "It didn't come up, so the build before it was put back."} It's tried again when ${live.follows} moves.`; color = t.blocked; }
+    else if (onLive) {
+      const last = live.last?.action === "live" && live.last.state === "done" ? live.last : null;
+      title = `Live: following ${live.follows}`;
+      sub = last ? `Landed ${checkedAt(last.at)}${last.subject ? ` · “${last.subject}”` : ""} · ${swapLine(last)}${tests ? ` · ${tests.label}${tests.state === "failed" && tests.detail ? `: ${tests.detail}` : ""}` : ""}`
+        : `Running ${buildLine(ins.build) ?? `release ${current}`}. The next landing on ${live.follows} is installed as it lands.`;
+      if (tests?.state === "failed") color = t.blocked;
+    }
     // Each says what GitHub's newest was and when it was asked (checkLine), and a failed check says so (T64).
     else if (available) { title = `${st.name || st.latest} is available`; sub = `${st.published ? `released ${String(st.published).slice(0, 10)} · ` : ""}checked ${checkedAt(st.checked)}`; }
     else if (st.error && (st.tried ?? 0) > (st.checked ?? 0)) { title = "Couldn't check for updates"; sub = checkLine(st); color = t.blocked; }
@@ -197,7 +251,13 @@ export default class CrewAbout extends View {
 
     const link = (id, label, action) => div().id(id).cursor_pointer().hover((s) => s.opacity(0.75)).on_click(action)
       .child(div().text_size(12.5).text_color(t.dim).child(label));
-    const footer = this.confirmUninstall && !this.busy
+    // Back to stable: offered while a build that isn't a release is running or main is followed.
+    const offStable = Boolean(st.latest && (onLive || live?.trying || ins.build?.hash));
+    const footer = this.confirmStable && !this.busy
+      ? h_flex().items_center().justify_end().gap(8).px(24).pt(14).pb(20)
+        .child(button("about-stable-cancel", "Stay here", false, (_e, cx) => { this.confirmStable = false; cx.notify(); }, false))
+        .child(button("about-stable-go", `Back to ${st.latest}`, true, (_e, cx) => this.backToStable(cx), false))
+      : this.confirmUninstall && !this.busy
       ? h_flex().items_center().justify_end().gap(8).px(24).pt(14).pb(20)
         .child(button("about-uninstall-cancel", "Keep it", false, (_e, cx) => { this.confirmUninstall = false; cx.notify(); }, false))
         // The owner's click: pal uninstall runs with its one-time token (like Update and Roll back).
@@ -205,7 +265,8 @@ export default class CrewAbout extends View {
       : h_flex().items_center().justify_between().gap(12).px(24).pt(14).pb(20)
       .child(h_flex().gap(16).items_center()
         .when(Boolean(this.backups && !this.busy), (el) => el.child(link("about-rollback", "Roll back", (_e, cx) => this.run("rollback", ["update", "rollback"], cx))))
-        .when(!this.busy, (el) => el.child(link("about-uninstall", "Uninstall", (_e, cx) => { this.confirmUninstall = true; this.error = null; cx.notify(); }))))
+        .when(!this.busy, (el) => el.child(link("about-uninstall", "Uninstall", (_e, cx) => { this.confirmUninstall = true; this.error = null; cx.notify(); })))
+        .when(Boolean(!this.busy && offStable), (el) => el.child(link("about-stable", `Back to stable (${st.latest})`, (_e, cx) => { this.confirmStable = true; this.error = null; cx.notify(); }))))
       .child(h_flex().gap(8).items_center()
         .child(button("about-check", "Check for updates", !available, (_e, cx) => this.run("check", ["update", "check"], cx), Boolean(this.busy)))
         .when(Boolean(available), (el) => el.child(button("about-update", `Update to ${st.latest}`, true, (_e, cx) => this.run("update", ["update", "apply"], cx), Boolean(this.busy)))));
@@ -223,7 +284,22 @@ export default class CrewAbout extends View {
       .child(v_flex().min_w(0).gap(1).child(div().text_size(13.5).text_color(t.foreground).child(label))
         .when(Boolean(sub), (el) => el.child(div().text_size(12).text_color(t.dim).child(sub))))
       .child(right);
+    // Stable | Live, the one on filled (Live in green: it's the one that changes things by itself).
+    const seg = (id, label, on, tint) => div().id(id).px(13).h(26).flex().items_center().cursor_pointer()
+      .bg(on ? tint : "#00000000").hover((s) => s.opacity(0.86))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => this.setChannel(id === "set-channel-live" ? "live" : "stable", cx))
+      .child(div().text_size(12).font_weight(on ? 600 : 400).text_color(on ? tk.bg0 : t.muted).child(label));
+    const home_ = (p) => String(p ?? "").replace(/^\/home\/[^/]+/, "~");
+    const channelRow = row("set-channel", "Update channel",
+      onLive ? `Live installs what you land on ${live.follows} in ${home_(live.repo)}, as you land it`
+        : "Stable: GitHub releases. Live: what you land on main in your own checkout, as you land it",
+      h_flex().flex_none().rounded(4).border_1().border_color(tk.lineMid).overflow_hidden()
+        .child(seg("set-channel-stable", "Stable", !onLive, tk.fg1))
+        .child(seg("set-channel-live", "Live", onLive, tk.ok)));
     const settings = v_flex().rounded(8).border_1().border_color(a(t.foreground, "10"))
+      .child(channelRow)
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       .child(row("set-owner", "Your name", "What your pals call you", div().w(170).h(30).px(10).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.owner).w_full().text_size(13).text_color(t.foreground))))
