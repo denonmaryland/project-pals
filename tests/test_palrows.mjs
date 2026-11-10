@@ -149,11 +149,30 @@ try {
     const sub = ids(rows[0]).filter((n) => n.calls.includes("on_click") && n !== top);
     assert.equal(sub.length, trees ? 3 : 0, `${st.id} trees ${trees}: topic rows`);
     if (trees) {
-      assert.ok(sub.every((n) => n.calls.includes("on_mouse_down") && n.args.h?.[0] === 22), `${st.id}: 22 px topic rows with a right-click menu`);
+      assert.ok(sub.every((n) => n.calls.includes("on_mouse_down") && n.args.h?.[0] === 24), `${st.id}: 24 px topic rows with a right-click menu`);
       for (const w of ["#command-bar", "#indicators", "#profiles"]) assert.ok(words.includes(w), `${st.id} trees: ${w}`);
       assert.ok(words.indexOf("#command-bar") < words.indexOf("#indicators"), "asks you first, then working");
       const box = rows[0].node.kids[1].node;
       assert.equal(box.args.pl[0], textLeft(st) - 4, `${st.id}: topics start at the text column`);
+      // The recessed channel (DeNon's pick C, 2026-11-09, T75): one clipped, rounded, darker box
+      // with no edge holds the rows; its first children are the shade (a dark line inside the top
+      // that fades down) and a faint light line at the bottom.
+      const well = box.kids[0].node;
+      assert.equal(box.kids.length, 1, `${st.id}: the tree is one well`);
+      assert.ok(well.calls.includes("overflow_hidden") && well.args.rounded?.[0] === 7 && well.args.bg?.[0] === "#070708" && !well.calls.includes("border_1"), `${st.id}: a soft well, no edge`);
+      const shade = well.kids.map((k) => k.node).filter((n) => n.calls.includes("absolute"));
+      assert.ok(shade.length >= 3 && shade[0].args.top?.[0] === 0 && shade[0].args.h?.[0] === 1 && shade.at(-1).args.bottom?.[0] === 0, `${st.id}: the well's shade and bottom line`);
+      assert.ok(sub.every((n) => well.kids.some((k) => k.node === n)), `${st.id}: the topic rows are in the well`);
+      // Status stays on the left (a 16 px slot first); the topic on screen is a shade lighter with
+      // a 2 px blue edge; a finished topic says when, on the right.
+      assert.ok(sub.every((n) => n.kids[0].node.args.w?.[0] === 16), `${st.id}: the status mark comes first`);
+      const shown = sub.find((n) => n.args.id[0].endsWith("-tp-t1")), quiet = sub.find((n) => n.args.id[0].endsWith("-tp-t2"));
+      const edge = (n) => n.kids.map((k) => k.node).find((x) => x.calls.includes("absolute") && x.args.w?.[0] === 2);
+      assert.ok(shown.args.bg?.[0] === d.hover && edge(shown)?.args.bg?.[0] === d.info, `${st.id}: the shown topic has the blue edge`);
+      assert.ok(!quiet.args.bg && !edge(quiet), `${st.id}: other topics are plain`);
+      const done = sub.find((n) => n.args.id[0].endsWith("-tp-t3"));
+      assert.match(text({ node: done }), /#profiles\s+\d\d:\d\d$/, `${st.id}: a finished topic ends with its time`);
+      for (const n of [shown, quiet]) assert.ok(!/\d\d:\d\d/.test(text({ node: n })), `${st.id}: no time on a working or asking topic`);
     }
     // " · #topic" on the row only when no tree shows under it (DeNon, 2026-11-08): with Trees on
     // the working pal's row says just its state; off, the looks that name the topic do; a resting
@@ -165,13 +184,14 @@ try {
       else if (names) assert.ok(rowText.includes("· #command-bar"), `${st.id} trees off: the row names its topic (${rowText})`);
       if (names) assert.ok(text(rows[1]).includes("· #general"), `${st.id}: a resting pal keeps its #topic`);
     }
-    // No last-activity times on pal rows or Trees rows (DeNon, 2026-11-08): nothing clock-like
-    // ("21:48", "Fri", "Nov 2") is drawn; "Working · 4m" in the state line stays.
+    // No last-activity times on pal rows (DeNon, 2026-11-08): nothing clock-like ("21:48", "Fri",
+    // "Nov 2") is drawn; "Working · 4m" in the state line stays. The one exception is the Trees'
+    // finished topic, which says when it finished (DeNon's pick C, 2026-11-09, T75).
     {
       const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
       const strs = all(rows[0]).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
       const clock = strs.filter((x) => /^\d{1,2}:\d{2}$|^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$|^[A-Z][a-z]{2} \d{1,2}$/.test(x.trim()));
-      assert.deepEqual(clock, [], `${st.id} trees ${trees}: no times (${clock})`);
+      assert.equal(clock.length, trees ? 1 : 0, `${st.id} trees ${trees}: only a finished topic's time (${clock})`);
       assert.ok(!all(rows[0]).some((n) => n.args.text_right && n.args.w?.[0] === 38), `${st.id}: no time slot`);
     }
     // Resting and closed pals never unfold.
@@ -199,6 +219,10 @@ try {
     const h = heroOf(space, open);
     const b = box(h);
     assert.ok(b && b.calls.includes("flex_none") && b.calls.includes("overflow_hidden"), `${space.tabs.length} channels: the channel box is always 4 rows + the peek (132 px)`);
+    // The box is a recessed well (DeNon's pick, 2026-11-09, T75): darker than the sidebar, a dark
+    // edge, rounded, inset 8 px each side, the shade under its top edge drawn first.
+    assert.ok(b.args.bg?.[0] === "#030304" && b.calls.includes("border_1") && b.args.rounded?.[0] === 8 && b.args.mx?.[0] === 8, `${space.tabs.length} channels: the Topics list is a deep well`);
+    assert.ok(b.kids[0].node.calls.includes("absolute") && b.kids[0].node.args.top?.[0] === 0, "the well's shade is under the rows");
   }
   const outline = (p) => shape(p).replace(/h\[(30|120|90|60)\]/g, "h[list]");
   assert.equal(outline(heroOf(many, true)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(),
@@ -291,6 +315,11 @@ try {
     assert.ok(hash > 0 && k[hash - 1].args.w?.[0] === 3 && k[hash - 1].args.bg?.[0] === "#4C8DFF", "the hero row: the mark, then #");
     const other = ids(hero).find((n) => n.args.id?.[0] === "hero-ch-t2").kids.map((x) => x.node);
     assert.ok(other[other.findIndex((x) => x.kids.includes("#")) - 1].args.w?.[0] === 3, "an uncoloured topic keeps the slot");
+    // The shown topic is a raised tile (a lighter face, a shadow, a light line inside its top);
+    // the others are plain.
+    assert.ok(heroRow.args.bg?.[0] === "#1A1A1C" && heroRow.calls.includes("shadow_sm") && k[0].calls.includes("absolute") && k[0].args.h?.[0] === 1, "the shown topic is raised");
+    const plain = ids(hero).find((n) => n.args.id?.[0] === "hero-ch-t2");
+    assert.ok(!plain.args.bg && !plain.calls.includes("shadow_sm"), "other topics lie flat in the well");
     const tree = ids(roster.palRow({ space: s1, bot: crew.botOf(s1) }, t, d, null)).find((n) => n.args.id?.[0]?.endsWith("-tp-t1"));
     const tk = tree.kids.map((x) => x.node);
     const ti = tk.findIndex((x) => typeof x.kids[0] === "string" && x.kids[0].startsWith("#"));

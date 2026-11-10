@@ -170,17 +170,23 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     **Trees** (DeNon, 2026-11-08; `palTrees`, on unless false), an option for every look (it
     replaced the board's Tree look; a saved `palList: "tree"` shows as Two tight lines): a pal
     with a topic working or asking you unfolds its live topics under its row, asks you first,
-    then working, then done, latest first, at most four and an 18px "+N more". Each topic row is
-    22px, starting at the look's text column (`palstyles.js textLeft`): the mark (the chosen
-    working indicator, an amber dot when it asks you, a check when done) in a 16px slot, "#topic"
-    in 11.5px mono (#EDEDED for the shown one); a click opens that topic,
-    right-click is its menu. Only those rows are added: nothing else moves. Resting, asleep and
-    hidden pals never unfold.
+    then working, then done, latest first, at most four and a 20px "+N more". They sit in a soft
+    recessed channel (DeNon's pick, 2026-11-09, T75; `crew.js sunk "soft"`) that starts at the
+    look's text column (`palstyles.js textLeft`): r7, no edge, well darker than the sidebar
+    (#070708; deepened after the first real screenshots, DeNon 2026-11-09), a dark line inside its top with a shadow that fades down over 15px, a very faint
+    light line at the bottom (gpui-kit has no gradients or inner shadows, so these are 1 to 8px
+    bands in a clipped box). Each topic row is 24px: the mark (the chosen working indicator, an
+    amber dot when it asks you, a check when done) in a 16px slot on the left, the colour bar,
+    "#topic" in 11.5px mono, and for a finished topic when it finished (11px #56565A) on the
+    right. The shown topic is #18181A with #EDEDED text and a 2px blue edge. A click opens that
+    topic, right-click is its menu. Only the channel is added: nothing else moves. Resting,
+    asleep and hidden pals never unfold.
     While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
     (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
-    **No times** on pal rows (any look) or Trees rows (DeNon, 2026-11-08): the name and the state
-    line have the width; the state line keeps "Working · 4m". The hero's topic list keeps its times.
+    **No times** on pal rows (any look; DeNon, 2026-11-08): the name and the state line have the
+    width; the state line keeps "Working · 4m". Trees rows show one only for a finished topic
+    (2026-11-09, above). The hero's topic list keeps its times.
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list
@@ -408,13 +414,17 @@ rectangular segments and tags.
     asks you / stuck, green done / PR); no state word (DeNon took it out; the tooltip names it).
     Under the floor, the pal's topics at full width: a header ("Topics", the count, and a
     magnifier: a search box that filters as you type; Esc or × clears and closes it), then 28px
-    rows (`#`, the name, the working indicator or an amber dot, a green check or when it last changed; the shown one
-    #232324), up to four; the box is ALWAYS four rows plus the 12px peek (132px), whatever the pal has,
+    rows (`#`, the name, the working indicator or an amber dot, a green check or when it last changed), up to
+    four, in a recessed well (DeNon's pick, 2026-11-09, T75; `crew.js sunk "deep"`): 8px in from
+    each side, r8, #030304 with a dark edge, a shadow under its top that fades over 31px and a
+    faint light line at the bottom; the rows start 4px down and 4px in. The shown topic is a
+    raised tile (`raisedTile`: #1A1A1C, r5, a light line inside its top, a small shadow). The box
+    is ALWAYS four rows plus the 12px peek (132px, edge included), whatever the pal has,
     so switching pals never moves the quick actions or the Pals list (DeNon, 2026-11-08): fewer rows
     leave the rest blank, with a faint "+ New topic" row (#56565A, opens the New topic dialog) after the last
     when not searching; past four the box is four rows plus the top 12px of the
     fifth, cut at its edge, scrolling in our own area with the pill thumb (see Scrolling below; the
-    rows end 11px in and the pill sits in that gap, never over a time, pin or dot). No "+N more"
+    rows end 13px in and the pill sits in that gap, never over a time, pin or dot). No "+N more"
     in the header (DeNon, 2026-11-08): "Topics 18" says it, and the cut row, the pill and the
     fixed box show there's more. The
     shown topic is scrolled into view when it changes. **Topic colours:** a 3x12px bar with
