@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { clampWords, describe as step, diffCount, duration, fit, gist, relPath, shellStep, shownCommand, testSummary, wrap } from './timeline'
+import { clampWords, describe as step, diffParts, diffCount, duration, fit, gist, relPath, shellStep, shownCommand, testSummary, wrap } from './timeline'
 
 // ── the line each call becomes ──
 
@@ -8,10 +8,10 @@ test('read, edit, search, test: icon, verb, target, short result', async () => {
   const read = step('Read', { file_path: '/w/src/auth/LoginButton.tsx' }, { type: 'text', file: { filePath: '', content: '', numLines: 84, startLine: 1, totalLines: 84 } }, {}, { cwd: '/w' })
   expect(read).toEqual({ icon: '▸', verb: 'read', target: 'src/auth/LoginButton.tsx', result: '84 lines', tone: 'look' })
 
-  const edit = step('Edit', { file_path: '/w/src/auth/LoginButton.tsx' }, { structuredPatch: [{ oldStart: 12, oldLines: 7, newStart: 12, newLines: 3, lines: [' a', '-b', '-c', '+d'] }] }, {})
-  expect(edit).toEqual({ icon: '✎', verb: 'edit', target: 'LoginButton.tsx', result: '+1 −2', tone: 'edit' })
+  const edit = step('Edit', { file_path: '/w/src/auth/LoginButton.tsx' }, { structuredPatch: [{ oldStart: 12, oldLines: 7, newStart: 12, newLines: 3, lines: [' a', '-b', '-c', '+d'] }] }, {}, { cwd: '/w' })
+  expect(edit).toEqual({ icon: '∆', verb: 'edit', target: 'src/auth/LoginButton.tsx', result: '+1 −2', tone: 'edit' })
 
-  const t = step('Bash', { command: 'cd /w && npm test -- auth.spec.ts' }, { stdout: ' ✓ auth.spec.ts (12 tests)\n      Tests  12 passed (12)\n', stderr: '', interrupted: false }, {})
+  const t = step('Bash', { command: 'cd /w && npm test -- auth.spec.ts' }, { stdout: ' ✓ auth.spec.ts (12 tests)\n      Tests  12 passed (12)\n', stderr: '', interrupted: false }, {}, { cwd: '/w' })
   expect(t).toEqual({ icon: '✓', verb: 'test', target: 'auth.spec.ts', result: '12 passed', tone: 'ok' })
 
   const run = step('Bash', { command: 'pal-room say x "hi"' }, { stdout: 'posted to #x\n', stderr: '', interrupted: false }, {})
@@ -34,14 +34,14 @@ test('a shell command reads as what it touched (MUSE review 1)', async () => {
   expect(shellStep('grep -rn "useSession" src | head', c)).toMatchObject({ verb: 'search', target: '"useSession" in src' })
   expect(shellStep('rg -e "a|b" -g "*.ts"', c)).toMatchObject({ verb: 'search', target: '"a|b"' })
   expect(shellStep('npm test 2>&1 | tail -40; ls src test', c)).toMatchObject({ verb: 'test', target: 'npm test' })
-  expect(shellStep('npx vitest run test/auth.spec.ts', c)).toMatchObject({ verb: 'test', target: 'auth.spec.ts' })
-  expect(shellStep("sed -i 's/i <= n/i < n/' src/cart.js && npm test 2>&1 | grep -E 'pass|fail'", c)).toMatchObject({ verb: 'edit', target: 'cart.js', withTest: true })
-  expect(shellStep("cat >> test/cart.test.js <<'EOF'\ntest('x', () => {})\nEOF\nnpm test", c)).toMatchObject({ verb: 'edit', target: 'cart.test.js', withTest: true })
+  expect(shellStep('npx vitest run test/auth.spec.ts', c)).toMatchObject({ verb: 'test', target: 'test/auth.spec.ts' })
+  expect(shellStep("sed -i 's/i <= n/i < n/' src/cart.js && npm test 2>&1 | grep -E 'pass|fail'", c)).toMatchObject({ verb: 'edit', target: 'src/cart.js', withTest: true })
+  expect(shellStep("cat >> test/cart.test.js <<'EOF'\ntest('x', () => {})\nEOF\nnpm test", c)).toMatchObject({ verb: 'edit', target: 'test/cart.test.js', withTest: true })
   expect(shellStep('git status --short', c)).toMatchObject({ verb: 'run', target: 'git status --short' })
   expect(shellStep('cd /w && make build 2>&1 | tail -20', c)).toMatchObject({ verb: 'run', target: 'make build' })
   // an edit and a test: one line, the edit's verb, the test's result
   const fix = step('Bash', { command: "sed -i 's/<=/</' src/cart.js && npm test" }, { stdout: 'ℹ pass 3\nℹ fail 0\n', stderr: '', interrupted: false }, {}, c)
-  expect(fix).toEqual({ icon: '✓', verb: 'edit', target: 'cart.js', result: '3 passed', tone: 'ok' })
+  expect(fix).toEqual({ icon: '✓', verb: 'edit', target: 'src/cart.js', result: '3 passed', tone: 'ok' })
   const read = step('Bash', { command: 'cat -n src/cart.js' }, { stdout: '1 a\n2 b\n', stderr: '', interrupted: false }, {}, c)
   expect(read).toMatchObject({ icon: '▸', verb: 'read', result: '2 lines' })
 })
@@ -63,6 +63,8 @@ test('helpers', async () => {
   expect(shownCommand("cat >> t.js <<'EOF'\ntest('x')\nEOF\nnpm test 2>&1 | tail -20")).toBe('npm test')
   expect(shownCommand('make a\nmake b')).toBe('make a …')
   expect(step('Grep', { pattern: 'x' }, { mode: 'content', numFiles: 0, numLines: 6 }, {}).result).toBe('6 hits')
+  expect(diffParts('+3 −7')).toEqual(['+3', '−7'])
+  expect(diffParts('3 passed')).toBe(null)
   expect(duration(26400)).toBe('26s')
   expect(duration(64000)).toBe('1m 4s')
   expect(clampWords('one two three four five six', 9, 2)).toEqual(['one two', 'three…'])

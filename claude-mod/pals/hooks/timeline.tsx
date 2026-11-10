@@ -5,7 +5,7 @@
 //   ┊ ◇ thinking it reads session state twice…
 //   ┊ ▸ read     src/auth/LoginButton.tsx  84 lines
 //   ┊ ▸ search   "useSession"  4 hits
-//   ┊ ✎ edit     LoginButton.tsx  +3 −7
+//   ┊ ∆ edit     LoginButton.tsx  +3 −7
 //   ┊ ✓ test     npm test -- auth.spec.ts  12 passed
 //
 // - Each tool call (a `ToolUse` row, and each call of a `ToolGroup` the engine would fold into
@@ -232,8 +232,8 @@ export function shellStep(cmd: string, ctx: Ctx = {}): ShellStep {
     const u = [...new Set(fs.map(name))]
     return u.length ? u[0] + (u.length > 1 ? ` +${u.length - 1}` : '') : ''
   }
-  if (edits.length) return { kind: 'edit', verb: 'edit', target: list(edits.flatMap(t => t.files), base) || edits[0].shown, withTest: tests.length > 0 }
-  if (tests.length) return { kind: 'test', verb: 'test', target: list(tests.flatMap(t => t.files), base) || tests[0].shown, withTest: true }
+  if (edits.length) return { kind: 'edit', verb: 'edit', target: list(edits.flatMap(t => t.files), rel) || edits[0].shown, withTest: tests.length > 0 }
+  if (tests.length) return { kind: 'test', verb: 'test', target: list(tests.flatMap(t => t.files), rel) || tests[0].shown, withTest: true }
   if (runs.length) return { kind: 'run', verb: 'run', target: runs[0].shown + (runs.length > 1 ? ' …' : ''), withTest: false }
   if (searches.length) {
     const s = searches[0]
@@ -278,13 +278,13 @@ export function describe(tool: string, input: unknown, output: unknown, flags: {
       break
     }
     case 'Edit': case 'MultiEdit': case 'NotebookEdit': {
-      icon = '✎'; verb = 'edit'; tone = 'edit'; target = base(str(i.file_path || i.notebook_path))
+      icon = '∆'; verb = 'edit'; tone = 'edit'; target = path(i.file_path || i.notebook_path)
       const d = diffCount(output)
       if (d) result = `+${d.add} −${d.del}`
       break
     }
     case 'Write': {
-      icon = '✎'; verb = 'edit'; tone = 'edit'; target = base(str(i.file_path))
+      icon = '∆'; verb = 'edit'; tone = 'edit'; target = path(i.file_path)
       const d = diffCount(output)
       if (o.type === 'create') result = `new · ${plural(str(i.content).split('\n').length, 'line')}`
       else if (d) result = `+${d.add} −${d.del}`
@@ -294,7 +294,7 @@ export function describe(tool: string, input: unknown, output: unknown, flags: {
       const sh = shellStep(str(i.command), ctx)
       verb = sh.verb; target = sh.target
       tone = sh.kind === 'edit' ? 'edit' : sh.kind === 'run' ? 'run' : 'look'
-      if (sh.kind === 'edit') icon = '✎'
+      if (sh.kind === 'edit') icon = '∆'
       const n = text.split('\n').filter(l => l.trim()).length
       if (output !== undefined) {
         const t = sh.withTest ? testSummary(text) : null
@@ -415,6 +415,12 @@ export function clampWords(text: string, w: number, lines: number): string[] {
   return out
 }
 
+// "+3 −7" → its two halves, for green and red.
+export function diffParts(result: string): [string, string] | null {
+  const m = /^(\+\d+) (−\d+)$/.exec(result)
+  return m ? [m[1], m[2]] : null
+}
+
 function stepLine(el: any, key: string, step: Step, columns: number, onPress: () => void) {
   const { Button, Text } = el
   const isThink = step.tone === 'think'
@@ -441,7 +447,9 @@ function stepLine(el: any, key: string, step: Step, columns: number, onPress: ()
       <Text color={toneColor(step.tone)}>{step.icon} </Text>
       <Text color={C.meta}>{step.verb.padEnd(VERB_W)}</Text>
       <Text color={C.body}>{target}</Text>
-      {step.result ? <Text color={step.tone === 'err' ? C.err : step.tone === 'ok' ? C.done : C.meta}>{'  '}{fit(step.result, Math.max(6, columns - lead - tw - 3))}</Text> : ''}
+      {diffParts(step.result) ? (
+        <Text>{'  '}<Text color={C.add}>{diffParts(step.result)![0]}</Text> <Text color={C.del}>{diffParts(step.result)![1]}</Text></Text>
+      ) : step.result ? <Text color={step.tone === 'err' ? C.err : step.tone === 'ok' ? C.done : C.meta}>{'  '}{fit(step.result, Math.max(6, columns - lead - tw - 3))}</Text> : ''}
     </Button>
   )
 }
@@ -478,6 +486,8 @@ export async function timelineStart($: any, cwd: string | undefined) {
     off = (await $.env.get('PALS_TIMELINE')) === '0'
     ctx = { cwd: cwd ?? '', home: (await $.env.get('HOME')) ?? '' }
   } catch { /* defaults */ }
+  // A resumed session draws its history before this ran: draw those rows again, as lines.
+  try { if (!off) $.ui.invalidate('ui.render') } catch { /* they redraw on the next resize */ }
 }
 
 // ── the closing line: "Cooked for 26s · 9 steps" ──
@@ -577,9 +587,9 @@ export function registerTimeline(on: any, isPal: Gate) {
     let best: TurnSteps | undefined
     for (const t of list) if (Math.abs(t.ms - p.durationMs) < 3000 && (!best || Math.abs(t.ms - p.durationMs) < Math.abs(best.ms - p.durationMs))) best = t
     if (!best || !best.steps) return next(e)
-    const { Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const at = clock(best.at)
-    return <Text color={C.meta}>✻ {p.word} for {duration(p.durationMs)} · {plural(best.steps, 'step')}{at ? ` · done ${at}` : ''}</Text>
+    return <Box marginTop={1}><Text color={C.meta}>✻ {p.word} for {duration(p.durationMs)} · {plural(best.steps, 'step')}{at ? ` · done ${at}` : ''}</Text></Box>
   }).catch(passOnError)
 
   // "Read 3 files, searched 2 patterns" → a line per call.
