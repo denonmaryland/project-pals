@@ -2298,7 +2298,13 @@ def cmd_factory(rest):
     """pal factory: the factories. Reading is anyone's; every change is the owner's click."""
     sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
-    names = sorted({b["name"] for b in records().values() if b.get("name")})
+    # Every pal there is: the ones Project Pals has notes on, and (when the app answers) every open space.
+    names = {b["name"] for b in records().values() if b.get("name")}
+    try:
+        names |= {sp["name"] for sp in herdr_spaces()}
+    except CrewError:
+        pass
+    names = sorted(names)
     try:
         if sub in ("ls", "list"):
             pos, o = opts(args, (), ("json",))

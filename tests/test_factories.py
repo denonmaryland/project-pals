@@ -50,6 +50,9 @@ class Factories(unittest.TestCase):
                          [("default", f"{OWNER}'s crew", "Boss", "project-crew")])
         self.assertEqual(v["factories"][0]["members"], ["Boss", "Helper", "Worker"])
         self.assertIn("One factory", pal(self.env, "factory", term="tW").stdout)
+        # An open pal Project Pals has no notes on yet still counts (seen live in the sandbox).
+        (self.root / "app" / "shared.json").write_text(json.dumps({"crew": {"bots": [{"name": "Boss", "god": True}]}}))
+        self.assertEqual(self.ls()["factories"][0]["members"], ["Boss", "Helper", "Worker"])
         self.assertFalse(self.file.exists(), "reading never creates the file")
 
     def test_one_factory_home_is_as_before(self):
