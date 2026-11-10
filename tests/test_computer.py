@@ -175,6 +175,25 @@ class TheCommand(unittest.TestCase):
         todo = json.loads(pal(self.env, "computer", "Worker", "todo", "--json").stdout)
         self.assertEqual(todo["next"][0]["due_label"], "due tomorrow")
 
+    def test_pages(self):
+        src = self.data / "page.md"
+        src.write_text("# Quirks\nWebhooks first.")
+        r = pal(self.env, "page", "write", "Payment quirks", "-F", str(src), term="tW")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        page = self.data / "crew-memory" / "worker" / "pages" / "Payment quirks.md"
+        self.assertEqual(page.read_text(), "# Quirks\nWebhooks first.\n")
+        self.assertIn("Payment quirks", pal(self.env, "page", "ls", "Worker").stdout)
+        self.assertIn("Webhooks first", pal(self.env, "page", "show", "Payment quirks", "--pal", "Worker").stdout)
+        pages = json.loads(pal(self.env, "computer", "Worker", "pages", "--json").stdout)["pages"]
+        self.assertEqual([p["name"] for p in pages], ["Payment quirks"])
+        r = pal(self.env, "page", "write", "../MEMORY", "-F", str(src), term="tW")     # stays in pages/
+        self.assertNotEqual(r.returncode, 0)
+        r = pal(self.env, "page", "write", "x", "-F", str(src))                         # not a pal: refused
+        self.assertNotEqual(r.returncode, 0)
+        r = pal(self.env, "page", "rm", "Payment quirks", term="tW")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(page.exists())
+
     def test_the_chief_may_read_it(self):
         import crewchief
         self.assertIsNone(crewchief.cli_refusal("computer", ["Worker", "today", "--json"]))

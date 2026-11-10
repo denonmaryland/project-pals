@@ -1007,6 +1007,45 @@ Not yet (later phases): Platform lanes' own Home panels (lanes, parity, PR/CI/re
 the task board per factory, a foreman's inbox routing, Sleep this factory, the Chief's All
 factories level.
 
+### A pal's Computer (0.4.3)
+
+Each pal has its own computer: a desktop of apps over its tasks, desk, notes, calendar and journal
+(crew-boards/pal-computer/design.md, DeNon's pick B · Desktop, T81). It's a view: the only new data
+is a task's optional due date and the memory folder's `pages/`.
+
+- **Opening it:** Ctrl+Shift+Y (`crew-roster.computer`, bound only if free) for the shown pal, the
+  pal menu's **Computer**, or "This pal's computer" in the command bar. The center stack shows
+  `pc-view` (`crew-computer`); Ctrl+Shift+Y again, Esc, or a topic goes back.
+- **The desktop:** the pal's pet as live wallpaper (open tiles, about a third of the width, on a
+  faint #14263A glow), the clock and "<Pal>'s computer · date" at top left, six icons down the left
+  (Notes, Calendar, To-do, Desk, Work, Journal: 44 px tiles, each its own dark colour), the **Today
+  widget** on the right (each topic with its state dot, task and state; next three to-dos with their
+  due; the desk count; the mission's focus in #D97757) and a dock at the bottom centre (a dot under
+  open apps, the Desk's open count as an amber badge). Keys: 1–6 open an app, t the first topic.
+  It reads `pal computer <pal> today --json` every 4 s, only while shown.
+- **The apps are real Herdr windows** (`crew-computer-app`, `openOverlay` kind window, key
+  `pc-<pal>-<app>`): Herdr drags and stacks them and puts each back where it was dropped. A 34 px
+  bar: the pet, the app's name, the pal, **Fit** (fills the desktop area; Restore), **Pin** (reopens
+  it with keep: true, so it stays over the work and comes back after a restart) and ×. Opening an
+  open app brings it forward. Each reads only while open, every 5 s.
+  - **To-do:** Doing, Next (soonest due first), Blocked, Done today; "+ Task" opens Tasks.
+  - **Desk:** its open cards (not task cards) with their status; "Open the Desk →".
+  - **Calendar:** a week, 08–22. Past work as muted blocks by topic (the feed's `working` →
+    `finished`/`blocked`; a turn with no recorded start shows as its last 10 minutes), routine runs,
+    tasks done, due dates in a row under the days; the now line on today. ‹ › Today.
+  - **Journal:** notebook days in the one-line-per-step look (did, hiccup with its cost, lesson).
+  - **Notes:** mission, decisions, change log, map, its pages, MEMORY.md, and USER.md (read-only),
+    as markdown; Open in Obsidian (the memory folder) and Folder.
+  - **Work:** git in its folder, read-only: branch, ahead/behind, changed files, worktrees, the last
+    8 commits; Open its topic, Open folder.
+- **Leaving** the desktop, or opening another pal's, closes its unpinned windows.
+- **Due dates:** `pal task add … --due fri`, `pal task due T12 <when|none>` (fri, tomorrow,
+  2026-11-14, +3d, fri 17:00). The owner sets any task's; a pal only its own. Lists say "due Wed",
+  "overdue 2d".
+- **Pages:** `pal page write "<title>" -F file` (a pal, its own), `ls`, `show`, `rm`.
+- **For pals and the Chief:** `pal computer [Pal] [today|todo|calendar|journal|pages] --json`; the
+  Chief may run it (read-only).
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
@@ -1330,12 +1369,26 @@ factories level.
   install (`data/crew-skills/.shipped.json` keeps its hash); an edited one is kept and the new one
   is written beside it as `SKILL.md.new`.
 
+- **A Computer window and the keyboard (T81 spike, Herdr 0.1.14):** a window doesn't take the
+  keyboard when it opens; its mod focuses its own handle (in init and again 250 ms later), which
+  works. Closing the top window gives the keyboard to no one, so the desktop says who's next
+  (shared `crew.pc.focus`, "<pal>|desktop" for itself). `at` isn't clamped: windows are placed
+  inside the desktop's rectangle (its bounds from the pointer, else the sidebar's width and the
+  header's height). `keep` is fixed when a window opens, so Pin reopens it in place.
+- **The feed's `working` events** (a turn starting) only bound calendar blocks: `pal feed` hides
+  them and Home tails 1600 lines to cover the same day.
+
 ## Done when
 
 - Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
   `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
   closes it and the asker gets "Re h-…: A" as a card from the owner. With nothing waiting, Home
   says "All caught up"; "What happened today ›" opens the drawer on Today.
+
+- Ctrl+Shift+Y on a pal shows its desktop with the pet, the clock and the Today widget; 2 opens
+  its Calendar as a window inside the desktop, 3 its To-do; Esc goes back to the topic and both
+  windows close, unless one was pinned. `pal task due T1 fri` shows "due Fri" in To-do and on the
+  Calendar's due row.
 
 - `./install.sh` ends with "all Project Pals mods pass herdr-app check", and switching to the
   `pals` layout shows the sidebar with the head pal on top (once one is hired:

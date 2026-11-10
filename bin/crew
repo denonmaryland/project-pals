@@ -74,6 +74,8 @@ Work
   pal task due T <when|none>         when: fri, tomorrow, 2026-11-14, +3d, fri 17:00 (a pal: its own tasks)
   pal computer [Pal] [today|todo|calendar|journal|pages] [--json] [--start D] [--days N]
                                      what a pal's Computer shows (read-only)
+  pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
+                                     its freeform pages (a pal writes its own), in its Computer's Notes
   pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
@@ -2307,6 +2309,46 @@ def cmd_computer(spaces, rest):
         print("\n".join(p["name"] for p in out["pages"]) or f"(no pages yet: {out['folder']})")
 
 
+def cmd_page(spaces, rest):
+    """pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
+    A pal's freeform pages (crew-memory/<pal>/pages/*.md), shown in its Computer's Notes. A pal writes
+    only its own; the owner edits any in Notes' folder (Obsidian or an editor)."""
+    import crewbrain
+    import crewcomputer
+    sub, args = (rest[0], rest[1:]) if rest and rest[0] in ("ls", "show", "write", "rm") else ("ls", rest)
+    if sub == "-F":
+        sub = "ls"
+    pos, o = opts(args, ("pal", "file"), ())
+    if sub == "ls":
+        _, _, name = pal_of(spaces, (pos[0] if pos else None) or o.get("pal"))
+        print("\n".join(p["name"] for p in crewcomputer.pages(name)) or f"(no pages for {name} yet)")
+        return
+    if not pos:
+        die(f'pal page {sub} "<title>"')
+    title = " ".join(pos)
+    if sub == "show":
+        _, _, name = pal_of(spaces, o.get("pal"))
+        path = crewcomputer.page_path(name, title)
+        if not path.exists():
+            die(f"{name} has no page called '{title}'")
+        print(path.read_text())
+        return
+    space, _ = my_bot(spaces)
+    if not space:
+        die("only a pal writes pages (its own); edit any page in its Computer's Notes folder")
+    path = crewcomputer.page_path(space["name"], title)
+    if sub == "rm":
+        if not path.exists():
+            die(f"no page called '{title}'")
+        path.unlink()
+        print(f"removed {space['name']}'s page '{title}'")
+        return
+    text = file_opt(o)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    crewbrain.write(path.parent, path.name, text if text.endswith("\n") else text + "\n")
+    print(f"wrote {space['name']}'s page '{title}' ({len(text)} characters)")
+
+
 def cmd_popout(spaces, rest):
     """pal popout: a topic's live terminal in its own desktop window (bin/crewpopout.py). Putting a
     window on the owner's desktop, pinning it or closing it is the owner's click; ls is anyone's."""
@@ -2703,6 +2745,8 @@ def main(argv):
         cmd_popout(spaces, rest)
     elif cmd == "computer":
         cmd_computer(spaces, rest)
+    elif cmd in ("page", "pages"):
+        cmd_page(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":
