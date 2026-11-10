@@ -42,6 +42,7 @@ import {
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
   openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
   severalFactories, currentFactory, inFactory, homeItemShown,
+  withoutChief,
 } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -155,7 +156,7 @@ export default class CrewHome extends View {
 
   needs() {
     const out = [];
-    const all = spaces();
+    const all = withoutChief();
     for (const ap of this.ops.approvals ?? []) out.push({ key: `ap-${ap.id}`, kind: "approval", at: ap.at, pal: ap.bot, ap });
     for (const x of this.home.items) if (x.status === "open" && (x.kind === "ask" || x.kind === "login")) out.push({ key: `h-${x.id}`, kind: x.kind, at: x.at, pal: (x.by ?? "").split("#")[0], x });
     // Topics asking you (the roster's crew.needs: a pal asking another pal isn't counted, T19).
@@ -201,7 +202,7 @@ export default class CrewHome extends View {
   }
 
   progress() {
-    const all = spaces();
+    const all = withoutChief();
     const c = crew();
     const rows = [];
     const held = {};

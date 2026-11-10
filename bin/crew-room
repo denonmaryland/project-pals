@@ -296,6 +296,12 @@ def main(argv):
                 specs.append(rest[i]); i += 1
         if len(specs) < 2:
             die("a room needs at least two topics: --with \"Pal#topic\" \"Pal#topic\"")
+        import crewchief
+        for spec in specs:
+            try:
+                crewchief.refuse_target(spec, "rooms")
+            except crewlib.CrewError as e:
+                die(str(e))
         cmd_new(name, specs, goal)
     elif cmd == "invite" and len(rest) >= 2:
         os.execvp("pal", ["pal", "invite", *rest])

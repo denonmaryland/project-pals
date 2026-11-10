@@ -142,6 +142,19 @@ class Factories(unittest.TestCase):
         self.own("move", "Mac", "default")
         self.assertEqual(json.loads(self.file.read_text())["factories"][0]["foreman"], "")
 
+    def test_the_chief_is_in_no_factory(self):
+        (self.root / "app" / "shared.json").write_text(json.dumps({"crew": {"bots": [
+            {"name": "Boss", "god": True}, {"name": "Worker"}, {"name": "Helper"}, {"name": "Chief", "chief": True}]}}))
+        self.own("new", "Example app")
+        v = self.ls()
+        self.assertEqual(v["factories"][0]["members"], ["Boss", "Helper", "Worker"], "not listed on any floor")
+        for args in (["move", "Chief", "Example app"], ["foreman", "Example app", "chief"], ["new", "Third", "--foreman", "Chief"]):
+            r = owner(self.env, self.data, "factory", *args)
+            self.assertNotEqual(r.returncode, 0, args)
+            self.assertIn("above every factory", r.stderr)
+        self.assertEqual(self.ls()["pals"], {})
+        self.assertEqual(len(self.ls()["factories"]), 2)
+
     # ── Home per factory ──
     def test_home_follows_the_factory(self):
         self.assertEqual(pal(self.env, "home", "ask", "Old question", term="tH").returncode, 0)   # before any factory: no stamp

@@ -2,12 +2,21 @@
 
 ## Unreleased (0.4.2)
 
+- **The pocket pets are redrawn.** Each pal has a lit, rounded body with a real face (eyes, mouth,
+  cheeks), its species has its own marks (a fox's tail tip, an owl's beak, a pup's muzzle), and
+  what it wears stands out from the body. The laptop is now a proper open laptop seen from the
+  front corner, and its screen shows the state: code while working, a tick when done, a question
+  mark when it asks you, a branch for an open PR, an x for closing, an exclamation mark when stuck,
+  and a shut lid while asleep. Small pets (in lists, rooms and menus) show the head alone, so they
+  stay sharp. Tails and raised arms are no longer cut off at the left edge. Every pet is drawn
+  again the first time the new version runs.
 - **Factories, phase 1.** A big project can have a crew of its own: a factory, with its own
   foreman and Home. Ctrl+Shift+G (or "Factories" in the command bar) makes one and switches
   between them; a pal's right-click moves it to another factory. Once there's a second factory, a
   chip above the hero names the one you're in and counts what the others need from you, and the
   pal list and Home follow it. Your crew is the default factory: with only one, nothing changes
   and nothing new is written. `pal factory` from the command line.
+
 - **Check for updates says what it found, and when.** About and the update dialog show GitHub's
   newest version and the time they asked ("You have 0.4.0. GitHub's newest: 0.4.1 · checked
   15:48"). Left open, they ask again every 10 minutes, so an About open since the last update no

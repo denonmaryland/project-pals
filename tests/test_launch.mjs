@@ -55,7 +55,7 @@ try {
     };
     const nop = () => {};
     export const theme = () => ({}), home = () => "/h", appHome = () => "/h/.config/herdr-app", layout = () => null, keys = () => ({});
-    export const run = nop, notify = nop, openOverlay = nop, hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
+    export const run = nop, notify = nop, openOverlay = nop, closeOverlay = nop, hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   const crew = await import(pathToFileURL(join(dir, "crew.js")).href);
