@@ -1273,8 +1273,9 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   other state: a finished topic whose push is held sits here, and its card says it finished. A
   question plainly put to another pal isn't yours: that topic rests, marked "Asks a pal".
   *Working:* topics with a turn running, the longest-running first. *Resting:* finished and idle
-  topics, the newest finish first ("New" until you've had the board up since), then the asleep
-  ones; past four, each shrinks to one line. *Up next:* the pal's open tasks no topic has claimed,
+  topics, the newest finish first ("New" until you've had the board up since); past four, each
+  shrinks to one line. Under them, "Not running · N": the asleep topics and the ones with no pal in
+  them, one line each, three shown and the rest behind "N more not running" (a pal can have dozens). *Up next:* the pal's open tasks no topic has claimed,
   three at most, with Start a topic (the new-topic dialog, the task as its brief) and a link to the
   Tasks list. An empty Needs you or Up next folds to a 34 px rail.
 - **A topic's card:** state dot, `#topic`, how long (working) or when it finished; one or two

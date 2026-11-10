@@ -29,6 +29,7 @@ const clip = (s, n) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n
 const tabOf = (space, topic) => space?.tabs.find((x) => x.name.replace(/^#/, "") === topic) ?? null;
 const RAIL = 34, GAP = 10, PAD = 28;
 const HEAD_H = 100, BOX_H = 76;   // the header's height, and the box's without its text rows
+const QUIET_SHOWN = 3;            // topics not running shown before "N more not running"
 const WEIGHT = { you: 1.24, working: 1.24, resting: 0.8, next: 0.8 };
 const KIND = { approval: "Approval", ask: "Ask", prompt: "Prompt", card: "Card" };
 const STATE_WORD = { working: "working", blocked: "asks you", done: "finished", idle: "resting", asleep: "asleep", shell: "no pal running" };
@@ -297,14 +298,22 @@ export default class CrewPalBoard extends View {
       });
     const working = this.column(d, "working", `Working · ${cols.working.length}`, px("working"),
       cols.working.length ? cols.working.map((tp) => this.topicCard(d, space, tp, aim)) : [this.note(d, "Nothing is running right now.")]);
-    const awake = cols.resting.filter((tp) => tp.state !== "asleep"), asleep = cols.resting.filter((tp) => tp.state === "asleep");
-    // With many topics resting, each shrinks to one line so the column stays readable.
-    const compact = cols.resting.length > 4;
-    const resting = this.column(d, "resting", `Resting · ${cols.resting.length}`, px("resting"), [
-      ...(cols.resting.length ? [] : [this.note(d, "A finished topic rests here once nothing waits on you.")]),
+    const awake = cols.resting.filter((tp) => !tp.quiet), asleep = cols.resting.filter((tp) => tp.quiet);
+    // With many topics resting, each shrinks to one line so the column stays readable. The ones
+    // not running (asleep, or with no pal in them) fold past the first three: a pal can have dozens,
+    // and the aimed one always shows.
+    const compact = awake.length > 4;
+    const fold = asleep.length > QUIET_SHOWN + 1 && !this.allQuiet;
+    const quiet = fold ? asleep.filter((tp, i) => i < QUIET_SHOWN || tp.topic === aim) : asleep;
+    const hidden = asleep.length - quiet.length;
+    const resting = this.column(d, "resting", `Resting · ${awake.length}`, px("resting"), [
+      ...(awake.length ? [] : [this.note(d, "A finished topic rests here once nothing waits on you.")]),
       ...awake.map((tp) => this.topicCard(d, space, tp, aim, { compact })),
-      ...(asleep.length ? [div().px(4).pt(2).text_size(10).font_family(d.mono).text_color(d.fg4).child("ASLEEP")] : []),
-      ...asleep.map((tp) => this.topicCard(d, space, tp, aim, { compact })),
+      ...(asleep.length ? [div().px(4).pt(2).text_size(10).font_family(d.mono).text_color(d.fg4).child(`NOT RUNNING · ${asleep.length}`)] : []),
+      ...quiet.map((tp) => this.topicCard(d, space, tp, aim, { compact: true })),
+      ...(hidden > 0 || (this.allQuiet && asleep.length > QUIET_SHOWN + 1) ? [div().id("pb-quiet-more").px(4).py(3).cursor_pointer().text_size(11.5).text_color(d.fg3).hover((s) => s.text_color(d.fg1))
+        .child(hidden > 0 ? `${hidden} more not running` : "Show fewer")
+        .on_click((_e, cx) => { this.allQuiet = !this.allQuiet; cx.notify(); })] : []),
     ]);
     const more = cols.nextTotal - cols.next.length;
     const next = railNext ? this.rail(d, "next", "Up next", "No task is waiting for a topic")
@@ -402,7 +411,7 @@ export default class CrewPalBoard extends View {
     const on = tp.topic === aim && this.target === "topic";
     const tab = tabOf(space, tp.topic);
     const asleep = tp.state === "asleep", working = tp.state === "working";
-    const right = working ? waited(tp.since).replace(/^just now$/, "now") : asleep ? "asleep" : when(tp.finished_at) || STATE_WORD[tp.state] || tp.state;
+    const right = working ? waited(tp.since).replace(/^just now$/, "now") : asleep ? "asleep" : tp.state === "shell" ? "no pal" : when(tp.finished_at) || STATE_WORD[tp.state] || tp.state;
     const head = h_flex().items_center().gap(7).min_w(0)
       .child(div().size(7).rounded(4).flex_none().bg(this.stateColor(d, tp.state)))
       .child(div().min_w(0).truncate().text_size(12).font_family(d.mono).text_color(asleep ? d.fg2 : d.fg1).child(`#${tp.topic}`))
@@ -412,7 +421,8 @@ export default class CrewPalBoard extends View {
       .when(tp.asksPal, (el) => el.child(this.chip(d, "Asks a pal", d.fg2)))
       .child(div().flex_1())
       .child(div().flex_none().text_size(11).text_color(d.fg3).child(right));
-    const words = tp.line?.text || (tp.blocked ? `${tp.blocked.id} ${tp.blocked.title}` : tp.task ? `${tp.task.id} ${tp.task.title}` : tp.state === "shell" ? "A shell, with no pal running in it." : "Nothing to read from it yet.");
+    // A one-line card of a blocked topic says why it's blocked: that is what you'd act on.
+    const words = (compact && tp.blocked?.why && tp.topic !== aim ? `Blocked: ${tp.blocked.why}` : null) || tp.line?.text || (tp.blocked ? `${tp.blocked.id} ${tp.blocked.title}` : tp.task ? `${tp.task.id} ${tp.task.title}` : tp.state === "shell" ? "No pal is running in it." : "Nothing to read from it yet.");
     const said = div().text_size(compact ? 12 : 13).line_height(compact ? "17px" : "19px").text_color(tp.line?.text && !asleep ? (working ? d.fg1 : d.body) : d.fg2)
       .when(compact, (el) => el.truncate())
       .child(compact ? clip(words, 120) : words);
