@@ -59,8 +59,12 @@ Hiring
   pal hire --partner [Name]         the idea partner (MUSE by default): you riff, it drafts cards you Send
   (the owner, from Project Pals: hire --chief [Name], the Chief: a pop-up chief of staff that only reads
    and hands work to the head pal's #ops; Ctrl+Shift+J)
-  pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
-                                     a new topic (a tab); --worktree gives it its own git branch and folder.
+  pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--area A] [--worktree [--base BRANCH]]
+                                     a new topic (a tab); --worktree gives it its own git branch and folder;
+                                     --area files it under one of the pal's areas (made if new).
+  pal topic area ls [Pal] [--json] | add <Pal> <Area> | set <Pal#topic> <Area|none> | rm <Pal> <Area> | rename <Pal> <Area> <New>
+                                     areas: a pal's topics filed under a few names, for listing only.
+                                     Pal#topic stays the address; an area is never part of it.
                                      pal channel is the same command (topics were called channels before 0.4.0)
   pal sleep [<Pal[#topic]>... | #topic | --idle] [-n]
                                      Sleep (keep topics, free RAM): stop a pal's agent; its tabs and room seats
@@ -270,6 +274,8 @@ def cmd_bots(spaces):
         print('no pals yet: open a space in Herdr, or hire one: pal hire "Name" --folder ~/Projects/x')
         return
     recs = records()
+    import crewareas
+    areas = crewareas.load()
     me, _ = whoami(spaces)
     spaces = without_chief(spaces, recs)
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
@@ -278,11 +284,81 @@ def cmd_bots(spaces):
         brain = max(set(apps), key=apps.count) if apps else "asleep (no agent running)"
         bits = ["HEAD PAL" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
         print(f"{s['name']}  ({' · '.join(b for b in bits if b)})" + (f"\n  folder: {s['folder']}" if s.get("folder") else ""))
-        for t in s["tabs"]:
-            x = lead(t)
-            mine = "  ← you" if me == f"{s['name']}#{chan(t)}" else ""
-            st = (x or {}).get("status") or ("idle" if (x or {}).get("app") else "asleep")
-            print(f"  #{chan(t)}: {st}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
+        # Topics under their areas when the pal has any (pal topic area …), else as they come.
+        by_name = {chan(t): t for t in s["tabs"]}
+        groups = crewareas.grouped(s["name"], list(by_name), areas)
+        for area, names in groups:
+            if len(groups) > 1 or area:
+                print(f"  {area or 'Unsorted'} ({len(names)})")
+            for n in names:
+                t = by_name[n]
+                x = lead(t)
+                mine = "  ← you" if me == f"{s['name']}#{chan(t)}" else ""
+                st = (x or {}).get("status") or ("idle" if (x or {}).get("app") else "asleep")
+                print(("    " if len(groups) > 1 or area else "  ") + f"#{chan(t)}: {st}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
+
+
+def cmd_topic_area(spaces, args):
+    """pal topic area …: a pal's topics filed under areas (crewareas.py). An area is never part of
+    an address; these commands only change how topics are listed."""
+    import crewareas
+    sub = args[0] if args else "ls"
+    rest = args[1:]
+    pos, o = opts(rest, (), ("json",))
+
+    def pal_of_spec(spec):
+        """A pal's exact name from what was typed (a live pal by any of find's rules, else as typed)."""
+        try:
+            return find(spec.split("#")[0], spaces)[0]["name"]
+        except CrewError:
+            return " ".join(spec.split("#")[0].split())
+
+    def topics_of(pal):
+        s = next((x for x in spaces if norm(x["name"]) == norm(pal)), None)
+        return [chan(t) for t in s["tabs"]] if s else []
+
+    if sub == "ls":
+        me, _ = whoami(spaces)
+        names = [pal_of_spec(pos[0])] if pos else ([me.split("#")[0]] if me else [s["name"] for s in spaces])
+        store = crewareas.load()
+        if o.get("json"):
+            print(json.dumps({n: {"areas": crewareas.of_pal(n, store)["areas"],
+                                  "groups": [{"area": a, "topics": ts} for a, ts in crewareas.grouped(n, topics_of(n), store)]} for n in names}, indent=2))
+            return
+        for n in names:
+            rec = crewareas.of_pal(n, store)
+            if not rec["areas"]:
+                print(f"{n}: no areas yet (make one: pal topic area set \"{n}#<topic>\" \"<Area>\")")
+                continue
+            print(f"{n}: {len(rec['areas'])} area{'s' if len(rec['areas']) != 1 else ''}")
+            shown = set()
+            for a, ts in crewareas.grouped(n, topics_of(n), store):
+                print(f"  {a or 'Unsorted'} ({len(ts)}): " + (", ".join("#" + t for t in ts) or "none"))
+                shown.add(a)
+            for a in rec["areas"]:
+                if a["name"] not in shown:
+                    print(f"  {a['name']} (0)")
+    elif sub == "add" and len(pos) >= 2:
+        a = crewareas.add(pal_of_spec(pos[0]), " ".join(pos[1:]))
+        print(f"{pal_of_spec(pos[0])} has the area {a['name']}")
+    elif sub == "set" and len(pos) >= 2 and "#" in pos[0]:
+        pal, topic = pal_of_spec(pos[0]), pos[0].split("#", 1)[1]
+        live = topics_of(pal)
+        if live and not any(norm(t) == norm(topic) for t in live):
+            raise CrewError(f"{pal} has no topic #{topic}. Its topics: " + ", ".join("#" + t for t in live))
+        topic = next((t for t in live if norm(t) == norm(topic)), topic)
+        a = crewareas.file(pal, topic, " ".join(pos[1:]))
+        print(f"{pal} #{topic} is under {a['name']}" if a else f"{pal} #{topic} is unsorted")
+    elif sub == "rm" and len(pos) >= 2:
+        out = crewareas.remove(pal_of_spec(pos[0]), " ".join(pos[1:]))
+        print(f"removed the area {out['area']['name']}; {out['topics']} topic{'s' if out['topics'] != 1 else ''} unsorted again (nothing else changed)")
+    elif sub == "rename" and len(pos) == 3:
+        a = crewareas.rename(pal_of_spec(pos[0]), pos[1], pos[2])
+        print(f"the area is now {a['name']}")
+    elif sub == "renamed" and len(pos) == 3:   # the app, when it sees a topic's name change
+        print("moved" if crewareas.renamed(pal_of_spec(pos[0]), pos[1], pos[2]) else "nothing to move")
+    else:
+        die("pal topic area ls [Pal] [--json] | add <Pal> <Area> | set <Pal#topic> <Area|none> | rm <Pal> <Area> | rename <Pal> <Area> <New>")
 
 
 def cmd_overview(spaces, deep=False):
@@ -2713,8 +2789,11 @@ def main(argv):
             print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
+    elif cmd in ("topic", "channel") and rest and rest[0] in ("area", "areas"):
+        cmd_topic_area(spaces, rest[1:])
     elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.4.0
-        pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
+        pos, o = opts(rest, ("brief", "category", "harness", "base", "model", "area"), ("worktree",))
+        area = o.pop("area", None)
         extra = {}
         if o.pop("worktree", False):
             space, _ = find(pos[0], spaces)
@@ -2728,6 +2807,10 @@ def main(argv):
         if out.get("guessed"):
             print(f"({out['bot']}'s own brain isn't on record, so this uses {'yours' if out.get('why') == 'yours' else 'the default'}; "
                   f"pick another with --harness)")
+        if area:
+            import crewareas
+            a = crewareas.file(out["bot"], out["channel"], area)
+            print(f"filed under {a['name']}" if a else "left unsorted")
         watch_start(out["bot"], out["channel"], brain)
     elif cmd == "invite" and len(rest) >= 2:
         import crewchief
