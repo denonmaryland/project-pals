@@ -13,7 +13,7 @@ import {
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
-  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
+  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
@@ -309,7 +309,7 @@ export default class CrewRoster extends View {
           .child(mascotEl(bot, mood(palStatus(space), bot.awake), 32, t))
           .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked)))))).flex_1().min_h(0).w_full())
       .child(icon("rail-hire", "plus", () => this.hire()))
-      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU })));
+      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...appMenuSpec() })));
   }
 
   brand(t) {
@@ -631,7 +631,7 @@ export default class CrewRoster extends View {
     const look = palListStyle();
     const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
-      .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
+      .on_size_change((size, cx) => { const k = Number(settings().zoom) || 1, w = size.width / k; noteWindowHeight(size.height / k); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     // The factory chip: only once there's a second factory.
     if (severalFactories()) root.child(this.factoryChip(d));
     if (shown) root.child(this.heroCard(shown, t, d, w));

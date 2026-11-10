@@ -713,11 +713,24 @@ rectangular segments and tags.
   still counts. Its tooltip says why each one counts ("Question: Orca #general · Approval: push ·
   OMA CMZ #dotfiles · Stuck: … · not counted: 1 asking a pal"). The Inbox lists the pal-to-pal ones
   as "<pal> asked another pal", after your questions, and they don't turn the Inbox red. Then come the shown topic's 5-hour and weekly usage, the update pill (see Updates) and the installed
-  version. The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252x454 popup in the terminal menu's look, with
+  version. The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252px-wide popup in the terminal menu's look, with
   shortcuts from keys.json): Hire a pal…, New room…, Inbox, Rooms, Routines, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
   settings, Command palette, Check for updates (`crew-update` with props `check: true`),
   Project Pals settings (About: owner, head pal, update, Roll back).
+  **It never runs past the window** (T95, DeNon 2026-11-10: it had outgrown its fixed 438px box
+  and a short window, Settings was cut off and nothing scrolled). It's as tall as its rows need
+  (`crew.js appMenuNeeds`: 28px rows, 7px dividers, 1px gaps, 4px padding, 1px border) but at
+  most the window's height minus 8px top and bottom (`appMenuSpec`); Herdr keeps a popup that
+  fits inside the window, so from the bottom bar it opens upward. A mod can't ask the window's
+  size, so the roster (the window minus the 24px status bar) publishes what it measures as shared
+  `crew.window` { h }; until it has, the menu opens 438px tall. When the rows don't all fit they
+  scroll in our own area (see Scrolling): the wheel, the pill (the rows end 9px further in while
+  it shows), and the keyboard: Up/Down (wrapping), Home/End and PageUp/PageDown move the
+  highlight and keep its row wholly in view; the first and last rows also show the list's very
+  ends. Every opening starts at the top. A pointer resting on the menu doesn't take the
+  highlight back in the quarter second after a key moved it. Watch-out: when you add a row,
+  nothing else needs changing (the height follows the list). `tests/test_appmenu.mjs`.
 - **The terminal sits in the app** (DeNon, 2026-11-08): no card around it. The pals layout sets
   its own `colors.background` to the column's #0B0B0C (this layout only, not the person's theme),
   so a terminal's default background is the column itself; programs' own coloured cells keep
