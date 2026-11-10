@@ -6,7 +6,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, ownerCli, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
+import { crewCli, ownerCli, checkDue, checkLine, checkedAt, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const LLM_ORDER = ["auto", "claude", "agy"];
@@ -33,11 +33,17 @@ export default class CrewAbout extends View {
     this.head.on("submit", (_e, cx) => this.saveHead(cx));
     this.head.on("blur", (_e, cx) => { this.headFocused = false; this.saveHead(cx); });
     this.head.on("focus", () => { this.headFocused = true; });
+    // Where everything pushed to the head pal goes (T60): one of its topics, e.g. ops; empty: as before, the topic it shows, else its first tab.
+    this.inbox = InputState.new({ placeholder: "the topic it shows", value: shared("crew.settings")?.head_topic ?? "" });
+    this.inbox.on("submit", (_e, cx) => this.saveInbox(cx));
+    this.inbox.on("blur", (_e, cx) => { this.inboxFocused = false; this.saveInbox(cx); });
+    this.inbox.on("focus", () => { this.inboxFocused = true; });
     this.load(cx);
     cx.timer.every(3000, (cx) => this.load(cx));
     cx.timer.every(500, () => {
       if (this.fillOwner && !this.owner.value()) { this.owner.set_value(this.fillOwner); this.fillOwner = null; }
       if (this.fillHead && !this.head.value()) { this.head.set_value(this.fillHead); this.fillHead = null; }
+      if (this.fillInbox && !this.inbox.value()) { this.inbox.set_value(this.fillInbox); this.fillInbox = null; }
     });
     this.handle = cx.focus_handle();
   }
@@ -47,11 +53,12 @@ export default class CrewAbout extends View {
       const d = `${appHome()}/data`;
       try { this.ins = JSON.parse((await readTextFile(`${d}/crew-install.json`)) ?? "{}"); } catch { this.ins = {}; }
       try { this.state = JSON.parse((await readTextFile(`${d}/crew-update.json`)) ?? "{}"); } catch { this.state = {}; }
-      // Opening About asks GitHub again when the last check is over 10 minutes old (crewd checks only
-      // every 6 hours), so a new release shows its Update button without a "Check for updates" click first.
-      if (!this.checkedOnOpen) {
-        this.checkedOnOpen = true;
-        if (!this.busy && Date.now() / 1000 - (this.state.checked ?? 0) > 10 * 60) this.run("check", ["update", "check"], cx);
+      // About asks GitHub again whenever the last answer is over 10 minutes old, open or opening
+      // (crewd checks only every 6 hours), so a new release shows its Update button without a "Check
+      // for updates" click first, even in an About left open since the last update (T64).
+      if (!this.busy && checkDue(this.state.checked, Math.max(this.lastAuto ?? 0, this.state.tried ?? 0))) {
+        this.lastAuto = Date.now() / 1000;
+        this.run("check", ["update", "check"], cx);
       }
       const r = await exec("sh", ["-c", 'ls "$1"/update-*.tar.gz 2>/dev/null | wc -l', "sh", `${appHome()}/.crew-backups`]).catch(() => null);
       this.backups = Number((r?.stdout ?? "0").trim()) || 0;
@@ -90,6 +97,20 @@ export default class CrewAbout extends View {
       try { await ownerCli(["settings", "owner", name]); this.savedOwner = name; notify({ title: `Pals now work for ${name}`, level: "success", timeout: 2500 }); }
       catch (e) { notify({ title: "Couldn't save your name", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
       this.savingOwner = false;
+    });
+  }
+
+  saveInbox(cx) {
+    const topic = this.inbox.value().trim().replace(/^#/, "");
+    if (this.savingInbox || topic === (shared("crew.settings")?.head_topic ?? "") || topic === this.savedInbox) return;
+    this.savingInbox = true;
+    cx.spawn(async () => {
+      try {
+        await ownerCli(["settings", "head-topic", topic || "none"]);
+        this.savedInbox = topic;
+        notify({ title: topic ? `The head pal's pushes now go to #${topic}` : "The head pal's pushes go to the topic it shows again", level: "success", timeout: 3500 });
+      } catch (e) { notify({ title: "Couldn't set the head pal's inbox topic", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+      this.savingInbox = false;
     });
   }
 
@@ -152,10 +173,12 @@ export default class CrewAbout extends View {
     else if (this.busy === "uninstall") { title = "Uninstalling Project Pals…"; sub = "Herdr switches to its main layout when it's done"; }
     else if (this.confirmUninstall) { title = "Uninstall Project Pals?"; sub = "Takes out its layout, mods, commands, Claude Code and Antigravity hooks, shortcuts and crewd. Your own settings go back to how they were; your pals' data (pals, memory, the Desk, tasks) stays."; color = t.blocked; }
     else if (this.error) { title = "That didn't work"; sub = this.error; color = t.blocked; }
-    else if (available) { title = `${st.name || st.latest} is available`; sub = st.published ? `released ${String(st.published).slice(0, 10)}` : ""; }
-    else if (st.checked && !st.latest) { title = "No releases yet"; sub = `checked ${ago(st.checked)}`; }
-    else if (st.checked) { title = "You're up to date"; sub = `checked ${ago(st.checked)}`; }
-    else { title = "Not checked yet"; sub = "Project Pals checks every few hours by itself"; }
+    // Each says what GitHub's newest was and when it was asked (checkLine), and a failed check says so (T64).
+    else if (available) { title = `${st.name || st.latest} is available`; sub = `${st.published ? `released ${String(st.published).slice(0, 10)} · ` : ""}checked ${checkedAt(st.checked)}`; }
+    else if (st.error && (st.tried ?? 0) > (st.checked ?? 0)) { title = "Couldn't check for updates"; sub = checkLine(st); color = t.blocked; }
+    else if (st.checked && !st.latest) { title = "No releases yet"; sub = checkLine(st); }
+    else if (st.checked) { title = "You're up to date"; sub = `You have ${current}. ${checkLine(st)} (${ago(st.checked)})`; }
+    else { title = "Not checked yet"; sub = st.error ? checkLine(st) : "Project Pals checks every few hours by itself"; }
 
     const notes = available && st.notes ? scrollArea(ds(t), "about-notes", v_flex().gap(3).pt(4).pr(10)
       .children(st.notes.split("\n").filter((l) => l.trim()).slice(0, 40).map((l) =>
@@ -190,6 +213,7 @@ export default class CrewAbout extends View {
     // Settings can arrive after the dialog opened: fill the name in if it's still empty.
     if (!this.ownerFocused && !this.owner.value() && shared("crew.settings")?.owner) this.fillOwner = shared("crew.settings").owner;
     if (!this.headFocused && !this.head.value() && shared("crew.settings")?.head) this.fillHead = shared("crew.settings").head;
+    if (!this.inboxFocused && !this.inbox.value() && shared("crew.settings")?.head_topic) this.fillInbox = shared("crew.settings").head_topic;
     const row = (id, label, sub, right, action) => h_flex().id(id).items_center().justify_between().gap(12).px(16).min_h(52).py(6)
       .when(Boolean(action), (el) => el.cursor_pointer().hover((s) => s.bg(a(t.foreground, "05"))).on_click(action))
       .child(v_flex().min_w(0).gap(1).child(div().text_size(13.5).text_color(t.foreground).child(label))
@@ -203,6 +227,10 @@ export default class CrewAbout extends View {
       .child(row("set-head", "Head pal's name", "The one over everyone (Orchestrator by default)", div().w(170).h(30).px(10).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(Input.new(this.head).w_full().text_size(13).text_color(t.foreground))))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      .child(row("set-head-topic", "Head pal's inbox topic", "Where its digests, check-ins and messages without a #topic go", div().w(170).h(30).px(10).flex().items_center().rounded(8).bg(a(t.foreground, "08"))
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(Input.new(this.inbox).w_full().text_size(13).text_color(t.foreground))))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       .child(row("set-bypass", "Bypass permissions for new pals", "Hired pals and new topics skip their harness's permission prompts",
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()

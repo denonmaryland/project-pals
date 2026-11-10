@@ -231,8 +231,42 @@ def norm(s):
     return s.lower().replace("-", " ").replace("_", " ").strip()
 
 
+def head_topic():
+    """The head pal's inbox topic name (T60: crew-settings.json head_topic, set with a click), or ''."""
+    return (load_json(SETTINGS, {}).get("head_topic") or "").strip().lstrip("#")
+
+
+def head_inbox(space, recs=None):
+    """The head pal's inbox topic tab, when `space` is the head pal and the owner chose one it has.
+    Everything pushed to the head pal without a topic goes there (dream digests, check-ins, its tray
+    cards, crewd's alerts, task notices, "Orca" with no #topic), so its other topics stay quiet."""
+    want = head_topic().lower()
+    if not want or not space:
+        return None
+    recs = records() if recs is None else recs
+    if not (record_of(space, recs).get("god") or norm(space["name"]) == norm(HEAD)):
+        return None
+    return next((t for t in space.get("tabs", []) if chan(t).lower() == want), None)
+
+
+def head_terminal(spaces, exclude=None):
+    """Where a push for the head pal goes: its inbox topic when one is set and an agent runs there,
+    else (as before T60) its first topic with an agent. None when there's no head pal awake."""
+    recs = records()
+    for sp in spaces:
+        if not record_of(sp, recs).get("god"):
+            continue
+        inbox = head_inbox(sp, recs)
+        for t in ([inbox] if inbox else []) + [t for t in sp["tabs"] if t is not inbox]:
+            x = lead(t)
+            if x and x.get("app") and x["terminal"] != exclude:
+                return x["terminal"]
+    return None
+
+
 def find(spec, spaces):
-    """'docs', 'Docs Site#updates' → (space, tab). Raises CrewError."""
+    """'docs', 'Docs Site#updates' → (space, tab). Raises CrewError. The head pal with no #topic is
+    its inbox topic when the owner chose one (T60)."""
     bot, _, ch = spec.lstrip("@").partition("#")
     want = norm(bot)
     space = (next((s for s in spaces if norm(s["name"]) == want), None)
@@ -247,7 +281,7 @@ def find(spec, spaces):
         if not tab:
             raise CrewError(f"{space['name']} has no #{ch}. Topics: " + ", ".join("#" + chan(t) for t in space["tabs"]))
     else:
-        tab = next((t for t in space["tabs"] if t.get("active")), space["tabs"][0])
+        tab = head_inbox(space) or next((t for t in space["tabs"] if t.get("active")), space["tabs"][0])
     return space, tab
 
 

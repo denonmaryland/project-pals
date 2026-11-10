@@ -209,8 +209,9 @@ Project Pals never answers it for you: trusting a folder is your call. It tells 
 
 When a newer release is out, a quiet **Update available · 0.x.y** pill shows in the status bar.
 Click it for the version and its highlights, then **Update now** or **Later** (the pill stays away
-for 3 days for that version). The gear menu has **Check for updates** too. Project Pals looks at
-most every 6 hours.
+for 3 days for that version). The gear menu has **Check for updates** too: it always asks GitHub,
+and says what the newest release is and when it asked. Project Pals looks by itself every 6 hours
+at most, and every 10 minutes while About or the update dialog is open.
 
 - Updates come only from this repo's GitHub releases, and must match the release's
   `SHA256SUMS`.

@@ -921,8 +921,11 @@ def route(card, spaces, rules_only=False):
     the topic on its task; then, when two or more of its topics are awake, (space, None, why) so
     triage picks one in the background (not with rules_only); else the topic the pal shows, or its
     first awake one. (space, tab, why)."""
-    from crewlib import find, chan
+    from crewlib import find, chan, head_inbox
     space, tab = find(pal_of(card["to"]), spaces)
+    inbox = head_inbox(space)
+    if inbox:
+        return space, inbox, f"the head pal's inbox topic (#{chan(inbox)})"
     names = {chan(t).lower(): t for t in space["tabs"]}
     for m in re.finditer(r"#([\w-]+)", card.get("title") or ""):
         if m.group(1).lower() in names:

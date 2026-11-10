@@ -27,7 +27,7 @@ from crewlib import (DATA, QUEUE, MEMORY, SKILLS, HOOKED, CrewError, OWNER, sett
                      hc_terminals, is_agent, term_info, proc_comm, shell_is_bare, clear_osc_status, owns_terminal, screen, meaningful,
                      split_where, send_now, feed, enqueue, without_input_box, herdr_spaces, find, record_of, records, lead,
                      chan, memory_dir, remember, today, now_ms, slug, trust_prompt, trust_notice, input_draft, DraftInTheWay,
-                     batch_text, claim_queue, unclaim, finish_claimed, hooked, tidy_queue, mod_alive)
+                     batch_text, claim_queue, unclaim, finish_claimed, hooked, tidy_queue, mod_alive, head_terminal)
 import crewskills
 import crewroutines
 import crewupdate
@@ -505,18 +505,13 @@ class Crewd:
             self.save_health()
 
     def tell_head(self, text, exclude=None):
+        """An alert for the head pal: its inbox topic when the owner chose one (T60), else its first awake topic."""
         try:
-            spaces = herdr_spaces()
+            term = head_terminal(herdr_spaces(), exclude=exclude)
         except CrewError:
             return
-        recs = records()
-        for s in spaces:
-            if record_of(s, recs).get("god"):
-                for t in s["tabs"]:
-                    x = lead(t)
-                    if x and x.get("app") and x["terminal"] != exclude:
-                        enqueue(x["terminal"], text, sender="crew", kind="alert")
-                        return
+        if term:
+            enqueue(term, text, sender="crew", kind="alert")
 
     # ── memory ──
     def maybe_review(self, addr, t):

@@ -294,7 +294,14 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   and the dialog read, because the update reinstalls the dialog itself; a run silent for 15
   minutes counts as failed. After it: "Updated to X" with Roll back. The status bar also asks
   GitHub when the last check is over 6 hours old (at most once an hour), for installs without
-  crewd. Snapshots store Herdr's home as `@app/…` (it needn't be inside `$HOME`); Roll back still
+  crewd. The gear's **Check for updates** and About's button always ask GitHub (`Cache-Control:
+  no-cache`, nothing cached of ours); an open About or `crew-update` asks again by itself once the
+  last answer is over 10 minutes old (`checkDue`, at most once per 10 minutes), not only when it
+  opens. Both say what GitHub's newest was and when they asked ("You have 0.4.0. GitHub's newest:
+  0.4.1 · checked 15:48", `checkLine`); a failed check keeps the last answer and records `tried` and
+  `error` in `crew-update.json`, shown as "Couldn't check for updates". Every `pal update check`
+  is a line in `data/crew-update.log` (T64: an About left open since the 0.4.0 update still said
+  up to date after 0.4.1 shipped). Snapshots store Herdr's home as `@app/…` (it needn't be inside `$HOME`); Roll back still
   reads older snapshots stored relative to `$HOME`.
   A local `./install.sh` over an existing install takes the same kind of snapshot first
   (`update-from-<version>-local-*.tar.gz`, the last 5 kept), so Roll back always undoes the most
@@ -747,6 +754,13 @@ still travels through crewd's queue, carrying the card's id.
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
   The card says what to do: pass it on, cancel it if stale, or tell the owner; never clear a box.
+- **The head pal's inbox topic** (0.4.2, T60): About → Settings "Head pal's inbox topic" (`pal settings
+  head-topic ops|none`, the owner's click; `head_topic` in crew-settings.json). When set and the head
+  pal has that topic, everything pushed to it without a #topic goes there: `pal tell Orca`, cards to
+  its tray, the check-in, task notices to "Orca", dream digests and crewd's alerts. `Orca#general`
+  still reaches #general, so the owner's chat topic stays quiet. Unset, or a topic it doesn't have:
+  as before, the topic it shows, else its first tab. Typed pushes (alerts, digests) only go to a topic with an agent running;
+  cards for an inbox that's asleep wait there (held: asleep).
 - **Claude Code pals carry the `pals` mod** (`claude-mod/pals`, installed to
   `~/.claude/project-pals/pals`, loaded with `--plugin-dir` only in pals). Every 2 s it writes a
   heartbeat (`data/crew-desk/.mod/<terminal>`; crewd then never types to that pal) and looks at the

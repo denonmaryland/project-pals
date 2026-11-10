@@ -99,7 +99,7 @@ Memory and skills
 
 Settings
   pal settings                      who the pals work for, head pal, bypass, and background LLM
-  pal settings owner "Name" | head "Name" | bypass on|off | llm auto|claude|agy
+  pal settings owner "Name" | head "Name" | head-topic ops|none | bypass on|off | llm auto|claude|agy
   pal settings desk | desk.<key> <value>   the Desk's settings (triage, caps, flags, archive, MUSE)
 
 Updates
@@ -138,7 +138,7 @@ from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOM
                      live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, agent_running, owns_terminal, screen, meaningful,
                      enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
-                     trust_prompt, trust_notice)
+                     trust_prompt, trust_notice, head_terminal, head_topic, head_inbox)
 import crewtasks
 import crewroutines
 import crewskills
@@ -1845,17 +1845,6 @@ def cmd_notebook(spaces, rest):
     print(("added to" if out["merged"] else "wrote") + f" {name}'s notebook: " + " · ".join(l[2:] for l in out["lines"]))
 
 
-def head_terminal(spaces):
-    recs = records()
-    for sp in spaces:
-        if record_of(sp, recs).get("god"):
-            for t in sp["tabs"]:
-                x = lead(t)
-                if x and x.get("app"):
-                    return x["terminal"]
-    return None
-
-
 def cmd_dream(spaces, rest):
     import crewdream, crewproposals
     sub = rest[0] if rest and rest[0] in ("ls", "propose", "intake", "run") else "run"
@@ -2012,7 +2001,8 @@ def cmd_settings(rest):
         return
     if not rest:
         st = settings()
-        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
+        print(f"owner: {st['owner']}\nhead pal: {st['head']}\nhead pal's inbox topic: {'#' + head_topic() if head_topic() else 'none (the topic it shows, else its first tab)'}"
+              f"\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}")
         return
     # Changing one is the owner's: a click in Project Pals (About, Settings → Desk). A missing or
     # unknown terminal ID isn't the owner (Grok review H1).
@@ -2029,6 +2019,24 @@ def cmd_settings(rest):
         st = save_settings(bypass=val == "on")
     elif key == "llm" and val in ("auto", "claude", "agy"):
         st = save_settings(llm=val)
+    elif key in ("head-topic", "head_topic"):
+        # T60: where everything pushed to the head pal goes ("" or "none": as before, the topic it shows, else its first tab).
+        topic = "" if val.lower() in ("", "none", "off") else val.lstrip("#").strip()
+        if topic and not re.fullmatch(r"[\w.-]{1,64}", topic):
+            die("a topic name: letters, digits, - _ . (e.g. ops)")
+        st = save_settings(head_topic=topic)
+        if not topic:
+            s = load_json(SETTINGS, {})
+            s.pop("head_topic", None)
+            save_json(SETTINGS, s)
+        try:
+            head = next((sp for sp in herdr_spaces() if record_of(sp, records()).get("god")), None)
+        except CrewError:
+            head = None
+        if topic and head and not head_inbox(head):
+            print(f"note: {head['name']} has no #{topic} yet; pushes go to the topic it shows (else its first tab) until it does")
+        print(f"head pal's inbox topic: {'#' + topic if topic else 'none (the topic it shows, else its first tab)'}")
+        return
     elif key == "head" and val:
         if "#" in val or val.startswith("@"):
             die("a pal's name can't have # in it or start with @")
@@ -2045,7 +2053,7 @@ def cmd_settings(rest):
         renamed(old if old and old != val else prev, val)
         st = save_settings(head=val)
     else:
-        die('pal settings owner "Name" | pal settings head "Name" | pal settings bypass on|off | pal settings llm auto|claude|agy | pal settings desk.<key> <value> (pal settings desk lists them)')
+        die('pal settings owner "Name" | pal settings head "Name" | pal settings head-topic ops|none | pal settings bypass on|off | pal settings llm auto|claude|agy | pal settings desk.<key> <value> (pal settings desk lists them)')
     # crewd reads the owner's name when it starts.
     subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
     print(f"owner: {st['owner']} · head pal: {st['head']} · bypass: {'on' if st['bypass'] else 'off'} · llm: {st.get('llm', 'auto')}")
@@ -2068,8 +2076,8 @@ def update_log(msg):
 def cmd_update(rest):
     sub = next((a for a in rest if not a.startswith("--")), "check")
     as_json = "--json" in rest
+    who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
     if sub in ("apply", "rollback"):
-        who = f"terminal {ME}" if ME else ("the app, e.g. About (--json, no terminal)" if as_json else "a terminal outside Herdr")
         update_log(f"{sub} started by {who}, installed {crewupdate.installed().get('version', '?')}")
     # Installing or rolling back code is the owner's call: a click in Project Pals (About, Update now),
     # never a pal's, and not anyone hc doesn't call a pal (Grok review H1).
@@ -2083,6 +2091,7 @@ def cmd_update(rest):
     try:
         if sub == "check":
             out = crewupdate.check()
+            update_log(f"check by {who}: GitHub's newest is {out.get('latest') or 'none'} (installed {out.get('current')})")
         elif sub == "apply":
             say = (lambda *_: None) if as_json else print
             out = crewupdate.apply(log=lambda m: (update_log(m), say(m), crewupdate.run_state(state="running", step=m)))
@@ -2092,6 +2101,8 @@ def cmd_update(rest):
         else:
             die("pal update check | apply | rollback [--json]")
     except CrewError as e:
+        if sub == "check":
+            update_log(f"check by {who} failed: {e}")
         if sub in ("apply", "rollback"):
             update_log(f"{sub} failed: {e}")
             crewupdate.run_state(state="failed", error=str(e))

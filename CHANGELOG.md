@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (0.4.2)
+
+- **Check for updates says what it found, and when.** About and the update dialog show GitHub's
+  newest version and the time they asked ("You have 0.4.0. GitHub's newest: 0.4.1 · checked
+  15:48"). Left open, they ask again every 10 minutes, so an About open since the last update no
+  longer says "up to date" after a new release. The button always asks GitHub afresh. A check that
+  fails says so ("Couldn't check for updates", and why) instead of showing the old answer as new,
+  and every check is a line in `data/crew-update.log`.
+
 ## 0.4.1: sleep, wake and a clean uninstall
 
 Put a pal to sleep to free its memory and wake it where it was, take Project Pals out cleanly,
