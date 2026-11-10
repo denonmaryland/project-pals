@@ -1,7 +1,7 @@
 // The sidebar runs the window's full height (T97, DeNon 2026-11-10): the status strip is the
 // sidebar's own last 24 px, not a bar under the whole window; no line above it and none under the
-// header; and in a 304 px sidebar it shows what fits, most important first, losing nothing (the
-// whole line is in a tooltip). Headless: the layout file, the fit rule, and the strip drawn for
+// header; and it holds just the gear (T98), plus "N need you" and the update pill when they apply,
+// fitted to the sidebar's width. Headless: the layout file, the fit rule, and the strip drawn for
 // real at several widths against stand-ins (every method must be one gpui-kit declares).
 // Run: node tests/test_status.mjs
 import assert from "node:assert/strict";
@@ -98,15 +98,11 @@ try {
   const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
   const strings = (nodes) => nodes.flatMap((n) => n.kids.filter((k) => typeof k === "string"));
   const st = Object.create(Status.prototype);
-  Object.assign(st, { w: 304, meta: { rate_limits: { five_hour: { used_percentage: 12 }, seven_day: { used_percentage: 52 } } }, version: "0.4.1",
-    update: { current: "0.4.1", latest: "0.4.2", available: false } });
+  Object.assign(st, { w: 304, update: { current: "0.4.1", latest: "0.4.2", available: false } });
   fx.agents = [{ status: "working" }, { status: "working" }, { status: "idle" }];
   const draw = (w) => { st.w = w; return all(st.render()); };
   const d = crew.ds(crew.tone({ background: "#0E0E0F", foreground: "#EDEDED" }));
-  const widthOf = (nodes) => {   // the fit's own arithmetic, from what was drawn
-    const kids = nodes[0].kids.map((k) => k.node).filter((n) => !n.calls.includes("flex_1"));
-    return kids.length;
-  };
+  const ids = (nodes) => nodes.map((x) => x.args.id?.[0]).filter(Boolean);
 
   let n = draw(304);
   const rootEl = n[0];
@@ -114,49 +110,43 @@ try {
   assert.ok(!rootEl.calls.includes("border_t_1"), "no line above the strip");
   assert.ok(rootEl.calls.includes("border_r_1") && rootEl.args.border_color[0] === d.line && rootEl.args.bg[0] === d.bg1, "the sidebar's colour and its edge line, down to the window's bottom");
   assert.ok(rootEl.calls.includes("on_size_change"), "it measures its own width");
-  // 304 px, calm: the gear, working, both limits and the version all fit.
-  assert.deepEqual(strings(n), ["2 working", "5h 12% · week 52%", "pal 0.4.1"]);
-  assert.ok(n.some((x) => x.args.id?.[0] === "crew-gear"), "the gear");
-  assert.ok(widthOf(n) >= 4);
-  // Something needs you: it comes before usage, which shortens to the weekly limit or steps aside.
+  // Calm: just the gear (T98, DeNon 2026-11-10: "N working", the usage limits and "pal 0.x.y" went).
+  assert.deepEqual(ids(n), ["crew-status", "crew-gear"], "calm: the gear alone");
+  assert.deepEqual(strings(n), [], "no text: no working count, usage or version");
+  const src = readFileSync(join(root, "mods/crew-status/main.js"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("//")).join("\n");
+  for (const gone of ["working`", "rate_limits", "seven_day", "`pal ${", "agents()"]) assert.ok(!src.includes(gone), `the strip no longer draws or reads ${gone}`);
+  // The gear opens the app menu, at the size that fits the window.
+  n.find((x) => x.args.id?.[0] === "crew-gear").args.on_mouse_down[1]({}, { stop_propagation() {} });
+  assert.equal(fx.overlays.at(-1).mod, "crew-appmenu");
+  // The version is still one click away: the menu's Project Pals settings row opens About.
+  assert.ok(crew.appMenuItems().some((x) => x.id === "settings" && x.label === "Project Pals settings"));
+  assert.match(readFileSync(join(root, "mods/crew-about/main.js"), "utf8"), /ins\.version/, "About shows the installed version");
+  // Something needs you: it shows beside the gear (a separator between) and opens the Inbox.
   fx.shared["crew.needs"] = { count: 2, approvals: 0 };
   n = draw(304);
-  let s = strings(n);
-  assert.ok(s.includes("2 working") && s.includes("2 need you") && s.includes("pal 0.4.1"), `needs you shows (${s})`);
-  assert.ok(!s.includes("5h 12% · week 52%"), "both limits no longer fit beside it");
+  assert.deepEqual(strings(n), ["2 need you"]);
   assert.ok(n.find((x) => x.args.id?.[0] === "crew-needs").calls.includes("on_mouse_down"), "and still opens the Inbox");
-  // An update: the pill comes before the version and usage.
+  assert.equal(n[0].kids.filter((k) => k.node.args.w?.[0] === 1 && k.node.args.h?.[0] === 12).length, 1, "one separator, between the gear and it");
+  // An update: the pill on the right, naming the version; a click opens the update dialog.
   st.update = { current: "0.4.1", latest: "0.4.2", available: true };
-  n = draw(304); s = strings(n);
-  assert.ok(s.includes("Update") && s.includes("2 working") && s.includes("2 need you"), `beside needs-you the pill shortens to "Update" (${s})`);
-  assert.ok(strings(draw(440)).includes("Update · 0.4.2"), "with room it names the version");
   n = draw(304);
+  assert.deepEqual(strings(n), ["2 need you", "Update · 0.4.2"]);
   n.find((x) => x.args.id?.[0] === "crew-update").args.on_mouse_down[1]({}, { stop_propagation() {} });
   assert.equal(fx.overlays.at(-1).mod, "crew-update");
-  // Nothing is lost: the whole line is the tooltip of "N working", whatever the width.
-  for (const w of [200, 304, 440]) {
-    const tip = draw(w).find((x) => x.args.id?.[0] === "crew-working").args.tooltip[0];
-    for (const part of ["2 working", "2 need you", "5h 12% · week 52%", "Project Pals 0.4.2 is out", "pal 0.4.1"]) assert.ok(tip.includes(part), `${w} px: the tooltip keeps "${part}" (${tip})`);
-  }
-  // What's drawn never adds up to more than the strip (the estimate the fit uses).
+  // Narrower: the pill shortens to "Update", then steps aside and the gear's tooltip says it.
+  assert.deepEqual(strings(draw(210)), ["2 need you", "Update"]);
+  n = draw(160);
+  assert.deepEqual(strings(n), ["2 need you"]);
+  assert.ok(n.find((x) => x.args.id?.[0] === "crew-gear").args.tooltip[0].includes("Project Pals 0.4.2 is out"), "nothing lost: the gear says an update is out");
+  assert.ok(!draw(304).find((x) => x.args.id?.[0] === "crew-gear").args.tooltip[0].includes("is out"), "while the pill shows, the gear's tooltip is just the menu");
+  // What's drawn never adds up to more than the strip (the estimate the fit uses), and the gear is always there.
   for (const w of [120, 160, 200, 240, 304, 360, 440]) {
-    const nodes = draw(w), texts = strings(nodes);
-    const parts = nodes[0].kids.map((k) => k.node).filter((x) => !x.calls.includes("flex_1") && x.args.w?.[0] !== 1);
-    const est = (x) => x.args.id?.[0] === "crew-gear" ? 20 + STRIP.gap + 1 : x.args.id?.[0] === "crew-update" ? 30 + textW(strings(all({ node: x }))[0])
-      : (x.kids.some((k) => typeof k === "string") ? 0 : 12) + textW(strings(all({ node: x }))[0]);
-    const used = STRIP.pad + parts.reduce((a, x) => a + est(x), 0) + STRIP.gap * (parts.length - 1);
-    assert.ok(used <= w, `${w} px: what shows fits (${used}: ${texts})`);
-    assert.ok(nodes.some((x) => x.args.id?.[0] === "crew-gear"), `${w} px: the gear is always there`);
+    const nodes = draw(w);
+    const used = STRIP.pad + 20 + (ids(nodes).includes("crew-needs") ? STRIP.gap * 2 + 1 + 12 + textW("2 need you") : 0)
+      + (ids(nodes).includes("crew-update") ? STRIP.gap + 30 + textW(strings(nodes).at(-1)) : 0);
+    assert.ok(used <= w, `${w} px: what shows fits (${used}: ${strings(nodes)})`);
+    assert.ok(ids(nodes).includes("crew-gear"), `${w} px: the gear is always there`);
   }
-  // Wider shows more, never less.
-  const count = (w) => strings(draw(w)).length;
-  assert.ok(count(440) >= count(304) && count(304) >= count(200) && count(200) >= count(120));
-  assert.ok(strings(draw(440)).includes("pal 0.4.1"), "at 440 px the version is back beside the pill");
-  // The weekly limit alone stands in when both don't fit (no update, something needs you, a wide sidebar).
-  st.update = { current: "0.4.1", latest: "0.4.2", available: false };
-  assert.ok(strings(draw(330)).includes("week 52%") && !strings(draw(330)).includes("5h 12% · week 52%"), `330 px: the weekly limit alone (${strings(draw(330))})`);
-  assert.ok(strings(draw(440)).includes("5h 12% · week 52%"), "440 px: both limits");
-  st.update = { current: "0.4.1", latest: "0.4.2", available: true };
   // Folded to the rail: an empty strip (the rail has its own gear), still the sidebar's colour and edge.
   n = draw(56);
   assert.equal(n.length, 1, "folded: nothing in it");
@@ -167,7 +157,7 @@ try {
   assert.equal(st.w, 304); assert.equal(notes, 0, "the same width: no redraw");
   draw(304)[0].args.on_size_change[0]({ width: 300, height: 36 }, { notify() { notes++; } });
   assert.equal(st.w, 200); assert.equal(notes, 1);
-  console.log("status: ok (the strip is the sidebar's last 24 px; it fits 120-440 px and loses nothing)");
+  console.log("status: ok (the strip is the sidebar's last 24 px: the gear, and needs-you / update when they apply)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

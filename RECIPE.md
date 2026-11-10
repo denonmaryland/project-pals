@@ -708,14 +708,27 @@ rectangular segments and tags.
   node is a column (it keeps the id, 304px, min 56, max 440, so resizing, folding and the saved
   width still go by it) of `side-main` (the roster) and `status` (24px), with no divider between
   them; the strip is the sidebar's #0E0E0F with its #1E1E20 edge line down the right side and
-  no line on top, so the sidebar's edge reaches the window's bottom. The strip shows what fits
-  its width, most important first (`crew-status` `statusFit`, widths estimated at 5.9px a
-  character): the gear, "N working", "N need you", the update pill ("Update · X", else just
-  "Update"), the version, then usage (both limits, else "week N%"). Whatever is left out is in
-  the tooltip of "N working", which always says the whole line. Folded to the 56px rail the
-  strip is empty (the rail has its own gear). Watch-out: a new status item needs a place in
-  that priority list, or it will push others out. `tests/test_status.mjs`.
-- **Status strip** (24px, the sidebar's last row): a quiet gear at its left end, the working count,
+  no line on top, so the sidebar's edge reaches the window's bottom. **The strip is just the
+  gear** when all is calm (T98, DeNon 2026-11-10: "N working", the usage limits and "pal 0.x.y"
+  went from it). Two things join it only when they apply, fitted to its width
+  (`crew-status` `statusFit`, widths estimated at 5.9px a character): "N need you" after a
+  separator, and on the right the update pill ("Update · X", else just "Update"; if even that
+  doesn't fit, the gear's tooltip says an update is out). The version is in Project Pals
+  settings (the gear's menu → About). Usage is no longer shown by the app; Claude Code's own
+  status line in the terminal still shows it. Folded to the 56px rail the strip is empty (the
+  rail has its own gear). `tests/test_status.mjs`.
+  **The working count lives beside "Pals"** (T98): in the Pals header, after the title, a 6px
+  dot and "N working" (blue dot and #808082 text; grey at zero), id `pals-working`. It counts
+  EVERY working agent (`crew.js workingEverywhere`): all pals and topics, on every machine, in
+  every factory, not just the shown factory's list. Its tooltip names them (the first eight,
+  then "+N more"), each with its machine and, with 2+ factories, its factory.
+  **Rooms fold** (T99, DeNon 2026-11-09): the sidebar's Rooms header is a button: "Rooms", how
+  many, a dot while a room is busy (amber: a topic in it asks you; blue: one is working; rooms
+  don't track unread messages, so that is what "news" means here), and a chevron. A click folds
+  the rooms away or shows them; folded is the header alone. Remembered as `roomsFolded` in
+  crew-settings.json (`saveUiSettings`, as the Topics list's fold). From the keyboard:
+  `crew-roster.rooms-fold` (no key bound by default).
+- **Status strip** (24px, the sidebar's last row): a quiet gear at its left end and, when any,
   **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while
   an approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
   `crew.needs`). Claude Code marks a topic blocked from the wording of its last message, so a

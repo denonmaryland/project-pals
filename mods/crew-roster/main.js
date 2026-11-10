@@ -14,7 +14,7 @@ import {
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
   toggleChief, withoutChief, isChiefRec, toggleComputer } from "./crew.js";
@@ -134,6 +134,8 @@ export default class CrewRoster extends View {
         const c = await nextCommand();
         if (c === "hire") this.hire();
         else if (c === "routines") this.routines();
+        // Fold or show the sidebar's Rooms section (T99; bind a key to crew-roster.rooms-fold).
+        else if (c === "rooms-fold") { saveUiSettings({ roomsFolded: !roomsFolded() }); cx.notify(); }
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
         else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
@@ -643,7 +645,10 @@ export default class CrewRoster extends View {
     const scroller = (inner) => scrollArea(d, "crew-list", inner).flex_1().min_h(0);
     if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
-      .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      // How many agents are working, everywhere (T98: it moved here from the status strip, and now
+      // counts every pal, machine and factory, not just what this list shows). Hover: who.
+      .child(this.workingChip(d))
       // Trees: fold or unfold every pal's topics at once (DeNon, 2026-11-08). It's the same "palTrees"
       // as the switch in Pal list style, so it's remembered and both always agree. Fixed 20 px, like
       // the search button beside it, so nothing moves when it flips.
@@ -710,8 +715,8 @@ export default class CrewRoster extends View {
     }
     const rs = rooms();
     if (rs.length) {
-      list.child(h_flex().h(28).mt(8).flex_none().items_center().px(8).child(div().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms")));
-      list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(6).px(8).rounded(d.r.md).cursor_pointer()
+      list.child(this.roomsHeader(rs, d));
+      if (!roomsFolded()) list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(6).px(8).rounded(d.r.md).cursor_pointer()
         .when(shownRoom()?.id === room.id, (el) => el.bg(d.sel))
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { showRoom(room.id); cx.notify(); })
@@ -1013,6 +1018,31 @@ export default class CrewRoster extends View {
   // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
   // shows where it will land (above or below the row under the pointer); release drops it. The
   // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
+  // "● 5 working" beside "Pals": a blue dot and the count (grey at zero), who in the tooltip.
+  workingChip(d) {
+    const w = workingEverywhere();
+    return h_flex().id("pals-working").flex_1().min_w(0).h(20).items_center().gap(6).pl(10).tooltip(w.tip)
+      .child(div().size(6).flex_none().rounded(3).bg(w.count ? d.info : d.lineStrong))
+      .child(div().truncate().text_size(11).line_height("14px").text_color(w.count ? d.fg2 : d.fg4).child(`${w.count} working`));
+  }
+  // The Rooms header (T99): "Rooms", how many, a dot while a room is busy (blue: a topic in it is
+  // working; amber: one asks you), and a 22 px chevron that folds the rooms away or shows them
+  // (the same button as the Topics list's, the same kind of remembered setting: "roomsFolded").
+  // The whole header takes the click; crew-roster.rooms-fold does it from the keyboard.
+  roomsHeader(rs, d) {
+    const folded = roomsFolded();
+    const members = rs.flatMap((room) => roomMembers(room));
+    const dot = members.some((m) => m.status === "blocked") ? d.warn : members.some((m) => m.status === "working") ? d.info : null;
+    return h_flex().id("rooms-head").h(28).mt(8).flex_none().items_center().gap(6).pl(8).pr(2).rounded(d.r.sm).cursor_pointer()
+      .hover((s) => s.bg(d.hover)).tooltip(folded ? "Show rooms" : "Fold rooms")
+      .on_click((_e, cx) => { saveUiSettings({ roomsFolded: !folded }); cx.notify(); })
+      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms"))
+      .child(div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(String(rs.length)))
+      .when(Boolean(dot), (el) => el.child(div().id("rooms-dot").size(6).flex_none().rounded(3).bg(dot)))
+      .child(div().flex_1())
+      .child(div().size(22).flex_none().flex().items_center().justify_center()
+        .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
+  }
   // The Pals header's fold-all / unfold-all button: unfolded shows the tree, folded a plain list.
   treesToggle(d) {
     const on = palTreesOn();

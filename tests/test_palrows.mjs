@@ -625,7 +625,74 @@ try {
     assert.deepEqual(crew.countFactoryNeeds([{ space: fixtures.spaces[2] }], { approvals: [] }, []), {}, "one factory: nothing is counted");
     assert.ok(!idsOf().includes("factory-chip"));
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
+  // ── The working count beside "Pals" (T98, DeNon 2026-11-10): it moved here from the status strip
+  // and counts every working agent: all pals and topics, every machine, every factory. ─────────
+  {
+    const keep = { agents: fixtures.agents, spaces: fixtures.spaces };
+    fixtures.shared["crew.settings"] = {};
+    let w = crew.workingEverywhere();
+    assert.equal(w.count, 1, "the fixture: one topic working");
+    assert.deepEqual(w.rows, [{ pal: "Project Pals - Herdr Mod", channel: "indicators", machine: null, factory: null }]);
+    let chip = roster.workingChip(d).node;
+    assert.equal(chip.args.id[0], "pals-working");
+    assert.ok(text({ node: chip }).includes("1 working") && chip.args.tooltip[0].includes("Project Pals - Herdr Mod #indicators"), "the count, and who on hover");
+    assert.equal(chip.kids[0].node.args.bg[0], d.info, "a blue dot while any works");
+    // Another machine, another factory, a pal this list doesn't show, and an agent whose space is gone: all counted.
+    fixtures.spaces = [...keep.spaces, { id: "s20", name: "Remote Pal", machine: "peecee", folder: "/x", index: 5, status: "working", tabs: [{ id: "t20", name: "build", status: "working" }] },
+      { id: "s21", name: "Away Pal", folder: "/y", index: 6, status: "working", tabs: [{ id: "t21", name: "ship", status: "working" }] }];
+    fixtures.agents = [...keep.agents, { space: "s20", tab: "t20", status: "working" }, { space: "s21", tab: "t21", status: "working" }, { space: "gone", tab: "t99", tab_name: "#orphan", status: "working" },
+      { space: "s21", tab: "t21", status: "idle" }];
+    fixtures.shared["crew.factories"] = { current: "default", factories: [{ id: "f-app001", name: "App Factory" }], pals: { "Away Pal": "f-app001" } };
+    w = crew.workingEverywhere();
+    assert.equal(w.count, 4, "every working agent, whatever the shown factory");
+    assert.ok(w.rows.some((r) => r.pal === "Remote Pal" && r.machine === "peecee"), "another machine's");
+    assert.ok(w.rows.some((r) => r.pal === "Away Pal" && r.factory === "App Factory"), "another factory's, named");
+    assert.equal(crew.factoryOf("Away Pal"), "f-app001", "(a pal in a factory that isn't the shown one)");
+    assert.ok(w.tip.includes("Remote Pal #build · peecee") && w.tip.includes("Away Pal #ship · App Factory") && w.tip.includes("#orphan"), w.tip);
+    assert.ok(text({ node: roster.workingChip(d).node }).includes("4 working"));
+    // More than eight: the tooltip names eight and counts the rest. None: grey, and it says so.
+    fixtures.agents = Array.from({ length: 11 }, () => ({ space: "s20", tab: "t20", status: "working" }));
+    assert.ok(crew.workingEverywhere().tip.endsWith("+3 more"));
+    fixtures.agents = [{ space: "s1", tab: "t1", status: "idle" }];
+    chip = roster.workingChip(d).node;
+    assert.ok(text({ node: chip }).includes("0 working") && chip.kids[0].node.args.bg[0] === d.lineStrong && chip.args.tooltip[0].startsWith("No agent is working"));
+    fixtures.agents = keep.agents; fixtures.spaces = keep.spaces; delete fixtures.shared["crew.factories"];
+    const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
+    assert.match(src, /child\("Pals"\)\)[\s\S]{0,400}\.child\(this\.workingChip\(d\)\)[\s\S]{0,600}\.child\(this\.treesToggle\(d\)\)/, "it sits in the Pals header, between the title and the buttons");
+  }
+  // ── The Rooms section folds (T99, DeNon 2026-11-09): a chevron on its header, the state
+  // remembered in the settings ("roomsFolded", like the Topics list), a count, and a dot while a
+  // room is busy. ──────────────────────────────────────────────────────────────────────────────
+  {
+    const rs = [{ id: "r1", name: "launch", members: [] }, { id: "r2", name: "design", members: [] }];
+    fixtures.shared["crew.settings"] = {};
+    assert.equal(crew.roomsFolded(), false, "open unless folded");
+    let h = roster.roomsHeader(rs, d).node;
+    assert.equal(h.args.id[0], "rooms-head");
+    assert.ok(text({ node: h }).includes("Rooms") && text({ node: h }).includes("2"), "the title and how many");
+    const chevron = (n) => ids({ node: n }).length >= 0 && JSON.stringify(n.kids.at(-1).node.kids.map((k) => k.node.arg));
+    assert.match(chevron(h), /chevron-down\.svg/);
+    assert.equal(h.args.tooltip[0], "Fold rooms");
+    // A click folds it and saves the setting; the header then shows the other chevron.
+    const before = fixtures.shared["crew.uiwrite"]?.at ?? 0;
+    let notes = 0;
+    h.args.on_click[0]({}, { notify() { notes++; } });
+    assert.ok((fixtures.shared["crew.uiwrite"]?.at ?? 0) >= before && fixtures.shared["crew.uiwrite"]?.busy === true, "the setting is being saved (saveUiSettings, as the Topics fold does)");
+    assert.equal(notes, 1);
+    fixtures.shared["crew.settings"] = { roomsFolded: true };
+    assert.equal(crew.roomsFolded(), true);
+    h = roster.roomsHeader(rs, d).node;
+    assert.match(chevron(h), /chevron-right\.svg/);
+    assert.equal(h.args.tooltip[0], "Show rooms");
+    assert.ok(text({ node: h }).includes("2"), "folded: still the count");
+    // The list draws the rows only while unfolded; the keyboard command flips the same setting.
+    const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
+    assert.match(src, /list\.child\(this\.roomsHeader\(rs, d\)\);\s*if \(!roomsFolded\(\)\) list\.children\(rs\.map/, "folded: the header alone");
+    assert.match(src, /c === "rooms-fold"\) \{ saveUiSettings\(\{ roomsFolded: !roomsFolded\(\) \}\); cx\.notify\(\); \}/, "crew-roster.rooms-fold does it from the keyboard");
+    assert.ok(!ids({ node: h }).some((n) => n.args.id?.[0] === "rooms-dot"), "quiet rooms: no dot");
+    fixtures.shared["crew.settings"] = {};
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
