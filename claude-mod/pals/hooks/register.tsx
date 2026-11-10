@@ -20,6 +20,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { DeskCounts } from '../types'
+import { registerTimeline, timelineStart } from './timeline'
 
 const desk = atom({ plugin: 'pals', key: 'desk' } as const, null)
 
@@ -113,10 +114,14 @@ async function tick($: any) {
 }
 
 export const register: Register = on => {
+  // The work timeline (T78): tool calls as one line each, thinking as dim narration.
+  registerTimeline(on, () => !!S.terminal)
+
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     S.terminal = await $.env.get('HC_TERMINAL_ID')
     if (!S.terminal) return r
+    await timelineStart($, r?.cwd ?? e.cwd)
     const home = (await $.env.get('HOME')) ?? ''
     const crewData = await $.env.get('CREW_DATA')
     const app = (await $.env.get('HERDR_APP_HOME')) ?? `${home}/.config/herdr-app`
