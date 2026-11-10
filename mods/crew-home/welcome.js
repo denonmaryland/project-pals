@@ -73,13 +73,17 @@ function context(host) {
 
 const setBeat = (i) => saveUiSettings({ welcome: { beat: Math.min(BEATS.length - 1, Math.max(0, i)) } });
 
+// Hiring makes a space, and its new terminal takes the keyboard (seen live, 2026-11-09: Enter worked
+// on screen 1 and not after). Give it back to Home once the hire returns, from a task, never in render.
+const refocus = (host) => { try { host.handle?.focus(); } catch {} };
+
 // The first click: every install gets its head pal (when a brain is installed and there isn't one).
 function hireHead(host) {
   const w = state(host);
   if (hasHead() || w.headAsked || !w.headBrain) return;
   w.headAsked = true;
   exec(PAL(), ["hire", "--god", "--harness", w.headBrain.key], { timeout: 90000 })
-    .then((r) => { if (r.code !== 0 && !hasHead()) { w.headAsked = false; notify({ title: `Couldn't hire ${headName()}`, body: (r.stderr || r.stdout).trim().split("\n").slice(-2).join(" "), level: "warning", timeout: 8000 }); } })
+    .then((r) => { refocus(host); if (r.code !== 0 && !hasHead()) { w.headAsked = false; notify({ title: `Couldn't hire ${headName()}`, body: (r.stderr || r.stdout).trim().split("\n").slice(-2).join(" "), level: "warning", timeout: 8000 }); } })
     .catch((e) => { if (!hasHead()) { w.headAsked = false; notify({ title: `Couldn't hire ${headName()}`, body: String(e.message ?? e).slice(0, 200), level: "warning", timeout: 8000 }); } });
 }
 
@@ -92,7 +96,7 @@ function hireFirst(host, cx) {
   w.hiring = f.name;
   const fail = (msg) => { if (w.hiring === f.name && !spaces().some((s) => same(s.name, f.name))) { w.hiring = null; notify({ title: `Couldn't hire ${f.name}`, body: msg, level: "warning", timeout: 8000 }); cx.notify(); } };
   exec(PAL(), ["hire", f.name, "--harness", brain.key, "--folder", f.path], { timeout: 90000 })
-    .then((r) => { if (r.code !== 0) fail((r.stderr || r.stdout).trim().split("\n").slice(-2).join(" ")); else { w.hired = f.name; w.hiring = null; saveUiSettings({ welcome: { pal: f.name } }); cx.notify(); } })
+    .then((r) => { refocus(host); if (r.code !== 0) fail((r.stderr || r.stdout).trim().split("\n").slice(-2).join(" ")); else { w.hired = f.name; w.hiring = null; saveUiSettings({ welcome: { pal: f.name } }); cx.notify(); } })
     .catch((e) => fail(String(e.message ?? e).slice(0, 200)));
 }
 

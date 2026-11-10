@@ -388,8 +388,11 @@ try {
     assert.equal(t.wel.headBrain.key, "claude", "the head pal's brain: Claude Code first");
     assert.ok(fx.calls.some((c) => c[0] === "pal" && c[1] === "welcome" && c[2] === "folders"), "it looked for project folders");
     // The first click hires the head pal, once, and moves on.
+    const f0 = focused;
     await click("wel-go");
     assert.deepEqual(hires().at(-1).slice(0, 5), ["pal", "hire", "--god", "--harness", "claude"]);
+    await new Promise((r) => setTimeout(r, 5));
+    assert.ok(focused > f0, "after the hire, Home takes the keyboard back from the new terminal");
     assert.equal(mark().beat, 1);
     const key = async (k) => run((cx) => t.key({ keystroke: k, key: k }, [], cx));
     await key("enter");
