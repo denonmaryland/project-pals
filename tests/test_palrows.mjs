@@ -692,7 +692,40 @@ try {
     assert.ok(!ids({ node: h }).some((n) => n.args.id?.[0] === "rooms-dot"), "quiet rooms: no dot");
     fixtures.shared["crew.settings"] = {};
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold)");
+  // ── The working dot pulses only while the pal's topics are folded away (T100, DeNon 2026-11-10):
+  // the looks with a state dot (Table: beside the pet; Two tight lines: on it). ─────────────────
+  {
+    const keep = { agents: fixtures.agents, spaces: fixtures.spaces };
+    const busy = { ...fixtures.spaces[0], id: "s30", name: "Busy Pal", status: "working", tabs: [{ id: "t30", name: "build", status: "working", changed_at: Date.now(), active: true }, { id: "t31", name: "notes", status: "idle", changed_at: 1 }] };
+    const asks = { ...busy, id: "s31", name: "Asking Pal", status: "blocked", tabs: [{ id: "t32", name: "q", status: "blocked", changed_at: Date.now(), active: true }, { id: "t33", name: "w", status: "working", changed_at: 1 }] };
+    const calm = { ...busy, id: "s32", name: "Calm Pal", status: "idle", tabs: [{ id: "t34", name: "main", status: "idle", changed_at: 1, active: true }] };
+    fixtures.spaces = [busy, asks, calm];
+    fixtures.panes = [...fixtures.panes, ...["t30", "t32", "t33", "t34"].map((tab, i) => ({ tab, terminal: `z${i}`, program: { agent: true, key: "claude", name: "Claude Code" } }))];
+    fixtures.agents = [{ space: "s30", tab: "t30", status: "working" }, { space: "s31", tab: "t32", status: "blocked" }, { space: "s31", tab: "t33", status: "working" }, { space: "s32", tab: "t34", status: "idle" }];
+    const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
+    const dots = (space) => all(roster.palRow({ space, bot: crew.botOf(space) }, t, d, null)).filter((n) => n.calls.includes("rounded") && (n.args.size?.[0] === 7 || n.args.size?.[0] === 9) && n.args.bg);
+    const loops = (space) => all(roster.palRow({ space, bot: crew.botOf(space) }, t, d, null)).filter((n) => n.calls.includes("loop"));
+    for (const look of ["table", "tight"]) {
+      // Folded (Trees off): the working pal's blue dot pulses, opacity only, slowly.
+      fixtures.shared["crew.settings"] = { palList: look, palTrees: false };
+      const dot = dots(busy).find((n) => n.args.bg[0] === d.info);
+      assert.ok(dot, `${look}: the working pal has a blue dot`);
+      assert.deepEqual(dot.args.loop, ["opacity", { from: 1, to: 0.45, period: 2600 }], `${look} folded: it pulses, 1 to 0.45 and back in 2.6 s`);
+      assert.equal(loops(busy).length, 1, `${look} folded: only the dot moves`);
+      // A pal that asks you (amber) or rests: steady, even with a topic working under it.
+      assert.equal(loops(asks).filter((n) => n.args.size).length, 0, `${look} folded: an amber dot doesn't pulse`);
+      assert.equal(loops(calm).length, 0, `${look} folded: a resting pal's dot is steady`);
+      // Unfolded (Trees on): the topic rows say who's working, so the dot is steady, and so are their marks.
+      fixtures.shared["crew.settings"] = { palList: look };
+      assert.ok(ids(roster.palRow({ space: busy, bot: crew.botOf(busy) }, t, d, null)).some((n) => n.args.id?.[0]?.includes("-tp-")), `${look}: the tree shows`);
+      assert.ok(dots(busy).some((n) => n.args.bg[0] === d.info), `${look} unfolded: the blue dot is there`);
+      assert.equal(loops(busy).length, 0, `${look} unfolded: nothing pulses`);
+    }
+    // No timer of ours drives it: the loop is the renderer's (gpui-kit `loop`), declared once per dot.
+    assert.ok(!/setInterval|timer\.every\([^)]*pulse/.test(readFileSync(join(root, "lib/crew.js"), "utf8")), "no pulse timer");
+    fixtures.agents = keep.agents; fixtures.spaces = keep.spaces; fixtures.shared["crew.settings"] = {};
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; the working dot's pulse)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

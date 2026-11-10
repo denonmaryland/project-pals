@@ -722,6 +722,14 @@ rectangular segments and tags.
   EVERY working agent (`crew.js workingEverywhere`): all pals and topics, on every machine, in
   every factory, not just the shown factory's list. Its tooltip names them (the first eight,
   then "+N more"), each with its machine and, with 2+ factories, its factory.
+  **The working dot pulses while the topics are folded** (T100, DeNon 2026-11-10): in the looks
+  with a state dot (Table: beside the pet; Two tight lines: on it), a working pal's blue dot
+  swings in opacity 1 → 0.45 and back every 2.6s, eased, no size change, but ONLY while no tree
+  shows under that pal (Trees folded or off): then the dot is the one sign of work there. With
+  the tree showing it is steady, as are amber/green/grey dots and the topic rows' own marks. It
+  is gpui-kit's native `loop` (about 30fps, only while drawn): render never runs for it and no
+  timer of ours exists, so it costs no redraws of the sidebar. Herdr exposes no reduced-motion
+  setting to mods, so there is nothing to respect yet (watch-out: add it when it does).
   **Rooms fold** (T99, DeNon 2026-11-09): the sidebar's Rooms header is a button: "Rooms", how
   many, a dot while a room is busy (amber: a topic in it asks you; blue: one is working; rooms
   don't track unread messages, so that is what "news" means here), and a chevron. A click folds
