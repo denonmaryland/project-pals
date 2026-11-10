@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { clampWords, describe as step, diffParts, diffCount, duration, fit, gist, relPath, shellStep, shownCommand, testSummary, wrap } from './timeline'
+import { clampWords, describe as step, diffParts, smallDiff, diffCount, duration, fit, gist, relPath, shellStep, shownCommand, testSummary, wrap } from './timeline'
 
 // ── the line each call becomes ──
 
@@ -187,5 +187,25 @@ test('the closing line counts the turn\'s steps', async ($, on) => {
   await $.turn.complete({ turnId: 't', reason: 'answer', answer: 'ok', text: '' } as any)
   const ui = await $.ui.mount({ plugin: 'pals', component: 'TurnDuration', surface: 'terminal', requestId: 'd1', props: { word: 'Cooked', durationMs: 26400 } } as any)
   expect((await ui.find({ type: 'Text', text: /Cooked/ }))?.text).toMatch(/^✻ Cooked for 26s · 3 steps/)
+  await ui.unmount()
+})
+
+test('an edit of 4 changed lines or fewer shows its diff inline (DeNon, 2026-11-09)', async ($, on) => {
+  const patch = (lines: string[]) => ({ structuredPatch: [{ oldStart: 4, oldLines: 1, newStart: 4, newLines: 1, lines }] })
+  expect(smallDiff('Edit', patch([' a', '-  for (i <= n)', '+  for (i < n)', ' b']))).toEqual([
+    { text: '−  for (i <= n)', kind: 'del' }, { text: '+  for (i < n)', kind: 'add' }])
+  expect(smallDiff('Edit', patch(['-a', '-b', '-c', '+d', '+e']))).toBe(null)
+  expect(smallDiff('Write', { type: 'create', structuredPatch: [] })).toBe(null)
+  expect(smallDiff('Bash', { stdout: '' })).toBe(null)
+
+  engine(on)
+  await asPal($, on)
+  const edit = (id: string, lines: string[]) => toolUse('terminal', { tool_use_id: id, tool: 'Edit', input: { file_path: '/w/src/cart.js' }, output: patch(lines) })
+  let ui = await $.ui.mount({ ...edit('e1', ['-  i <= n', '+  i < n']), requestId: 'e1' })
+  expect((await ui.find({ type: 'Text', text: /i <= n/ }))?.text).toContain('−  i <= n')
+  expect((await ui.find({ type: 'Text', text: /i < n$/ }))?.text).toContain('+  i < n')
+  await ui.unmount()
+  ui = await $.ui.mount({ ...edit('e2', ['-a', '-b', '-c', '+d', '+e']), requestId: 'e2' })
+  expect(await ui.find({ type: 'Text', text: /│/ })).toBeFalsy()
   await ui.unmount()
 })

@@ -38,6 +38,7 @@ export const C = {
 }
 
 const RAW_ROWS = 12 // Crush-style cap on an opened step
+const SMALL_DIFF = 4 // DeNon (2026-11-09): edits of this many changed lines or fewer show their diff inline
 
 export type Tone = 'look' | 'edit' | 'ok' | 'run' | 'err' | 'live' | 'stop' | 'think'
 export type Step = { icon: string; verb: string; target: string; result: string; tone: Tone }
@@ -342,6 +343,20 @@ export function describe(tool: string, input: unknown, output: unknown, flags: {
 }
 
 // The raw output an opened step shows (a diff for edits).
+// A small edit's changed lines (− and +, no context), shown under its line without a click; null
+// for a bigger edit (one click away, as any step), a write of a new file, or a call that isn't an edit.
+export function smallDiff(tool: string, output: unknown): RawLine[] | null {
+  const o = obj(output)
+  if (!['Edit', 'MultiEdit', 'Write'].includes(tool) || o.type === 'create' || !Array.isArray(o.structuredPatch)) return null
+  const lines: RawLine[] = []
+  for (const h of o.structuredPatch) for (const l of h?.lines ?? []) {
+    if (typeof l !== 'string') continue
+    if (l.startsWith('-')) lines.push({ text: `−${l.slice(1)}`, kind: 'del' })
+    else if (l.startsWith('+')) lines.push({ text: l, kind: 'add' })
+  }
+  return lines.length && lines.length <= SMALL_DIFF ? lines : null
+}
+
 export function rawLines(tool: string, input: unknown, output: unknown): RawLine[] {
   const o = obj(output)
   if ((tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit') && Array.isArray(o.structuredPatch) && o.structuredPatch.length) {
@@ -530,6 +545,10 @@ async function stepRows($: any, e: any, el: any, calls: Call[]) {
     const open = await read($, memberOf(isOpen, { requestId: c.id }))
     out.push(stepLine(el, c.id, step, columns, () => void update($, memberOf(isOpen, { requestId: c.id }), (v: boolean | undefined) => !v)))
     if (open && c.output !== undefined) out.push(rawBlock(el, `${c.id}-raw`, rawLines(c.tool, c.input, c.output), columns))
+    else if (!c.isErrored && !c.isInterrupted) {
+      const small = smallDiff(c.tool, c.output)
+      if (small) out.push(rawBlock(el, `${c.id}-diff`, small, columns))
+    }
   }
   return out
 }
