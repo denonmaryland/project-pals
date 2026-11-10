@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync, copyFileSync, readFileSync, existsSync } from
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { petSpec, petFiles, petPath, petKey } from "../../lib/pets.js";
-import { crewLook, palLookOf, pairFit, splitSizes, contrastOf, PET_LOOKS, SCREEN_LOOKS, SPLIT_PALETTES, BRAIN_COLORS, BRAIN_NAMES, STATE_COLORS, themeColors, DEFAULT_PAL_LOOK } from "../../lib/pallook.js";
+import { crewLook, palLookOf, pairFit, splitSizes, contrastOf, PET_LOOKS, SCREEN_LOOKS, SPLIT_PALETTES, BRAIN_COLORS, BRAIN_NAMES, STATE_COLORS, themeColors, DEFAULT_PAL_LOOK, DEMO_PALS } from "../../lib/pallook.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT = process.argv[2];
@@ -16,21 +16,10 @@ mkdirSync(join(OUT, "art"), { recursive: true });
 for (const f of ["pet-aura-row.svg", "pet-floor-work.svg", "pet-floor-ask.svg", "pet-floor-done.svg", "pet-floor-stuck.svg", "pet-floor-pr.svg", "pet-floor-merged.svg", "pet-floor-closing.svg"])
   copyFileSync(join(ROOT, "mods/crew-roster/icons", f), join(OUT, "art", f));
 
-// ---------- the made-up crew, in sidebar order ----------
-const CREW = [
-  { name: "Orchestrator", head: true, brain: "claude", own: "#f7f2e6", project: "Head", factory: "Studio", state: "work", topic: "ops", word: "Working · 2m" },
-  { name: "Lumen - Web", brain: "claude", own: "#e0866a", factory: "Studio", state: "ask", topic: "checkout" },
-  { name: "Lumen - API", brain: "codex", own: "#e6e8ef", factory: "Studio", state: "work", topic: "rate-limits", word: "Working · 7m" },
-  { name: "Lumen - Docs", brain: "gemini", own: "#6f9cf0", factory: "Studio", state: "rest" },
-  { name: "Harbor - App", brain: "claude", own: "#ff6fb5", factory: "Studio", state: "done", topic: "onboarding" },
-  { name: "Harbor - Sync", brain: "grok", own: "#8f96b3", factory: "Studio", state: "work", topic: "conflicts", word: "Working · 31m" },
-  { name: "Harbor - Site", brain: "opencode", own: "#f0b245", factory: "Studio", state: "stuck", topic: "deploy" },
-  { name: "Kite - Core", brain: "hermes", own: "#a28cf0", factory: "Platform", state: "asleep" },
-  { name: "Kite - CLI", brain: "codex", own: "#6fd6a8", factory: "Platform", state: "work", topic: "flags", word: "Working · 4m" },
-  { name: "Kite - Infra", brain: "claude", own: "#7cc8f2", factory: "Platform", state: "pr", topic: "terraform" },
-  { name: "Orbit - Data", brain: "gemini", own: "#f7d64a", factory: "Platform", state: "rest" },
-  { name: "Orbit - Ops", brain: "claude", own: "#c4a7f5", factory: "Platform", state: "ask", topic: "alerts" },
-];
+// ---------- the made-up crew, in sidebar order (the app's own preview crew, plus topics) ----------
+const EXTRA = { "Orchestrator": ["ops", "Working · 2m"], "Lumen - Web": ["checkout"], "Lumen - API": ["rate-limits", "Working · 7m"], "Harbor - App": ["onboarding"],
+  "Harbor - Sync": ["conflicts", "Working · 31m"], "Harbor - Site": ["deploy"], "Kite - CLI": ["flags", "Working · 4m"], "Kite - Infra": ["terraform"], "Orbit - Ops": ["alerts"] };
+const CREW = DEMO_PALS.map((p) => ({ ...p, topic: EXTRA[p.name]?.[0], word: EXTRA[p.name]?.[1] }));
 const WORDS = { work: ["Working", "#4CA1F2"], ask: ["Needs you", "#E8AA0A"], done: ["Done", "#34D098"], stuck: ["Stuck", "#E8AA0A"], pr: ["PR open", "#3FBF78"], rest: ["Resting", "#C8C8C8"], asleep: ["Asleep", "#808082"] };
 const THEMES = {
   "Tokyo Night": { accent: "#7aa2f7", ansi: ["#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6", "#414868", "#ff899d", "#9fe044", "#faba4a", "#8db0ff", "#c7a9ff", "#a4daff", "#c0caf5"] },

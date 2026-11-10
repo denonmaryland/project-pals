@@ -228,6 +228,26 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     <branch>` on the space's machine, at most every 2 minutes per folder and branch).
   - Every pal has one (an old record's `"pet": "none"` gets the default). Until its tiles are on
     disk, an empty #131316 box of the same size holds its place.
+  - **Pal look** (Project Pals settings → Pal look, `crew-pallook`, saved as `palLook` in
+    crew-settings.json; DeNon 2026-11-09, the board is `crew-boards/pal-colors`). Two choices.
+    **Pals**: Each its own (the default: a pal's own pick, else its brain's colour, else one from
+    its name), All one colour (you pick), Split by count (2, 3 or 4 colours from one of three
+    palettes, shared out as evenly as they go down the open pals in the list's own order, never
+    "who needs you most", so a pal keeps its colour as its state changes; closed pals are split
+    among themselves), By brain, By state (the pal itself takes the state's colour), By project or
+    factory (a project is the part of a pal's name before " - ", else its folder; a factory gives
+    its own colour), Match the theme (the theme's ANSI hues, following it). **Laptop screens**: By
+    state (the default), Match the pal, Contrast pair (the hue across the wheel; a grey pal gets a
+    cool white), Same for all (you pick; under Match the theme, the theme's accent until you do).
+    A preset never changes a pal's record: its hand-picked colour shows under Each its own, and
+    its own Look dialog always edits that colour. The dialog: the two lists on the left, each
+    screen option tagged Best / Good / Weak for the chosen pet preset, and a line on why
+    (`pallook.js pairFit`); on the right a made-up crew of 1, 4, 8 or 12, all in view, drawn by
+    the real renderer. A click draws your crew's tiles in the new look first, then saves, so the
+    sidebar never blanks; Done keeps it, Cancel or Esc puts back what you had. Pure logic in
+    `lib/pallook.js` (`crewLook`), copied into every mod; `crew.js petOf` applies it, and
+    `pets.js petSpec` takes `tones` (a colour per state) and `screen`. A pet without either keeps
+    its old key and files.
 - **Demo filter (for screenshots):** `data/crew-demo.json` `{"only": ["Website", …]}` makes that
   window's sidebar show just those pals, and `{"states": {"Website": "pr", …}}` shows those pals'
   pets in that tile state; no file, everyone, live. Screenshots come from a second Herdr window

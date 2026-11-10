@@ -73,7 +73,7 @@ try {
     export const hc = exec, writeTextFile = async () => {}, knownAgents = async () => [];
     export const readTextFile = async (p) => world.files[p.replace("/home/x/.config/herdr-app/", "")] ?? null;
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   for (const m of ["crew-about", "crew-update"]) copyFileSync(join(root, "mods", m, "main.js"), join(dir, `${m}.js`));
   const crew = await import(pathToFileURL(join(dir, "crew.js")).href);
   const { world } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);

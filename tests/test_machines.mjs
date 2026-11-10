@@ -131,7 +131,7 @@ try {
     export const notify = nop, openOverlay = (o) => calls.push(["overlay", o]), closeOverlay = nop, nextCommand = () => new Promise(() => {});
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [], pickFolder = async () => null;
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   for (const f of readdirSync(join(root, "mods/crew-profile")).filter((f) => f.endsWith(".js"))) copyFileSync(join(root, "mods/crew-profile", f), join(dir, f));
   copyFileSync(join(root, "mods/crew-machine/main.js"), join(dir, "machine.js"));
   const url = (f) => pathToFileURL(join(dir, f)).href;
