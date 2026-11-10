@@ -8,14 +8,24 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, theme, keys, terminals, panes } from "herdr";
-import { ds, tone } from "./crew.js";
+import { run, props, closeOverlay, theme, keys, terminals, panes, spaces } from "herdr";
+import { ds, tone, popOut } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
 function shortcut(action) {
   const k = keys().find((x) => x.action === action);
   return k ? k.keys.split("-").map((p) => p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1)).join("+") : "";
+}
+
+// The pal and topic a pane belongs to ({ space, tab }), or null (a mod pane, a pane we can't place).
+function topicOf(pane) {
+  if (!pane?.terminal || !pane.tab) return null;
+  for (const space of spaces()) {
+    const tab = space.tabs.find((t) => t.id === pane.tab);
+    if (tab) return { space, tab };
+  }
+  return null;
 }
 
 export default class CrewTermMenu extends View {
@@ -33,6 +43,7 @@ export default class CrewTermMenu extends View {
     const toProgram = term?.labels?.["herdr.right-click"] === "program";
     const pane = panes().find((p) => p.pane === tg.pane);
     const agent = pane?.program?.agent ? (pane.program.name || "the agent") : null;
+    const home = topicOf(pane);
     return [
       { label: "Split right", icon: "panel-right", key: shortcut("pane.split:right"), cmd: ["pane.split", { direction: "right", pane: tg.pane }] },
       { label: "Split down", icon: "ds-split-down", key: shortcut("pane.split:down"), cmd: ["pane.split", { direction: "down", pane: tg.pane }] },
@@ -43,6 +54,8 @@ export default class CrewTermMenu extends View {
       ...(term ? [toProgram
         ? { label: "Use this menu on right-click", icon: "ds-terminal", cmd: ["terminal.right_click", { terminal: term.address, to: "menu" }] }
         : { label: "Send right-clicks to the program", icon: "ds-terminal", cmd: ["terminal.right_click", { terminal: term.address, to: "program" }] }] : []),
+      // Pop out (T70): this topic in its own desktop window, when the pane is a topic's own terminal.
+      ...(home ? [{ label: "Pop out to a window", icon: "ds-expand", fn: () => popOut(home.space, home.tab) }] : []),
       ...(parent ? [{ label: `Send back to ${parent.name || parent.address}`, icon: "minimize", cmd: ["terminal.park", { terminal: term.address }] }] : []),
       { sep: true },
       { label: agent ? `Close pane (ends ${agent})` : "Close pane", icon: "x", key: shortcut("pane.close"), danger: Boolean(agent), cmd: ["pane.close", { pane: tg.pane }] },
@@ -52,6 +65,7 @@ export default class CrewTermMenu extends View {
   go(item) {
     closeOverlay(props()?.overlay);
     // Copy and paste act on the focused terminal: focus the right-clicked pane first.
+    if (item.fn) return item.fn();
     const tg = props()?.target ?? {};
     if (item.cmd[0].startsWith("terminal.") && item.cmd[0] !== "terminal.right_click" && item.cmd[0] !== "terminal.park" && tg.pane) run("pane.focus", { pane: tg.pane });
     run(item.cmd[0], item.cmd[1]);

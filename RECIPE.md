@@ -836,6 +836,24 @@ shows, the header hides the split buttons.
 - **Each showing** is stamped by `showHome` (shared `crew.home.shown`, a counter): a hidden view
   doesn't render, so that's how Home knows to take the keyboard and restart its review after a
   trip to the terminal.
+- **Pop out** (T70): a topic's live terminal in a desktop window of its own, because Herdr's
+  `window` overlays (Home's chat, the Chief) are drawn inside the main window and a window manager
+  can't pin those. "Pop out" on the chat window's bar (not for the idea partner; the chat window then
+  closes) and "Pop out to a window" on a terminal's right-click run `pal popout <Pal#topic>` with
+  the owner's click (`popOut` in `lib/crew.js`). `bin/crewpopout.py` builds a throwaway app home
+  under `$XDG_RUNTIME_DIR/pals-popout/<key>` (short, for the socket path): one layout, a 30 px bar
+  (`crew-popout-bar`: Pal, #topic, Pin, Open topic, ×) over the terminal, the owner's theme and
+  zoom, no keys and no crew state; then starts a second `herdr-app` on it (same herdr-core, so the
+  same terminal). A watcher beside it floats the window at the remembered size and place (560×520,
+  centred, the first time), pins it if it was pinned, and saves size, place and pin to
+  `data/crew-popout.json` every 2 s while they change, so resizing or moving it by any means is
+  remembered; when the window closes it removes the runtime home. Pin is `pal popout pin KEY` (the
+  owner's click, written from the bar into the main home's `crew-clicks`): Hyprland's pin on that
+  one window by address, never the active window; the bar re-reads the store every 3 s so a pin made
+  with Super+O shows. No Hyprland: the window still opens and Pin says to use the window manager.
+  Opening a topic that's already out focuses its window. Closing never ends the terminal.
+  Watch-outs: nothing is written to the Hypr config (no window rule); `pal popout` open / pin /
+  close refuse everyone but the owner's click (`ls` is anyone's).
 - **Chat about it** opens a window (key `home-chat`, 560×520) over Home: a 34 px bar
   (`crew-home-chat`: pet, Pal, #topic, what it's about, Open topic, ×; drag the window by it) over
   the asking topic's live terminal; the bar says "click below to type" (Herdr can't give a window's

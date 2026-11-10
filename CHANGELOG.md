@@ -2,6 +2,11 @@
 
 ## Unreleased (0.4.2)
 
+- **Pop out: a topic in its own window you can pin.** "Pop out" (the bar of Home's chat window, and
+  "Pop out to a window" on a terminal's right-click) opens that topic's live terminal in a small
+  desktop window of its own. On Hyprland it floats, its bar has a Pin button (every workspace;
+  Omarchy's Super+O works on it too), it resizes freely with the terminal following, and its size,
+  place and pin are remembered per topic. Closing the window never stops the pal.
 - **Check for updates says what it found, and when.** About and the update dialog show GitHub's
   newest version and the time they asked ("You have 0.4.0. GitHub's newest: 0.4.1 · checked
   15:48"). Left open, they ask again every 10 minutes, so an About open since the last update no

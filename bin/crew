@@ -30,6 +30,11 @@ The Desk (everything sent to you is a card with a status and receipts)
                                      the idea partner's draft: it waits for the owner's Send (ls --drafts)
   (the owner, from Project Pals: urgency ID LEVEL, confirm ID, send-draft ID [--to …], discard ID, prune --older 180d)
 
+Pop out (the owner, from Project Pals: a topic's live terminal in its own desktop window)
+  pal popout ls                     the pop-outs that are open
+  (the owner's click: popout <Pal[#topic]>, popout pin KEY, popout close KEY. The window floats, can be
+   pinned to every workspace (Hyprland), resizes freely, and remembers its size, place and pin.)
+
 Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
   pal home [--json]                 what's on Home
   pal home ask "question" [--option A [--does "what A does"]]... [--recommend A --why "…"] [--topic P#t]
@@ -2167,6 +2172,43 @@ def home_answer_to(spaces, x, answer):
     return f"told {dest} ({what}) · card {card['id']}"
 
 
+def cmd_popout(spaces, rest):
+    """pal popout: a topic's live terminal in its own desktop window (bin/crewpopout.py). Putting a
+    window on the owner's desktop, pinning it or closing it is the owner's click; ls is anyone's."""
+    import crewpopout
+    pos = [a for a in owner_args()[1:]]
+    sub = pos[0] if pos else "ls"
+    if sub == "ls":
+        keys = crewpopout.open_keys()
+        print("\n".join(keys) if keys else "no pop-outs open")
+        return
+    if sub in ("pin", "close") and len(pos) == 2:
+        require_owner(f"{sub} a pop-out window")
+        key = crewpopout.slug(pos[1])
+        if sub == "close":
+            print("closed" if crewpopout.close_popout(key) else "it wasn't open")
+            return
+        state = crewpopout.toggle_pin(key)
+        if state is None:
+            die("couldn't pin it: no pop-out window found, or this isn't Hyprland (pin it with your window manager)")
+        print("pinned" if state else "unpinned")
+        return
+    if len(pos) != 1:
+        die('usage: pal popout <Pal[#topic]> | ls | pin KEY | close KEY')
+    require_owner("pop a topic out into its own window")
+    space, tab = find(pos[0], spaces)
+    x = lead(tab)
+    if not x or not x.get("terminal"):
+        die(f"{space['name']} #{chan(tab)} has no terminal (it's asleep: open the topic to wake it)")
+    name = space["name"].split(" - ")[0]
+    try:
+        key, what = crewpopout.open_popout(x["terminal"], f"{space['name']}#{chan(tab)}",
+                                           {"pal": name, "topic": chan(tab), "space": space.get("id"), "tab": tab.get("id"), "home": str(HOME)})
+    except FileNotFoundError as e:
+        die(str(e))
+    print(f"{what} {key}")
+
+
 def cmd_home(spaces, rest):
     sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
@@ -2408,6 +2450,8 @@ def main(argv):
         cmd_desk(spaces, rest)
     elif cmd == "home":
         cmd_home(spaces, rest)
+    elif cmd == "popout":
+        cmd_popout(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":
