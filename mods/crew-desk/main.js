@@ -28,7 +28,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, shared, setShared, run, notify, openOverlay } from "herdr";
 import { ds, tone, scrollArea, pebble, channelName, loadDesk, deskMode, showTabs, ownerCli, deskSlug, cardAge,
-  CARD_OPEN, CARD_STATUS_WORD, URGENCIES, urgencyColor, cardStatusColor, openDrop, partnerOf, PARTNER_NAME, showHome, headSpace } from "./crew.js";
+  CARD_OPEN, CARD_STATUS_WORD, URGENCIES, urgencyColor, cardStatusColor, openDrop, partnerOf, PARTNER_NAME, showHome, headSpace, withoutChief } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const LEFT = 232, RIGHT = 400;
@@ -91,7 +91,7 @@ export default class CrewDesk extends View {
   owner() { return shared("crew.settings")?.owner || "you"; }
 
   pals() {
-    const out = spaces().map((s) => ({ name: s.name, slug: deskSlug(s.name), space: s, tabs: s.tabs ?? [] }));
+    const out = withoutChief().map((s) => ({ name: s.name, slug: deskSlug(s.name), space: s, tabs: s.tabs ?? [] }));
     const known = new Set(out.map((p) => p.slug));
     for (const c of this.cards) {
       if (c.tray && !c.tray.startsWith("_") && !known.has(c.tray)) { known.add(c.tray); out.push({ name: c.pal || c.tray, slug: c.tray, space: null, tabs: [] }); }
@@ -369,7 +369,7 @@ export default class CrewDesk extends View {
         .child(div().truncate().text_size(12).text_color(d.body).child(targetLabel(target))));
       opt("dt-auto", "auto");
       opt("dt-route", "route");
-      for (const s of spaces()) for (const t of s.tabs ?? []) opt(`dt-${s.id}-${t.id}`, `${s.name}#${channelName(t)}`);
+      for (const s of withoutChief()) for (const t of s.tabs ?? []) opt(`dt-${s.id}-${t.id}`, `${s.name}#${channelName(t)}`);
       return scrollArea(d, "desk-draft-to", list).max_h(200).rounded(6).bg(d.raised).border_1().border_color(d.line);
     };
     const urgRow = h_flex().h(26).flex_none().items_center().p(2).gap(2).rounded(6).bg(d.raised).border_1().border_color(d.line)
