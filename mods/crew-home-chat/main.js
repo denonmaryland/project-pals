@@ -7,7 +7,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, spaces, props, run, closeOverlay } from "herdr";
-import { ds, tone, botOf, channelName, petOf, petReady, petEl, petState, mascotEl, showTabs } from "./crew.js";
+import { ds, tone, botOf, channelName, petOf, petReady, petEl, petState, mascotEl, showTabs, popOut } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
@@ -28,6 +28,12 @@ export default class CrewHomeChat extends View {
       .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg2).child(tab ? `#${channelName(tab)}` : ""))
       // Herdr can't give a window's terminal the keyboard from code, so say how (live test, 2026-11-08).
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(d.fg3).child(`click below to type${p.muse ? " · idea partner" : ""}${p.about ? ` · about: ${p.about}` : ""}`))
+      // Pop out (T70): the same terminal in its own desktop window (pin it, resize it); this one closes.
+      .when(Boolean(space && tab && !p.muse), (el) => el.child(stop(h_flex().id("home-chat-pop").h(24).px(8).flex_none().items_center().gap(6).rounded(d.r.sm).cursor_pointer()
+        .tooltip("Its own window: pin it to every workspace, resize it").hover((s) => s.bg(d.hover))
+        .on_click(async () => { if (await popOut(space, tab)) close(); })
+        .child(svg(`${ICON}/ds-expand.svg`).size(11).flex_none().text_color(d.fg3))
+        .child(div().text_size(12).text_color(d.fg2).child("Pop out")))))
       .child(stop(h_flex().id("home-chat-open").h(24).px(8).flex_none().items_center().rounded(d.r.sm).cursor_pointer()
         .hover((s) => s.bg(d.hover))
         .on_click(() => { if (space) { run("space.select", { id: space.id }); if (tab) run("tab.select", { id: tab.id }); showTabs(); } close(); })
