@@ -172,14 +172,17 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     with a topic working or asking you unfolds its live topics under its row, asks you first,
     then working, then done, latest first, at most four and a 20px "+N more". They sit in a soft
     recessed channel (DeNon's pick, 2026-11-09, T75; `crew.js sunk "soft"`) that starts at the
-    look's text column (`palstyles.js textLeft`): r7, no edge, well darker than the sidebar
-    (#070708; deepened after the first real screenshots, DeNon 2026-11-09), a dark line inside its top with a shadow that fades down over 15px, a very faint
-    light line at the bottom (gpui-kit has no gradients or inner shadows, so these are 1 to 8px
+    look's text column (`palstyles.js textLeft`): r7, no edge, only a touch darker than the sidebar
+    (#0C0C0D; DeNon, 2026-11-10: much lighter than the Topics list's near-black well, so the two
+    are clearly different), a thin dark line inside its top with a light shadow that fades over 7px, a very faint
+    light line at the bottom (gpui-kit has no gradients or inner shadows, so these are 1 to 4px
     bands in a clipped box). Each topic row is 24px: the mark (the chosen working indicator, an
     amber dot when it asks you, a check when done) in a 16px slot on the left, the colour bar,
     "#topic" in 11.5px mono, and for a finished topic when it finished (11px #56565A) on the
     right. The shown topic is #18181A with #EDEDED text and a 2px blue edge. A click opens that
-    topic, right-click is its menu. Only the channel is added: nothing else moves. Resting,
+    topic, right-click is its menu. A pal with ONE live topic gets no channel (DeNon,
+    2026-11-10: a single row in a box looks odd): the same row, same place, straight on the
+    sidebar (`crew.js TREE_SINGLE`). Only the channel is added: nothing else moves. Resting,
     asleep and hidden pals never unfold.
     While a pal's tree shows (even one topic), its row drops " · #topic" and says only the state
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it

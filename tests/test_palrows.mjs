@@ -154,12 +154,13 @@ try {
       assert.ok(words.indexOf("#command-bar") < words.indexOf("#indicators"), "asks you first, then working");
       const box = rows[0].node.kids[1].node;
       assert.equal(box.args.pl[0], textLeft(st) - 4, `${st.id}: topics start at the text column`);
-      // The recessed channel (DeNon's pick C, 2026-11-09, T75): one clipped, rounded, darker box
+      // The recessed channel (DeNon's pick C, 2026-11-09, T75; lightened 2026-11-10 so it never
+      // reads like the Topics list's near-black well): one clipped, rounded, slightly darker box
       // with no edge holds the rows; its first children are the shade (a dark line inside the top
       // that fades down) and a faint light line at the bottom.
       const well = box.kids[0].node;
       assert.equal(box.kids.length, 1, `${st.id}: the tree is one well`);
-      assert.ok(well.calls.includes("overflow_hidden") && well.args.rounded?.[0] === 7 && well.args.bg?.[0] === "#070708" && !well.calls.includes("border_1"), `${st.id}: a soft well, no edge`);
+      assert.ok(well.calls.includes("overflow_hidden") && well.args.rounded?.[0] === 7 && well.args.bg?.[0] === "#0C0C0D" && !well.calls.includes("border_1"), `${st.id}: a soft well, no edge`);
       const shade = well.kids.map((k) => k.node).filter((n) => n.calls.includes("absolute"));
       assert.ok(shade.length >= 3 && shade[0].args.top?.[0] === 0 && shade[0].args.h?.[0] === 1 && shade.at(-1).args.bottom?.[0] === 0, `${st.id}: the well's shade and bottom line`);
       assert.ok(sub.every((n) => well.kids.some((k) => k.node === n)), `${st.id}: the topic rows are in the well`);
@@ -193,6 +194,18 @@ try {
       const clock = strs.filter((x) => /^\d{1,2}:\d{2}$|^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$|^[A-Z][a-z]{2} \d{1,2}$/.test(x.trim()));
       assert.equal(clock.length, trees ? 1 : 0, `${st.id} trees ${trees}: only a finished topic's time (${clock})`);
       assert.ok(!all(rows[0]).some((n) => n.args.text_right && n.args.w?.[0] === 38), `${st.id}: no time slot`);
+    }
+    // One live topic: no channel around it (DeNon, 2026-11-10: a single row in a box looks odd).
+    // The lone row sits straight on the sidebar, in the same place and size as a row in a channel.
+    if (trees) {
+      const solo = { ...s1, id: "s7", tabs: [s1.tabs[0]] };
+      const r = roster.palRow({ space: solo, bot: crew.botOf(solo) }, t, d, null);
+      const wrap = r.node.kids[1].node, holder = wrap.kids[0].node;
+      const lone = ids(r).filter((n) => n.args.id?.[0]?.includes("-tp-"));
+      assert.equal(lone.length, 1, `${st.id}: one topic row`);
+      assert.equal(crew.TREE_SINGLE, "plain");
+      assert.ok(!holder.args.bg && !holder.calls.includes("overflow_hidden") && !holder.calls.includes("rounded") && holder.kids.length === 1, `${st.id}: a lone topic has no channel`);
+      assert.ok(lone[0].args.h?.[0] === 24 && wrap.args.pl[0] === textLeft(st) - 4 && holder.args.pr?.[0] === 3, `${st.id}: the lone row keeps its place and size`);
     }
     // Resting and closed pals never unfold.
     for (const r of rows.slice(1)) assert.equal(ids(r).filter((n) => n.args.id?.[0]?.includes("-tp-")).length, 0, `${st.id}: no trees for a resting pal`);
