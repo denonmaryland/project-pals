@@ -757,6 +757,22 @@ rectangular segments and tags.
   `rock: false` keeps a working pet still. Herdr exposes no reduced-motion setting to mods
   (watch-out: honour it when it does). Room heads and stock mascots (a pal whose pet isn't
   drawn yet) don't rock.
+  **Topic areas** (T105, DeNon 2026-11-10: "39 topics… we need some type of feature that can
+  take a bunch of topics and put them under category folders / sections"; pick B, an area
+  switcher). An area is a name a pal's topics are filed under: one level, per pal, a topic in
+  one area or none. It is NEVER part of an address (`Pal#topic` stays the address), so messages,
+  rooms, Desk cards, worktrees, sleep and wake don't know areas exist. Stage 1 (data and
+  commands; no look change yet): `data/crew-areas.json` (`{pals: {<pal>: {areas: [{id, name}],
+  topics: {<topic>: id}}}}`, written only by `pal topic area …` under a lock; `bin/crewareas.py`),
+  `pal topic area ls [Pal] [--json] | add | set <Pal#topic> <Area|none> | rm | rename`,
+  `pal topic <Pal> <name> --area A`, and `pal team` lists a pal's topics under its areas (then
+  "Unsorted") once it has any. Filing makes the area if it's new; a name matches by its start;
+  "Live", "Shelf", "Unsorted" and "none" are views, not area names; 16 areas a pal. Removing an
+  area only unfiles its topics. Topics are filed by name, so a renamed topic keeps its area
+  only when `pal topic area renamed <Pal> <old> <new>` is called (the app will, in stage 2).
+  Watch-out: nothing may ever resolve an address through an area. `tests/test_areas.py`.
+  Still to come: the sidebar's chip row and Live view (2), the pal proposing its own sort (3),
+  the Shelf (4), area headings in the topic picker and on the pal's page (5).
   **Rooms fold** (T99, DeNon 2026-11-09): the sidebar's Rooms header is a button: "Rooms", how
   many, a dot while a room is busy (amber: a topic in it asks you; blue: one is working; rooms
   don't track unread messages, so that is what "news" means here), and a chevron. A click folds

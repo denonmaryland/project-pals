@@ -302,6 +302,7 @@ def cmd_topic_area(spaces, args):
     """pal topic area …: a pal's topics filed under areas (crewareas.py). An area is never part of
     an address; these commands only change how topics are listed."""
     import crewareas
+    from crewlib import norm
     sub = args[0] if args else "ls"
     rest = args[1:]
     pos, o = opts(rest, (), ("json",))

@@ -128,9 +128,6 @@ class Areas(unittest.TestCase):
 
     def test_addresses_do_not_know_areas(self):
         self.ok("set", "Helper#build", "Releases")
-        got = py(self.env, "import crewlib\nsp = crewlib.herdr_spaces() if hasattr(crewlib, 'herdr_spaces') else None\n"
-                           "import subprocess, os\nprint(json.dumps(True))")
-        self.assertTrue(got)
         # The address still resolves by pal and topic alone, and an area name is not a topic.
         r = pal(self.env, "peek", "Helper#build", "-n", "1", term="tW")
         self.assertNotIn("no topic", (r.stderr + r.stdout).lower())
