@@ -13,7 +13,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, shared, nextCommand, layout } from "herdr";
 import {
   ds, botOf, petOf, petEl, petState, mood, crewCli, openTerminal, findNode, computerMode, pcPal, PC_APPS,
-  openComputerApp, pcKey, closeComputerWindows,
+  openComputerApp, pcKey, closeComputerWindows, dayDate,
 } from "./crew.js";
 
 const ICONS = "mods/crew-computer";
@@ -61,9 +61,11 @@ export default class CrewComputer extends View {
   // been over it, a guess from the layout (the sidebar's width, the header's height).
   area() {
     const w = this.size.width, h = this.size.height;
-    if (this.origin) return { x: this.origin.x, y: this.origin.y, w, h: h - 74 };   // above the dock
+    // Right of the icon column (104 px) and above the dock (74 px), so a window never covers either.
+    const ICON_COL = 104;
+    if (this.origin) return { x: this.origin.x + ICON_COL, y: this.origin.y, w: w - ICON_COL, h: h - 74 };
     const px = (id, dflt) => { const n = findNode(layout(), id); return n?.hidden ? 0 : (n?.size?.px ?? dflt); };
-    return { x: px("sidebar", 300), y: px("crew-header", 46), w, h: h - 74 };
+    return { x: px("sidebar", 300) + ICON_COL, y: px("crew-header", 46), w: w - ICON_COL, h: h - 74 };
   }
 
   open(app, opts = {}) {
@@ -109,23 +111,29 @@ export default class CrewComputer extends View {
     const pet = petOf(bot);
     const st = petState(bot, mood(space.status, bot?.awake !== false));
     const W = this.size.width, H = this.size.height;
-    const petW = Math.max(220, Math.min(420, Math.round(W * 0.34)));
+    // Wide: the pet left of centre, Today on the right. Narrow (under 900 px): Today across the top,
+    // the pet smaller under it.
+    const wide = W >= 900;
+    const petW = wide ? Math.max(220, Math.min(420, Math.round(W * 0.34))) : Math.max(160, Math.min(300, Math.round(W * 0.5)));
+    const petX = wide ? Math.round(W * 0.37 - petW / 2) : Math.round(104 + (W - 104) / 2 - petW / 2);
+    const petY = wide ? Math.round(H * 0.46 - petW * 0.4) : Math.round(H * 0.62 - petW * 0.4);
+    const glow = Math.round(Math.min(wide ? W * 0.5 : W * 0.7, H * 0.62));
     const now = new Date();
     const wins = shared("crew.pc.wins") ?? {};
     const isOpen = (app) => Boolean(wins[pcKey(space.name, app)]);
 
     // The wallpaper: a soft glow under the pet, in the theme's colours.
     root.child(div().absolute().inset_0().bg(d.bg0))
-      .child(div().absolute().left(Math.round(W * 0.12)).top(Math.round(H * 0.18)).w(Math.round(W * 0.5)).h(Math.round(H * 0.6)).rounded(9999)
+      .child(div().absolute().left(Math.round(petX + petW / 2 - glow / 2)).top(Math.round(petY + petW * 0.4 - glow / 2)).size(glow).rounded(9999)
         .bg(lumBg(d)).opacity(0.55));
     // The pet, live.
-    root.child(div().absolute().left(Math.round(W * 0.37 - petW / 2)).top(Math.round(H * 0.46 - petW * 0.4))
+    root.child(div().absolute().left(petX).top(petY)
       .child(petEl(pet, st, petW, undefined, { open: true })));
     // The clock and whose computer this is.
     root.child(v_flex().absolute().left(112).top(22).gap(2)
       .child(div().text_size(30).font_weight(500).child(`${two(now.getHours())}:${two(now.getMinutes())}`))
       .child(div().text_size(12).font_family(d.mono).text_color(d.fg2)
-        .child(`${space.name}'s computer · ${now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}`)));
+        .child(`${space.name}'s computer · ${dayDate(now)}`)));
     // Desktop icons, left.
     root.child(v_flex().absolute().left(18).top(18).gap(12)
       .children(PC_APPS.map((a, i) => v_flex().id(`pc-ico-${a.id}`).w(74).items_center().gap(5).cursor_pointer().rounded(d.r.md).py(4)
@@ -136,7 +144,7 @@ export default class CrewComputer extends View {
           .child(svg(`${ICONS}/${a.icon}.svg`).size(20).text_color("#FFFFFF")))
         .child(div().text_size(11).text_color(d.body).child(a.label)))));
     // The Today widget, right.
-    root.child(this.today(d, space, W));
+    root.child(this.today(d, space, W, wide));
     // The dock, bottom centre: a dot under open apps, the desk's count on Desk.
     const deskN = this.data?.desk?.open ?? 0;
     root.child(h_flex().absolute().bottom(14).left(0).right(0).justify_center()
@@ -153,9 +161,9 @@ export default class CrewComputer extends View {
     return root;
   }
 
-  today(d, space, W) {
-    const w = Math.max(320, Math.min(420, Math.round(W * 0.34)));
-    const box = v_flex().absolute().right(28).top(70).w(w).p(14).gap(2).rounded(d.r.lg).bg(d.bg1).border_1().border_color(d.lineMid);
+  today(d, space, W, wide = true) {
+    const w = wide ? Math.max(320, Math.min(420, Math.round(W * 0.34))) : Math.max(240, W - 104 - 24);
+    const box = v_flex().absolute().right(wide ? 28 : 16).top(wide ? 70 : 92).w(w).p(14).gap(2).rounded(d.r.lg).bg(d.bg1).border_1().border_color(d.lineMid);
     const head = (l, r) => h_flex().justify_between().pb(6).text_size(10.5).font_family(d.mono).text_color(d.fg3)
       .child(div().child(l.toUpperCase())).child(div().child(r.toUpperCase()));
     const x = this.data;

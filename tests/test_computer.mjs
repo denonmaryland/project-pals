@@ -222,6 +222,21 @@ try {
   clicks.get("pc-x")?.(null, cx);
   assert.ok(fx.closed.includes("ov-j2"));
   assert.equal(fx.shared["crew.pc.wins"]["Juniper|journal"], undefined);
+  // Keys in a window (live look, T81): Esc hands the keyboard to the desktop, 1–6 open another app.
+  fx.props = { pal: "Juniper", app: "calendar", overlay: "ov-cal2" };
+  const cal = new App(); cal.init(fx.props, cx); await tick(); cal.render(cx);
+  cal.key({ keystroke: "escape" }, cx);
+  assert.equal(fx.shared["crew.pc.focus"], "Juniper|desktop");
+  cal.key({ keystroke: "5" }, cx);
+  assert.equal(fx.shared["crew.pc.focus"], "Juniper|work");
+  // Overlapping work blocks get lanes.
+  assert.deepEqual(c.lanesFor([{ start: 0, end: 10 }, { start: 5, end: 15 }, { start: 20, end: 30 }]).map((x) => [x.lane, x.lanes]), [[0, 2], [1, 2], [0, 1]]);
+  // No locale data in Herdr: our own day and month names.
+  assert.equal(c.dayDate(new Date(2026, 10, 9)), "Mon Nov 9");
+  // Narrow desktop renders too, and windows open right of the icon column.
+  desk.size = { width: 700, height: 600 };
+  desk.render(cx);
+  assert.ok(desk.area().x >= 404, "right of the sidebar and the icons");
   console.log("test_computer: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

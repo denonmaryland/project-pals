@@ -18,7 +18,7 @@ import { v_flex, h_flex, TextView } from "gpui-base";
 import { theme, props, spaces, shared, setShared, exec, readTextFile, openOverlay, home as homeDir, appHome } from "herdr";
 import {
   ds, botOf, petOf, petEl, petState, mood, crewCli, openTerminal, showDesk, scrollArea, PC_APPS, pcKey,
-  closeComputerApp, forgetComputerApp, openComputerApp, pinComputerApp,
+  closeComputerApp, forgetComputerApp, openComputerApp, pinComputerApp, shortDate, dayDate, DAY_NAMES, lanesFor,
 } from "./crew.js";
 
 const ICONS = "mods/crew-computer";
@@ -121,10 +121,21 @@ export default class CrewComputerApp extends View {
     }
     const a = PC_APPS.find((x) => x.id === this.app) ?? { label: String(this.app ?? "App"), icon: "pc-notes" };
     return v_flex().id("pc-app").size_full().bg(d.bg1).text_color(d.fg1)
-      .track_focus(this.handle)
+      .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", () => this.handle.focus())
       .child(this.bar(d, a))
       .child(v_flex().flex_1().min_h(0).child(this.body(d, cx)));
+  }
+
+  // Keys in a window (the live look: they stayed here and did nothing). Esc hands the keyboard back
+  // to the desktop (it doesn't close: × does); 1–6 open or bring forward another app.
+  key(e, cx) {
+    const k = e.keystroke;
+    const w = (shared("crew.pc.wins") ?? {})[pcKey(this.palName, this.app)] ?? {};
+    if (k === "escape") setShared("crew.pc.focus", pcKey(this.palName, "desktop"));
+    else if (/^[1-6]$/.test(k)) openComputerApp(this.palName, PC_APPS[Number(k) - 1].id, w.area ?? { x: 404, y: 50, w: 1000, h: 700 });
+    else return;
+    cx.notify();
   }
 
   bar(d, a) {
@@ -220,14 +231,20 @@ export default class CrewComputerApp extends View {
     });
     const topOf = (ms) => { const t = new Date(ms); return Math.max(0, (t.getHours() + t.getMinutes() / 60 - H0) * PX); };
     const col = (day) => {
-      const c = div().relative().flex_1().h((H1 - H0) * PX).border_l_1().border_color(d.line).bg(ymd(day) === today ? "#110F0D" : "#00000000");
+      const c = div().id(`pc-day-${ymd(day)}`).relative().flex_1().h((H1 - H0) * PX)
+        .on_size_change((size, cx) => { if (Math.abs((this.colW ?? 0) - size.width) > 1) { this.colW = size.width; cx.notify(); } }).border_l_1().border_color(d.line).bg(ymd(day) === today ? "#110F0D" : "#00000000");
       for (let h = H0; h < H1; h++) c.child(div().absolute().left(0).right(0).top((h - H0) * PX).h(1).bg(d.lineSoft));
+      // Work blocks that overlap (two topics at once) sit side by side.
+      const work = lanesFor(ofDay(day).filter((e) => e.kind === "work"));
+      const colW = this.colW ?? 60;
+      for (const e of work) {
+        const top = topOf(e.start), h = Math.max(10, topOf(e.end) - top);
+        const lw = (colW - 6) / e.lanes;
+        c.child(div().absolute().left(3 + e.lane * lw).w(Math.max(8, lw - 2)).top(top).h(h).rounded(3).bg("#18222D").border_l_2().border_color("#3D6E9A").px(4).overflow_hidden()
+          .text_size(10).text_color("#9DB8D3").child(`#${e.topic}`));
+      }
       for (const e of ofDay(day)) {
-        if (e.kind === "work") {
-          const top = topOf(e.start), h = Math.max(10, topOf(e.end) - top);
-          c.child(div().absolute().left(3).right(3).top(top).h(h).rounded(3).bg("#18222D").border_l_2().border_color("#3D6E9A").px(4).overflow_hidden()
-            .text_size(10).text_color("#9DB8D3").child(`#${e.topic}`));
-        } else if (e.kind === "routine") {
+        if (e.kind === "routine") {
           c.child(div().absolute().left(3).right(3).top(topOf(e.at)).h(14).rounded(3).bg("#1E1A2C").border_l_2().border_color("#6A54C2").px(4).overflow_hidden()
             .text_size(10).text_color("#B7A6EE").opacity(e.past ? 1 : 0.85).child(`${hhmm(e.at)} ${e.name ?? e.routine}`));
         } else if (e.kind === "done") {
@@ -246,7 +263,7 @@ export default class CrewComputerApp extends View {
     const head = h_flex().h(34).flex_none().border_b_1().border_color(d.line)
       .child(div().w(34).flex_none())
       .children(days.map((day) => v_flex().flex_1().px(6).pt(3).border_l_1().border_color(d.line)
-        .child(div().text_size(9.5).font_family(d.mono).text_color(d.fg3).child(day.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()))
+        .child(div().text_size(9.5).font_family(d.mono).text_color(d.fg3).child(DAY_NAMES[day.getDay()].toUpperCase()))
         .child(div().text_size(13).text_color(ymd(day) === today ? "#E0905A" : d.body).child(String(day.getDate())))));
     const gutter = div().relative().w(34).flex_none().h((H1 - H0) * PX)
       .children(Array.from({ length: H1 - H0 }, (_, i) => div().absolute().top(i * PX + 1).right(5).text_size(9.5).font_family(d.mono).text_color(d.fg4).child(two(H0 + i))));
@@ -254,7 +271,7 @@ export default class CrewComputerApp extends View {
     return v_flex().size_full()
       .child(h_flex().h(34).flex_none().px(12).gap(10).items_center().border_b_1().border_color(d.line)
         .child(nav("pc-cal-today", "Today", 0)).child(nav("pc-cal-prev", "‹", -1)).child(nav("pc-cal-next", "›", 1))
-        .child(div().text_size(13).font_weight(600).child(`${days[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString(undefined, { month: "short", day: "numeric" })}`))
+        .child(div().text_size(13).font_weight(600).child(`${shortDate(days[0])} – ${shortDate(days[6])}`))
         .child(div().flex_1())
         .child(div().text_size(10.5).text_color(d.fg3).child("worked · routine · done · due")))
       .child(head).child(dueRow)
@@ -273,7 +290,7 @@ export default class CrewComputerApp extends View {
       .child(div().flex_1().min_w(0).text_color(d.body).child(text))
       .child(div().flex_none().text_color(d.fg3).child(res ?? ""));
     for (const day of x.days) {
-      list.child(div().text_size(12).font_weight(600).text_color(d.fg1).child(new Date(`${day.day}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })));
+      list.child(div().text_size(12).font_weight(600).text_color(d.fg1).child(dayDate(new Date(`${day.day}T12:00:00`))));
       for (const e of day.entries) {
         const box = v_flex().gap(2).pl(10).border_l_1().border_color(d.lineStrong);
         list.child(v_flex().gap(4)
