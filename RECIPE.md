@@ -413,6 +413,11 @@ rectangular segments and tags.
   Saved in shared `crew.marks` (`groups`, `pals[bot].group/order/pin`, `arranged`), so it
   survives restarts; Herdr's own space order isn't touched. The topic list can't drag: it's a
   virtual list, whose rows can't take their own mouse handlers in Herdr.
+  Watch-out (T104, 2026-11-10): the head pal sits in a section of its own (`palSections`: group
+  `undefined`, first). The drop must look its target up among the real groups and Unassigned
+  only; looked up in the head pal's section it isn't found and the pal lands last every time
+  (that was the bug from the day drag shipped, whenever a head pal was in the list).
+  `tests/test_palrows.mjs` drags through `drop()` with a head pal present.
 - **Dialogs** ("A · Compact sheet", DeNon 2026-11-08): New topic, Hire a pal, New room, New group
   and Tasks share one kit (`sheet*` in crew.js): a header row (the pal's bare pet over its aura, a
   15/600 title, a 12px #808082 line, a quiet ×), 32px r6 fields on #0A0A0B with a #2C2C2F hairline

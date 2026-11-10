@@ -879,7 +879,44 @@ try {
     assert.ok(ids(hero).some((n) => n.args.id?.[0] === "hero-ch-list"), "the Topics list draws");
     fixtures.agents = keepA; fixtures.shared["crew.pets"] = keepP; fixtures.panes = keepPanes;
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges)");
+  // ── Dragging a pal to reorder, with no groups made and a head pal in the list (T104, DeNon
+  // 2026-11-10: "dragging pals to reorder doesn't work"). The drop looked its target up in the
+  // head pal's own section, never found it, and put the pal last every time. ─────────────────
+  {
+    const keep = { spaces: fixtures.spaces, marks: fixtures.shared["crew.marks"], crew: fixtures.shared.crew };
+    const mk = (id, name, index) => ({ id, name, folder: `/p/${id}`, index, status: "idle", tabs: [{ id: `${id}t`, name: "main", status: "idle", changed_at: 1, active: true }] });
+    fixtures.spaces = [mk("d0", "Orca", 0), mk("d1", "Alpha", 1), mk("d2", "Beta", 2), mk("d3", "Gamma", 3), mk("d4", "Delta", 4)];
+    fixtures.shared.crew = { bots: [{ id: "b-orca", name: "Orca", space: "d0", god: true }, ...["Alpha", "Beta", "Gamma", "Delta"].map((n, i) => ({ id: `b-${n.toLowerCase()}`, name: n, space: `d${i + 1}` }))] };
+    fixtures.shared["crew.marks"] = { pals: {}, tabs: {} };
+    const idOf = (n) => crew.botOf(fixtures.spaces.find((x) => x.name === n)).id;
+    const order = () => crew.palSections(fixtures.spaces.map((space) => ({ space, bot: crew.botOf(space) }))).find((x) => x.group === null).rows.map((r) => r.bot.name);
+    assert.deepEqual(order(), ["Alpha", "Beta", "Gamma", "Delta"], "to start with");
+    assert.equal(crew.palGroups().length, 0, "no groups made");
+    const cx = { notify() {} };
+    const drag = (who, onto, after) => { roster.drag = { id: idOf(who), gid: null, y0: 0, active: true, over: { id: idOf(onto), gid: null, after } }; roster.drop(cx); };
+    drag("Delta", "Beta", false);
+    assert.deepEqual(order(), ["Alpha", "Delta", "Beta", "Gamma"], "dropped on Beta's top half: Delta lands before Beta (not last)");
+    drag("Alpha", "Beta", true);
+    assert.deepEqual(order(), ["Delta", "Beta", "Alpha", "Gamma"], "dropped on Beta's bottom half: after it");
+    drag("Gamma", "Delta", false);
+    assert.deepEqual(order(), ["Gamma", "Delta", "Beta", "Alpha"], "to the very top");
+    drag("Gamma", "Alpha", true);
+    assert.deepEqual(order(), ["Delta", "Beta", "Alpha", "Gamma"], "and to the very end");
+    assert.equal(roster.drag, null, "the drag is over");
+    // The rows themselves take the drag in every look, the head pal's doesn't, and the order survives a redraw.
+    for (const look of ["table", "large", "tight"]) {
+      fixtures.shared["crew.settings"] = { palList: look };
+      const row = roster.palRow({ space: fixtures.spaces[1], bot: crew.botOf(fixtures.spaces[1]) }, t, d, null);
+      const top = ids(row).find((n) => n.args.id?.[0] === "bot-d1");
+      assert.ok(top.calls.includes("on_mouse_move") && top.calls.filter((c) => c === "on_mouse_down").length >= 2, `${look}: a pal row starts a drag`);
+    }
+    // With groups made, a drop into Unassigned also lands where it was dropped.
+    fixtures.shared["crew.marks"] = { ...fixtures.shared["crew.marks"], groups: [{ id: "g9", name: "Work" }] };
+    drag("Gamma", "Beta", false);
+    assert.deepEqual(order(), ["Delta", "Gamma", "Beta", "Alpha"], "with a group made too: before Beta in Unassigned");
+    fixtures.spaces = keep.spaces; fixtures.shared["crew.marks"] = keep.marks; fixtures.shared.crew = keep.crew; fixtures.shared["crew.settings"] = {};
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges; drag to reorder)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

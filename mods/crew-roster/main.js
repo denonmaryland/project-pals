@@ -974,7 +974,9 @@ export default class CrewRoster extends View {
     const o = dg.over;
     if (bot && o.id !== bot.id) {
       const rows = withoutChief().map((sp) => ({ space: sp, bot: botOf(sp) }));
-      const sec = palSections(rows).find((x) => (x.group?.id ?? null) === (o.gid ?? null));
+      // The head pal has a section of its own (group undefined) that comes first; skip it, or a drop
+      // among ungrouped pals is looked up there, isn't found, and the pal always lands last (T104).
+      const sec = palSections(rows).find((x) => x.group !== undefined && (x.group?.id ?? null) === (o.gid ?? null));
       const ids = (sec?.rows ?? []).map((r) => r.bot.id).filter((id) => id !== bot.id);
       let before = null;
       if (o.header) before = ids[0] ?? null;
