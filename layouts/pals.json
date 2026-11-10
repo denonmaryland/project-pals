@@ -33,15 +33,39 @@
       "children": [
         {
           "id": "sidebar",
-          "type": "block",
+          "type": "column",
           "size": {
             "px": 304
           },
           "min": 56,
           "max": 440,
-          "content": {
-            "mod": "crew-roster"
-          }
+          "resizable": false,
+          "background": "#0E0E0F",
+          "divider": {
+            "width": 0,
+            "color": "#1E1E20"
+          },
+          "children": [
+            {
+              "id": "side-main",
+              "type": "block",
+              "content": {
+                "mod": "crew-roster"
+              }
+            },
+            {
+              "id": "status",
+              "type": "block",
+              "size": {
+                "px": 24
+              },
+              "min": 24,
+              "max": 24,
+              "content": {
+                "mod": "crew-status"
+              }
+            }
+          ]
         },
         {
           "id": "work",
@@ -223,18 +247,6 @@
           ]
         }
       ]
-    },
-    {
-      "id": "status",
-      "type": "block",
-      "size": {
-        "px": 24
-      },
-      "min": 24,
-      "max": 24,
-      "content": {
-        "mod": "crew-status"
-      }
     }
   ]
 }

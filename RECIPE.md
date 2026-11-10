@@ -316,7 +316,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
-- **Updates:** the status bar's quiet **Update available · X** pill (a 18px raised rectangle,
+- **Updates:** the status strip's quiet **Update · X** pill (a 18px raised rectangle,
   a 6px blue dot, 11px #808082 text; while an update runs, a spinning ring and "Updating to X")
   or the gear's **Check for updates** opens `crew-update`, an A-style sheet: the head pal's pet,
   "Project Pals X is out" over "You have Y · released <date>", the release notes' bullet
@@ -703,7 +703,19 @@ rectangular segments and tags.
   the open count: the `crew-tasks` dialog), The project (AGENTS.md, Review changes on
   a worktree topic, Open folder), then Sleep / Wake and Close pal. No topics: the hero lists them. ↑/↓, Enter, Esc. The row the panel is already
   on is checked, and choosing it closes the panel.
-- **Status bar** (24px, under everything): a quiet gear at its left end, the working count,
+- **The sidebar runs the window's full height** (T97, DeNon 2026-11-10): nothing spans under
+  the whole window, and the header has no line under it. In `layouts/pals.json` the `sidebar`
+  node is a column (it keeps the id, 304px, min 56, max 440, so resizing, folding and the saved
+  width still go by it) of `side-main` (the roster) and `status` (24px), with no divider between
+  them; the strip is the sidebar's #0E0E0F with its #1E1E20 edge line down the right side and
+  no line on top, so the sidebar's edge reaches the window's bottom. The strip shows what fits
+  its width, most important first (`crew-status` `statusFit`, widths estimated at 5.9px a
+  character): the gear, "N working", "N need you", the update pill ("Update · X", else just
+  "Update"), the version, then usage (both limits, else "week N%"). Whatever is left out is in
+  the tooltip of "N working", which always says the whole line. Folded to the 56px rail the
+  strip is empty (the rail has its own gear). Watch-out: a new status item needs a place in
+  that priority list, or it will push others out. `tests/test_status.mjs`.
+- **Status strip** (24px, the sidebar's last row): a quiet gear at its left end, the working count,
   **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while
   an approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
   `crew.needs`). Claude Code marks a topic blocked from the wording of its last message, so a
@@ -723,7 +735,7 @@ rectangular segments and tags.
   (`crew.js appMenuNeeds`: 28px rows, 7px dividers, 1px gaps, 4px padding, 1px border) but at
   most the window's height minus 8px top and bottom (`appMenuSpec`); Herdr keeps a popup that
   fits inside the window, so from the bottom bar it opens upward. A mod can't ask the window's
-  size, so the roster (the window minus the 24px status bar) publishes what it measures as shared
+  size, so the roster (the window minus the 24px status strip under it) publishes what it measures as shared
   `crew.window` { h }; until it has, the menu opens 438px tall. When the rows don't all fit they
   scroll in our own area (see Scrolling): the wheel, the pill (the rows end 9px further in while
   it shows), and the keyboard: Up/Down (wrapping), Home/End and PageUp/PageDown move the
