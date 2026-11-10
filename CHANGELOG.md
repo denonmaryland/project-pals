@@ -18,7 +18,8 @@
   place and pin are remembered per topic. Closing the window never stops the pal.
 - **The pocket pets are redrawn.** Each pal has a lit, rounded body with clearer eyes and cheeks,
   and its species has its own marks (a fox's tail tip, an owl's beak, a pup's muzzle). What it
-  wears has a clean edge against the body. The laptop has a real keyboard deck and a lid whose
+  wears has a clean edge against the body, and the head pal's crown is white dots like the rest of
+  the pet, not a yellow shape. The laptop has a real keyboard deck and a lid whose
   screen faces the pal and glows in the state's colour (code scrolls while it works; the lid is
   shut while it sleeps). Small pets (in lists, rooms and menus) show the head alone, so they stay
   sharp. Tails and raised arms are no longer cut off at the left edge, and the floating marks

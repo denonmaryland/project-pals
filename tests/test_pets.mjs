@@ -47,6 +47,11 @@ assert.ok(!lit({ species: "kit", pose: "work", avatar: true }), "head: no laptop
 // One LED world (DeNon, 2026-11-09): the laptop and what a pal wears are dots, never solid shapes; no mouths.
 for (const pose of PET_STATES) for (const l of pal({ species: "kit", acc: ["phones", "glasses"], pose })) if (l.fill === "body") assert.ok(l.mask, `${pose}: body-coloured shapes are LEDs`);
 assert.ok(!pal({ species: "kit", pose: "work" }).some((l) => l.stroke === "ink" && /Q/.test(l.d) && !l.fill && l.sw < 2.5), "no mouth");
+// The crown is the pal's LED world too (DeNon, 2026-11-09: "the solid yellow crown looks out of place"):
+// white dots on the pal's grid, lit, and nothing a pal wears brings a colour of its own.
+{ const bareL = pal({ species: "kit", pose: "work" }).map((l) => l.d), worn = (a, o = {}) => pal({ species: "kit", acc: [a], pose: "work", ...o }).filter((l) => !l.back && !bareL.includes(l.d) && !l.stroke && l.fill !== "ink");
+  for (const o of [{}, { avatar: true }]) { const crown = pal({ species: "kit", acc: ["crown"], pose: "rest", ...o }).filter((l) => l.glow && l.fill === "hot"); assert.equal(crown.length, 1, "one lit crown"); assert.equal(crown[0].mask, "big", "the crown is dots on the pal's grid"); }
+  for (const a of ACC) for (const l of worn(a)) assert.ok(["body", "hot"].includes(l.fill), `${a}: ${l.fill} is not the pal's LEDs`); }
 // Bare art is inset and edge-faded, so the frame never slices a shape or its glow.
 for (const o of [{ bare: true }, { small: true }]) { const svg = tileSvg({ species: "kit", acc: ["crown"], pose: "work", scheme: idScheme("#e8e6f0", "work") }, o); assert.ok(/edge\)"><g/.test(svg) || /mask="url\(#t\d+edge\)"/.test(svg), "edge fade"); assert.ok(svg.includes("scale(0.86)"), "inset"); }
 console.log("pets ok");
