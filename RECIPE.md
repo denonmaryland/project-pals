@@ -118,7 +118,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   from the pal's side (deck toward its paw, the lid leaning back, the screen facing the pal): the
   screen glows in the state's colour, shows code while working, and is shut while asleep; what the
   state is floats over it in LEDs (sparkle, ?, z, sweat). Under 46 px wide (`SMALL_BELOW`) a pet
-  shows its head alone (`tileSvg`'s `small`, the `-s` files), with no paw frame or bits. (Redrawn
+  shows its head alone (`tileSvg`'s `small`, the `-s` files), with no paw frame. (Redrawn
   2026-11-09: lit bodies with eyes and cheeks. DeNon the same day: no mouths; what a pal wears stays
   dark, as before; the laptop faces the pal, not you; nothing solid, everything in the one LED
   world. The folder mascots' `mascot-art.js` is gone.)
@@ -218,10 +218,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     **closing** (waving, red: the PR closed unmerged in the last day), **stuck** (X eyes and sweat,
     amber: crewd says it's been working 15+ minutes with an unchanged screen). PR states show only
     while the pal is idle; merged and closing last a day.
-  - Working moves natively: the paw taps (two frames cross-fade), from 44px wide bits drift up off
-    the laptop, and a **lightsaber** laps the container's edge every 1.6 s: a white-blue core
-    (`#EAF2FF`, 1.5-2 px, 100° comet tail) inside blue glow rings (`#4C8DFF` inside, `#2A6AFE`
-    outside, 140° tail) that breathe (opacity 0.55-1 over 2.4 s).
+  - Working moves natively: the paw taps (two frames cross-fade) and a **lightsaber** laps the
+    container's edge every 1.6 s: a white-blue core (`#EAF2FF`, 1.5-2 px, 100° comet tail) inside
+    blue glow rings (`#4C8DFF` inside, `#2A6AFE` outside, 140° tail) that breathe (opacity 0.55-1
+    over 2.4 s). Nothing floats up off the laptop (T107, DeNon 2026-11-10: the three rising dots
+    went; the screen's glow says "working").
   - Drawn on demand into `data/crew-pets/<hash>-<state>[-b].svg` (9 files a pet, about 12KB each)
     by the roster's art pass, which publishes shared `crew.pets`; the roster also publishes
     shared `crew.petstate` (stuck from `crew-health.json`, PR state from `gh pr list --head
@@ -750,8 +751,8 @@ rectangular segments and tags.
   under the pill, and only while there is something to fade. Watch-out: a new surface colour
   needs its own pair of fade images, and a scroll area on a tinted surface must name it.
   **A working pal rocks** (T102, DeNon 2026-11-10; it replaced T100's pulsing dot, which is
-  steady again): while a pal's pet is in its "work" state the whole sprite (pet, tapping paw,
-  drifting bits) sways from side to side and back every 2.6s, eased, and is still the moment
+  steady again): while a pal's pet is in its "work" state the whole sprite (pet and tapping paw)
+  sways from side to side and back every 2.6s, eased, and is still the moment
   it stops working. Everywhere the pet is drawn (`crew.js petEl`: pal rows, the hero, the
   folded rail's heads, Home, the Chief), boxed or open, big or a small head; the box, its edge
   and the saber don't move. The sway is 1.5px each way at the 75px row size, scaled with the

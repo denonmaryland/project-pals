@@ -54,4 +54,7 @@ assert.ok(!pal({ species: "kit", pose: "work" }).some((l) => l.stroke === "ink" 
   for (const a of ACC) for (const l of worn(a)) assert.ok(["body", "hot"].includes(l.fill), `${a}: ${l.fill} is not the pal's LEDs`); }
 // Bare art is inset and edge-faded, so the frame never slices a shape or its glow.
 for (const o of [{ bare: true }, { small: true }]) { const svg = tileSvg({ species: "kit", acc: ["crown"], pose: "work", scheme: idScheme("#e8e6f0", "work") }, o); assert.ok(/edge\)"><g/.test(svg) || /mask="url\(#t\d+edge\)"/.test(svg), "edge fade"); assert.ok(svg.includes("scale(0.86)"), "inset"); }
+// Nothing floats up off the laptop while working (T107, DeNon 2026-11-10): no bits art, and no pet file for it.
+{ const P = await import("../lib/pets.js"); for (const k of ["bitsSvg", "BITS", "glyph"]) assert.ok(!(k in P), `pets.js has no ${k}`);
+  assert.ok(!petFiles(p).some(([path]) => /bits/.test(path)), "no bits file among a pet's files"); }
 console.log("pets ok");

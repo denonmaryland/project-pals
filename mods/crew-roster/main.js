@@ -763,7 +763,7 @@ export default class CrewRoster extends View {
     const light = d.bg1 !== "#0E0E0F";
     const ready = p && petReady(p);
     const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
-    const NB = 36;      // the name's band over the sprite (room for the bits that rise off it)
+    const NB = 36;      // the name's band over the sprite (what a pal wears reaches the sprite's top edge)
     const FY = NB + H + 2;   // the floor's line
     const word = !bot.awake ? "Asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
     const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";

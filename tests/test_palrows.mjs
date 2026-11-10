@@ -740,11 +740,16 @@ try {
       assert.ok(pol.from === -crew.rockPx(w) && pol.to === crew.rockPx(w) && pol.period === 2600 && !pol.easing, `${w}px: side to side and back in 2.6 s, eased (the default)`);
       assert.ok(crew.rockPx(w) >= 0.75 && crew.rockPx(w) <= 3, `${w}px: a gentle ${crew.rockPx(w)} px`);
       assert.ok(s[0].args.w[0] === w && s[0].calls.includes("absolute"), "the wrapper fills the pet's box");
-      // Every sprite layer is inside it (the pet, its paw, its bits), so they move as one; the box itself doesn't.
-      const imgs = all(el).filter((n) => n.kind === "image" && /crew-pets|bits/.test(String(n.arg)));
+      // Every sprite layer is inside it (the pet and its paw), so they move as one; the box itself doesn't.
+      const imgs = all(el).filter((n) => n.kind === "image" && /crew-pets/.test(String(n.arg)));
       const inside = all({ node: s[0] }).filter((n) => n.kind === "image");
       assert.ok(imgs.length >= 1 && imgs.every((n) => inside.includes(n)), `${w}px ${open ? "open" : "boxed"}: all ${imgs.length} sprite layers sway together`);
       assert.ok(!el.node.calls.includes("loop"), "the box keeps still");
+      // No dots float up off the laptop (T107, DeNon 2026-11-10): no bits image, nothing drifting upward, and the
+      // sprite is the pet plus its paw frame (a small head: the pet alone).
+      assert.ok(!all(el).some((n) => n.kind === "image" && /bits/.test(String(n.arg))), `${w}px ${open ? "open" : "boxed"}: no rising bits`);
+      assert.ok(!all(el).some((n) => n.args.loop?.[0] === "top"), `${w}px ${open ? "open" : "boxed"}: nothing drifts up`);
+      assert.equal(imgs.length, w < pets.SMALL_BELOW ? 1 : 2, `${w}px ${open ? "open" : "boxed"}: the pet${w < pets.SMALL_BELOW ? "" : " and its paw frame"}, nothing else`);
       // Not working: nothing sways. Working but told to keep still: nothing sways.
       for (const st of ["rest", "done", "ask"]) assert.equal(sway(crew.petEl(pet, st, w, undefined, { open })).length, 0, `${w}px ${st}: still`);
       assert.equal(sway(crew.petEl(pet, "work", w, undefined, { open, rock: false })).length, 0, `${w}px: rock off keeps a working pet still`);
