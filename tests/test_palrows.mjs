@@ -95,7 +95,7 @@ try {
     export const run = (op, a) => { (fixtures.ran ??= []).push([op, a]); }, notify = (x) => { (fixtures.notes ??= []).push(x); }, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => fixtures.known ?? [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods/crew-roster/main.js"), join(dir, "roster.js"));
   copyFileSync(join(root, "mods/crew-palstyle/main.js"), join(dir, "palstyle.js"));
 
@@ -543,6 +543,45 @@ try {
     assert.equal(fixtures.notes[0].title, "Sleep (keep topics, free RAM)"); assert.equal(fixtures.notes[0].level, "warning");
     assert.match(fixtures.notes[0].body, /mid-turn/);
     fixtures.shared.crew = before; fixtures.known = undefined; fixtures.notes = [];
+  }
+  // Factories (T66). One factory: the whole sidebar draws as it always did, with no chip.
+  {
+    fixtures.shared["crew.settings"] = { head: "Orca", owner: "DeNon" };
+    Object.defineProperty(globalThis, "localStorage", { value: { getItem: () => null, setItem() {} }, configurable: true });
+    roster.ops = { tasks: [], approvals: [], proposals: [], stalled: {} };
+    const idsOf = () => ids(roster.render()).map((n) => n.args.id[0]);
+    const one = idsOf();
+    assert.ok(!one.includes("factory-chip"), "no chip with one factory");
+    const before = text(roster.render());
+    for (const n of ["Orca", "Softly", "Project Pals - Herdr Mod"]) assert.ok(before.includes(n), `one factory shows ${n}`);
+    // A second factory holding Softly; the default one is shown.
+    const st = { current: "default", defaultName: "Mods", factories: [{ id: "f-app001", name: "Example app", template: "platform-lanes", foreman: "", foremanTopic: "ops", color: "#E2935A" }],
+      pals: { "Softly - Dictation App with a very long name indeed": "f-app001" } };
+    fixtures.shared["crew.factories"] = st;
+    fixtures.shared["crew.factory.needs"] = { "f-app001": 2, default: 5 };
+    let out = roster.render();
+    assert.ok(ids(out).some((n) => n.args.id[0] === "factory-chip"), "the chip shows once there's a second factory");
+    assert.ok(text(out).includes("Mods"), "it names the shown factory");
+    assert.equal(text(ids(out).find((n) => n.args.id[0] === "factory-chip-n")), "2", "and counts what the OTHER factories need");
+    assert.ok(!ids(out).some((n) => String(n.args.id[0]).includes("s3")), "a pal on another floor isn't listed");
+    assert.ok(ids(out).some((n) => String(n.args.id[0]).includes("s2")), "the head pal is");
+    // Switch: the other floor, and only it. The head pal stays in the default factory.
+    fixtures.ran = [];
+    await crew.switchFactory("f-app001");
+    assert.equal(fixtures.shared["crew.factories.at"], 0, "the store is read again after the click");
+    fixtures.shared["crew.factories"] = { ...st, current: "f-app001" };
+    assert.deepEqual(fixtures.ran.filter((r) => r[0] === "space.select").map((r) => r[1].id), ["s3"], "the pal on show wasn't on that floor: its first pal is shown");
+    out = roster.render();
+    assert.ok(text(out).includes("Example app"));
+    assert.equal(text(ids(out).find((n) => n.args.id[0] === "factory-chip-n")), "5");
+    assert.ok(ids(out).some((n) => String(n.args.id[0]).includes("s3")));
+    assert.ok(!ids(out).some((n) => /(^|-)s2($|-)/.test(String(n.args.id[0]))), "the head pal isn't on this floor");
+    assert.equal(crew.currentFactory().name, "Example app");
+    assert.deepEqual(crew.countFactoryNeeds([{ space: fixtures.spaces[2] }, { space: fixtures.spaces[0] }], { approvals: [{ bot: "Orca" }], stalled: {} }, [{ factory: "f-app001" }]),
+      { "f-app001": 2, default: 2 });
+    delete fixtures.shared["crew.factories"]; delete fixtures.shared["crew.factory.needs"];
+    assert.deepEqual(crew.countFactoryNeeds([{ space: fixtures.spaces[2] }], { approvals: [] }, []), {}, "one factory: nothing is counted");
+    assert.ok(!idsOf().includes("factory-chip"));
   }
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
 } finally {

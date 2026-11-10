@@ -2,6 +2,12 @@
 
 ## Unreleased (0.4.2)
 
+- **Factories, phase 1.** A big project can have a crew of its own: a factory, with its own
+  foreman and Home. Ctrl+Shift+G (or "Factories" in the command bar) makes one and switches
+  between them; a pal's right-click moves it to another factory. Once there's a second factory, a
+  chip above the hero names the one you're in and counts what the others need from you, and the
+  pal list and Home follow it. Your crew is the default factory: with only one, nothing changes
+  and nothing new is written. `pal factory` from the command line.
 - **Check for updates says what it found, and when.** About and the update dialog show GitHub's
   newest version and the time they asked ("You have 0.4.0. GitHub's newest: 0.4.1 · checked
   15:48"). Left open, they ask again every 10 minutes, so an About open since the last update no

@@ -144,7 +144,7 @@ try {
     export const run = nop, notify = nop, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   for (const f of readdirSync(join(root, "mods/crew-profile")).filter((f) => f.endsWith(".js"))) copyFileSync(join(root, "mods/crew-profile", f), join(dir, f));
   const url = (f) => pathToFileURL(join(dir, f)).href;
   const crew = await import(url("crew.js"));

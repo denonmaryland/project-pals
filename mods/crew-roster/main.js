@@ -15,6 +15,7 @@ import {
   petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
   togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
   palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
+  severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -79,6 +80,7 @@ export default class CrewRoster extends View {
     // Then lay the window out once the layout is there (before that, applyLayout does nothing).
     const sync = () => cx.spawn(async (cx) => {
       try { await syncSettings(); } catch {}
+      try { await syncFactories(); } catch {}
       if (!this.laidOut && applyLayout()) { this.laidOut = true; cx.notify(); }
     });
     sync();
@@ -99,6 +101,9 @@ export default class CrewRoster extends View {
       // when it changes, reasons included).
       const n = needsOf(spaces(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
       if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
+      // With several factories: what each one needs from you (the switcher's counts).
+      const fn = countFactoryNeeds(this.waitingNow(), this.ops, shared("crew.factory.asks") ?? []);
+      if (JSON.stringify(shared("crew.factory.needs") ?? {}) !== JSON.stringify(fn)) setShared("crew.factory.needs", fn);
       cx.notify();
     });
     ops(cx);
@@ -132,9 +137,16 @@ export default class CrewRoster extends View {
         else if (c === "profile") togglePanel(panelTab());
         // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
         else if (c === "home") toggleHome();
+        // Ctrl+Shift+G: the factory switcher.
+        else if (c === "factory" || c === "factories") openFactoryMenu();
         cx.notify();
       }
     });
+  }
+
+  // Topics that wait on you (a question for you), in every factory.
+  waitingNow() {
+    return spaces().flatMap((space) => space.tabs.filter((tb) => askingYou(tb)).map((tab) => ({ space, tab })));
   }
 
   view() { const v = shared("crew.view"); return v === "you" || v === "rooms" || v === "tasks" ? v : "bots"; }
@@ -249,14 +261,18 @@ export default class CrewRoster extends View {
     const rows = (only ? all.filter((s) => only.includes(s.name)) : all).map((space) => ({ space, bot: botOf(space, c, ps) }))
       // The head pal sits above everyone; then whoever needs you most.
       .sort((x, y) => (y.bot.god ? 1 : 0) - (x.bot.god ? 1 : 0) || (STATUS_RANK[y.space.status] ?? 0) - (STATUS_RANK[x.space.status] ?? 0) || x.space.index - y.space.index);
-    const asleep = sleepers(all, c);
+    // With several factories the list is the shown factory's floor, its foreman on top. The Inbox
+    // below stays everyone's: what waits on you is never hidden by a switch.
+    const several = severalFactories();
+    const floor = several ? rows.filter((r) => inFactory(r.space.name)).sort((x, y) => (runsHome(y.space, y.bot) ? 1 : 0) - (runsHome(x.space, x.bot) ? 1 : 0)) : rows;
+    const asleep = sleepers(all, c).filter((rec) => !several || inFactory(rec.name));
     // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
     const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0)
       + (shared("crew.desk")?.needs?.length ?? 0);
-    if (narrow()) return this.rail(rows, waiting, t, extra);
-    return this.focusColumn(rows, asleep, waiting, t, extra);
+    if (narrow()) return this.rail(floor, waiting, t, extra);
+    return this.focusColumn(floor, asleep, waiting, t, extra);
   }
 
   // Folded: just the pals' faces, the active one lit, a red count for what needs you.
@@ -589,7 +605,7 @@ export default class CrewRoster extends View {
   // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
   // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
   open(space) {
-    if (botOf(space).god && hasHome()) { showHome(); return; }
+    if (runsHome(space) && hasHome()) { showHome(); return; }
     this.go(space, this.leadTab(space));
   }
 
@@ -597,7 +613,7 @@ export default class CrewRoster extends View {
   focusColumn(rows, asleep, waiting, t, extra) {
     const d = ds(t);
     const w = this.width ?? 304;
-    const shown = rows.find((r) => r.space.active) ?? rows.find((r) => r.bot.god) ?? rows[0];
+    const shown = rows.find((r) => r.space.active) ?? rows.find((r) => runsHome(r.space, r.bot)) ?? rows[0];
     const ordered = palOrder(rows);
     const live = ordered.filter((r) => r.bot.awake || r.space.active || r.bot.starting);
     const dozing = ordered.filter((r) => !(r.bot.awake || r.space.active || r.bot.starting));
@@ -608,6 +624,8 @@ export default class CrewRoster extends View {
     const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
+    // The factory chip: only once there's a second factory.
+    if (severalFactories()) root.child(this.factoryChip(d));
     if (shown) root.child(this.heroCard(shown, t, d, w));
     // The list scrolls in our own area (scrollArea: the pill thumb sits in its 8 px right padding).
     const list = v_flex().px(8).pt(8).pb(24).gap(2)
@@ -652,6 +670,23 @@ export default class CrewRoster extends View {
     }
     this.extras(list, waiting, extra, d);
     return root.child(scroller(list));
+  }
+
+  // Which factory this is, and the way to the others (design F-A, DeNon's pick 2026-11-09): a colour
+  // square, its name, its template, and an amber count of what the OTHER factories need from you.
+  factoryChip(d) {
+    const f = currentFactory();
+    const n = needsOutsideFactory();
+    return div().flex_none().px(8).pt(8).child(h_flex().id("factory-chip").h(32).items_center().gap(8).pl(10).pr(8).rounded(d.r.sm).cursor_pointer()
+      .bg(d.raised).border_1().border_color(d.lineMid)
+      .hover((s) => s.bg(d.hover)).tooltip("Switch factory")
+      .on_click(() => openFactoryMenu())
+      .child(div().size(9).flex_none().rounded(2).bg(f.color))
+      .child(div().flex_1().min_w(0).truncate().text_size(13).font_weight(600).text_color(d.fg1).child(f.name))
+      .child(div().flex_none().text_size(11).text_color(d.fg3).child(templateOf(f.template).short))
+      .when(n > 0, (el) => el.child(div().id("factory-chip-n").flex_none().h(16).px(5).flex().items_center().rounded(3).bg(d.warn).text_size(11).font_weight(600).text_color("#1A1203")
+        .tooltip(`${n} waiting on you in other factories`).child(String(n))))
+      .child(svg(`${ICON}/chevron-down.svg`).size(11).flex_none().text_color(d.fg3)));
   }
 
   // Not on the boards, and only there while they have something: the Inbox (approvals wait for

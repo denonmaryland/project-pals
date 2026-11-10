@@ -31,7 +31,7 @@ The Desk (everything sent to you is a card with a status and receipts)
   (the owner, from Project Pals: urgency ID LEVEL, confirm ID, send-draft ID [--to …], discard ID, prune --older 180d)
 
 Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
-  pal home [--json]                 what's on Home
+  pal home [--json] [--factory NAME|all]   what's on Home (with several factories: the one you're in)
   pal home ask "question" [--option A [--does "what A does"]]... [--recommend A --why "…"] [--topic P#t]
             [--body …] [--link URL]... [--image FILE]...   a decision for the owner (options: one click each)
   pal home recommend <a-…|c-…|h-…> <option> --why "…"   your pick for an approval (approve|decline),
@@ -40,6 +40,11 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
+                                    crew is the default one; until you make another, nothing changes
+  pal factory new NAME [--template project-crew|platform-lanes] [--foreman Pal] [--foreman-topic T]
+  pal factory switch NAME | move PAL NAME | foreman NAME [PAL] [--topic T] | rename NAME NEW | rm NAME
+                                    (changes are the owner's: a click in Project Pals)
   (the owner, from Project Pals: answer ID "option", seen)
 
 Hiring
@@ -144,6 +149,7 @@ import crewguard
 import crewupdate
 import crewdesk
 import crewhome
+import crewfactories
 
 
 def opts(rest, flags, bools=()):
@@ -2199,8 +2205,18 @@ def cmd_home(spaces, rest):
         die("only pal home ask takes --option, --does, --link and --image")
     try:
         if sub in ("ls", "list", "show"):
-            pos, o = opts(args, (), ("json", "all"))
+            pos, o = opts(args, ("factory",), ("json", "all"))
             h = crewhome.load()
+            # With several factories, Home is the factory you're in: a pal's own, else the one the app
+            # shows. --factory NAME picks another, --factory all shows every factory's.
+            fstore = crewfactories.load()
+            if crewfactories.several(fstore) or o.get("factory"):
+                want = o.get("factory") or (crewfactories.factory_of(name, fstore) if me else crewfactories.current(fstore))
+                for x in h["items"]:
+                    x["factory"] = crewfactories.factory_of_item(x, fstore)
+                if want != "all":
+                    fid = crewfactories.get(want, fstore)["id"]
+                    h["items"] = [x for x in h["items"] if x["factory"] == fid]
             if o.get("json"):
                 print(json.dumps({**h, "installs": crewhome.installs(10)}, ensure_ascii=False))
                 return
@@ -2278,6 +2294,66 @@ def cmd_home(spaces, rest):
         die(str(e))
 
 
+def cmd_factory(rest):
+    """pal factory: the factories. Reading is anyone's; every change is the owner's click."""
+    sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
+    args = rest[1:] if rest and not rest[0].startswith("--") else rest
+    names = sorted({b["name"] for b in records().values() if b.get("name")})
+    try:
+        if sub in ("ls", "list"):
+            pos, o = opts(args, (), ("json",))
+            store = crewfactories.load()
+            if o.get("json"):
+                v = crewfactories.view(store)
+                for f in v["factories"]:
+                    f["members"] = crewfactories.pals_of(f["id"], names, store)
+                print(json.dumps(v, ensure_ascii=False))
+                return
+            print("\n".join(crewfactories.line(f, store, names) for f in crewfactories.factories(store)))
+            if not crewfactories.several(store):
+                print("One factory: your crew. pal factory new NAME makes another (from Project Pals: Ctrl+Shift+G).")
+        elif sub == "show":
+            pos, o = opts(args, (), ("json",))
+            store = crewfactories.load()
+            f = crewfactories.get(pos[0] if pos else crewfactories.current(store), store)
+            members = crewfactories.pals_of(f["id"], names, store)
+            if o.get("json"):
+                print(json.dumps({**f, "members": members, "home": crewfactories.TEMPLATES[f["template"]]["home"]}, ensure_ascii=False))
+                return
+            print(crewfactories.line(f, store, names))
+            print(f"  foreman: {f['foreman'] or '(none yet)'}" + (f" #{f['foreman_topic']}" if f["foreman"] and f["foreman_topic"] else ""))
+            print(f"  pals: {', '.join(members) or '(none yet)'}")
+            print(f"  Home: {', '.join(crewfactories.TEMPLATES[f['template']]['home'])}")
+        elif sub == "new" and args:
+            pos, o = opts(args, ("template", "foreman", "foreman-topic"))
+            require_owner("making a factory")
+            f = crewfactories.new(" ".join(pos), o.get("template") or "project-crew", o.get("foreman"), o.get("foreman-topic"))
+            print(f"made the factory {f['name']} ({f['id']})")
+        elif sub == "switch" and args:
+            require_owner("switching the factory the app shows")
+            print(f"showing {crewfactories.switch(' '.join(args))['name']}")
+        elif sub == "move" and len(args) >= 2:
+            require_owner("moving a pal to another factory")
+            f = crewfactories.move(args[0], " ".join(args[1:]))
+            print(f"{args[0]} is in {f['name']}")
+        elif sub == "foreman" and args:
+            pos, o = opts(args, ("topic",))
+            require_owner("naming a factory's foreman")
+            f = crewfactories.set_foreman(pos[0], pos[1] if len(pos) > 1 else "", o.get("topic"))
+            print(f"{f['name']}: foreman {f['foreman'] or '(none)'}")
+        elif sub == "rename" and len(args) >= 2:
+            require_owner("renaming a factory")
+            print(f"it's {crewfactories.rename(args[0], ' '.join(args[1:]))['name']} now")
+        elif sub in ("rm", "remove") and args:
+            require_owner("removing a factory")
+            f, back = crewfactories.remove(" ".join(args))
+            print(f"removed {f['name']}" + (f"; back in your crew: {', '.join(back)}" if back else ""))
+        else:
+            die("pal factory [ls|show NAME] | new NAME [--template T] [--foreman Pal] | switch NAME | move PAL NAME | foreman NAME [PAL] | rename NAME NEW | rm NAME")
+    except crewfactories.FactoryError as e:
+        die(str(e))
+
+
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
 def main(argv):
@@ -2323,6 +2399,8 @@ def main(argv):
         return cmd_uninstall(rest)
     if cmd == "settings":
         return cmd_settings(rest)
+    if cmd in ("factory", "factories"):
+        return cmd_factory(rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).

@@ -66,7 +66,7 @@ try {
     export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = (o) => { (fx.overlays ??= []).push(o); return "ov1"; }, nextCommand = () => new Promise(() => {}), closeOverlay = () => { fx.closed++; };
     export const hc = exec, readTextFile = async (p) => (fx.files ?? {})[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   cpSync(join(root, "mods", "crew-home", "main.js"), join(dir, "crew-home.mjs"));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
@@ -167,6 +167,36 @@ try {
   assert.deepEqual(prog.rows.map((r) => r.ch), ["site", "desk", "general"], "working topics and a held one, longest first");
   assert.equal(prog.rows[0].held, "draft");
   assert.deepEqual(prog.desk.map((c) => c.id), ["c-orca01"], "what's open on the head pal's desk");
+  // Factories (T66): with a second factory, Home is the shown one's. Herdr Mod moves to "Example app".
+  const facs = { current: "default", defaultName: "", factories: [{ id: "f-app001", name: "Example app", template: "platform-lanes", foreman: "", foremanTopic: "ops", color: "#E2935A" }],
+    pals: { "Herdr Mod": "f-app001" } };
+  fx.shared["crew.factories"] = facs;
+  await run((cx) => draw(v, cx));
+  assert.deepEqual(v.needs().map((n) => n.kind), ["ask", "ask"], "the default factory: the head pal's asks, not the other floor's approval, login, question or card");
+  assert.deepEqual(v.progress().rows.map((r) => r.ch), ["general"]);
+  assert.deepEqual(v.progress().desk.map((c) => c.id), ["c-orca01"]);
+  assert.equal(v.home.release.next, "0.3.1", "the release track is the default factory's");
+  assert.ok(v.since().some((r) => r.kind === "install"));
+  fx.shared["crew.factories"] = { ...facs, current: "f-app001" };
+  await run((cx) => draw(v, cx));
+  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "login", "question", "desk"], "Example app: what its pal waits on");
+  assert.deepEqual(v.progress().rows.map((r) => r.ch), ["site", "desk"]);
+  assert.deepEqual(v.progress().desk, [], "no foreman yet: nobody's desk");
+  assert.equal(v.home.release.next, null);
+  assert.ok(!v.since().some((r) => r.kind === "install" || r.kind === "card"), "installs and the head pal's cards are the default factory's news");
+  assert.ok(v.since().some((r) => r.kind === "finished" && r.bot === "Herdr Mod"));
+  assert.equal(v.who(), "the foreman");
+  // A foreman: Home is its desk, and Home's terminal button goes to it.
+  fx.shared["crew.factories"] = { ...facs, current: "f-app001", factories: [{ ...facs.factories[0], foreman: "Herdr Mod" }] };
+  assert.equal(v.who(), "Herdr Mod");
+  assert.equal(crewjs.foremanSpace().id, "s1");
+  assert.equal(crewjs.runsHome(fx.spaces[2]), true);
+  assert.equal(crewjs.runsHome(fx.spaces[1]), false);
+  // Back to one factory: everything as before.
+  delete fx.shared["crew.factories"];
+  await run((cx) => draw(v, cx));
+  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk"]);
+  assert.equal(crewjs.runsHome(fx.spaces[2]), false);
   await run((cx) => draw(v, cx));
   const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
   // The review: one item at a time, the oldest first (the approval), with its recommendation.

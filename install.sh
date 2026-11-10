@@ -95,10 +95,11 @@ for dir in "$src"/mods/crew-*; do
   cp "$src/lib/machines.js" "$dest/machines.js"
   cp "$src/lib/pets.js" "$dest/pets.js"
   cp "$src/lib/palstyles.js" "$dest/palstyles.js"
+  cp "$src/lib/factories.js" "$dest/factories.js"
   cp "$src/lib/crew.js" "$dest/crew.js"
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
-  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
+  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/factories.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
   cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
 done
 
@@ -143,11 +144,12 @@ fi
 # panel, 2026-11-08), ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
 # it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
 # crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
-# crew-roster.home (Home, the head pal's page; free in both too). Each only when
+# crew-roster.home (Home, the head pal's page; free in both too) and ctrl-shift-g →
+# crew-roster.factory (the factory switcher, T66; free in both, checked 2026-11-09). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home"; do
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-g crew-roster.factory the factory switcher"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"

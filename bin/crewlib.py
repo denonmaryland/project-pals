@@ -851,6 +851,8 @@ def renamed(old, new):
     desk = _desk()
     if desk:
         desk.renamed(old, new)
+    import crewfactories   # here, not at the top: it imports this module
+    crewfactories.renamed(old, new)
 
 
 def memory_dir(bot_name):

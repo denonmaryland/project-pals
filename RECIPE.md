@@ -881,6 +881,59 @@ the root (a hash, or JSON with those fields); `export: true` marks it. Anything 
 hash is ignored, with a warning.
 Home reads only while it shows: files every 4 s, `pal desk ls --all --json --done` every 10 s.
 
+### Factories (phase 1)
+
+Several crews in one Project Pals: a **factory** is a named set of pals with a foreman, a template
+(its org shape) and its own Home. **Your crew is the default factory and needs no file.** Until a
+second factory is made there is one, and nothing looks or behaves differently: no chip, no extra
+field on anything, no file written. (Design, with what comes later: Platform lanes' own Home, the
+Chief over all factories: `data/crew-boards/chief/design.md`, Part 2.)
+
+**Making one.** Ctrl+Shift+G (`crew-roster.factory`, bound by install.sh only when free), or
+"Factories" in the command bar, opens the switcher: every factory with its template, foreman and
+what it needs from you, then New factory…, Rename…, and Remove (not the default one; its pals go
+back to your crew, nothing of theirs is touched). New factory asks for a name and a template
+(Project crew, Platform lanes). Making one doesn't switch to it or move anyone.
+
+**Who's in it.** A pal's right-click menu gets a Factory section once there are several: one row
+per factory, its own checked; on a floor that isn't the default, "Make it <factory>'s foreman".
+The head pal is the default factory's foreman and never leaves it. A pal that isn't placed
+anywhere, or whose factory was removed, is in the default one. A renamed pal keeps its factory and
+its job; a foreman moved out stops being foreman.
+
+**The switcher chip** sits above the hero once there are several: a colour square, the factory's
+name, its template (Crew / Lanes) and an amber count of what the OTHER factories need from you
+(topics asking you, approvals, stuck topics, Home's open asks and logins). Click it for the
+switcher. Switching shows that floor: the pal list is its pals (foreman first, the hero is the pal
+on show, else the foreman, else the first), and if the pal on show isn't on it, its foreman (else
+its first open pal) is shown. Nothing stops or sleeps: other floors keep working. The sidebar's
+Inbox stays everyone's, so a switch never hides an approval.
+
+**Home follows the factory.** With several, Home (Ctrl+Shift+H) is the shown factory's: its Home
+items, its pals' questions, approvals, cards and stuck topics, its pals' work in progress, and its
+foreman's desk ("On <foreman>'s desk", Talk to <foreman>). A small tag by "Needs you" names the
+factory. A Home item belongs to the factory of the pal it's about (`topic`, else who added it),
+stamped as `factory` when added; an older item without the stamp goes by the same rule. Installs
+and the release track are the default factory's. A factory with no foreman yet has nobody's desk.
+Clicking a factory's foreman shows Home, as clicking the head pal does.
+
+**Commands.** `pal factory` (or `ls`, `show NAME`, both with `--json`) is anyone's to read. `new
+NAME [--template T] [--foreman Pal] [--foreman-topic T]`, `switch`, `move PAL NAME`, `foreman NAME
+[PAL]`, `rename`, `rm` are the owner's: the app's click token, as for other owner decisions. `pal
+home` lists the factory you're in (a pal: its own; the app or a shell: the shown one);
+`--factory NAME` another, `--factory all` every one.
+
+Data: `data/crew-factories.json`, written only by `pal factory …` (bin/crewfactories.py, locked):
+`{current, default_name, factories: [{id f-6hex, name ≤40, template project-crew|platform-lanes,
+foreman, foreman_topic, color, created}], pals: {<pal name>: id}}`. A broken file, an unknown
+template or an id that's gone reads as the default; nothing is repaired on disk. The app reads it
+every 3 s into shared `crew.factories` (lib/factories.js is the same model, pure); at most 12
+factories besides the default.
+
+Not yet (later phases): Platform lanes' own Home panels (lanes, parity, PR/CI/review), messages and
+the task board per factory, a foreman's inbox routing, Sleep this factory, the Chief's All
+factories level.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
