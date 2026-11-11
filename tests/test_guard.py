@@ -1,6 +1,7 @@
 """The approval gate's AGENTS.md / CLAUDE.md rules (Codex review H2, H3) and the owner gate (H1).
 Run: python3 -m unittest discover -s tests   (uses a throwaway CREW_DATA; touches nothing real)."""
 import json
+import re
 import os
 import sys
 import unittest
@@ -20,6 +21,7 @@ SHIMS.mkdir()
 (SHIMS / "hc").chmod(0o755)
 os.environ["PATH"] = f"{SHIMS}:{os.environ.get('PATH', '/usr/bin:/bin')}"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # githelp.py, beside this file
 
 import crewguard  # noqa: E402
 
@@ -860,6 +862,24 @@ class LiveBranchRefs(unittest.TestCase):
         ("", "wt", "git fetch . +refs/heads/feature:refs/heads/main"),
         ("", "wt", "git fetch {repo} feature:main"),
         ("", "wt", "git pull . feature:main"),
+        # an option's value is not the repository, nor the branch being rebased (Codex T159)
+        ("", "wt", "git fetch --jobs 1 . feature:main"),
+        ("", "wt", "git fetch --depth 1 . +feature:main"),
+        ("", "wt", "git fetch -j 1 . feature:main"),
+        ("", "wt", "git fetch --upload-pack git-upload-pack . feature:main"),
+        ("", "wt", "git pull -s ort . feature:main"),
+        ("", "wt", "git pull --jobs 1 . feature:main"),     # (git's listing says --jobs[=<n>]; it takes the 1)
+        ("", "wt", "git pull -j 1 . feature:main"),
+        ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/main . refs/heads/feature"),
+        ("", "wt", "echo feature:main | git fetch --stdin ."),
+        ("", "wt", "git rebase --empty keep feature main"),
+        ("", "wt", "git rebase --whitespace nowarn feature main"),
+        ("", "wt", "git rebase -C 1 feature main"),
+        ("", "wt", "git rebase --root --onto feature main"),
+        ("", "wt", "git checkout --conflict merge -B main feature"),
+        ("", "wt", "git switch --conflict merge -C main feature"),
+        ("", "wt", "git switch --conflict merge main && git reset --hard feature"),
+        ("", "wt", "git checkout --conflict merge main && git merge feature"),
         ("", "wt", "git push . feature:main"),
         ("", "wt", "git push {repo} +crew/x:refs/heads/main"),
         # checking it out here on the way, creating or resetting it
@@ -955,8 +975,8 @@ class LiveBranchRefs(unittest.TestCase):
     @staticmethod
     def where_checked_out(layout, template):
         """Rows that move main by working where it's checked out (held on Live only); the rest name it."""
-        return (layout == "m" and "branch -f main" not in template) or template.startswith(
-            ("git checkout main &&", "git switch main", "git worktree add ../m2 main &&"))
+        return (layout == "m" and "branch -f main" not in template) or bool(re.match(
+            r"git (checkout|switch) (--conflict merge )?main( &&|;)|git worktree add \.\./m2 main &&", template))
 
     def case(self, layout, where, template, channel="live"):
         p = self.repo(layout)
@@ -999,6 +1019,93 @@ class LiveBranchRefs(unittest.TestCase):
                 slipped.append(f"{cmd} -> {held}")
         self.assertEqual(slipped, [], "landed by hand without being held:\n  " + "\n  ".join(slipped))
         self.assertEqual(held_work, [], "ordinary work on a checked-out main was held:\n  " + "\n  ".join(held_work))
+
+    # A value that lets git carry on, for the options that take one (the sweeps below).
+    VALUES = {"jobs": "1", "depth": "1", "deepen": "1", "shallow-since": "2000-01-01", "upload-pack": "git-upload-pack",
+              "strategy": "ort", "strategy-option": "ours", "empty": "keep", "whitespace": "nowarn", "exec": "true",
+              "onto": "feature", "cleanup": "strip", "conflict": "merge", "trailer": "x:y", "negotiation-tip": "feature",
+              "negotiation-restrict": "feature", "negotiation-include": "feature", "filter": "blob:none", "log": "1",
+              "rebase": "false", "rebase-merges": "rebase-cousins", "recurse-submodules": "no", "track": "direct",
+              "server-option": "x", "shallow-exclude": "crew/x", "refmap": "", "reason": "x", "unified": "3",
+              "inter-hunk-context": "1", "C": "1", "gpg-sign": "", "signoff": "", "U": "3"}
+    # What each command does to main once its options are out of the way.
+    CORES = {"fetch": [". feature:main", ". +feature:refs/heads/main"], "pull": [". feature:main"],
+             "rebase": ["feature main"], "switch": ["-C main feature"], "checkout": ["-B main feature"],
+             "worktree add": ["-B main ../m2 feature"]}
+
+    def test_git_option_tables_match_the_installed_git(self):
+        """The gate's tables (crewguard.GIT_OPTS) say which options take a value. Checked against this
+        machine's git: every option git lists as taking one is in the table as such, and git itself
+        (run with the option and nothing after it) agrees. A newer git with a new value-taking option
+        fails here, with the line to add."""
+        import githelp
+        p = self.repo("")
+        wrong = []
+        for sub in githelp.SUBS:
+            want = githelp.table(sub, p["wt"], self.env)    # git's listing, corrected by what git does
+            have = crewguard.git_opts(sub)
+            self.assertGreater(len(want["V"]) + len(want["P"]), 5, f"couldn't read `git {sub} -h`")
+            for k in ("V", "O", "sv", "so"):
+                missing = sorted(want[k] - have[k])
+                if missing:
+                    wrong.append(f"git {sub}: {k} lacks {' '.join(missing)}")
+            for k in ("P", "sp"):
+                unknown = sorted(want[k] - have[k] - have["V" if k == "P" else "sv"] - have["O" if k == "P" else "so"])
+                if unknown:
+                    wrong.append(f"git {sub}: {k} lacks {' '.join(unknown)}")
+            # And the other way: nothing the table calls value-taking that git runs without one.
+            for name in sorted(have["V"] & (want["V"] | want["O"] | want["P"])):
+                if name not in want["V"]:
+                    wrong.append(f"git {sub}: --{name} takes no separate value, the table says it does")
+            for name in sorted(have["V"] & want["V"]):
+                if githelp.needs_value(sub, f"--{name}", p["wt"], self.env) is False and name not in crewguard.GIT_LASTARG:
+                    wrong.append(f"git {sub}: --{name} runs without a value, the table says it needs one")
+        self.assertEqual(wrong, [], "\n  " + "\n  ".join(wrong))
+
+    def test_no_option_value_hides_a_move(self):
+        """Codex T159: `git fetch --jobs 1 . topic:main` and `git rebase --empty keep topic main` moved
+        main unheld, the option's value read as the repository or as the upstream. Every option the
+        installed git lists for fetch, pull, rebase, switch, checkout and worktree add, in every
+        spelling (value as the next word, after =, abbreviated, short, stuck to the short letter),
+        put before what the command acts on, each run in a real repository with the channel on and off."""
+        import githelp
+        slipped, moved_n, ran = [], 0, 0
+        scratch = self.repo("")
+        for sub, cores in self.CORES.items():
+            t = githelp.table(sub, scratch["wt"], self.env)
+            every = t["V"] | t["O"] | t["P"]
+            def abbrev(name):
+                for n in range(3, len(name)):
+                    if sum(1 for o in every if o.startswith(name[:n])) == 1:
+                        return name[:n]
+                return None
+            forms = []
+            for name in sorted(t["V"]):
+                v = self.VALUES.get(name, "1")
+                forms += [f"--{name} {v}", f"--{name}={v}"] + ([f"--{abbrev(name)} {v}"] if abbrev(name) else [])
+            for c in sorted(t["sv"]):
+                v = self.VALUES.get(t["alias"].get(c, c), "1")
+                forms += [f"-{c} {v}", f"-{c}{v}"]
+            # The "value only after =" kind, with a word after it too: whether git takes that word
+            # is exactly what went wrong (git pull --jobs 1), so git decides here, by what moves.
+            for name in sorted(t["O"]):
+                v = self.VALUES.get(name, "1")
+                forms += [f"--{name}"] + ([f"--{name}={v}", f"--{name} {v}"] if v else []) + [f"--{name} 1"]
+            for c in sorted(t["so"]):
+                forms += [f"-{c}", f"-{c} 1", f"-{c}1"]
+            forms += [f"--{name}" for name in sorted(t["P"]) if name in ("verbose", "quiet", "force", "no-verify", "no-tags", "prune", "no-stat", "detach")]
+            for f in forms:
+                if "'" in f or '"' in f or re.search(r"(^|\s)-[cCbB](\s|$)|create|orphan|-[bB] ", f) and sub in ("switch", "checkout", "worktree add"):
+                    continue   # (these name the branch themselves: the core does that here)
+                for core in cores:
+                    for channel in ("live", "stable"):
+                        cmd, held, moved = self.case("", "wt", f"git {sub} {f} {core}", channel)
+                        ran += 1
+                        moved_n += moved and channel == "live"
+                        if moved and not held:
+                            slipped.append(f"{cmd} ({channel})")
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+        self.assertGreater(moved_n, 120, f"of {ran} commands, most must really move it (else the sweep proves little)")
 
     def test_no_harmless_option_hides_a_move(self):
         """Every way of writing the core commands with an option that changes nothing about what they

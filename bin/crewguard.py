@@ -890,38 +890,153 @@ def run_strings(cmd):
 HOOK_CWD = None   # the folder the command runs in, when the hook knows it (bin/crew-hook sets it)
 # git subcommands that move the branch that's checked out where they run.
 MOVES_HEAD = {"commit", "merge", "reset", "pull", "rebase", "cherry-pick", "revert", "am"}
-# git branch's options, as git's own parser reads them (builtin/branch.c): which take a value as a
-# separate word, and the short letters. Everything else here is a plain switch. What kind of command
-# a `git branch` is comes only from its mode options; -v, --track, --no-track, --sort, --format,
-# --color … change nothing about that (Codex T130: they had been taken for "only lists").
-BRANCH_VALUE = {"set-upstream-to", "sort", "format", "points-at"}            # --opt <value> or --opt=<value>
-BRANCH_MAYBE = {"contains", "no-contains", "merged", "no-merged"}             # the next word, if it isn't an option
-BRANCH_PLAIN = {"verbose", "quiet", "track", "no-track", "recurse-submodules", "color", "no-color", "remotes", "all",
-                "list", "show-current", "create-reflog", "edit-description", "force", "delete", "move", "copy",
-                "ignore-case", "omit-empty", "column", "no-column", "abbrev", "no-abbrev", "unset-upstream"}
-BRANCH_SHORT = {"v": "verbose", "q": "quiet", "t": "track", "r": "remotes", "a": "all", "l": "list", "f": "force",
-                "d": "delete", "D": "delete", "m": "move", "M": "move", "c": "copy", "C": "copy", "i": "ignore-case",
-                "u": "set-upstream-to"}
-# With one of these it lists, describes or sets an upstream: no branch is made, moved or removed
-# (and git refuses to mix two kinds in one command).
+# Each command's options as git 2.56.0 has them: its listing (`git <command> -h`), corrected by what it
+# does (an option it refuses without a value takes one, whatever the listing says: `git pull --jobs`).
+# tests/githelp.py builds this from the installed git; tests/test_guard.py checks these against it and
+# fails with the line to add when a newer git has a new option.
+# V: long options whose value may be the next word; O: a value only after "="; P: plain; sv / so / sp:
+# the same for short letters; alias: the long name a letter stands for.
+GIT_OPTS = {
+    "fetch": {
+        "V": "deepen depth filter jobs negotiation-include negotiation-restrict negotiation-tip refmap "
+             "server-option shallow-exclude shallow-since upload-pack",
+        "O": "recurse-submodules",
+        "P": "all append atomic auto-gc auto-maintenance dry-run force ipv4 ipv6 keep multiple negotiate-only "
+             "no-all no-append no-atomic no-auto-gc no-auto-maintenance no-deepen no-depth no-dry-run no-filter "
+             "no-force no-jobs no-keep no-multiple no-negotiate-only no-negotiation-include "
+             "no-negotiation-restrict no-negotiation-tip no-porcelain no-prefetch no-progress no-prune "
+             "no-prune-tags no-quiet no-recurse-submodules no-server-option no-set-upstream no-shallow-exclude "
+             "no-shallow-since no-show-forced-updates no-stdin no-tags no-update-head-ok no-update-shallow "
+             "no-upload-pack no-verbose no-write-commit-graph no-write-fetch-head porcelain prefetch progress "
+             "prune prune-tags quiet refetch set-upstream show-forced-updates stdin tags unshallow update-head-ok "
+             "update-shallow verbose write-commit-graph write-fetch-head",
+        "sv": "jo", "so": "", "sp": "46Pafkmnpqtuv",
+        "alias": "4=ipv4 6=ipv6 P=prune-tags a=append f=force j=jobs k=keep m=multiple o=server-option p=prune q=quiet "
+             "t=tags u=update-head-ok v=verbose"},
+    "pull": {
+        "V": "cleanup deepen depth jobs negotiation-include negotiation-restrict negotiation-tip refmap "
+             "server-option shallow-exclude shallow-since strategy strategy-option upload-pack",
+        "O": "gpg-sign log rebase recurse-submodules signoff",
+        "P": "all allow-unrelated-histories append autostash commit compact-summary dry-run edit ff ff-only force "
+             "ipv4 ipv6 keep no-all no-allow-unrelated-histories no-append no-autostash no-cleanup no-commit "
+             "no-compact-summary no-deepen no-depth no-dry-run no-edit no-ff no-force no-gpg-sign no-ipv4 no-ipv6 "
+             "no-jobs no-keep no-log no-negotiation-include no-negotiation-restrict no-negotiation-tip no-progress "
+             "no-prune no-quiet no-rebase no-recurse-submodules no-server-option no-set-upstream "
+             "no-shallow-exclude no-shallow-since no-show-forced-updates no-signoff no-squash no-stat no-strategy "
+             "no-strategy-option no-tags no-update-shallow no-upload-pack no-verbose no-verify "
+             "no-verify-signatures progress prune quiet set-upstream show-forced-updates squash stat tags "
+             "unshallow update-shallow verbose verify verify-signatures",
+        "sv": "Xjos", "so": "Sr", "sp": "46afknpqtv",
+        "alias": "4=ipv4 6=ipv6 S=gpg-sign X=strategy-option a=append f=force j=jobs k=keep o=server-option p=prune "
+             "q=quiet r=rebase s=strategy t=tags v=verbose"},
+    "push": {
+        "V": "exec push-option receive-pack recurse-submodules repo",
+        "O": "force-with-lease signed",
+        "P": "all atomic branches delete dry-run follow-tags force force-if-includes ipv4 ipv6 mirror no-all "
+             "no-atomic no-branches no-delete no-dry-run no-exec no-follow-tags no-force no-force-if-includes "
+             "no-force-with-lease no-mirror no-porcelain no-progress no-prune no-push-option no-quiet "
+             "no-receive-pack no-recurse-submodules no-repo no-set-upstream no-signed no-tags no-thin no-verbose "
+             "no-verify porcelain progress prune quiet set-upstream tags thin verbose verify",
+        "sv": "o", "so": "", "sp": "46dfnquv",
+        "alias": "4=ipv4 6=ipv6 d=delete f=force n=dry-run o=push-option q=quiet u=set-upstream v=verbose"},
+    "rebase": {
+        "V": "empty exec onto strategy strategy-option trailer whitespace",
+        "O": "gpg-sign rebase-merges",
+        "P": "abort apply autosquash autostash committer-date-is-author-date continue edit-todo ff force-rebase "
+             "fork-point ignore-whitespace interactive keep-base merge no-autosquash no-autostash "
+             "no-committer-date-is-author-date no-exec no-ff no-force-rebase no-fork-point no-gpg-sign "
+             "no-ignore-whitespace no-keep-base no-onto no-quiet no-reapply-cherry-picks no-rebase-merges "
+             "no-rerere-autoupdate no-reschedule-failed-exec no-reset-author-date no-root no-signoff no-stat "
+             "no-strategy no-strategy-option no-trailer no-update-refs no-verbose no-verify no-whitespace quiet "
+             "quit reapply-cherry-picks rerere-autoupdate reschedule-failed-exec reset-author-date root "
+             "show-current-patch signoff skip stat update-refs verbose verify",
+        "sv": "CXsx", "so": "Sr", "sp": "fimnqv",
+        "alias": "S=gpg-sign X=strategy-option f=force-rebase i=interactive m=merge n=no-stat q=quiet r=rebase-merges "
+             "s=strategy v=verbose x=exec"},
+    "switch": {
+        "V": "conflict create force-create orphan",
+        "O": "recurse-submodules track",
+        "P": "detach discard-changes force guess ignore-other-worktrees merge no-conflict no-create no-detach "
+             "no-discard-changes no-force no-force-create no-guess no-ignore-other-worktrees no-merge no-orphan "
+             "no-overwrite-ignore no-progress no-quiet no-recurse-submodules no-track overwrite-ignore progress "
+             "quiet",
+        "sv": "Cc", "so": "t", "sp": "dfmq",
+        "alias": "C=force-create c=create d=detach f=force m=merge q=quiet t=track"},
+    "checkout": {
+        "V": "conflict inter-hunk-context orphan pathspec-from-file unified",
+        "O": "recurse-submodules track",
+        "P": "auto-advance detach force guess ignore-other-worktrees ignore-skip-worktree-bits merge "
+             "no-auto-advance no-conflict no-detach no-force no-guess no-ignore-other-worktrees "
+             "no-ignore-skip-worktree-bits no-merge no-orphan no-overlay no-overwrite-ignore no-patch "
+             "no-pathspec-file-nul no-pathspec-from-file no-progress no-quiet no-recurse-submodules no-track ours "
+             "overlay overwrite-ignore patch pathspec-file-nul progress quiet theirs",
+        "sv": "BUb", "so": "t", "sp": "23dflmpq",
+        "alias": "2=ours 3=theirs U=unified d=detach f=force m=merge p=patch q=quiet t=track"},
+    "worktree add": {
+        "V": "reason",
+        "O": "",
+        "P": "checkout detach force guess-remote lock no-checkout no-detach no-force no-guess-remote no-lock "
+             "no-orphan no-quiet no-reason no-relative-paths no-track orphan quiet relative-paths track",
+        "sv": "Bb", "so": "", "sp": "dfq",
+        "alias": "d=detach f=force q=quiet"},
+    "branch": {
+        "V": "contains delete-merged forked format merged no-contains no-merged points-at set-upstream-to sort",
+        "O": "abbrev color column track",
+        "P": "all copy create-reflog delete dry-run edit-description force ignore-case list move no-abbrev "
+             "no-color no-column no-copy no-create-reflog no-delete no-dry-run no-edit-description no-force "
+             "no-format no-ignore-case no-list no-move no-omit-empty no-points-at no-quiet no-recurse-submodules "
+             "no-set-upstream-to no-show-current no-sort no-track no-unset-upstream no-verbose omit-empty quiet "
+             "recurse-submodules remotes show-current unset-upstream verbose",
+        "sv": "u", "so": "t", "sp": "CDMacdfilmqrv",
+        "alias": "a=all c=copy d=delete f=force i=ignore-case l=list m=move q=quiet r=remotes t=track "
+             "u=set-upstream-to v=verbose"},
+}
+# Options that take the next word when there is one, and stand alone as the last word (git branch
+# --contains): git doesn't "require a value" for these, but the word after them is still theirs.
+GIT_LASTARG = {"contains", "no-contains", "merged", "no-merged", "points-at"}
+# Short letters with no long name in git's listing, as the long option they mean.
+GIT_LETTERS = {"branch": {"D": "delete", "M": "move", "C": "copy"}}
+# With one of these, `git branch` lists, describes or sets an upstream: no branch is made, moved or
+# removed (and git refuses to mix two kinds in one command). What kind of command a `git branch` is
+# comes only from its mode options; -v, --track, --no-track, --sort, --format, --color … change nothing
+# about that (Codex T130: they had been taken for "only lists").
 BRANCH_QUIET_MODES = {"list", "show-current", "edit-description", "set-upstream-to", "unset-upstream",
-                      "contains", "no-contains", "merged", "no-merged", "points-at"}
+                      "contains", "no-contains", "merged", "no-merged", "points-at", "forked"}
+_git_opts = {}
 
 
-def _branch_parse(args):
-    """`git branch`'s arguments → (the options given, by full name; the names; anything not understood).
-    Clusters (-vf), abbreviations (--forc), --opt=value, values as the next word and -- are read as
-    git reads them, so an option's value is never taken for a branch name."""
-    opts, names, odd, i = set(), [], False, 0
-    every = BRANCH_VALUE | BRANCH_MAYBE | BRANCH_PLAIN
+def git_opts(sub):
+    """GIT_OPTS[sub] as sets (and alias as a dict), or None for a command without a table."""
+    if sub not in _git_opts:
+        t = GIT_OPTS.get(sub)
+        _git_opts[sub] = t and {"V": set(t["V"].split()), "O": set(t["O"].split()), "P": set(t["P"].split()),
+                                "sv": set(t["sv"]), "so": set(t["so"]), "sp": set(t["sp"]),
+                                "alias": {**dict(x.split("=", 1) for x in t["alias"].split()), **GIT_LETTERS.get(sub, {})}}
+    return _git_opts[sub]
+
+
+def git_parse(sub, args):
+    """A git command's arguments, read as git's own parser reads them → (opts, pos, odd).
+    opts: {option's long name (a short letter's long name, else the letter): its value, or True};
+    pos: what's left, in order (the repository and refspecs, the upstream and branch, the names);
+    odd: something wasn't understood (an option that isn't in the table, an ambiguous abbreviation,
+    a value that's missing). Callers treat odd as "can't tell" and hold what they'd otherwise let go.
+    Handled: --opt value and --opt=value, values only after = for the optional kind, unique
+    abbreviations (--dep 1), short letters alone, clustered (-vf) and with a value next or stuck
+    (-j 1, -j1), and -- (Codex T159: `git fetch --jobs 1 . x:main` read 1 as the repository)."""
+    t = git_opts(sub)
+    opts, pos, odd, i = {}, [], t is None, 0
+    if t is None:
+        return opts, [a for a in args if not a.startswith("-")], True
+    every = t["V"] | t["O"] | t["P"]
     while i < len(args):
         a = args[i]
         i += 1
         if a == "--":
-            names += args[i:]
+            pos += args[i:]
             break
         if a.startswith("--"):
-            name, eq, _val = a[2:].partition("=")
+            name, eq, val = a[2:].partition("=")
             full = name if name in every else None
             if not full:
                 hits = [o for o in every if o.startswith(name)] if name else []
@@ -929,25 +1044,45 @@ def _branch_parse(args):
             if not full:
                 odd = True
                 continue
-            opts.add(full)
-            if not eq and full in BRANCH_VALUE:
-                i += 1
-            elif not eq and full in BRANCH_MAYBE and i < len(args) and not args[i].startswith("-"):
-                i += 1
+            if full in t["V"]:
+                if eq:
+                    opts[full] = val
+                elif i < len(args) and (full not in GIT_LASTARG or not args[i].startswith("-")):
+                    opts[full] = args[i]
+                    i += 1
+                else:
+                    opts[full] = True
+                    odd = odd or full not in GIT_LASTARG
+            else:
+                opts[full] = val if eq else True
         elif a.startswith("-") and len(a) > 1:
             for k, ch in enumerate(a[1:]):
-                full = BRANCH_SHORT.get(ch)
-                if not full:
-                    odd = True
-                    break
-                opts.add(full)
-                if full in BRANCH_VALUE:       # -u <upstream>, or -u<upstream>
-                    if k == len(a) - 2:
+                key = t["alias"].get(ch, ch)
+                rest = a[k + 2:]
+                if ch in t["sv"]:
+                    if rest:
+                        opts[key] = rest
+                    elif i < len(args):
+                        opts[key] = args[i]
                         i += 1
+                    else:
+                        opts[key], odd = True, True
                     break
+                if ch in t["so"]:
+                    opts[key] = rest or True
+                    break
+                if ch in t["sp"]:
+                    opts[key] = True
+                    continue
+                odd = True
+                break
         else:
-            names.append(a)
-    return opts, names, odd
+            pos.append(a)
+    return opts, pos, odd
+
+
+def _branch_parse(args):
+    return git_parse("branch", args)
 
 
 def _checked_out(folder):
@@ -1000,18 +1135,30 @@ def _branch_moves(args, branch):
     opts, names, odd = _branch_parse(args)
     if odd:
         return branch in args or branch in names
+    if "delete-merged" in opts:
+        return True    # deletes whatever matches a pattern: which branches can't be read from here
     if "delete" in opts or "move" in opts:
         return branch in names
     if "copy" in opts:
         return names[-1:] == [branch]
-    if opts & BRANCH_QUIET_MODES:
+    if set(opts) & BRANCH_QUIET_MODES:
         return False
     return names[:1] == [branch]
 
 
-def _creates(args, branch):
-    """switch -c/-C, checkout -b/-B, worktree add -b/-B, --create / --force-create / --orphan (or an
-    abbreviation), with the branch as the next word, after `=`, or stuck to the letter (-Cmain)."""
+CREATES = {"switch": ("create", "force-create", "orphan"), "checkout": ("b", "B", "orphan"), "worktree add": ("b", "B")}
+
+
+def _creates(sub, args, branch):
+    """switch -c/-C, checkout -b/-B, worktree add -b/-B, --orphan: does it make (or make over) the
+    branch? Read with the command's own options (so --conflict merge -C main, -Cmain, --force-c main
+    and --create=main are all seen); when something isn't understood, by the look of the words."""
+    table = "worktree add" if sub == "worktree" and args[:1] == ["add"] else sub
+    opts, _pos, odd = git_parse(table, args[1:] if table == "worktree add" else args)
+    if any(opts.get(k) == branch for k in CREATES.get(table, ())):
+        return True
+    if not odd:
+        return False
     for i, a in enumerate(args):
         nxt = args[i + 1:i + 2] == [branch]
         if a.startswith("--"):
@@ -1036,9 +1183,9 @@ def _refspec_writes(arg, branch):
     return bool(dst) and any(fnmatch.fnmatchcase(x, dst) for x in (branch, f"refs/heads/{branch}"))
 
 
-def _local_source(names):
+def _local_source(src):
     """Is a fetch / pull's repository this checkout or a folder (git fetch . x:main, git fetch ../r …)?"""
-    src = names[0] if names else ""
+    src = src or ""
     return src == "." or src.startswith(("/", "./", "../", "~", "file:")) or os.path.isdir(os.path.expanduser(src))
 
 
@@ -1117,22 +1264,25 @@ def moved_branch(cmd, branches, live=None, strict=True):
             if sub == "symbolic-ref" and f"refs/heads/{b}" in args and (
                     len(names) >= 2 or any(a in ("-d", "--delete") or "--delete".startswith(a) and len(a) > 3 for a in args)) and hit(b):
                 return b
-            if sub in ("switch", "checkout", "worktree") and _creates(args, b) and hit(b):
+            if sub in ("switch", "checkout", "worktree") and _creates(sub, args, b) and hit(b):
                 return b
-            if sub in ("fetch", "pull", "push") and any(_refspec_writes(a.lstrip("+"), b) for a in names) \
-                    and hit(b, remote_ok=sub != "push" and not _local_source(names)):
-                return b
+            if sub in ("fetch", "pull", "push"):
+                # [<repository> [<refspec>...]], after the options and their values. A refspec that
+                # writes the branch, a --refmap that maps onto it, or refspecs from stdin (unread).
+                opts, pos, odd = git_parse(sub, args)
+                specs = names if odd else pos + [v for v in (opts.get("refmap"),) if isinstance(v, str)]
+                writes = any(_refspec_writes(a.lstrip("+"), b) for a in specs) or (sub != "push" and "stdin" in opts and bool(pos))
+                # The always-on rule lets the branch come from a real remote: only when the repository
+                # word is known for what it is (nothing odd before it) and isn't this checkout or a folder.
+                remote = sub != "push" and not odd and bool(pos) and not _local_source(pos[0])
+                if writes and hit(b, remote_ok=remote):
+                    return b
             if sub == "rebase":
-                # git rebase [--onto <x>] <upstream> <branch>: checks <branch> out and moves it.
-                pos, skip = [], False
-                for a in args:
-                    if skip:
-                        skip = False
-                    elif a in ("--onto", "-s", "--strategy", "-X", "--strategy-option", "-x", "--exec", "-C"):
-                        skip = True
-                    elif not a.startswith("-"):
-                        pos.append(a)
-                if pos[1:2] == [b] and hit(b):
+                # git rebase [--onto <x>] <upstream> <branch>, or --root [<branch>]: checks <branch>
+                # out and moves it. Not understood: the branch named at all is enough.
+                opts, pos, odd = git_parse("rebase", args)
+                target = names if odd else pos[:1] if "root" in opts else pos[1:2]
+                if b in target and hit(b):
                     return b
         if sub == "branch":   # (for the lines above: a branch deleted or renamed away earlier on this line)
             o, n, _odd = _branch_parse(args)
@@ -1141,11 +1291,18 @@ def moved_branch(cmd, branches, live=None, strict=True):
         if not live:
             continue
         branch, repo = live
-        # Where the live branch is (or is about to be) checked out.
-        if at and sub in ("switch", "checkout") and names[:1] == [branch]:
-            here[at] = _checked_out(at)[1]
-        if at and sub == "worktree" and names[:1] == ["add"] and len(names) >= 3 and names[-1] == branch:
-            here[join(at, os.path.expanduser(names[1]))] = _checked_out(at)[1]
+        # Where the live branch is (or is about to be) checked out: git switch <b>, git checkout <b>,
+        # git worktree add <dir> <b> (the words left once the options and their values are read).
+        if at and sub in ("switch", "checkout"):
+            _o, pos, odd = git_parse(sub, args)
+            if (names if odd else pos[:1]).count(branch):
+                here[at] = _checked_out(at)[1]
+        if at and sub == "worktree" and args[:1] == ["add"]:
+            _o, pos, odd = git_parse("worktree add", args[1:])
+            if odd:
+                pos = names[1:]
+            if len(pos) >= 2 and pos[-1] == branch:
+                here[join(at, os.path.expanduser(pos[0]))] = _checked_out(at)[1]
         # (git update-ref HEAD … moves whatever is checked out where it runs.)
         if (sub in MOVES_HEAD or (sub == "update-ref" and "HEAD" in args)) and repo and at:
             if at in here:

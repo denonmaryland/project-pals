@@ -512,7 +512,20 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   feature main` had slipped past; T130: so had `git branch -v -f main x`, because `-v`, `--track`
   and `--no-track` were taken for "only lists"). `git branch`'s options are read as git reads them
   (clusters, abbreviations, values, `--`), and only its mode options decide what it does; a
-  generated matrix of harmless options around the core commands is part of that test. Like the rest of the gate it catches the plain ways, not a pal
+  generated matrix of harmless options around the core commands is part of that test.
+  The same goes for `fetch`, `pull`, `push`, `rebase`, `switch`, `checkout` and `worktree add`
+  (Codex T159: `git fetch --jobs 1 . x:main` read `1` as the repository, a "real remote", and `git
+  rebase --empty keep x main` read `keep` as the upstream): `crewguard.GIT_OPTS` holds each
+  command's options as git has them (which take the next word as their value, which only after
+  `=`, which none; short letters; `git_parse` reads a command line with them), and what isn't
+  understood is treated as "can't tell" and held. The tables are built from the installed git by
+  `tests/githelp.py`: its `-h` listing corrected by what git does (`git pull -h` lists
+  `--jobs[=<n>]`, yet `git pull --jobs 1 . x:main` takes the `1`, found by running it). The tests
+  check the tables against the installed git, failing with the line to add when a newer git has a
+  new option, and sweep every option of those commands in every spelling (next word, `=`,
+  abbreviated, short, stuck) in front of what the command acts on, in real repositories, channel
+  on and off. `--refmap` onto the branch, refspecs from `--stdin` and `rebase --root <branch>` are
+  held too. Like the rest of the gate it catches the plain ways, not a pal
   set on getting round it.
   `pal update run-tests` (the background suite) only runs for the build a swap just announced.
   `pal land` no longer needs the project folder to be on the base branch: where the base is checked
