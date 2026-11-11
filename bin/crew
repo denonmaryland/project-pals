@@ -79,6 +79,8 @@ Hiring
                                      The owner or the head pal; never an approval, and unused approvals lapse.
   pal handoff back <Pal#topic>       to the brain that held it before, resuming its session when it can
   pal handoff brief [<Pal#topic>|--id h-…] | log [<Pal#topic>]   the brief a seat was handed with; who held it when
+  pal handoff limits [--json]        each awake topic's limit as its brain reports it (Claude Code, Codex), and
+                                     where to hand a seat whose brain is out
 
 Work
   pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"] [--due fri]
@@ -1209,7 +1211,7 @@ def cmd_handoff(spaces, rest):
     """pal handoff <Pal#topic> --to <brain> [--why "…"] [-n] | back <Pal#topic> | brief [<Pal#topic>|--id h-…] | log [<Pal#topic>]
     (and `take h-…`, which Project Pals types into the topic's own shell)."""
     import crewhandoff as ho
-    usage = 'pal handoff <Pal#topic> --to <claude|codex> [--why "…"] [-n] | back <Pal#topic> | brief | log'
+    usage = 'pal handoff <Pal#topic> --to <claude|codex> [--why "…"] [-n] | back <Pal#topic> | brief | log | limits'
     sub = rest[0] if rest else ""
     if sub == "take":
         rec = ho.find(rest[1] if len(rest) > 1 else "")
@@ -1227,6 +1229,41 @@ def cmd_handoff(spaces, rest):
         except OSError as e:
             ho.save({**rec, "status": "failed"})
             die(f"couldn't start {ho.brain_name(rec.get('to'))}: {e}")
+    if sub == "limits":
+        # Each awake topic's own word on its limit, fullest first: Claude Code's from its status line,
+        # Codex's from its session file. What the offer when a brain runs out stands on; until that is
+        # built, this is how a limit is seen coming (the head pal can then hand the seat over).
+        import crewsleep, crewchat
+        as_json = "--json" in rest
+        terms, rows = hc_terminals(), []
+        for s in spaces:
+            for t in s["tabs"]:
+                addr = (lead(t) or {}).get("terminal")
+                if not addr or not crewsleep.is_local(s, addr) or not is_agent(terms.get(addr)):
+                    continue
+                brain = ho.brain_key(terms[addr].get("agent"))
+                lim = None
+                if brain == "claude":
+                    lim = ho.claude_limit(load_json(crewchat.STATUS / f"{addr}.json", None))
+                elif brain == "codex":
+                    info = term_info(addr)
+                    kids = crewsleep.agent_children(info.get("pid"), addr) if info.get("pid") else []
+                    link = ho.codex_session(crewsleep.shell_cwd(info["pid"], info), crewsleep.started_ms(kids[0])) if kids else None
+                    lim = ho.codex_limit(link["transcript"]) if link else None
+                rows.append({"seat": f"{s['name']}#{chan(t)}", "terminal": addr, "brain": brain, "limit": lim,
+                             "hand_to": ho.suggest(addr, brain) if lim and lim.get("reached") else None})
+        rows.sort(key=lambda r: (-(r["limit"] or {}).get("reached", 0), -(r["limit"] or {}).get("used", -1), r["seat"]))
+        if as_json:
+            print(json.dumps(rows, indent=1))
+            return
+        for r in rows:
+            line = f"{r['seat']}  {ho.brain_name(r['brain'])}: {ho.limit_words(r['limit'])}"
+            if r["hand_to"]:
+                line += f"  →  pal handoff \"{r['seat']}\" --to {r['hand_to']}"
+            print(line)
+        if not rows:
+            print("no awake topics on this computer")
+        return
     if sub in ("brief", "log"):
         pos, o = opts(rest[1:], ("id",))
         if o.get("id"):

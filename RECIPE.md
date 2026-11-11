@@ -373,8 +373,13 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     found by the folder its session began in and by having been written since that agent started;
     when that isn't exactly one file (two Codex topics in one folder), nothing is guessed and the
     brief falls back to the screen. `codex_limit` reads Codex's own word on its limit from the
-    same file (percent of the window used, when it resets, reached or not): what the offer when
-    a brain runs out will stand on.
+    same file (percent of the window used, when it resets, reached or not), and `claude_limit`
+    Claude Code's from its status line (`crew-status/<terminal>.json`).
+  - `pal handoff limits [--json]` lists each awake topic on this computer with its brain's own
+    word on its limit, fullest first ("Claude Code: 74% of its week, resets Sun 12:00", "out
+    until Thu 16:16"), and for one that is out the command that hands its seat on (`suggest`: the
+    brain that held it before, else the other one). It reads and changes nothing. The offer when
+    a brain runs out will stand on the same data.
   - Not yet: the holder on the pal page and header, the first-time notice, the brief preview, the
     swap's look, the offer when a brain runs out, the old brain's own note, other brains as
     targets, other machines.

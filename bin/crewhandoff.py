@@ -431,6 +431,43 @@ def codex_limit(path):
     return None
 
 
+def claude_limit(status):
+    """Claude Code's limit from what its status line reports (data/crew-status/<terminal>.json:
+    rate_limits.five_hour / seven_day), as codex_limit gives it: the window that is reached, else
+    the fullest one. None when it reports none."""
+    best = None
+    for name, minutes in (("five_hour", 300), ("seven_day", 10080)):
+        w = ((status or {}).get("rate_limits") or {}).get(name)
+        if not isinstance(w, dict) or w.get("used_percentage") is None:
+            continue
+        used = float(w["used_percentage"])
+        got = {"used": used, "window_minutes": minutes, "resets_at": int(w["resets_at"]) * 1000 if w.get("resets_at") else None, "reached": used >= 100}
+        if best is None or (got["reached"], got["used"]) > (best["reached"], best["used"]):
+            best = got
+    return best
+
+
+def limit_words(lim):
+    """'97% of its week, resets Thu 16:16' / 'out until Thu 16:16'."""
+    if not lim:
+        return "no limit reported"
+    m = lim.get("window_minutes") or 0
+    window = "week" if m >= 7 * 1440 else "day" if m >= 1440 else f"{round(m / 60)} hours" if m >= 120 else f"{m} minutes" if m else "window"
+    when = time.strftime("%a %H:%M", time.localtime(lim["resets_at"] / 1000)) if lim.get("resets_at") else ""
+    if lim.get("reached"):
+        return "out" + (f" until {when}" if when else "")
+    return f"{lim['used']:.0f}% of its {window}" + (f", resets {when}" if when else "")
+
+
+def suggest(terminal, holds, installed=TRIED):
+    """Which brain to offer a seat to when its holder is out: the one that held it before, else the
+    first other brain a seat can go to. None when there is no other."""
+    prev = previous(terminal)
+    if prev and brain_key(prev.get("brain")) != brain_key(holds) and brain_key(prev.get("brain")) in installed:
+        return brain_key(prev["brain"])
+    return next((k for k in installed if k != brain_key(holds)), None)
+
+
 def story_from_screen(terminal):
     """The last readable lines of the terminal, for a brain whose sessions aren't parsed (Codex and
     the rest today). It includes whatever was on screen, so it gets the same filter."""

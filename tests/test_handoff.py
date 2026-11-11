@@ -193,6 +193,19 @@ class Seat(unittest.TestCase):
         self.assertIn("Codex", log.splitlines()[1])
         self.assertIn("holds it now", log.splitlines()[1])
 
+    def test_limits_lists_each_awake_topic_and_where_to_hand_one_that_is_out(self):
+        (self.sb["data"] / "crew-status" / "t1.json").write_text(json.dumps({"rate_limits": {"seven_day": {"used_percentage": 100, "resets_at": 1794772800}}}))
+        r = run(self.sb, "handoff", "limits")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stdout, r'Navi#checkout  Claude Code: out until \w{3} \d\d:\d\d  →  pal handoff "Navi#checkout" --to codex')
+        self.assertNotIn("Other#general", r.stdout)                                        # asleep topics have no brain to run out
+        rows = json.loads(run(self.sb, "handoff", "limits", "--json").stdout)
+        self.assertEqual((rows[0]["seat"], rows[0]["brain"], rows[0]["limit"]["reached"], rows[0]["hand_to"]), ("Navi#checkout", "claude", True, "codex"))
+        (self.sb["data"] / "crew-status" / "t1.json").write_text(json.dumps({"rate_limits": {"seven_day": {"used_percentage": 34}}}))
+        self.assertIn("Claude Code: 34% of its week", run(self.sb, "handoff", "limits").stdout)
+        self.assertNotIn("pal handoff \"", run(self.sb, "handoff", "limits").stdout)
+        self.assertIsNone(self.agent.poll())                                               # looking changes nothing
+
     def test_dry_run_shows_the_brief_and_changes_nothing(self):
         r = self.hand_over("-n")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -484,6 +497,20 @@ class CodexSessions(unittest.TestCase):
         self.assertTrue(ho.codex_limit(codex_rollout(self.root / "b", self.cwd, used=100.0))["reached"])
         self.assertTrue(ho.codex_limit(codex_rollout(self.root / "c", self.cwd, used=40.0, reached="primary"))["reached"])
         self.assertIsNone(ho.codex_limit(self.root / "nope.jsonl"))
+
+    def test_claude_codes_limit_and_the_words_for_one(self):
+        self.assertIsNone(ho.claude_limit({}))
+        self.assertIsNone(ho.claude_limit(None))
+        week = ho.claude_limit({"rate_limits": {"seven_day": {"used_percentage": 34, "resets_at": 1794772800}}})
+        self.assertEqual((week["used"], week["window_minutes"], week["reached"]), (34.0, 10080, False))
+        both = ho.claude_limit({"rate_limits": {"five_hour": {"used_percentage": 100, "resets_at": 1794772800}, "seven_day": {"used_percentage": 60}}})
+        self.assertEqual((both["window_minutes"], both["reached"]), (300, True))             # the window that is reached wins
+        self.assertRegex(ho.limit_words(week), r"^34% of its week, resets \w{3} \d\d:\d\d$")
+        self.assertRegex(ho.limit_words(both), r"^out until \w{3} \d\d:\d\d$")
+        self.assertEqual(ho.limit_words(None), "no limit reported")
+        self.assertEqual(ho.suggest("t-none", "codex"), "claude")                           # never held by another: the other brain
+        self.assertEqual(ho.suggest("t-none", "claude"), "codex")
+        self.assertIsNone(ho.suggest("t-none", "codex", installed=("codex",)))
 
     def test_a_process_start_time(self):
         import crewsleep
