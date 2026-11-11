@@ -1055,7 +1055,7 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
         return True
     landed, deadline = False, time.time() + wait
     while time.time() < deadline and not landed:
-        time.sleep(1)
+        time.sleep(0.5)
         if trust_prompt(screen(addr)):
             ho.release(addr)
             say(said)
@@ -1068,11 +1068,9 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
         say(f"{ho.brain_name(to)} didn't start in {label} within {int(wait)}s (not signed in? look at that tab). Its seat is empty; "
             f"put {ho.brain_name(frm)} back with: {undo}")
         return False
-    # Held a little longer: until its first turn is under way, so nothing is typed over its first message.
-    until = time.time() + min(15.0, wait)
-    while time.time() < until and (hc_terminals().get(addr) or {}).get("status") != "working":
-        time.sleep(1)
-    ho.release(addr)
+    # Held a little longer, by the marker's own clock: until its first turn is under way, so nothing
+    # is typed over its first message. Nobody waits on it (found live: waiting here cost 15s).
+    ho.hold(addr, hid, 12)
     ho.save({**(ho.load(addr, hid) or hrec), "landed": now_ms()})
     say(said)
     return True

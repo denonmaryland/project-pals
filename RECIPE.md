@@ -308,8 +308,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     brief counts what was removed, and a quoted line can't pose as a header. The first message is
     short and the same for every brain: who handed the seat over, "Picking up: …", and
     `pal handoff brief` for the rest.
-  - The CLI then watches for the new agent (20s) and keeps the desk held until its first turn is
-    under way. If it never starts, it says so, releases the desk and names the way back
+  - The CLI then watches for the new agent (20s); once it is there the desk stays held 12s more
+    (the marker's own clock), so nothing is typed over its first message. If it never starts, it says so, releases the desk and names the way back
     (`pal handoff back`). A folder-trust question counts as started and is the owner's to answer.
   - `pal handoff back <Pal#topic>` hands the seat to the brain that held it before. Where wake's
     rules can vouch for that brain's own session (kept in the seat's history) it resumes it and the

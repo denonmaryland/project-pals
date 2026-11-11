@@ -144,7 +144,7 @@ def log_lines(terminal):
         line = f"{brain_name(h['brain'])}  from {when}"
         if h.get("until"):
             left = h.get("left") or {}
-            line += f", {span(h.get('from'), h['until']) or 'until'} · handed over {time.strftime('%b %d %H:%M', time.localtime(h['until'] / 1000))}"
+            line += (f", {span(h['from'], h['until'])}" if h.get("from") else "") + f" · handed over {time.strftime('%b %d %H:%M', time.localtime(h['until'] / 1000))}"
             line += f" by {left.get('by') or '?'}" + (f" ({left['why']})" if left.get("why") else "") + (f" · brief {left['brief']}" if left.get("brief") else "")
             if (h.get("link") or {}).get("session"):
                 line += " · session kept"
@@ -347,13 +347,15 @@ def build_brief(*, hid, space, tab, terminal, frm, to, by, via, why, cwd, link, 
     facts = seat_facts(space, tab, terminal)
     git = git_facts(cwd, since_ms=(back or {}).get("at"))
     reply, asked = story_from_session(link)
-    source = f"{brain_name(frm)}'s last reply"
+    source, said = f"{brain_name(frm)}'s last reply", bool(reply)
     if not reply:
         reply, source = story_from_screen(terminal), f"{brain_name(frm)}'s screen (its session isn't readable yet)"
     if not reply:
         source = "none: nothing readable from the old session"
     task = next((t for t in facts["tasks"] if t["status"] == "claimed"), None) or (facts["tasks"][0] if facts["tasks"] else None)
-    lead = first_sentences(redact(reply, {})) if reply else ""
+    # The one-line "Picking up" quotes the old brain only when it is its own reply: screen lines
+    # carry prompts and chrome (found live), so they stay in "Where it stands", marked as the screen.
+    lead = first_sentences(redact(reply, {})) if said else ""
     picking = (f"{task['id']} {task['title']}" + (f": {lead}" if lead else "")) if task else (lead or (topic_brief.strip()[:200] if topic_brief else f"the work in #{topic}"))
     picking = unforge(redact(picking, counts))
 

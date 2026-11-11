@@ -309,6 +309,17 @@ class Seat(unittest.TestCase):
         seat = json.loads((self.sb["data"] / "crew-seats" / "t1.json").read_text())
         self.assertEqual([h["brain"] for h in seat["holders"]], ["claude", "codex", "claude"])
 
+    def test_a_brain_with_no_readable_session_gives_its_screen_and_the_picking_up_line_stays_clean(self):
+        (self.sb["data"] / "crew-sessions" / "t1.json").unlink()
+        self.tabs["t1"] = ts.agent_tab(self.sb, "t1", 7001, self.agent, screen=["bash-5.3$ claude", "● The retry guard is in.", *ts.IDLE[1:]])
+        ts.make_fake_proc(self.sb["proc"], 7001, comm="bash", children=[self.agent.pid], address="t1", cwd=str(self.work))
+        ts.write_state(self.sb, self.spaces, self.tabs)
+        r = self.hand_over("-n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("story from Claude Code's screen", r.stdout)
+        self.assertIn("## Picking up\nT41 Stop the double charge\n", r.stdout)          # the task alone: no screen text in the one-liner
+        self.assertIn("The retry guard is in.", r.stdout)                                  # the screen is quoted under Where it stands
+
     def test_hand_back_starts_fresh_when_the_session_cant_be_vouched_for(self):
         self.assertEqual(self.hand_over().returncode, 0)
         self.agent.wait(timeout=5)
