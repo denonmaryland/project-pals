@@ -1097,6 +1097,9 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
     link = links.get(addr)
     if link and ho.brain_key(link.get("harness") or "claude") != frm:
         link = None   # an earlier holder's session, not this one's
+    if not link and frm == "codex" and agent:
+        # Codex links nothing itself: its session is found by its folder and when it started.
+        link = ho.codex_session(cwd, crewsleep.started_ms(agent))
     import crewguard
     would_void = [r.get("command") or "" for r in crewguard.all_requests() if r.get("terminal") == addr and r.get("status") in ("approved", "pending")]
     hid = "h-preview" if dry else new_id("h-")
@@ -1147,7 +1150,7 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
             crewchat.link(addr, old["transcript"], old["session"], source="resume", harness=old.get("harness") or "claude")
     hrec = {"id": hid, "terminal": addr, "seat": seat_spec, "from": frm, "to": to, "by": by, "via": via, "why": why or "", "at": now_ms(),
             "back": bool(back), "resumed": bool(extra), "session": old["session"] if extra else None,
-            "kept_session": bool(link and link.get("session")), "voided": len(voided), "argv": [*base, *extra], "agy": bool(brain.get("agy")),
+            "kept_session": bool(link and link.get("session")) and crewsleep.kind(frm, [frm]) is not None, "voided": len(voided), "argv": [*base, *extra], "agy": bool(brain.get("agy")),
             "status": "started", **{k: meta[k] for k in ("picking", "story", "filtered", "carry", "lines", "tasks", "cards", "rooms", "branch")}}
     hrec["message"] = ho.first_message(hrec, "" if extra else (brain.get("hint") or ""))
     ho.save(hrec, md)

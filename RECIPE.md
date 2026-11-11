@@ -365,6 +365,16 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     refusal's reason comes back as a toast. Handing to the brain that held the seat just before
     is a hand back, by name too (`--to`), so it resumes. The row is left out for a pal on another
     machine, for the head pal, and when only one of those brains is installed.
+  - A seat held by Codex gets its story from Codex's own session file, not its screen
+    (`codex_session`, `story_from_codex`; codex-cli 0.167's rollout files under
+    `~/.codex/sessions/`): the last turn's last message and the last three things asked of it,
+    never its reasoning, tool calls or their output, nor the instruction files and environment
+    note Codex puts in the user's place. Codex links nothing to its terminal, so the file is
+    found by the folder its session began in and by having been written since that agent started;
+    when that isn't exactly one file (two Codex topics in one folder), nothing is guessed and the
+    brief falls back to the screen. `codex_limit` reads Codex's own word on its limit from the
+    same file (percent of the window used, when it resets, reached or not): what the offer when
+    a brain runs out will stand on.
   - Not yet: the holder on the pal page and header, the first-time notice, the brief preview, the
     swap's look, the offer when a brain runs out, the old brain's own note, other brains as
     targets, other machines.
