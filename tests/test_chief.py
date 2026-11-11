@@ -287,7 +287,8 @@ class TheChiefsToolCalls(unittest.TestCase):
         "git reflog show --output=x", "git reflog --output=x", "git -C /p log --output=x", "cd /p && git diff --output=x",
         "git blame -- main --output=a", "git shortlog -- --output=x.out -3",          # these two take it even after "--"
         f"git log --output={'{home}'}/log.txt",                                # even into its own folder: a redirect does that
-        "git grep -O TODO", "git grep -Oless TODO", "git grep -nO TODO", "git grep --open-files-in-pager TODO", "git grep --open-files-in-pager=less TODO",
+        "git grep -O TODO", "git grep -Oless TODO", "git grep -nO TODO", "git grep -1O TODO", "git grep -2nO TODO", "git grep -10Oless TODO",
+        "git grep -v1O TODO", "git grep -5 -O TODO", "git grep -hIO TODO", "git grep -xO TODO",          # T141: digits (context) before the O "git grep --open-files-in-pager TODO", "git grep --open-files-in-pager=less TODO",
         "git grep --open=less TODO", "git grep --op TODO", "git grep --open-files-in=less TODO", "git grep --open-files-in-page=less TODO",   # git takes these as the same option
         "git format-patch -o /p/out HEAD~1", "git format-patch HEAD~1", "git archive -o /p/x.tar HEAD", "git archive --output=x.zip HEAD",
         "git bundle create /p/x.bundle HEAD", "git notes add -m x", "git stash", "git apply x.diff",
@@ -295,7 +296,8 @@ class TheChiefsToolCalls(unittest.TestCase):
     GIT_STILL_READS = (
         "git log -p --output-indicator-new=+ -3", "git diff --stat HEAD~1", "git diff -Oorderfile", "git log --oneline -- output",
         "git show HEAD:README.md", "git blame README.md", "git shortlog -sn", "git rev-list --count HEAD",
-        "git grep -n TODO", "git grep -e OK", "git grep -eOK", "git grep -c -i output", "git grep -n TODO -- -O", "git grep --only-matching TODO", "git grep -e a --or -e b", "git grep -o TODO",
+        "git grep -n TODO", "git grep -e OK", "git grep -eOK", "git grep -c -i output", "git grep -n TODO -- -O", "git grep -3 TODO", "git grep -n2 TODO", "git grep -C2 TODO", "git grep -A1 -B1 TODO",
+        "git grep -fOwners", "git grep -m1 TODO", "git grep -1eO", "git grep --only-matching TODO", "git grep -e a --or -e b", "git grep -o TODO",
     )
 
     def test_git_reads_dont_write_files(self):
@@ -501,6 +503,8 @@ class TheGateAgainstRealGit(unittest.TestCase):
         live = [
             f"git grep --open={P} needle", f"git grep --open-files-in={P} needle", f"git grep --open-files-in-page={P} needle",   # Codex's three
             f"git grep --open-files-in-pager={P} needle", f"git grep -O{P} needle", f"git grep -nO{P} needle", f"git grep --op={P} needle",
+            f"git grep -1O{P} needle", f"git grep -2nO{P} needle", f"git grep -10O{P} needle", f"git grep -v1O{P} absent",        # Codex's four (T141)
+            f"git grep -hIO{P} needle", f"git grep -c3wO{P} needle", f"git grep -5 -O{P} needle",
             f"GIT_EXTERNAL_DIFF={P} git diff", f"env GIT_EXTERNAL_DIFF={P} git diff", f"export GIT_EXTERNAL_DIFF={P}; git diff",
             f"GIT_EXTERNAL_DIFF={P} sh -c 'git diff'",
             f"git -c diff.external={P} diff", f"git -c diff.external={P} log -p -1 --ext-diff", f"git -c diff.external={P} show --ext-diff",
@@ -514,6 +518,23 @@ class TheGateAgainstRealGit(unittest.TestCase):
         why = self.refusals(live)
         for cmd in live:
             self.assertTrue(why[cmd], f"starts a program or writes a file, and passed: {cmd}")
+
+    def test_no_cluster_of_grep_options_reaches_the_pager(self):
+        """Short options in every order, digits among them, with -O<program> somewhere: whichever
+        the gate lets through must not start it. (A list of what may precede the O missed digits.)"""
+        P = shlex.quote(str(self.prog))
+        letters = "0123456789abcehilnopqrvwzABCEFGHILPWfm"
+        rnd = random.Random(141)
+        clusters = [f"-{c}O{P}" for c in letters] + [f"-{c}{d}O{P}" for c in "159nvhcIw" for d in "0123nvABCem"]
+        clusters += ["-" + "".join(rnd.choice(letters) for _ in range(rnd.choice((2, 3, 4)))) + f"O{P}" for _ in range(120)]
+        clusters += [f"-{c} -O{P}" for c in ("1", "n", "5n", "C2", "e needle")] + [f"-O{P}", "-O", f"-e needle -O{P}"]
+        cmds = list(dict.fromkeys(f"git grep {c} needle" for c in clusters))
+        why = self.refusals(cmds)
+        started = [c for c in cmds if self.real(c)]
+        self.assertGreater(len(started), 60, "plenty of these really start the program")
+        for cmd in started:
+            self.assertTrue(why[cmd], f"started the program, and passed: {cmd}")
+        self.assertEqual(self.state(), self.before)
 
     def test_what_passes_starts_nothing_and_changes_nothing(self):
         P, M = shlex.quote(str(self.prog)), shlex.quote(str(self.mark))

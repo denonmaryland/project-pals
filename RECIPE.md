@@ -1156,7 +1156,9 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   A reading subcommand still may not write a file or start a program: `--output[=FILE]` (a diff
   option, so log, show, diff, blame, shortlog, rev-list and reflog show all take it, blame and
   shortlog even after `--`) is refused anywhere in the command, and so is `git grep -O` /
-  `--open-files-in-pager`, cut short too (`--open=less`); the refusal says to redirect into its
+  `--open-files-in-pager`, cut short too (`--open=less`) or with -O anywhere in a cluster of short
+  options (`-nO`, `-1O`, `-10O`: read letter by letter as git does, stopping at one that takes a
+  value, `-e -f -A -B -C -m`); the refusal says to redirect into its
   own folder instead. Nor may the command set git up to run one: before the subcommand only `-C`,
   `--git-dir`, `--work-tree`, `--no-pager` / `-P`, a few pathspec switches and `-c` with
   `color.*`, `core.quotepath`, `advice.*`, `log.date` or `log.decorate` pass (so no

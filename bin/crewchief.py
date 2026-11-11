@@ -212,14 +212,26 @@ GIT_MIXED = {
 # show, diff, blame, shortlog, rev-list and reflog show all take it, and git opens (and empties)
 # FILE as it reads the option. `git grep -O` opens the matching files in a program. Neither is a
 # read. (format-patch -o, archive -o and bundle create aren't reading subcommands at all.)
-_GREP_OPENS = re.compile(r"-[abchiIlLnopPqrvwWzEFGH0]*O")
+_GREP_TAKES_VALUE = set("efABCm")     # grep's short options whose value is the rest of the word (-eOK searches for "OK")
 
 
 def _grep_opens(a):
-    """-O (alone, with its program, or in a cluster of flags), or --open-files-in-pager in any
-    spelling git takes: it accepts a long option cut short, so --open=less is the same thing."""
-    name = a.partition("=")[0]
-    return bool(_GREP_OPENS.match(a)) or (len(name) > 3 and "--open-files-in-pager".startswith(name))
+    """-O (alone, with its program, or anywhere in a cluster of short options), or
+    --open-files-in-pager in any spelling git takes: it accepts a long option cut short, so
+    --open=less is the same thing. A cluster is read as git reads it, letter by letter, and no
+    list of what may stand before the O is kept: the first one named only letters and 0, and
+    -1O, -2nO and -10O (lines of context, then -O) went past it (Codex, T141)."""
+    if a.startswith("--"):
+        name = a.partition("=")[0]
+        return len(name) > 3 and "--open-files-in-pager".startswith(name)
+    if not a.startswith("-"):
+        return False
+    for ch in a[1:]:
+        if ch == "O":
+            return True
+        if ch in _GREP_TAKES_VALUE:             # the rest is its value, not options
+            return False
+    return False
 
 
 def git_writes_a_file(sub, args):
