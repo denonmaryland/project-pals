@@ -215,6 +215,10 @@ install -m 644 "$src"/bin/crew*.py "$HOME/.local/lib/herdr-crew/"
 # through it (PR #2).
 # prompt card).
 rm -f "$HOME/.local/lib/herdr-crew/crewprompt.py"
+# crewhelper.py (singular) is the helper module of the build that went live unreviewed on 2026-11-10
+# (7692987): its check accepted a request without a key. Nothing imports it now (crewhelpers.py
+# replaced it), but a copy of the installer doesn't remove what an older one placed, so say so.
+rm -f "$HOME/.local/lib/herdr-crew/crewhelper.py"
 
 if [[ $helpers -eq 1 ]]; then
   # crewd, as a user service (needs a systemd user session: not in most containers or WSL).

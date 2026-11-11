@@ -180,6 +180,17 @@ class Uninstall(unittest.TestCase):
         for gone in ("crew-install.json", "crew-footprint.json", "crew-originals"):
             self.assertFalse((data / gone).exists(), gone)
 
+    def test_an_install_takes_out_the_unreviewed_builds_helper_module(self):
+        """Build 7692987 left crewhelper.py (its weak check) in the library folder; the installer only
+        copies files in, so it has to name what it retires (as it does crewprompt.py)."""
+        self.sb.install()
+        lib = self.sb.home / ".local" / "lib" / "herdr-crew"
+        (lib / "crewhelper.py").write_text("def authenticate():\n    return True\n")
+        self.assertTrue((lib / "crewhelpers.py").is_file())
+        self.sb.install()
+        self.assertFalse((lib / "crewhelper.py").exists())
+        self.assertTrue((lib / "crewhelpers.py").is_file(), "the reviewed module stays")
+
     def test_trusted_helpers_keys_go_and_only_those(self):
         """T116: a helper's key is a secret Project Pals made after the install; it doesn't outlive it.
         Anything else in that folder is the person's and stays; a link is never followed."""
