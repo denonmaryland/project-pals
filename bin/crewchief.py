@@ -212,7 +212,14 @@ GIT_MIXED = {
 # show, diff, blame, shortlog, rev-list and reflog show all take it, and git opens (and empties)
 # FILE as it reads the option. `git grep -O` opens the matching files in a program. Neither is a
 # read. (format-patch -o, archive -o and bundle create aren't reading subcommands at all.)
-_GREP_OPENS = re.compile(r"-[abchiIlLnopPqrvwWzEFGH0]*O|--open-files-in-pager(=|$)")
+_GREP_OPENS = re.compile(r"-[abchiIlLnopPqrvwWzEFGH0]*O")
+
+
+def _grep_opens(a):
+    """-O (alone, with its program, or in a cluster of flags), or --open-files-in-pager in any
+    spelling git takes: it accepts a long option cut short, so --open=less is the same thing."""
+    name = a.partition("=")[0]
+    return bool(_GREP_OPENS.match(a)) or (len(name) > 3 and "--open-files-in-pager".startswith(name))
 
 
 def git_writes_a_file(sub, args):
@@ -225,8 +232,64 @@ def git_writes_a_file(sub, args):
         for a in args:
             if a == "--":                       # paths from here on
                 break
-            if _GREP_OPENS.match(a):
+            if _grep_opens(a):
                 return "-O opens the files it finds in a program"
+    if any(len(a) > 4 and "--ext-diff".startswith(a) for a in args):
+        return "--ext-diff runs an external diff program"
+    if sub == "help":                           # as text only: -w opens a browser, -i an info reader
+        odd = next((a for a in args if a.startswith("-") and a not in _HELP_OK), None)
+        if odd:
+            return f"{odd} isn't one of help's plain forms (git help <command>, -a, -g, -c)"
+    return None
+
+
+# What goes in front of a git subcommand decides what git runs as much as the subcommand does:
+# -c diff.external=PROG, -c core.fsmonitor=PROG, -c alias.x=!PROG, --config-env and --exec-path
+# name a program, and so do GIT_EXTERNAL_DIFF, GIT_CONFIG_COUNT/KEY/VALUE, GIT_SSH_COMMAND … in the
+# environment (GIT_TRACE=FILE writes one). The Chief's git runs with the settings the repo and the
+# owner already have: only these few harmless ones may be added. (What the owner's own config
+# makes git run for everyone, an external diff or a file-system monitor, is theirs and still runs.)
+_HELP_OK = {"-a", "--all", "-g", "--guides", "-c", "--config", "-m", "--man", "-v", "--verbose", "--no-verbose",
+            "--no-external-commands", "--no-aliases"}
+GIT_GLOBAL_FLAGS = {"--no-pager", "-P", "--no-optional-locks", "--no-replace-objects", "--literal-pathspecs", "--glob-pathspecs",
+                    "--noglob-pathspecs", "--icase-pathspecs", "--bare", "--no-lazy-fetch", "--no-advice"}
+GIT_GLOBAL_VALUED = {"-C", "--git-dir", "--work-tree"}
+GIT_CONFIG_OK = re.compile(r"(?:color\.[\w.-]+|core\.quotepath|advice\.\w+|log\.date|log\.decorate)(?:=.*)?", re.I | re.S)
+GIT_ENV_OK = {"GIT_TERMINAL_PROMPT", "GIT_OPTIONAL_LOCKS", "GIT_NO_REPLACE_OBJECTS", "GIT_LITERAL_PATHSPECS", "GIT_DIR", "GIT_WORK_TREE",
+              "GIT_CEILING_DIRECTORIES", "GIT_CONFIG_NOSYSTEM", "GIT_NO_LAZY_FETCH", "GIT_ADVICE"}
+SETS_ENV = {"export", "declare", "typeset", "readonly", "local"}
+
+
+def git_env_refusal(words):
+    """The first NAME=value among these words that sets git up to run a program or write a file, or
+    None. A pager of nothing or `cat` is the one setting agents add by habit, and it's harmless."""
+    for w in words:
+        m = re.fullmatch(r"([A-Za-z_]\w*)=(.*)", w, re.S)
+        if not m:
+            continue
+        name, value = m.group(1), m.group(2)
+        if name in ("GIT_PAGER", "PAGER"):
+            if value.strip() not in ("", "cat"):
+                return name
+        elif name.startswith("GIT_") and name not in GIT_ENV_OK:
+            return name
+    return None
+
+
+def git_global_refusal(opts):
+    """The first of git's own options (the ones before the subcommand) that isn't a harmless one, or None."""
+    i = 0
+    while i < len(opts):
+        o = opts[i]
+        i += 1
+        if o in GIT_GLOBAL_VALUED:
+            i += 1
+        elif o == "-c":
+            if i >= len(opts) or not GIT_CONFIG_OK.fullmatch(opts[i]):
+                return f"-c {opts[i].partition('=')[0]}" if i < len(opts) else "-c"
+            i += 1
+        elif not (o in GIT_GLOBAL_FLAGS or o.partition("=")[0] in ("--git-dir", "--work-tree") and "=" in o):
+            return o.partition("=")[0]
     return None
 
 
@@ -327,15 +390,25 @@ def hook_refusal(tool, inp, cwd=None):
         return None
     import crewguard
     cmd = inp.get("command") or ""
-    for seg in crewguard.commands(cmd):
-        words = crewguard.normal_words(seg)
+    for seg in crewguard.commands(cmd, lead=True):   # with its VAR=value settings: git's environment counts
+        dropped = {}
+        words = crewguard.normal_words(seg, dropped)
+        head = os.path.basename(words[0]) if words else ""
+        rest = words[1:]
+        name = git_env_refusal(dropped.get("env", []) + (rest if head in SETS_ENV else []))
+        if name:
+            return (f"the {NAME} runs git with the settings the repo already has: {name} in the environment can make git run a program "
+                    f"or write a file. Leave it out (GIT_PAGER=cat and --no-pager are fine), or hand it to {inbox_label()}.")
         if not words:
             continue
-        head = os.path.basename(words[0])
-        rest = words[1:]
         if head == "hc" and rest and rest[0] in HC_WRITES:
             return f"the {NAME} doesn't type into or run terminals (hc {rest[0]}); it reads them with pal peek."
         if head == "git":
+            opt = git_global_refusal(dropped.get("git", []))
+            if opt:
+                return (f"the {NAME} runs git with the settings the repo already has: `git {opt} …` can name a program for git to run "
+                        f"(only -C, --git-dir, --work-tree, --no-pager and -c color.* / core.quotepath / advice.* / log.date go before "
+                        f"the subcommand). Leave it out, or hand it to {inbox_label()}.")
             j = 0   # past git's own options (-C dir, -c k=v, --no-pager…)
             while j < len(rest) and rest[j].startswith("-"):
                 j += 2 if rest[j] in crewguard.GIT_VALUE_OPTS else 1

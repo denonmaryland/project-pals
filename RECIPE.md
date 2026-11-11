@@ -1153,6 +1153,22 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   name with nothing that makes it a listing is a write (`git branch x`, `git branch -v x`,
   `git tag x`), and so is `git config name [value]`; config's reading option must come before the
   name (`git config user.name --get` sets it to "--get"). The refusal names the read forms.
+  A reading subcommand still may not write a file or start a program: `--output[=FILE]` (a diff
+  option, so log, show, diff, blame, shortlog, rev-list and reflog show all take it, blame and
+  shortlog even after `--`) is refused anywhere in the command, and so is `git grep -O` /
+  `--open-files-in-pager`, cut short too (`--open=less`); the refusal says to redirect into its
+  own folder instead. Nor may the command set git up to run one: before the subcommand only `-C`,
+  `--git-dir`, `--work-tree`, `--no-pager` / `-P`, a few pathspec switches and `-c` with
+  `color.*`, `core.quotepath`, `advice.*`, `log.date` or `log.decorate` pass (so no
+  `-c diff.external=…`, `-c core.fsmonitor=…`, `-c alias.…`, `--config-env`, `--exec-path`,
+  `--paginate`); in the environment (a `VAR=value` before the command, `env`, `export`,
+  `declare`) no `GIT_*` but a short harmless list, and `GIT_PAGER` / `PAGER` only empty or `cat`;
+  no `--ext-diff`; `git help` only as text (not `-w`, `-i`). What the owner's own git config makes
+  git run for everyone (an external diff on plain `git diff`, a file-system monitor, textconv,
+  gpg) is theirs and still runs. `tests/test_chief.py` runs these against the real git
+  (`TheGateAgainstRealGit`): every listed form really starts a stand-in program or writes a file
+  and is refused, and whatever a sweep of spellings gets past the gate starts nothing and changes
+  nothing.
 - **The pop-up** (`toggleChief`, `crew-roster.chief`, **Ctrl+Shift+J**, bound by install.sh when free
   and taken out by the uninstaller; also "Chief" in the gear menu and command bar): a Herdr window
   (`key: "chief"`, `keep: true`, so it comes back where it was dropped and after a restart). Split

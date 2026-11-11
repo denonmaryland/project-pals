@@ -6,8 +6,13 @@ outside its folder; only the owner hires it.
 Runs in subprocesses with a throwaway HOME, data folder and fake hc / herdr-app / systemctl, like
 test_desk: python3 -m unittest discover -s tests
 """
+import hashlib
+import itertools
 import json
 import os
+import random
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -283,13 +288,14 @@ class TheChiefsToolCalls(unittest.TestCase):
         "git blame -- main --output=a", "git shortlog -- --output=x.out -3",          # these two take it even after "--"
         f"git log --output={'{home}'}/log.txt",                                # even into its own folder: a redirect does that
         "git grep -O TODO", "git grep -Oless TODO", "git grep -nO TODO", "git grep --open-files-in-pager TODO", "git grep --open-files-in-pager=less TODO",
+        "git grep --open=less TODO", "git grep --op TODO", "git grep --open-files-in=less TODO", "git grep --open-files-in-page=less TODO",   # git takes these as the same option
         "git format-patch -o /p/out HEAD~1", "git format-patch HEAD~1", "git archive -o /p/x.tar HEAD", "git archive --output=x.zip HEAD",
         "git bundle create /p/x.bundle HEAD", "git notes add -m x", "git stash", "git apply x.diff",
     )
     GIT_STILL_READS = (
         "git log -p --output-indicator-new=+ -3", "git diff --stat HEAD~1", "git diff -Oorderfile", "git log --oneline -- output",
         "git show HEAD:README.md", "git blame README.md", "git shortlog -sn", "git rev-list --count HEAD",
-        "git grep -n TODO", "git grep -e OK", "git grep -eOK", "git grep -c -i output", "git grep -n TODO -- -O",
+        "git grep -n TODO", "git grep -e OK", "git grep -eOK", "git grep -c -i output", "git grep -n TODO -- -O", "git grep --only-matching TODO", "git grep -e a --or -e b", "git grep -o TODO",
     )
 
     def test_git_reads_dont_write_files(self):
@@ -332,6 +338,40 @@ class TheChiefsToolCalls(unittest.TestCase):
             self.assertFalse(self.denied("tC", "Bash", {"command": cmd}, str(self.home)), cmd)
         # Another pal's git is not the Chief's business.
         self.assertFalse(self.denied("tW", "Bash", {"command": "git branch review-notes"}))
+
+    # T133: what goes before the subcommand, and git's environment, decide what git runs too.
+    GIT_SETUP = (
+        "git -c diff.external=/p/x diff", "git -c core.pager=less log", "git -c core.fsmonitor=/p/x status", "git -c alias.st=!x st",
+        "git -c core.sshCommand=x remote show origin", "git -C /p -c pager.log=x log", "git -c user.name=X log", "git -c",
+        "git --config-env=diff.external=PX diff", "git --exec-path=/p log", "git --paginate log", "git -p log", "git --namespace=x log",
+        "GIT_EXTERNAL_DIFF=/p/x git diff", "env GIT_EXTERNAL_DIFF=/p/x git diff", "GIT_PAGER=less git log", "PAGER=/p/x git log",
+        "GIT_SSH_COMMAND=x git remote show origin", "GIT_EXEC_PATH=/p git log", "GIT_TRACE=/p/trace git status", "GIT_EDITOR=x git log",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=/p/x git diff", "GIT_CONFIG_GLOBAL=/p/cfg git status",
+        "export GIT_EXTERNAL_DIFF=/p/x; git diff", "export GIT_PAGER=less && git log", "declare -x GIT_EXTERNAL_DIFF=/p/x; git diff",
+        "GIT_EXTERNAL_DIFF=/p/x; export GIT_EXTERNAL_DIFF; git diff", "GIT_EXTERNAL_DIFF=/p/x sh -c 'git diff'",
+        "git diff --ext-diff", "git log -p --ext-diff -1", "git show --ext-diff",
+        "git help -w log", "git help --web log", "git help -i log", "git help --info log", "git help --w log",
+    )
+    GIT_SETUP_OK = (
+        "git --no-pager log -3", "git -P diff", "git -C /p status", "git --git-dir=/p/.git log", "git --git-dir /p/.git --work-tree /p status",
+        "git -c color.ui=never diff", "git -C /p -c core.quotepath=false ls-files", "git -c advice.detachedHead=false status",
+        "git -c log.date=iso log -1", "GIT_PAGER=cat git log", "GIT_PAGER= git diff", "PAGER=cat git show HEAD", "GIT_TERMINAL_PROMPT=0 git remote -v",
+        "GIT_OPTIONAL_LOCKS=0 git status", "LC_ALL=C TZ=UTC git log -1", "export GIT_PAGER=cat; git log -1", "export LANG=C",
+        "git help log", "git help -a", "git help -g", "git log --help", "git diff --no-ext-diff",
+    )
+
+    def test_git_runs_with_the_repos_own_settings(self):
+        why = self.refusals(self.GIT_SETUP)
+        for cmd in self.GIT_SETUP:
+            self.assertTrue(why[cmd], f"passed: {cmd}")
+        self.assertIn("`git -c diff.external …`", why["git -c diff.external=/p/x diff"])
+        self.assertIn("GIT_EXTERNAL_DIFF in the environment", why["GIT_EXTERNAL_DIFF=/p/x git diff"])
+        self.assertIn("GIT_PAGER=cat and --no-pager are fine", why["GIT_PAGER=less git log"])
+        self.assertIn("--ext-diff runs an external diff program", why["git diff --ext-diff"])
+        self.assertTrue(self.denied("tC", "Bash", {"command": "GIT_EXTERNAL_DIFF=/p/x git diff"}, str(self.home)))
+        ok = self.refusals(self.GIT_SETUP_OK)
+        for cmd in self.GIT_SETUP_OK:
+            self.assertIsNone(ok[cmd], f"refused: {cmd}")
 
     def test_edits(self):
         self.assertTrue(self.denied("tC", "Write", {"file_path": "/p/src/app.py", "content": "x"}, str(self.home)))
@@ -402,6 +442,118 @@ class Hiring(unittest.TestCase):
         self.assertEqual((data / "crew-chief" / "priorities.md").read_text(), "- mine\n")
         self.assertTrue((data / "crew-chief" / "decisions.md").exists())
         self.assertEqual((data / "crew-chief" / "AGENTS.md").read_text(), f"Ace for {OWNER} above Boss")
+
+
+@unittest.skipUnless(shutil.which("git"), "needs a real git")
+class TheGateAgainstRealGit(unittest.TestCase):
+    """T133 (Codex's re-review of 0.4.3's repairs): the Chief's git rules were written from git's
+    manual and git disagreed twice (`git config user.name --get` sets the name; `git grep --open=X`
+    is --open-files-in-pager). So this runs the real git in a throwaway repo, with a stand-in
+    program that leaves a marker when anything starts it:
+    - every form listed as starting a program or writing a file really does, here, and is refused;
+    - whatever the gate allows, from a sweep of spellings, starts nothing and changes nothing."""
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+        self.home = self.data / "crew-chief"
+        self.home.mkdir()
+        self.repo, self.ghome, self.mark, self.prog = self.root / "repo", self.root / "ghome", self.root / "MARK", self.root / "prog"
+        self.repo.mkdir()
+        self.ghome.mkdir()
+        self.prog.write_text(f"#!/bin/sh\necho ran >> {self.mark}\nexit 0\n")
+        self.prog.chmod(0o755)
+        self.genv = {"HOME": str(self.ghome), "PATH": f"{Path(shutil.which('git')).parent}:/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1", "LANG": "C",
+                     "PX": str(self.prog)}
+        who = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+        for args in (["init", "-q", "-b", "main"], ["add", "a"], [*who, "commit", "-qm", "one"], ["branch", "old"], ["tag", "v1"],
+                     ["remote", "add", "origin", str(self.repo)]):
+            if args[0] == "add":
+                (self.repo / "a").write_text("needle one\n")
+            subprocess.run(["git", *args], cwd=self.repo, env=self.genv, check=True, capture_output=True)
+        (self.repo / "a").write_text("needle two\n")              # something for diff to show
+        self.before = self.state()
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def state(self):
+        h = hashlib.sha256()
+        for p in sorted(self.repo.rglob("*")) + sorted(self.ghome.rglob("*")):
+            rel = str(p)
+            if "/.git/objects" in rel or "/.git/logs" in rel or p.name == "index":
+                continue
+            h.update(rel.encode())
+            if p.is_file():
+                h.update(p.read_bytes())
+        return h.hexdigest()
+
+    def real(self, cmd):
+        """Run it for real. True when the stand-in program ran or the marker file was written."""
+        self.mark.unlink(missing_ok=True)
+        subprocess.run(["sh", "-c", cmd], cwd=self.repo, env=self.genv, stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+        return self.mark.exists()
+
+    def refusals(self, cmds):
+        return py(self.env, f"import crewchief\nprint(json.dumps({{c: crewchief.hook_refusal('Bash', {{'command': c}}, {str(self.repo)!r}) "
+                            f"for c in {list(cmds)!r}}}))", term="tC")
+
+    def test_what_starts_a_program_or_writes_a_file_is_refused(self):
+        P, M = shlex.quote(str(self.prog)), shlex.quote(str(self.mark))
+        live = [
+            f"git grep --open={P} needle", f"git grep --open-files-in={P} needle", f"git grep --open-files-in-page={P} needle",   # Codex's three
+            f"git grep --open-files-in-pager={P} needle", f"git grep -O{P} needle", f"git grep -nO{P} needle", f"git grep --op={P} needle",
+            f"GIT_EXTERNAL_DIFF={P} git diff", f"env GIT_EXTERNAL_DIFF={P} git diff", f"export GIT_EXTERNAL_DIFF={P}; git diff",
+            f"GIT_EXTERNAL_DIFF={P} sh -c 'git diff'",
+            f"git -c diff.external={P} diff", f"git -c diff.external={P} log -p -1 --ext-diff", f"git -c diff.external={P} show --ext-diff",
+            f"git -c core.fsmonitor={P} status", f"git -c alias.st='!'{P} st", f"git -c man.viewer=x -c man.x.cmd={P} help log",
+            f"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0={P} git diff", "git --config-env=diff.external=PX diff",
+            f"GIT_TRACE={M} git status", f"git log -1 --output={M}", f"git diff --output={M}", f"git blame -- a --output={M}",
+        ]
+        for cmd in live:
+            self.assertTrue(self.real(cmd), f"this git doesn't start it (drop it from the list?): {cmd}")
+        self.mark.unlink(missing_ok=True)
+        why = self.refusals(live)
+        for cmd in live:
+            self.assertTrue(why[cmd], f"starts a program or writes a file, and passed: {cmd}")
+
+    def test_what_passes_starts_nothing_and_changes_nothing(self):
+        P, M = shlex.quote(str(self.prog)), shlex.quote(str(self.mark))
+        env = ["", "", "", "GIT_PAGER=cat", f"GIT_PAGER={P}", f"PAGER={P}", f"GIT_EXTERNAL_DIFF={P}", f"GIT_TRACE={M}", "GIT_TERMINAL_PROMPT=0",
+               f"GIT_SSH_COMMAND={P}", f"GIT_EDITOR={P}", f"GIT_ASKPASS={P}", f"GIT_EXEC_PATH={self.root}"]
+        glob = ["", "", "", "--no-pager", "-P", "-C .", "--git-dir=.git", "-p", "--paginate", f"-c diff.external={P}", f"-c core.pager={P}",
+                f"-c core.fsmonitor={P}", f"-c core.editor={P}", f"-c pager.log={P}", f"-c pager.grep={P}", "-c color.ui=always", "-c core.quotepath=false",
+                f"--exec-path={self.root}", "--config-env=diff.external=PX", f"-c alias.log='!'{P}", f"-c core.sshCommand={P}", f"-c diff.x.textconv={P}"]
+        tails = {
+            "log": ["-1", "-p -1", "-p -1 --ext-diff", f"-1 --output={M}", "--oneline", "-1 --ext", "-1 --stat"],
+            "diff": ["", "--stat", "--ext-diff", f"--output={M}", "--no-ext-diff", "HEAD", f"--output {M}"],
+            "show": ["HEAD", "--ext-diff", f"--output={M} HEAD", "--stat HEAD"],
+            "grep": ["needle", "-n needle", f"-O{P} needle", f"--open={P} needle", f"--open-files-in-pager={P} needle", f"--op={P} needle",
+                     f"--open-files-in-={P} needle", "-O needle", f"-nO{P} needle", "--only-matching needle", "-e needle --or -e two", "-c needle"],
+            "status": ["", "--short"], "blame": ["a", f"-- a --output={M}", f"--output={M} a"], "shortlog": ["-sn HEAD", f"-sn HEAD --output={M}"],
+            "rev-list": ["--count HEAD", f"--output={M} HEAD"], "help": ["-a", f"-w log", "--web log", "-i log", "--w log"],
+            "branch": ["", "-a", "-v", "--list", "x", "-v x", "--edit-description"], "tag": ["", "-l", "x", "-n"],
+            "config": ["--list", "--get user.name", "user.name X", "user.name --get", "--edit", "-e"],
+            "remote": ["", "-v", "show -n origin", f"add up {P}", "get-url origin"], "reflog": ["", "show", f"show --output={M}", "expire --all"],
+            "worktree": ["list", "prune"], "ls-files": [""], "describe": ["--always"], "rev-parse": ["HEAD"], "for-each-ref": [""], "cat-file": ["-p HEAD"],
+            "st": [""], "difftool": ["-y", f"-y -x {P}"], "format-patch": [f"-1 -o {self.root}/out"], "archive": [f"-o {M} HEAD"],
+        }
+        rnd = random.Random(133)
+        cmds = []
+        for sub, ts in tails.items():
+            for t in ts:                                   # each form bare, then under a few settings
+                cmds.append(f"git {sub} {t}".strip())
+                for _ in range(6):
+                    cmds.append(" ".join(x for x in (rnd.choice(env), "git", rnd.choice(glob), sub, t) if x))
+        cmds = list(dict.fromkeys(cmds))
+        why = self.refusals(cmds)
+        allowed = [c for c in cmds if why[c] is None]
+        self.assertGreater(len(allowed), 60, "the sweep should let plenty of plain reads through")
+        self.assertGreater(len(cmds) - len(allowed), 200)
+        for must in ("git log -1", "git diff", "git grep -n needle", "git status", "git branch -a", "git config --list", "GIT_PAGER=cat git --no-pager log -p -1"):
+            self.assertIsNone(self.refusals([must])[must], must)
+        for cmd in allowed:
+            ran = self.real(cmd)
+            self.assertFalse(ran, f"passed the gate and started a program or wrote the marker: {cmd}")
+            self.assertEqual(self.state(), self.before, f"passed the gate and changed the repo or git's config: {cmd}")
 
 
 if __name__ == "__main__":

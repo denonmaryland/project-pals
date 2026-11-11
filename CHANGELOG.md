@@ -12,7 +12,12 @@
   without any flag that says so. Git commands that can do both now pass only in a form that
   plainly reads (`git branch --list`, `git tag -l`, `git config --get name`, `git remote -v`,
   `git worktree list`, `git reflog show`); anything else is refused, and the refusal lists the
-  reading forms. (From Codex's review of 0.4.2.)
+  reading forms. A reading command can't write a file or start a program either:
+  `git log --output=FILE` (and the same flag on diff, show, blame and the rest), `git grep -O`
+  and `--open-files-in-pager` however it's shortened, `--ext-diff`, and settings that name a
+  program for git to run (`-c diff.external=…`, `GIT_EXTERNAL_DIFF=…` and the like) are refused.
+  `--no-pager`, `GIT_PAGER=cat` and `-c color.ui=…` still work. The rules are tested against the
+  real git. (From Codex's reviews of 0.4.2 and of these fixes.)
 - **Pop out opens the topic you asked for.** Two topics whose names differ only in punctuation
   (`#build-api` and `#build_api`), or long names with the same first 48 characters, shared one
   pop-out: opening the second brought up the first one's window, where you could type into the
