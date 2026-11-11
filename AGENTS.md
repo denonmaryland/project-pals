@@ -90,7 +90,10 @@ updates, and crewd's daily check) then offers it, and refuses a tarball that doe
 another pal is not approval. From a pal, `./release X.Y.Z` is held by the approval gate (the
 `release-script` rule) until the owner clicks Approve in the Inbox: the script pushes and publishes
 inside itself, where the gate can't see those commands. Approvals not used within 30 minutes
-expire, so approve right before the run.
+expire, so approve right before the run. From a plain shell the script asks for itself (`pal
+owner-step`): it exits 3 with a request in the owner's Inbox, and the same command goes through
+once after their click. `./release X.Y.Z --dry-run` runs every check and nothing else; from a
+plain shell it asks nobody (a pal's is still held by the gate, like any release line).
 
 ## Rules of thumb
 
