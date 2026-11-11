@@ -340,6 +340,29 @@ class Seat(unittest.TestCase):
         self.assertNotIn("Ask Codex to do anything", brief)                                # its box and footer aren't the story
         self.assertNotIn("for shortcuts", brief)
 
+    def test_handing_to_the_brain_it_came_from_is_a_hand_back(self):
+        """The menu's click names the brain (--to); pal handoff sees it held the seat just before."""
+        self.assertEqual(self.hand_over().returncode, 0)
+        self.agent.wait(timeout=5)
+        self.asleep()
+        r = run(self.sb, "handoff", "Navi#checkout", "--to", "claude")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("handed Navi #checkout back to Claude Code (was Codex)", r.stdout)
+        self.assertIn(f"resuming its session {SID[:8]}", r.stdout)
+
+    def test_the_owners_click_is_recorded_as_the_owners(self):
+        clicks = self.sb["data"] / "crew-clicks"
+        clicks.mkdir(parents=True, exist_ok=True)
+        args = ["handoff", "Navi#checkout", "--to", "codex", "--notify"]
+        (clicks / ("ab" * 16 + ".json")).write_text(json.dumps({"args": args, "at": int(time.time() * 1000)}))
+        r = run(self.sb, *args, "--click", "ab" * 16)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        left = json.loads((self.sb["data"] / "crew-seats" / "t1.json").read_text())["holders"][0]["left"]
+        self.assertEqual((left["by"], left["via"]), (crewlib.OWNER, "click"))
+        self.assertTrue(any(q["op"] == "power-report" and q.get("mode") == "handoff" and not q.get("refused") for q in self.app.reports))   # the toast
+        r = run(self.sb, *args, "--click", "cd" * 16)                                      # a token that isn't there: refused, never downgraded
+        self.assertEqual(r.returncode, 1)
+
     def test_hand_back_starts_fresh_when_the_session_cant_be_vouched_for(self):
         self.assertEqual(self.hand_over().returncode, 0)
         self.agent.wait(timeout=5)

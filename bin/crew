@@ -1082,6 +1082,8 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
             return False
         to = prev["brain"]
     to = ho.brain_key(to)
+    if not back and ho.brain_key((ho.previous(addr) or {}).get("brain")) == to and to != frm:
+        back, prev = True, ho.previous(addr)   # handing to the brain it came from is a hand back
     if to not in ho.TRIED:
         say(f"not handing {label} over: {ho.brain_name(to)} hasn't been tried as a target yet (this version hands seats to "
             + " and ".join(ho.brain_name(k) for k in ho.TRIED) + ")")

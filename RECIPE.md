@@ -356,8 +356,18 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Hand back resumes the session that brain last really had on the seat (`kept_link`): a holder
     whose start never landed has none and is passed over. A resumed session is linked to the
     terminal again (`source: "resume"`), so a later sleep and wake find it.
-  - Not yet: the click (topic menu, pal page, header), the offer when a brain runs out, the old
-    brain's own note, other brains as targets, other machines.
+  - In the app (T138): a topic's right-click menu opens with **Hand to**, a tile per installed
+    brain the seat can go to (`HANDOFF_BRAINS`), each with its logo. The one that holds the seat
+    (`topicBrain`: the agent running there, else the topic's brain on record) says "holds it" and
+    does nothing; the one it came from says "hand back"; the rest "hand over". A click runs
+    `pal handoff <Pal#topic> --to <brain> --notify` detached with the click's one-time token
+    (`handOff`), so the brief and the seat's history name the owner, and the outcome or the
+    refusal's reason comes back as a toast. Handing to the brain that held the seat just before
+    is a hand back, by name too (`--to`), so it resumes. The row is left out for a pal on another
+    machine, for the head pal, and when only one of those brains is installed.
+  - Not yet: the holder on the pal page and header, the first-time notice, the brief preview, the
+    swap's look, the offer when a brain runs out, the old brain's own note, other brains as
+    targets, other machines.
 - **Helper (crewd, optional):**
   - Messages wait for a pal's turn to end.
   - Whoever handed out work is told when it's done.

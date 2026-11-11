@@ -7,9 +7,9 @@
   claimed tasks and room seats. The new brain starts with a short brief built from the board, git
   and the old brain's last reply (never a transcript, and filtered for secrets), and
   `pal handoff back` returns the seat, resuming the first brain's own session when it can. Cards
-  wait while the seat changes hands, and approvals never cross with it. This first step is the
-  command line, for Claude Code and Codex on this computer; the click and the offer when a brain
-  runs out come next.
+  wait while the seat changes hands, and approvals never cross with it. In the app, right-click a
+  topic and pick a brain under **Hand to**. For Claude Code and Codex on this computer for now; the
+  offer when a brain runs out comes next.
 
 - **Sleep works for Codex pals.** `pal sleep` used to refuse an idle Codex ("can't see an empty
   input box"), because it only knew Claude Code's box. It reads Codex's now. After any agent is
