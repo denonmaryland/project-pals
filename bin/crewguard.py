@@ -883,10 +883,64 @@ def run_strings(cmd):
 HOOK_CWD = None   # the folder the command runs in, when the hook knows it (bin/crew-hook sets it)
 # git subcommands that move the branch that's checked out where they run.
 MOVES_HEAD = {"commit", "merge", "reset", "pull", "rebase", "cherry-pick", "revert", "am"}
-# git branch options that only read or describe (with one of these, nothing moves).
-BRANCH_READS = {"--list", "-l", "--show-current", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at",
-                "--format", "--sort", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--column",
-                "-u", "--set-upstream-to", "--unset-upstream", "--edit-description", "--track", "--no-track"}
+# git branch's options, as git's own parser reads them (builtin/branch.c): which take a value as a
+# separate word, and the short letters. Everything else here is a plain switch. What kind of command
+# a `git branch` is comes only from its mode options; -v, --track, --no-track, --sort, --format,
+# --color … change nothing about that (Codex T130: they had been taken for "only lists").
+BRANCH_VALUE = {"set-upstream-to", "sort", "format", "points-at"}            # --opt <value> or --opt=<value>
+BRANCH_MAYBE = {"contains", "no-contains", "merged", "no-merged"}             # the next word, if it isn't an option
+BRANCH_PLAIN = {"verbose", "quiet", "track", "no-track", "recurse-submodules", "color", "no-color", "remotes", "all",
+                "list", "show-current", "create-reflog", "edit-description", "force", "delete", "move", "copy",
+                "ignore-case", "omit-empty", "column", "no-column", "abbrev", "no-abbrev", "unset-upstream"}
+BRANCH_SHORT = {"v": "verbose", "q": "quiet", "t": "track", "r": "remotes", "a": "all", "l": "list", "f": "force",
+                "d": "delete", "D": "delete", "m": "move", "M": "move", "c": "copy", "C": "copy", "i": "ignore-case",
+                "u": "set-upstream-to"}
+# With one of these it lists, describes or sets an upstream: no branch is made, moved or removed
+# (and git refuses to mix two kinds in one command).
+BRANCH_QUIET_MODES = {"list", "show-current", "edit-description", "set-upstream-to", "unset-upstream",
+                      "contains", "no-contains", "merged", "no-merged", "points-at"}
+
+
+def _branch_parse(args):
+    """`git branch`'s arguments → (the options given, by full name; the names; anything not understood).
+    Clusters (-vf), abbreviations (--forc), --opt=value, values as the next word and -- are read as
+    git reads them, so an option's value is never taken for a branch name."""
+    opts, names, odd, i = set(), [], False, 0
+    every = BRANCH_VALUE | BRANCH_MAYBE | BRANCH_PLAIN
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if a == "--":
+            names += args[i:]
+            break
+        if a.startswith("--"):
+            name, eq, _val = a[2:].partition("=")
+            full = name if name in every else None
+            if not full:
+                hits = [o for o in every if o.startswith(name)] if name else []
+                full = hits[0] if len(hits) == 1 else None
+            if not full:
+                odd = True
+                continue
+            opts.add(full)
+            if not eq and full in BRANCH_VALUE:
+                i += 1
+            elif not eq and full in BRANCH_MAYBE and i < len(args) and not args[i].startswith("-"):
+                i += 1
+        elif a.startswith("-") and len(a) > 1:
+            for k, ch in enumerate(a[1:]):
+                full = BRANCH_SHORT.get(ch)
+                if not full:
+                    odd = True
+                    break
+                opts.add(full)
+                if full in BRANCH_VALUE:       # -u <upstream>, or -u<upstream>
+                    if k == len(a) - 2:
+                        i += 1
+                    break
+        else:
+            names.append(a)
+    return opts, names, odd
 
 
 def _checked_out(folder):
@@ -931,21 +985,39 @@ def _git_words(seg):
 
 def _branch_moves(args, branch):
     """Does `git branch <args>` move, make or remove `branch`?
-      -m / -M / -c / -C [<old>] <new>: the destination is the LAST name (`-M feature main` moves main;
-        Codex T94); renaming it away removes it, and a later plain rename or create puts it somewhere new;
-      -d / -D: any name; -f <name> [<start>] and a plain `git branch <name> [<start>]`: the first."""
-    shorts = "".join(a[1:] for a in args if re.fullmatch(r"-[a-zA-Z]+", a))
-    longs = {a.split("=", 1)[0] for a in args if a.startswith("--")}
-    names = [a for a in args if not a.startswith("-")]
-    if longs & BRANCH_READS or {a for a in args if a.startswith("-")} & BRANCH_READS:
-        return False
-    if set(shorts) & set("dD") or "--delete" in longs:
+      --delete: any name given; --move: any name (as the new name it moves, as the old one it's gone,
+        and then a plain create puts it somewhere new); --copy: the destination, the LAST name
+        (`-C feature main` moves main; Codex T94; a copy FROM it leaves it where it is);
+      otherwise a create or -f: the FIRST name (the second is where it starts).
+    An option this doesn't know (a newer git's, or --no-<something>) with the branch named: held."""
+    opts, names, odd = _branch_parse(args)
+    if odd:
+        return branch in args or branch in names
+    if "delete" in opts or "move" in opts:
         return branch in names
-    if set(shorts) & set("mM") or "--move" in longs:
-        return branch in names          # as the new name it moves; as the old one it's gone
-    if set(shorts) & set("cC") or "--copy" in longs:
-        return names[-1:] == [branch]   # copied FROM, it stays where it is
-    return names[:1] == [branch]        # -f / --force, or a plain create of it
+    if "copy" in opts:
+        return names[-1:] == [branch]
+    if opts & BRANCH_QUIET_MODES:
+        return False
+    return names[:1] == [branch]
+
+
+def _creates(args, branch):
+    """switch -c/-C, checkout -b/-B, worktree add -b/-B, --create / --force-create / --orphan (or an
+    abbreviation), with the branch as the next word, after `=`, or stuck to the letter (-Cmain)."""
+    for i, a in enumerate(args):
+        nxt = args[i + 1:i + 2] == [branch]
+        if a.startswith("--"):
+            name, eq, val = a[2:].partition("=")
+            if name != "force" and len(name) >= 2 and any(o.startswith(name) for o in ("create", "force-create", "orphan")):
+                if (eq and val == branch) or (not eq and nxt):
+                    return True
+        elif re.fullmatch(r"-[a-zA-Z]*[cCbB]", a):
+            if nxt:
+                return True
+        elif re.fullmatch(r"-[a-zA-Z]*?[cCbB](.+)", a) and re.fullmatch(r"-[a-zA-Z]*?[cCbB](.+)", a).group(1) == branch:
+            return True
+    return False
 
 
 def _refspec_writes(arg, branch):
@@ -997,11 +1069,11 @@ def moves_live_branch(cmd):
             return True
         if sub == "update-ref" and (f"refs/heads/{branch}" in args or "--stdin" in args):
             return True
-        if sub == "symbolic-ref" and names[:1] == [f"refs/heads/{branch}"]:
+        # symbolic-ref <ref> <target> or -d <ref> writes it (-m <reason> may come first); <ref> alone reads.
+        if sub == "symbolic-ref" and f"refs/heads/{branch}" in args and (
+                len(names) >= 2 or any(a in ("-d", "--delete") or "--delete".startswith(a) and len(a) > 3 for a in args)):
             return True
-        if sub in ("switch", "checkout", "worktree") and any(
-                args[i + 1:i + 2] == [branch] for i, a in enumerate(args)
-                if a in ("--create", "--force-create", "--orphan") or re.fullmatch(r"-[a-zA-Z]*[cCbB]", a)):
+        if sub in ("switch", "checkout", "worktree") and _creates(args, branch):
             return True
         if sub in ("fetch", "pull", "push") and any(_refspec_writes(a.lstrip("+"), branch) for a in names):
             return True
@@ -1022,7 +1094,8 @@ def moves_live_branch(cmd):
             here[at] = _checked_out(at)[1]
         if at and sub == "worktree" and names[:1] == ["add"] and len(names) >= 3 and names[-1] == branch:
             here[join(at, os.path.expanduser(names[1]))] = _checked_out(at)[1]
-        if sub in MOVES_HEAD and repo and at:
+        # (git update-ref HEAD … moves whatever is checked out where it runs.)
+        if (sub in MOVES_HEAD or (sub == "update-ref" and "HEAD" in args)) and repo and at:
             if at in here:
                 on, root = branch, here[at]
             else:

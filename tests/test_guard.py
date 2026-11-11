@@ -809,6 +809,25 @@ class LiveBranchRefs(unittest.TestCase):
         ("", "wt", "git branch -f main feature"),
         ("", "wt", "git branch --force main crew/x"),
         ("", "wt", "git -C {repo} branch -M feature main"),
+        # options that don't change what kind of command it is (Codex T130: --no-track, -v and --track
+        # were taken for "only lists"), clustered, abbreviated, with values, after --, after the names
+        ("", "wt", "git branch --no-track -f main feature"),
+        ("", "wt", "git branch -v -f main feature"),
+        ("", "wt", "git branch --track -f main feature"),
+        ("", "wt", "git branch -vf main feature"),
+        ("", "wt", "git branch -fq main feature"),
+        ("", "wt", "git branch --sort refname -f main feature"),
+        ("", "wt", "git branch --sort=refname --format x -f main feature"),
+        ("", "wt", "git branch --color=never --column -f main feature"),
+        ("", "wt", "git branch --forc main feature"),
+        ("", "wt", "git branch --mov --forc feature main"),
+        ("", "wt", "git branch --cop --force feature main"),
+        ("", "wt", "git branch -f -- main feature"),
+        ("", "wt", "git branch main feature -f"),
+        ("", "wt", "git branch feature main -M"),
+        ("", "wt", "git branch -C feature main --sort refname"),
+        ("", "wt", "git branch --no-list -f main feature"),
+        ("", "wt", "git branch -Dq main"),
         # taking it away, and then making it again somewhere else (no force needed by then)
         ("", "wt", "git branch -D main"),
         ("", "wt", "git branch -d main"),
@@ -822,6 +841,9 @@ class LiveBranchRefs(unittest.TestCase):
         ("", "wt", "git update-ref -d refs/heads/main"),
         ("", "wt", "echo 'update refs/heads/main {feature}' | git update-ref --stdin"),
         ("", "wt", "git symbolic-ref refs/heads/main refs/heads/feature"),
+        ("", "wt", "git symbolic-ref -m why refs/heads/main refs/heads/feature"),
+        ("", "wt", "git update-ref --no-deref -m why refs/heads/main {feature}"),
+        ("m", "m", "git update-ref HEAD {feature}"),
         ("", "wt", "echo {feature} > {repo}/.git/refs/heads/main"),
         ("", "wt", "cp {repo}/.git/refs/heads/feature {repo}/.git/refs/heads/main"),
         # fetch, pull and push into the local branch
@@ -835,6 +857,11 @@ class LiveBranchRefs(unittest.TestCase):
         ("", "wt", "git switch -C main feature"),
         ("", "wt", "git checkout -B main feature"),
         ("", "wt", "git switch --force-create main feature"),
+        ("", "wt", "git switch -Cmain feature"),
+        ("", "wt", "git checkout -Bmain feature"),
+        ("", "wt", "git switch --force-create=main feature"),
+        ("", "wt", "git switch --force-c main feature"),
+        ("", "wt", "git worktree add -Bmain ../m2 feature"),
         ("", "wt", "git worktree add -B main ../m2 feature"),
         ("", "wt", "git rebase feature main"),
         ("", "wt", "git checkout main && git reset --hard feature"),
@@ -870,6 +897,12 @@ class LiveBranchRefs(unittest.TestCase):
         ("", "wt", "git switch main"), ("", "wt", "git checkout main"), ("", "wt", "git worktree add ../m2 main"),
         ("m", "wt", "git commit --allow-empty -m x"), ("m", "wt", "git reset --hard main"), ("m", "m", "git status"),
         ("m", "m", "git log -1"), ("m", "m", "git diff"), ("m", "m", "git stash list"), ("m", "m", "git branch copy"),
+        ("", "wt", "git branch -v"), ("", "wt", "git branch -vv --all"), ("", "wt", "git branch --list -v main"),
+        ("", "wt", "git branch --sort refname"), ("", "wt", "git branch --merged main"), ("", "wt", "git branch --contains main"),
+        ("", "wt", "git branch --show-current"), ("", "wt", "git branch -u main feature"), ("", "wt", "git branch --no-track -f feature main"),
+        ("", "wt", "git branch -v -f feature main"), ("", "wt", "git branch --sort main"), ("", "wt", "git switch --force main"),
+        ("", "wt", "git symbolic-ref -q --short HEAD"), ("", "wt", "git update-ref refs/heads/copy main"),
+        ("m", "wt", "git update-ref HEAD {feature}"),
     ]
 
     def setUp(self):
@@ -929,10 +962,32 @@ class LiveBranchRefs(unittest.TestCase):
             elif not held:
                 slipped.append(cmd)
         self.assertEqual(duds, [], "these didn't move main here, so they prove nothing")
-        self.assertEqual(slipped, [], "moved the followed branch without being held")
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
 
     def test_commands_that_only_name_it_stay_free(self):
         for layout, where, template in self.FREE:
             cmd, held, moved = self.case(layout, where, template)
             self.assertFalse(moved, cmd)
             self.assertIsNone(held, cmd)
+
+    def test_no_harmless_option_hides_a_move(self):
+        """Every way of writing the core commands with an option that changes nothing about what they
+        do, before or after the names: whatever really moves the branch is held (Codex T130)."""
+        noise = ["-v", "-q", "-vq", "--verbose", "--quiet", "--track", "--no-track", "-t", "--sort refname", "--sort=refname",
+                 "--format x", "--format=x", "--color", "--color=never", "--no-color", "--column", "--no-column", "-i",
+                 "--ignore-case", "--abbrev=7", "--no-abbrev", "--create-reflog", "--omit-empty", "--recurse-submodules",
+                 "--no-verbose", "--no-quiet", "--no-force", "--no-list", "-a", "-r", "--", "--trac", "--verb"]
+        cores = ["-f main feature", "--force main feature", "-M feature main", "-C feature main", "-D main", "-m main old",
+                 "-c -f feature main", "--move --force feature main"]
+        slipped, moved_n = [], 0
+        for n in noise:
+            for core in cores:
+                for template in (f"git branch {n} {core}", f"git branch {core} {n}" if n != "--" else None):
+                    if not template:
+                        continue
+                    cmd, held, moved = self.case("", "wt", template)
+                    moved_n += moved
+                    if moved and not held:
+                        slipped.append(cmd)
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+        self.assertGreater(moved_n, 250, "most of these really move it (else the table proves little)")

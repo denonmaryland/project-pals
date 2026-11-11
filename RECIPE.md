@@ -494,7 +494,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   `git switch main` or `git worktree add <dir> main` earlier on the same line count). On Stable
   the rule holds nothing. tests/test_guard.py `LiveBranchRefs` runs every spelling in a real
   repository and requires that whatever really moves the ref is held (Codex T94: `git branch -M
-  feature main` had slipped past). Like the rest of the gate it catches the plain ways, not a pal
+  feature main` had slipped past; T130: so had `git branch -v -f main x`, because `-v`, `--track`
+  and `--no-track` were taken for "only lists"). `git branch`'s options are read as git reads them
+  (clusters, abbreviations, values, `--`), and only its mode options decide what it does; a
+  generated matrix of harmless options around the core commands is part of that test. Like the rest of the gate it catches the plain ways, not a pal
   set on getting round it.
   `pal update run-tests` (the background suite) only runs for the build a swap just announced.
   `pal land` no longer needs the project folder to be on the base branch: where the base is checked
