@@ -276,6 +276,48 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - agy doesn't clear its Herdr status (OSC 7501) when it exits, so a dead agy tab looked awake.
     Sleep, and crewd for any agent tab whose shell has no children left, write
     `\e]7501;state=clear\a` to the shell's terminal.
+- **Handoff: the seat stays, the brain changes** (T119, slice 1: the command line; design in
+  `docs/handoff/design.md`):
+  - `pal handoff <Pal#topic> --to <claude|codex> [--why "…"]` changes the brain in one topic and
+    nothing else. The seat is the topic's tab and terminal, its name `Pal#topic`, its folder and
+    branch, its desk cards, claimed tasks and room seats: all keyed by the terminal or the name, and
+    the swap happens in the same terminal. `-n` prints the brief it would send and changes nothing.
+  - It runs sleep's checks first and refuses what sleep refuses (mid-turn, on a prompt, unsent text,
+    work still running, another machine), plus: the same brain, a brain not tried as a target yet
+    (this slice: Claude Code and Codex), a brain that isn't installed, and the head pal's seat.
+  - Who: the owner (a click token, or a shell that isn't a pal's, as sleep and wake take it) or the
+    head pal (`"handoff": {"head": false}` in `crew-settings.json` turns that off). Any other pal is
+    refused. A handoff is never an approval: every approved-but-unused or pending approval of that
+    terminal lapses (`expired`, note "seat changed hands"), since approvals are keyed by terminal
+    and command.
+  - The swap: hold the desk (`data/crew-handoffs/<terminal>/now.json`; `claim_queue` hands nothing
+    over while it's there, for crewd, the hooks and the mod alike; it ends by itself after 90s),
+    write the brief, stop the old agent (sleep's `stop_agent`), move its session link out of
+    `crew-sessions` and `crew-status` into the seat's history, ask the app to keep the new brain as
+    this topic's (`handoff-brain` with `keep`), then type one line into the topic's own shell:
+    `pal handoff take h-…`. That prints the handoff card and becomes the brain (`exec`) with its
+    first message, so the brain sits directly under the shell, where sleep and wake expect it.
+    `take` only runs in that seat's terminal, once, within 5 minutes.
+  - The brief (`data/crew-handoffs/<terminal>/<id>.md`, at most 6 KB, with a `.json` record beside
+    it) is not a transcript. Facts come from Project Pals' records: the claimed tasks and their
+    notes, open desk cards, rooms, and git (branch, commits ahead of main, uncommitted files). The
+    story is the old brain's last reply from its session file (Claude Code, agy), at most 1,200
+    characters, and the last three things asked of it; a brain whose sessions aren't parsed (Codex)
+    gives its last screen lines instead, and the brief says so. Everything quoted is filtered
+    (tokens, credentials, long opaque strings, email addresses; the home folder becomes `~`), the
+    brief counts what was removed, and a quoted line can't pose as a header. The first message is
+    short and the same for every brain: who handed the seat over, "Picking up: …", and
+    `pal handoff brief` for the rest.
+  - The CLI then watches for the new agent (20s) and keeps the desk held until its first turn is
+    under way. If it never starts, it says so, releases the desk and names the way back
+    (`pal handoff back`). A folder-trust question counts as started and is the owner's to answer.
+  - `pal handoff back <Pal#topic>` hands the seat to the brain that held it before. Where wake's
+    rules can vouch for that brain's own session (kept in the seat's history) it resumes it and the
+    brief is a return brief ("While you were away", the commits since); otherwise it starts fresh
+    and says why. `data/crew-seats/<terminal>.json` lists the holders; `pal handoff log` prints
+    them, `pal handoff brief` the brief a seat was handed with. Claimed tasks get a note.
+  - Not yet: the click (topic menu, pal page, header), the offer when a brain runs out, the old
+    brain's own note, other brains as targets, other machines.
 - **Helper (crewd, optional):**
   - Messages wait for a pal's turn to end.
   - Whoever handed out work is told when it's done.

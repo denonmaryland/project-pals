@@ -54,6 +54,13 @@ Hiring
                                      (Close pal, in the app, ends its space instead.)
   pal wake <Pal[#topic]|#topic>... [-n]   Wake (resume topics): its brain again in the same tab, resuming
                                      that topic's session when it can vouch for it, else fresh (it says why)
+  pal handoff <Pal#topic> --to <claude|codex> [--why "…"] [-n]
+                                     Hand a topic's seat to another brain: same tab, same name, branch, cards,
+                                     tasks and room seats; the new brain starts with a brief (no transcript).
+                                     Refuses what pal sleep refuses. -n shows the brief and changes nothing.
+                                     The owner or the head pal; never an approval, and unused approvals lapse.
+  pal handoff back <Pal#topic>       to the brain that held it before, resuming its session when it can
+  pal handoff brief [<Pal#topic>|--id h-…] | log [<Pal#topic>]   the brief a seat was handed with; who held it when
 
 Work
   pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
@@ -123,6 +130,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -898,6 +906,230 @@ def cmd_wake(spaces, rest):
             say(f"woke {label} ({addr}) with {said}")
     if o.get("notify"):
         _tell_app("wake", out, refused)
+
+
+# ── handoff: the seat stays, the brain in it changes (bin/crewhandoff.py; docs/handoff/design.md) ──
+
+def _handoff_by(spaces):
+    """(who asks, how), as the brief and the seat's history name them; dies for a pal that isn't the
+    head pal. A handoff spends another subscription and sends a brief to another company's model, so
+    it's the owner's (a click, or a shell that isn't a pal's, as sleep and wake take it) or the head
+    pal's (crew-settings.json "handoff": {"head": false} turns that off)."""
+    from crewlib import SHELL_NAME
+    if owner_proven():
+        return f"{OWNER}", "click"
+    if not ME:
+        return SHELL_NAME, ""
+    s, _ = where_of(ME, spaces)
+    if s and record_of(s).get("god") and (settings().get("handoff") or {}).get("head", True) is not False:
+        return s["name"], "the head pal"
+    die(f"only {OWNER} or the head pal hands a seat to another brain. Ask the head pal (pal tell), or {OWNER}.")
+
+
+def _handoff_target(spec, spaces):
+    pairs = _targets(spec, spaces) if spec.startswith("#") else [find(spec, spaces)]
+    if "#" not in spec:
+        die('name the topic: pal handoff "Pal#topic" --to <brain>')
+    if len(pairs) != 1:
+        die(f"{spec}: that's {len(pairs)} topics; name one")
+    return pairs[0]
+
+
+def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
+    """Hand one topic's seat over. Returns True when the new brain was started (and, watched, landed)."""
+    import crewsleep, crewchat, crewhandoff as ho
+    from crewlib import feed
+    say = lambda m: (print(m), out is not None and out.append(m))
+    by, via = _handoff_by(spaces)
+    s, t = _handoff_target(spec, spaces)
+    label, seat_spec = f"{s['name']} #{chan(t)}", f"{s['name']}#{chan(t)}"
+    rec = record_of(s)
+    if rec.get("god"):
+        say(f"not handing {label} over: it's the head pal's seat (its standing brief is written per brain; not in this version)")
+        return False
+    addr = (lead(t) or {}).get("terminal")
+    info = term_info(addr) if crewsleep.is_local(s, addr) and addr != ME else {}
+    try:
+        shell, agent = crewsleep.check_sleep(s, addr, ME, info, screen(addr, 60) if info else [])
+    except crewsleep.Refused as e:
+        say(f"not handing {label} over: {e}")
+        return False
+    # Who holds it now: the agent running there, else (asleep) the seat's last holder, else the brain it would wake as.
+    if agent:
+        frm = ho.brain_key((info.get("status") or {}).get("app") or (hc_terminals().get(addr) or {}).get("agent") or proc_comm(agent))
+    else:
+        frm = ho.brain_key((ho.holder(addr) or {}).get("brain") or request("wake-brain", spaces, space=s["id"], tab=t["id"]).get("key"))
+    prev = ho.previous(addr) if back else None
+    if back:
+        if not prev:
+            say(f"not handing {label} back: nobody held it before {ho.brain_name(frm)}")
+            return False
+        to = prev["brain"]
+    to = ho.brain_key(to)
+    if to not in ho.TRIED:
+        say(f"not handing {label} over: {ho.brain_name(to)} hasn't been tried as a target yet (this version hands seats to "
+            + " and ".join(ho.brain_name(k) for k in ho.TRIED) + ")")
+        return False
+    if to == frm:
+        say(f"not handing {label} over: {ho.brain_name(to)} already holds it")
+        return False
+    brain = request("handoff-brain", spaces, space=s["id"], tab=t["id"], to=to)   # dies when it isn't installed
+    cwd = crewsleep.shell_cwd(shell, info)
+    links = crewchat.links()
+    link = links.get(addr)
+    if link and ho.brain_key(link.get("harness") or "claude") != frm:
+        link = None   # an earlier holder's session, not this one's
+    import crewguard
+    would_void = [r.get("command") or "" for r in crewguard.all_requests() if r.get("terminal") == addr and r.get("status") in ("approved", "pending")]
+    hid = "h-preview" if dry else new_id("h-")
+    last = ho.load(addr) if back else None
+    topic_brief = str((rec.get("briefs") or {}).get(t["id"]) or (rec.get("briefs") or {}).get(t["name"]) or "")
+    md, meta = ho.build_brief(hid=hid, space=s, tab=t, terminal=addr, frm=frm, to=to, by=by, via=via, why=why, cwd=cwd, link=link,
+                              topic_brief=topic_brief, voided=would_void, back=last if back else None)
+    if dry:
+        say(f"would hand {label} from {ho.brain_name(frm)} to {ho.brain_name(to)} ({addr})" + (f"; {len(would_void)} approval(s) would lapse" if would_void else "")
+            + ". The brief it would get:\n")
+        print(md)
+        return True
+    if agent:
+        # Looked at once more right before the signal: a message may have just started a turn.
+        st = (term_info(addr).get("status") or {}).get("state")
+        if st in ("working", "blocked"):
+            say(f"not handing {label} over: it just became {st}")
+            return False
+    ho.hold(addr, hid)   # nothing is delivered to this seat until the new brain has taken it
+    if agent:
+        try:
+            crewsleep.stop_agent(agent, shell, addr)
+        except crewsleep.Refused as e:
+            ho.release(addr)
+            say(f"couldn't hand {label} over: {e}")
+            return False
+        clear_osc_status(shell)
+    (HOOKED / addr).unlink(missing_ok=True)
+    crewsleep.unmark(addr)
+    voided = ho.void_approvals(addr)
+    # The old session's link leaves the terminal (kept in the seat's history): replies and the feed
+    # must not be read from a session the new brain never had.
+    (crewchat.SESSIONS / f"{addr}.json").unlink(missing_ok=True)
+    (crewchat.STATUS / f"{addr}.json").unlink(missing_ok=True)
+    ho.change_hands(addr, seat_spec, frm, to, link, {"by": by, "via": via, "why": why, "brief": hid})
+    base = crewsleep.base_argv(brain.get("argv"), brain.get("key"))
+    extra, resume_why = [], ""
+    if back and (prev.get("link") or {}).get("session"):
+        live = {a for a, x in hc_terminals().items() if is_agent(x)}
+        extra, resume_why = crewsleep.resume_args(addr, brain.get("key"), base, cwd, {**{a: l for a, l in links.items() if a != addr}, addr: prev["link"]}, live)
+    hrec = {"id": hid, "terminal": addr, "seat": seat_spec, "from": frm, "to": to, "by": by, "via": via, "why": why or "", "at": now_ms(),
+            "back": bool(back), "resumed": bool(extra), "session": (prev or {}).get("link", {}).get("session") if extra else None,
+            "kept_session": bool(link and link.get("session")), "voided": len(voided), "argv": [*base, *extra], "agy": bool(brain.get("agy")),
+            "status": "started", **{k: meta[k] for k in ("picking", "story", "filtered", "carry", "lines", "tasks", "cards", "rooms", "branch")}}
+    hrec["message"] = ho.first_message(hrec, "" if extra else (brain.get("hint") or ""))
+    ho.save(hrec, md)
+    request("handoff-brain", spaces, space=s["id"], tab=t["id"], to=to, keep=True)   # this topic's brain on record, for wake and the pet
+    me, me_name = whoami(spaces)
+    for tid in meta["tasks"]:
+        with contextlib.suppress(CrewError):
+            crewtasks.update(tid, spaces, me, me_name, note=f"seat handed {ho.brain_name(frm)} → {ho.brain_name(to)} ({hid}, by {by}" + (f", {why}" if why else "") + ")")
+    feed("handoff", id=hid, bot=s["name"], channel=chan(t), terminal=addr, frm=frm, to=to, by=by)
+    # One short line typed into the topic's own shell, as wake does: it prints the handoff card and
+    # becomes the brain (exec), so the brain ends up directly under the shell, where sleep expects it.
+    here = Path(__file__).resolve()
+    on_path = shutil.which("pal")
+    line = shlex.join(["pal" if on_path and Path(on_path).resolve() == here else str(here), "handoff", "take", hid])
+    raw_env = {k: v for k, v in os.environ.items() if k not in ("HC_TERMINAL_ID", "HC_SCOPE")}
+    subprocess.run(["hc", "keys", addr, "ctrl+c"], env=raw_env, capture_output=True, timeout=10)
+    r = subprocess.run(["hc", "send", "--force", addr, line], env=raw_env, capture_output=True, text=True, timeout=30)
+    undo = f'pal handoff back "{seat_spec}"'
+    if r.returncode != 0:
+        ho.release(addr)
+        ho.save({**hrec, "status": "failed"})
+        say(f"couldn't start {ho.brain_name(to)} in {label}: {(r.stderr or r.stdout).strip() or 'hc send failed'}. Its seat is empty; "
+            f"put {ho.brain_name(frm)} back with: {undo}")
+        return False
+    said = (f"handed {label} " + ("back " if back else "") + f"to {ho.brain_name(to)} (was {ho.brain_name(frm)}) · brief {hid}"
+            + (f" · {resume_why}" if resume_why else "") + (f" · {len(voided)} approval(s) lapsed" if voided else ""))
+    wait = float(os.environ.get("CREW_HANDOFF_WAIT", "20"))
+    if wait <= 0:
+        ho.hold(addr, hid, 20)   # not watched: the hold ends by itself, after the brain's start
+        say(said)
+        return True
+    landed, deadline = False, time.time() + wait
+    while time.time() < deadline and not landed:
+        time.sleep(1)
+        if trust_prompt(screen(addr)):
+            ho.release(addr)
+            say(said)
+            say(trust_notice(s["name"], chan(t)))
+            return True
+        landed = bool(crewsleep.agent_children(shell, addr)) or ho.brain_key((hc_terminals().get(addr) or {}).get("agent")) == to
+    if not landed:
+        ho.release(addr)
+        ho.save({**hrec, "status": "failed"})
+        say(f"{ho.brain_name(to)} didn't start in {label} within {int(wait)}s (not signed in? look at that tab). Its seat is empty; "
+            f"put {ho.brain_name(frm)} back with: {undo}")
+        return False
+    # Held a little longer: until its first turn is under way, so nothing is typed over its first message.
+    until = time.time() + min(15.0, wait)
+    while time.time() < until and (hc_terminals().get(addr) or {}).get("status") != "working":
+        time.sleep(1)
+    ho.release(addr)
+    ho.save({**(ho.load(addr, hid) or hrec), "landed": now_ms()})
+    say(said)
+    return True
+
+
+def cmd_handoff(spaces, rest):
+    """pal handoff <Pal#topic> --to <brain> [--why "…"] [-n] | back <Pal#topic> | brief [<Pal#topic>|--id h-…] | log [<Pal#topic>]
+    (and `take h-…`, which Project Pals types into the topic's own shell)."""
+    import crewhandoff as ho
+    usage = 'pal handoff <Pal#topic> --to <claude|codex> [--why "…"] [-n] | back <Pal#topic> | brief | log'
+    sub = rest[0] if rest else ""
+    if sub == "take":
+        rec = ho.find(rest[1] if len(rest) > 1 else "")
+        if not rec:
+            die("no such handoff")
+        if not ME or rec.get("terminal") != ME:
+            die("that handoff is for another topic's seat")
+        if rec.get("status") != "started" or now_ms() - rec.get("at", 0) > ho.TAKE_WITHIN * 1000:
+            die("that handoff isn't waiting to start (it was taken already, or is too old). Hand the seat over again.")
+        ho.save({**rec, "status": "taken", "taken": now_ms()})
+        print(ho.card(rec), flush=True)
+        argv = [*rec["argv"], *(["-i", rec["message"]] if rec.get("agy") else [rec["message"]])]
+        try:
+            os.execvp(argv[0], argv)
+        except OSError as e:
+            ho.save({**rec, "status": "failed"})
+            die(f"couldn't start {ho.brain_name(rec.get('to'))}: {e}")
+    if sub in ("brief", "log"):
+        pos, o = opts(rest[1:], ("id",))
+        if o.get("id"):
+            rec, addr = ho.find(o["id"]), None
+            addr = (rec or {}).get("terminal")
+        else:
+            addr = (lead(_handoff_target(pos[0], spaces)[1]) or {}).get("terminal") if pos else ME
+            rec = ho.load(addr) if addr else None
+        if sub == "log":
+            lines = ho.log_lines(addr) if addr else []
+            print("\n".join(lines) if lines else "this seat hasn't changed hands")
+            return
+        if not rec:
+            die("no handoff brief for this seat" if addr else "which seat? pal handoff brief <Pal#topic>")
+        if ME and ME == rec.get("terminal") and not rec.get("read"):
+            ho.save({**rec, "read": now_ms()})   # the new holder read its brief
+        print(ho.brief_text(rec) or "(the brief's file is gone)")
+        return
+    back = sub == "back"
+    args = rest[1:] if back else rest
+    pos, o = opts([a for a in args if a != "-n"], ("to", "why"), ("notify",))
+    if len(pos) != 1 or (not back and not o.get("to")) or (back and o.get("to")):
+        die(usage)
+    out = []
+    ok = _handoff_go(spaces, pos[0], o.get("to"), o.get("why"), dry="-n" in args, back=back, out=out)
+    if o.get("notify"):
+        _tell_app("handoff", out, not ok)
+    if not ok:
+        sys.exit(1)
+
 
 
 # ── tasks, routines, memory, skills, approvals ───────────────────────────────────────────────
@@ -2291,7 +2523,7 @@ def main(argv):
     cmd, rest = argv[0], argv[1:]
     # The app speaks as the owner only with a click token for exactly this command line (tell, ask and
     # task: the Tasks dialog, Review's notes). A bad or used token is refused, never downgraded.
-    if click_of() and cmd in ("tell", "ask", "task", "desk", "home", "sleep", "wake"):
+    if click_of() and cmd in ("tell", "ask", "task", "desk", "home", "sleep", "wake", "handoff"):
         prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
@@ -2402,6 +2634,8 @@ def main(argv):
         cmd_sleep(spaces, rest)
     elif cmd == "wake":
         cmd_wake(spaces, rest)
+    elif cmd == "handoff":
+        cmd_handoff(spaces, rest)
     elif cmd == "task":
         cmd_task(spaces, rest)
     elif cmd == "desk":

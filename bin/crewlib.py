@@ -39,6 +39,7 @@ MEMORY = DATA / "crew-memory"
 SKILLS = DATA / "crew-skills"
 APPROVALS = DATA / "crew-approvals"
 WORKTREES = DATA / "crew-worktrees"
+HANDOFFS = DATA / "crew-handoffs"   # <terminal>/now.json while its seat changes hands; <id>.json + .md per handoff
 ME = os.environ.get("HC_TERMINAL_ID", "")
 SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu", "nushell", "elvish", "xonsh", "pwsh"}
 OSC_CLEAR = b"\x1b]7501;state=clear\x07"
@@ -672,13 +673,21 @@ def batch_text(msgs):
     return "Messages that came in while you were busy:\n\n" + "\n\n".join(item_text(m) for m in msgs)
 
 
+def changing_hands(terminal):
+    """This terminal's seat is changing hands right now (pal handoff: one brain has left, the next
+    hasn't taken its first turn). Nothing is delivered to it meanwhile, by crewd, a hook or the mod:
+    its queue waits. The marker ends by itself (`until`), so a handoff that died can't hold a desk."""
+    m = load_json(HANDOFFS / terminal / "now.json", None)
+    return bool(m) and m.get("until", 0) > now_ms()
+
+
 def claim_queue(terminal, only=None):
     """Take this terminal's due messages off the queue: [(claimed path, message)], oldest first.
     Each file is renamed before it's read, so crewd and a hook never both deliver the same one;
     `only` (paths) limits it to those. Put them back with unclaim(), or drop them with
     finish_claimed() once they've been delivered."""
     d = QUEUE / terminal
-    if not d.is_dir():
+    if not d.is_dir() or changing_hands(terminal):
         return []
     out = []
     for f in sorted(only if only is not None else d.glob("*.json")):

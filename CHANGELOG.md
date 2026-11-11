@@ -2,6 +2,15 @@
 
 ## Unreleased (0.4.2)
 
+- **Handoff: hand a topic to another brain, and back.** `pal handoff "Pal#topic" --to codex` changes
+  the brain in a topic and keeps everything else: the same tab, the same name, branch, desk cards,
+  claimed tasks and room seats. The new brain starts with a short brief built from the board, git
+  and the old brain's last reply (never a transcript, and filtered for secrets), and
+  `pal handoff back` returns the seat, resuming the first brain's own session when it can. Cards
+  wait while the seat changes hands, and approvals never cross with it. This first step is the
+  command line, for Claude Code and Codex on this computer; the click and the offer when a brain
+  runs out come next.
+
 - **The pocket pets are redrawn.** Each pal has a lit, rounded body with clearer eyes and cheeks,
   and its species has its own marks (a fox's tail tip, an owl's beak, a pup's muzzle). What it
   wears has a clean edge against the body. The laptop has a real keyboard deck and a lid whose

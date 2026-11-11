@@ -1,6 +1,8 @@
 # Handoff: a topic keeps its seat, the brain changes (design)
 
-Status: **design only** (2026-11-10, T119, #handoff). Nothing is built, installed or pushed.
+Status: **DeNon picked A · Relay** (Home h-103e47, 2026-11-10). **Slice 1 is built** on
+`crew/handoff` (the command line; §17 says what was built and where it differs from this design).
+Nothing is installed or pushed. The click, the offer and the swap's look (slices 2 and 3) are not built.
 Written by Project Pals - Herdr Mod #handoff from Orca's relay of DeNon's request: hand a topic's
 context and seat from one brain to another, "as simply and seamlessly as possible, with great ux
 and magic feeling in mind". MUSE owns the feel of the swap (§9 is a placeholder until MUSE's
@@ -564,3 +566,35 @@ Unverified, to be tried before or during slice 1:
   and memory.
 - The no-help brief was tried on one real Claude Code feed, for a turn that ended normally. The
   cut-off case is reasoned, not tried.
+
+## 17. Built: slice 1 (2026-11-10)
+
+`pal handoff <Pal#topic> --to <claude|codex>`, `back`, `brief`, `log` and `take`. Code:
+`bin/crewhandoff.py` (the brief, the filter, the seat's history, the records, voiding approvals),
+`cmd_handoff` in `bin/crew` (the swap), `changing_hands` in `bin/crewlib.py` (the desk hold, read by
+`claim_queue`), `handoff-brain` in `lib/crew.js`. Tests: `tests/test_handoff.py` and the
+`handoff-brain` cases in `tests/test_palrows.mjs`. `RECIPE.md` has the behaviour.
+
+Where the build differs from the design above, and why:
+
+- **The brief never rides in the session's start-up context** (§4 said the SessionStart hook would
+  add it for Claude Code and agy). Claude Code cuts long start-up context to a 2 KB preview and a
+  file, so a brief added there would be half hidden. Every brain gets the same short first message
+  and reads the brief with `pal handoff brief`: one tool call, and the read is recorded.
+- **The CLI watches the landing, not crewd** (§6 step 7). It is simpler and has no new moving part;
+  the desk hold carries its own end time (90 s), so a CLI that dies can't leave a desk held.
+- **The desk hold has no card receipt yet.** Cards wait in the queue while `now.json` is there; the
+  `held · changing hands` receipt on each card comes with the UI slice.
+- **Pending approvals lapse too**, not only approved-and-unused ones (§3): a pending one approved
+  after the swap would have let the new brain's command through.
+- **A plain shell counts as the owner**, as it does for sleep and wake. A shell that isn't a pal's
+  can't be told from DeNon's (the open tasks T110 and T112 are the same gap), so the brief and the
+  history name it "a shell on this computer", never DeNon. Only a click is recorded as DeNon's.
+- **The head pal's seat is always refused** in this slice, for DeNon too.
+- **No `--wait`, no late note, no `turns`, no first-time notice** yet: slices 2 to 4.
+
+Still unverified after slice 1: **no handoff has been run against a real agent.** The tests use
+stand-in processes and fake `hc`. Before this is installed for real it needs one live pass in a
+sandbox window: Claude Code to Codex and back, to check that the brain started through
+`pal handoff take` shows up to Herdr and to sleep like one typed by hand, that Codex takes its
+first message as an argument of this length, and how long the swap really takes.

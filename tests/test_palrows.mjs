@@ -542,6 +542,27 @@ try {
     await crew.requestHandlers["power-report"]({ op: "power-report", mode: "sleep", lines: ["not putting X to sleep: it's mid-turn (working)"], refused: true });
     assert.equal(fixtures.notes[0].title, "Sleep (keep topics, free RAM)"); assert.equal(fixtures.notes[0].level, "warning");
     assert.match(fixtures.notes[0].body, /mid-turn/);
+    // T119, pal handoff: the brain a seat is handed to. Asking changes nothing; `keep` records it as
+    // this topic's brain (what wake starts again); a brain that isn't installed is an error, said.
+    const CODEX_IN = { key: "codex", name: "Codex", run: ["codex"], installed: true };
+    fixtures.known = [CLAUDE, AGY, CODEX_IN];
+    fixtures.shared.crew = before;
+    const brainsOf = () => fixtures.shared.crew.bots.find((b) => b.id === rec.id)?.brains ?? {};
+    const ask = await crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex" });
+    assert.equal(ask.ok, true); assert.equal(ask.key, "codex"); assert.equal(ask.name, "Codex"); assert.equal(ask.argv[0], "codex");
+    assert.equal(ask.agy, false);
+    assert.match(ask.hint, /pal primer/, "a brain without Project Pals' hooks is told where its primer is");
+    assert.equal(brainsOf()[tab.id], undefined, "asking records nothing");
+    await crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex", keep: true });
+    assert.equal(brainsOf()[tab.id], "codex", "kept as this topic's brain");
+    const woke = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id });
+    assert.equal(woke.argv[0], "codex", "wake starts the seat's holder");
+    fixtures.known = [CLAUDE, AGY, CODEX];
+    await assert.rejects(crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex" }), /isn't installed/);
+    await assert.rejects(crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: "nope", to: "codex" }), /isn't open/);
+    fixtures.notes = [];
+    await crew.requestHandlers["power-report"]({ op: "power-report", mode: "handoff", lines: ["handed X #y to Codex (was Claude Code)"], refused: false });
+    assert.equal(fixtures.notes[0].title, "Handoff (same seat, another brain)"); assert.equal(fixtures.notes[0].level, "success");
     fixtures.shared.crew = before; fixtures.known = undefined; fixtures.notes = [];
   }
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size)");
