@@ -13,6 +13,10 @@
   `pal version` say which build is running (branch and commit), and **Back to stable** puts the
   newest release back. All of it is your click; a pal can't switch the channel, start a trial or
   install, and while Live is on a pal moving `main` by hand is held like a landing.
+- **Landing by hand needs your click too.** A pal moving `main` (or `master`, or a topic's base
+  branch) with `git update-ref`, `git branch -f` and the like is now held in your Inbox, the same
+  as `pal land`. Before, only `pal land` was. Ordinary work in a checkout that is on `main`, a new
+  repository's first `main`, and fetching `main` from a remote are not held.
 - **Land works wherever the project folder is.** Landing a topic's branch no longer needs the
   project folder to be on `main`: when `main` isn't checked out anywhere, the merge is made without
   touching a checkout.

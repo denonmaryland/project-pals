@@ -21,7 +21,8 @@ POLICY = DATA / "crew-policy.json"
 # also brings any saved policy up to date when a built-in rule is missing from it, whatever number it
 # carries (two branches picking the same number can't strand a rule again).
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
-DEFAULTS_VERSION = 15
+# 16: live-branch (T90) and base-branch (T136).
+DEFAULTS_VERSION = 16
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -91,6 +92,12 @@ DEFAULT = {
         # (Stable, the default), this rule holds nothing. pal land is the way, held by "land".
         {"name": "live-branch", "why": "moves the branch the Live channel installs from (land it instead: pal land)",
          "check": "moves-live-branch", "pattern": r"$^"},
+        # T136: landing by hand. `pal land` needs the owner's click, and `git update-ref refs/heads/main
+        # <commit>` or `git branch -f main crew/x` does the same thing without it (pals landed that
+        # way while the project folder was parked on another branch). Always on, every project: a
+        # base branch (main, master, a topic's base) moved by name is held. `pal land` is the way.
+        {"name": "base-branch", "why": "moves a project's base branch by hand (land it instead: pal land)",
+         "check": "moves-base-branch", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -1029,29 +1036,55 @@ def _refspec_writes(arg, branch):
     return bool(dst) and any(fnmatch.fnmatchcase(x, dst) for x in (branch, f"refs/heads/{branch}"))
 
 
-def moves_live_branch(cmd):
-    """While the Live channel is on (crew-settings.json "channel": "live"), a command that moves,
-    makes or removes the branch it follows. Installing follows that branch, so this needs the click a
-    landing needs:
+def _local_source(names):
+    """Is a fetch / pull's repository this checkout or a folder (git fetch . x:main, git fetch ../r …)?"""
+    src = names[0] if names else ""
+    return src == "." or src.startswith(("/", "./", "../", "~", "file:")) or os.path.isdir(os.path.expanduser(src))
+
+
+def _has_branch(folder, branch):
+    """Does that branch exist in the checkout the folder belongs to? None: can't tell."""
+    try:
+        r = subprocess.run(["git", "-C", folder, "rev-parse", "-q", "--verify", f"refs/heads/{branch}"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode == 0:
+        return True
+    inside = subprocess.run(["git", "-C", folder, "rev-parse", "--git-dir"], capture_output=True, text=True).returncode == 0
+    return False if inside else None
+
+
+def moved_branch(cmd, branches, live=None, strict=True):
+    """The first of `branches` that the command line moves, makes over or removes, else None.
       by name, from anywhere: git branch (see _branch_moves), update-ref on it (or --stdin: what that
         moves can't be read), symbolic-ref on it, switch -c/-C, checkout -b/-B, worktree add -b/-B,
         a fetch / pull / push refspec that writes it (x:<b>), rebase <upstream> <b>, and a file
         written to its ref (…/refs/heads/<b>, packed-refs);
-      or by running where it is checked out, in the followed repo: commit, merge, reset, pull,
-        rebase, cherry-pick, revert, am. Where it runs: the hook's folder, a `cd` before it, git -C,
-        and a `git switch <b>` / `git checkout <b>` / `git worktree add <dir> <b>` earlier on the
-        same line counts as being on it there.
-    tests/test_guard.py LiveBranchRefs runs each spelling in a real repository and checks the ref.
-    As with the rest of the gate, this catches the plain ways, not a pal set on getting around it."""
-    s = load_json(DATA / "crew-settings.json", {})
-    if s.get("channel") != "live":
-        return False
-    branch = s.get("live_branch") or "main"
-    repo = os.path.realpath(s["live_repo"]) if s.get("live_repo") else None
-    if any(re.search(rf"(^|/)refs/heads/{re.escape(branch)}$|(^|/)packed-refs$", t) for t in write_targets(cmd)):
-        return True
+      and, for live = (branch, repo) only, by running where that branch is checked out in that repo:
+        commit, merge, reset, pull, rebase, cherry-pick, revert, am, update-ref HEAD. Where it runs:
+        the hook's folder, a `cd` before it, git -C; a `git switch <b>` / `git checkout <b>` /
+        `git worktree add <dir> <b>` earlier on the same line counts as being on it there.
+    strict=False (the always-on rule, T136) leaves two everyday things free: a fetch or pull of the
+    branch from a real remote (git fetch origin main:main), and naming a branch that doesn't exist
+    yet where the command runs (git branch -M main in a new repository). The second is only given
+    when where it runs is known and nothing points git elsewhere (GIT_DIR, --git-dir).
+    tests/test_guard.py LiveBranchRefs / BaseBranch run each spelling in a real repository and check
+    the ref. As with the rest of the gate, this catches the plain ways, not a pal set on getting
+    around it."""
+    branches = [b for b in branches if b]
+    if not branches or ("git" not in cmd and "refs/heads" not in cmd and "packed-refs" not in cmd):
+        return None
+    for t in write_targets(cmd):
+        for b in branches:
+            if re.search(rf"(^|/)refs/heads/{re.escape(b)}$", t):
+                return b
+        if re.search(r"(^|/)packed-refs$", t):
+            return branches[0]
+    # Anywhere on the line (a segment comes without its leading VAR=…): git pointed at another repository.
+    elsewhere = bool(re.search(r"\bGIT_(DIR|WORK_TREE|COMMON_DIR)\b|--git-dir\b|--work-tree\b", cmd))
     cwd = HOOK_CWD
-    here = {}   # folder → the repo's main folder, where an earlier command on this line checks the branch out
+    here = {}      # folder → the repo's main folder, where an earlier command on this line checks the live branch out
+    removed = set()   # branches an earlier command on this line removed or renamed away
     join = lambda base, d: os.path.normpath(d if os.path.isabs(d) else os.path.join(base, d)) if (base or os.path.isabs(d)) else None
     for seg in commands(cmd):
         if _help(seg):
@@ -1065,31 +1098,50 @@ def moves_live_branch(cmd):
             continue
         at = join(cwd, folder) if folder else (os.path.normpath(cwd) if cwd else None)
         names = [a for a in args if not a.startswith("-")]
-        if sub == "branch" and _branch_moves(args, branch):
-            return True
-        if sub == "update-ref" and (f"refs/heads/{branch}" in args or "--stdin" in args):
-            return True
-        # symbolic-ref <ref> <target> or -d <ref> writes it (-m <reason> may come first); <ref> alone reads.
-        if sub == "symbolic-ref" and f"refs/heads/{branch}" in args and (
-                len(names) >= 2 or any(a in ("-d", "--delete") or "--delete".startswith(a) and len(a) > 3 for a in args)):
-            return True
-        if sub in ("switch", "checkout", "worktree") and _creates(args, branch):
-            return True
-        if sub in ("fetch", "pull", "push") and any(_refspec_writes(a.lstrip("+"), branch) for a in names):
-            return True
-        if sub == "rebase":
-            # git rebase [--onto <x>] <upstream> <branch>: checks <branch> out and moves it.
-            pos, skip = [], False
-            for a in args:
-                if skip:
-                    skip = False
-                elif a in ("--onto", "-s", "--strategy", "-X", "--strategy-option", "-x", "--exec", "-C"):
-                    skip = True
-                elif not a.startswith("-"):
-                    pos.append(a)
-            if pos[1:2] == [branch]:
+
+        def hit(b, remote_ok=False):
+            # The always-on rule lets a branch that isn't there yet be made (a new repository's main).
+            if strict:
                 return True
-        # Where the branch is (or is about to be) checked out.
+            if remote_ok:
+                return False
+            return not (at and not elsewhere and b not in removed and _has_branch(at, b) is False)
+        for b in branches:
+            if sub == "branch" and _branch_moves(args, b):
+                if hit(b):
+                    return b
+                continue
+            if sub == "update-ref" and (f"refs/heads/{b}" in args or "--stdin" in args) and hit(b):
+                return b
+            # symbolic-ref <ref> <target> or -d <ref> writes it (-m <reason> may come first); <ref> alone reads.
+            if sub == "symbolic-ref" and f"refs/heads/{b}" in args and (
+                    len(names) >= 2 or any(a in ("-d", "--delete") or "--delete".startswith(a) and len(a) > 3 for a in args)) and hit(b):
+                return b
+            if sub in ("switch", "checkout", "worktree") and _creates(args, b) and hit(b):
+                return b
+            if sub in ("fetch", "pull", "push") and any(_refspec_writes(a.lstrip("+"), b) for a in names) \
+                    and hit(b, remote_ok=sub != "push" and not _local_source(names)):
+                return b
+            if sub == "rebase":
+                # git rebase [--onto <x>] <upstream> <branch>: checks <branch> out and moves it.
+                pos, skip = [], False
+                for a in args:
+                    if skip:
+                        skip = False
+                    elif a in ("--onto", "-s", "--strategy", "-X", "--strategy-option", "-x", "--exec", "-C"):
+                        skip = True
+                    elif not a.startswith("-"):
+                        pos.append(a)
+                if pos[1:2] == [b] and hit(b):
+                    return b
+        if sub == "branch":   # (for the lines above: a branch deleted or renamed away earlier on this line)
+            o, n, _odd = _branch_parse(args)
+            if "delete" in o or "move" in o:
+                removed.update(n)
+        if not live:
+            continue
+        branch, repo = live
+        # Where the live branch is (or is about to be) checked out.
         if at and sub in ("switch", "checkout") and names[:1] == [branch]:
             here[at] = _checked_out(at)[1]
         if at and sub == "worktree" and names[:1] == ["add"] and len(names) >= 3 and names[-1] == branch:
@@ -1101,8 +1153,51 @@ def moves_live_branch(cmd):
             else:
                 on, root = _checked_out(at)
             if on == branch and root and os.path.realpath(root) == repo:
-                return True
-    return False
+                return branch
+    return None
+
+
+def moves_live_branch(cmd):
+    """While the Live channel is on (crew-settings.json "channel": "live"): a command that moves the
+    branch it follows, by name or by running where it's checked out in the followed repo (see
+    moved_branch). Installing follows that branch, so this needs the click a landing needs."""
+    s = load_json(DATA / "crew-settings.json", {})
+    if s.get("channel") != "live":
+        return False
+    branch = s.get("live_branch") or "main"
+    repo = os.path.realpath(s["live_repo"]) if s.get("live_repo") else None
+    return bool(moved_branch(cmd, [branch], live=(branch, repo)))
+
+
+def base_branches():
+    """The branches topics land on: main and master, the one the Live channel follows, and every
+    base a worktree topic was cut from (shared.json crew.bots[].worktrees[].base)."""
+    out = ["main", "master"]
+    s = load_json(DATA / "crew-settings.json", {})
+    out.append(s.get("live_branch"))
+    try:
+        from crewlib import HOME as APP_HOME
+        for b in (load_json(APP_HOME / "shared.json", {}).get("crew") or {}).get("bots") or []:
+            for wt in (b.get("worktrees") or {}).values():
+                out.append((wt or {}).get("base"))
+    except Exception:
+        pass
+    seen = []
+    for b in out:
+        if isinstance(b, str) and b and b not in seen:
+            seen.append(b)
+    return seen
+
+
+def moves_base_branch(cmd):
+    """Always on, in every project (T136): moving a base branch by its name is landing by hand
+    (`git update-ref refs/heads/main <commit>`, `git branch -f main crew/x`, `git fetch . crew/x:main`),
+    so it's held like `pal land`. Committing or merging in a checkout that is ON such a branch is
+    not this rule's business: pals without a worktree work there all day (only the Live channel's
+    repo holds that, moves_live_branch)."""
+    if "git" not in cmd and "refs/heads" not in cmd:
+        return False
+    return bool(moved_branch(cmd, base_branches(), strict=False))
 
 
 def _help(seg):
@@ -1113,7 +1208,7 @@ def _help(seg):
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
           "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers,
-          "moves-live-branch": moves_live_branch}
+          "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
 
 
 def matches(cmd, _depth=0):

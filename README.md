@@ -82,7 +82,8 @@ Reports from other harnesses are welcome.
 ## The approval gate
 
 Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,
-merge or post on GitHub, deploy, send mail or webhooks, land a branch, run a repo's release script,
+merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
+moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
 tokens or the Desk's cards. The command waits in your Inbox until you click Approve.
 

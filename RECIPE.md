@@ -395,6 +395,16 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
+  Landing by hand is held too (`base-branch`, T136, always on, every project): a base branch
+  (`main`, `master`, the branch Live follows, any base a worktree topic was cut from) moved by its
+  name: `git update-ref refs/heads/main <commit>`, `git branch -f main crew/x`, `-M` / `-C` onto
+  it, deleting it, `switch -C` / `checkout -B main`, `git fetch . crew/x:main`, a write to its ref
+  file. It uses the Live rule's parser (below) and its real-repository tests. Left free: work in a
+  checkout that is on main (pals without a worktree commit there all day; only the Live channel's
+  repo holds that), making a branch that doesn't exist yet where the command runs (a new
+  repository's `git branch -M main`; not when the folder is unknown or git is pointed elsewhere
+  with `GIT_DIR` / `--git-dir`), and fetching main from a real remote (`git fetch origin
+  main:main`). `pal land` is the way to land: it needs no checkout of the base branch.
 - **Updates:** the status strip's quiet **Update · X** pill (a 18px raised rectangle,
   a 6px blue dot, 11px #808082 text; while an update runs, a spinning ring and "Updating to X")
   or the gear's **Check for updates** opens `crew-update`, an A-style sheet: the head pal's pet,

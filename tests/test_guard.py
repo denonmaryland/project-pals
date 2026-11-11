@@ -746,15 +746,18 @@ class LiveBranch(unittest.TestCase):
     def test_the_followed_branch_is_the_one_held(self):
         self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "release"}))
         self.assertEqual(rule("git update-ref refs/heads/release abc1234"), "live-branch")
-        self.assertIsNone(rule("git update-ref refs/heads/main abc1234"))
+        self.assertEqual(rule("git update-ref refs/heads/main abc1234"), "base-branch", "main is a base branch whatever Live follows (T136)")
 
-    def test_nothing_is_held_on_stable(self):
+    def test_on_stable_a_base_branch_moved_by_name_is_still_held(self):
+        # T136: these are landings by hand. Before it, nothing here was held with the channel off.
         for settings in (None, {"channel": "stable"}, {"owner": "Sam"}):
             if settings is None:
                 self.SETTINGS.unlink(missing_ok=True)
             else:
                 self.SETTINGS.write_text(json.dumps(settings))
             for cmd in self.MOVES:
+                self.assertEqual(rule(cmd), "base-branch", cmd)
+            for cmd in self.FREE:
                 self.assertIsNone(rule(cmd), cmd)
 
     def test_a_commit_in_a_checkout_of_the_followed_branch(self):
@@ -789,6 +792,12 @@ class LiveBranch(unittest.TestCase):
             self.assertIsNone(rule(cmd), cmd)
         crewguard.HOOK_CWD = None                    # no folder known: nothing to go on
         self.assertIsNone(rule("git commit -am x"))
+        # With the channel off, working on main where it's checked out is nobody's business (T136:
+        # pals without a worktree commit there all day).
+        self.SETTINGS.write_text(json.dumps({"channel": "stable", "live_repo": str(t / "repo")}))
+        crewguard.HOOK_CWD = str(t / "repo" / "sub")
+        for cmd in moves:
+            self.assertIsNone(rule(cmd), cmd)
 
 
 class LiveBranchRefs(unittest.TestCase):
@@ -943,10 +952,16 @@ class LiveBranchRefs(unittest.TestCase):
         s = self.sp.run(["git", "-C", repo, "symbolic-ref", "-q", "refs/heads/main"], env=self.env, capture_output=True, text=True)
         return (r.stdout.strip() or None, s.stdout.strip() or None)
 
-    def case(self, layout, where, template):
+    @staticmethod
+    def where_checked_out(layout, template):
+        """Rows that move main by working where it's checked out (held on Live only); the rest name it."""
+        return (layout == "m" and "branch -f main" not in template) or template.startswith(
+            ("git checkout main &&", "git switch main", "git worktree add ../m2 main &&"))
+
+    def case(self, layout, where, template, channel="live"):
         p = self.repo(layout)
         cmd = template.format(**p)
-        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main", "live_repo": p["repo"]}))
+        self.SETTINGS.write_text(json.dumps({"channel": channel, "live_branch": "main", "live_repo": p["repo"]}))
         crewguard.HOOK_CWD = p[where]
         held = rule(cmd)
         before = self.main_ref(p["repo"])
@@ -966,9 +981,24 @@ class LiveBranchRefs(unittest.TestCase):
 
     def test_commands_that_only_name_it_stay_free(self):
         for layout, where, template in self.FREE:
-            cmd, held, moved = self.case(layout, where, template)
-            self.assertFalse(moved, cmd)
-            self.assertIsNone(held, cmd)
+            for channel in ("live", "stable"):
+                cmd, held, moved = self.case(layout, where, template, channel)
+                self.assertFalse(moved, cmd)
+                self.assertIsNone(held, f"{cmd} ({channel})")
+
+    def test_on_stable_landing_by_hand_is_held_and_working_on_main_is_not(self):
+        """T136: with the Live channel off, every row that moves main by NAME is still held (it is a
+        landing without the click `pal land` needs); rows that work where main is checked out are free."""
+        slipped, held_work = [], []
+        for layout, where, template in self.MOVERS:
+            cmd, held, moved = self.case(layout, where, template, "stable")
+            if self.where_checked_out(layout, template):
+                if held:
+                    held_work.append(f"{cmd} -> {held}")
+            elif moved and held not in ("base-branch", "push"):   # (git push . x:main is the push rule's)
+                slipped.append(f"{cmd} -> {held}")
+        self.assertEqual(slipped, [], "landed by hand without being held:\n  " + "\n  ".join(slipped))
+        self.assertEqual(held_work, [], "ordinary work on a checked-out main was held:\n  " + "\n  ".join(held_work))
 
     def test_no_harmless_option_hides_a_move(self):
         """Every way of writing the core commands with an option that changes nothing about what they
@@ -985,9 +1015,113 @@ class LiveBranchRefs(unittest.TestCase):
                 for template in (f"git branch {n} {core}", f"git branch {core} {n}" if n != "--" else None):
                     if not template:
                         continue
-                    cmd, held, moved = self.case("", "wt", template)
-                    moved_n += moved
-                    if moved and not held:
-                        slipped.append(cmd)
+                    for channel in ("live", "stable"):   # by name: held with the channel on or off (T136)
+                        cmd, held, moved = self.case("", "wt", template, channel)
+                        moved_n += moved and channel == "live"
+                        if moved and not held:
+                            slipped.append(f"{cmd} ({channel})")
         self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
         self.assertGreater(moved_n, 250, "most of these really move it (else the table proves little)")
+
+
+class BaseBranch(unittest.TestCase):
+    """T136: `git update-ref refs/heads/main <commit>` landed on main with no click, while `pal land`
+    needed one. Always on, in every project: a base branch moved by name is held. What stays free:
+    making a branch that isn't there yet (a new repository's main), fetching it from a real remote,
+    and everything about other branches."""
+    SETTINGS = Path(TMP) / "crew-settings.json"
+
+    def setUp(self):
+        import subprocess
+        self.sp = subprocess
+        self.t = Path(tempfile.mkdtemp(prefix="pals-base-"))
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
+                    "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
+        self.SETTINGS.unlink(missing_ok=True)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.t, ignore_errors=True)
+        self.SETTINGS.unlink(missing_ok=True)
+        crewguard.HOOK_CWD = None
+
+    def git(self, at, *a):
+        return self.sp.run(["git", "-C", str(at), *a], env=self.env, check=True, capture_output=True, text=True).stdout.strip()
+
+    def new_repo(self, name, first="trunk"):
+        r = self.t / name
+        r.mkdir()
+        self.git(r, "init", "-q", "-b", first)
+        (r / "f").write_text("a\n"); self.git(r, "add", "f"); self.git(r, "commit", "-q", "-m", "A")
+        return r
+
+    def test_the_reported_command(self):
+        for cmd in ("git update-ref refs/heads/main abc1234", "git -C ~/Projects/x update-ref refs/heads/main abc1234 def5678",
+                    "git branch -f main crew/x", "git fetch . crew/x:main", "git update-ref refs/heads/master abc1234"):
+            self.assertEqual(rule(cmd), "base-branch", cmd)
+        for cmd in ("git update-ref refs/heads/crew/x abc1234", "git branch -f crew/x main", "git merge main", "git log main",
+                    "pal task note T1 'git update-ref refs/heads/main'", "grep -rn 'refs/heads/main' bin"):
+            self.assertIsNone(rule(cmd), cmd)
+        self.assertEqual(rule("pal land Builder#x"), "land", "the way to land is still its own rule")
+
+    def test_a_new_repository_may_make_its_main(self):
+        r = self.new_repo("fresh")
+        crewguard.HOOK_CWD = str(r)
+        for cmd in ("git branch -M main", "git checkout -b main", "git switch -c main", "git branch main"):
+            self.assertIsNone(rule(cmd), f"{cmd}: there is no main here yet")
+        self.assertEqual(rule("git branch -M main && git branch -f main HEAD~0"), "base-branch",
+                         "a line that makes it and then moves it gets no benefit of the doubt")
+        self.git(r, "branch", "main")
+        for cmd in ("git branch -M main", "git branch -f main trunk", "git switch -C main", "git update-ref refs/heads/main HEAD"):
+            self.assertEqual(rule(cmd), "base-branch", f"{cmd}: now there is one")
+        self.assertEqual(rule("git branch -D main && git branch main trunk"), "base-branch", "taking it away first doesn't make it new")
+        # Not known where it runs, or git pointed somewhere else: no benefit of the doubt.
+        other = self.new_repo("other")
+        crewguard.HOOK_CWD = str(other)
+        self.assertIsNone(rule("git branch -M main"))
+        self.assertEqual(rule(f"GIT_DIR={r}/.git git branch -f main trunk"), "base-branch")
+        self.assertEqual(rule(f"git --git-dir={r}/.git branch -f main trunk"), "base-branch")
+        self.assertEqual(rule(f"git -C {r} branch -f main trunk"), "base-branch", "git -C says where")
+        self.assertIsNone(rule(f"git -C {other} branch -f main trunk"))
+        crewguard.HOOK_CWD = None
+        self.assertEqual(rule("git branch -M main"), "base-branch")
+
+    def test_fetching_main_from_a_real_remote(self):
+        r = self.new_repo("r", "main")
+        crewguard.HOOK_CWD = str(r)
+        for cmd in ("git fetch origin main:main", "git pull origin main:main", "git fetch upstream +main:main"):
+            self.assertIsNone(rule(cmd), f"{cmd}: the remote's main, not a landing")
+        for cmd in ("git fetch . trunk:main", "git fetch ../other x:main", f"git fetch {self.t} x:main", "git pull . x:main"):
+            self.assertEqual(rule(cmd), "base-branch", cmd)
+        # On the Live channel the remote's main would be installed too: held there.
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main", "live_repo": str(r)}))
+        self.assertEqual(rule("git fetch origin main:main"), "live-branch")
+
+    def test_a_topics_recorded_base_counts(self):
+        shared = crewguard_home() / "shared.json"
+        had = shared.read_text() if shared.exists() else None
+        try:
+            shared.parent.mkdir(parents=True, exist_ok=True)
+            shared.write_text(json.dumps({"crew": {"bots": [{"name": "B", "worktrees": {"#x": {"branch": "crew/x", "base": "develop"}}}]}}))
+            self.assertEqual(rule("git update-ref refs/heads/develop abc1234"), "base-branch")
+            self.assertIsNone(rule("git update-ref refs/heads/staging abc1234"))
+        finally:
+            if had is None:
+                shared.unlink(missing_ok=True)
+            else:
+                shared.write_text(had)
+
+    def test_an_older_policy_gets_the_rule(self):
+        old = {**crewguard.DEFAULT, "defaults_version": 14,
+               "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] not in ("base-branch", "live-branch")]}
+        crewguard.save_json(crewguard.POLICY, old)
+        try:
+            self.assertEqual(rule("git update-ref refs/heads/main abc1234"), "base-branch")
+            self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+
+def crewguard_home():
+    import crewlib
+    return crewlib.HOME
