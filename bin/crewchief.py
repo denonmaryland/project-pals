@@ -208,6 +208,28 @@ GIT_MIXED = {
 }
 
 
+# A reading subcommand can still write a file: --output=FILE is one of git's diff options, so log,
+# show, diff, blame, shortlog, rev-list and reflog show all take it, and git opens (and empties)
+# FILE as it reads the option. `git grep -O` opens the matching files in a program. Neither is a
+# read. (format-patch -o, archive -o and bundle create aren't reading subcommands at all.)
+_GREP_OPENS = re.compile(r"-[abchiIlLnopPqrvwWzEFGH0]*O|--open-files-in-pager(=|$)")
+
+
+def git_writes_a_file(sub, args):
+    """What makes this otherwise-reading git command write a file or start a program, or None."""
+    # Anywhere in the command: blame and shortlog take --output even after "--" (found by running
+    # the allowed forms against git 2.56).
+    if any(a == "--output" or a.startswith("--output=") for a in args):
+        return "--output writes its output to a file"
+    if sub == "grep":
+        for a in args:
+            if a == "--":                       # paths from here on
+                break
+            if _GREP_OPENS.match(a):
+                return "-O opens the files it finds in a program"
+    return None
+
+
 def _git_options(args, spec):
     """A mixed subcommand's arguments as (the options given, by long name; the other words; the
     options given before the first of those words), or None when one of them isn't a read option of
@@ -326,6 +348,10 @@ def hook_refusal(tool, inp, cwd=None):
                             f"Hand a change to {inbox_label()}.")
             elif sub not in GIT_READS:
                 return f"the {NAME} reads git (log, status, diff, show, branch --list…) but doesn't change it (git {sub}). Hand it to {inbox_label()}."
+            how = git_writes_a_file(sub, args)
+            if how:
+                return (f"the {NAME} reads git but doesn't write files or start programs with it: in `git {' '.join([sub, *args])}`, {how}. "
+                        f"Read what it prints (to keep it, redirect into your own folder: … > {_home()}/notes.md), or hand it to {inbox_label()}.")
         if head in PAL_NAMES:
             sub = rest[0] if rest else ""
             why = cli_refusal(sub, rest[1:])

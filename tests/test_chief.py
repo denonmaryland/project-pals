@@ -274,6 +274,40 @@ class TheChiefsToolCalls(unittest.TestCase):
         "git log --oneline -5", "git status", "git diff --stat", "git show HEAD", "git rev-parse HEAD",
     )
 
+    # A reading subcommand that writes a file (Orca, after T121's sweep): --output is a diff option,
+    # so every command that takes diff options has it, and git empties the file as it parses the flag.
+    GIT_FILE_WRITES = (
+        "git log --output=/p/log.txt", "git log -5 --output /p/log.txt", "git diff --output=patch.diff", "git diff --stat --output patch.diff HEAD~1",
+        "git show --output=x HEAD", "git blame --output=x README.md", "git shortlog --output=x", "git rev-list --output=x HEAD",
+        "git reflog show --output=x", "git reflog --output=x", "git -C /p log --output=x", "cd /p && git diff --output=x",
+        "git blame -- main --output=a", "git shortlog -- --output=x.out -3",          # these two take it even after "--"
+        f"git log --output={'{home}'}/log.txt",                                # even into its own folder: a redirect does that
+        "git grep -O TODO", "git grep -Oless TODO", "git grep -nO TODO", "git grep --open-files-in-pager TODO", "git grep --open-files-in-pager=less TODO",
+        "git format-patch -o /p/out HEAD~1", "git format-patch HEAD~1", "git archive -o /p/x.tar HEAD", "git archive --output=x.zip HEAD",
+        "git bundle create /p/x.bundle HEAD", "git notes add -m x", "git stash", "git apply x.diff",
+    )
+    GIT_STILL_READS = (
+        "git log -p --output-indicator-new=+ -3", "git diff --stat HEAD~1", "git diff -Oorderfile", "git log --oneline -- output",
+        "git show HEAD:README.md", "git blame README.md", "git shortlog -sn", "git rev-list --count HEAD",
+        "git grep -n TODO", "git grep -e OK", "git grep -eOK", "git grep -c -i output", "git grep -n TODO -- -O",
+    )
+
+    def test_git_reads_dont_write_files(self):
+        cmds = [c.replace("{home}", str(self.home)) for c in self.GIT_FILE_WRITES]
+        why = self.refusals(cmds)
+        for cmd in cmds:
+            self.assertTrue(why[cmd], f"passed: {cmd}")
+        self.assertIn("--output writes its output to a file", why["git log --output=/p/log.txt"])
+        self.assertIn(f"{self.home.resolve()}/notes.md", why["git log --output=/p/log.txt"])       # how to keep it instead
+        self.assertIn("-O opens the files it finds in a program", why["git grep -O TODO"])
+        self.assertTrue(self.denied("tC", "Bash", {"command": "git diff --output=patch.diff"}, str(self.home)))
+        ok = self.refusals(self.GIT_STILL_READS)
+        for cmd in self.GIT_STILL_READS:
+            self.assertIsNone(ok[cmd], f"refused: {cmd}")
+        # Keeping what git printed, in its own folder, is still a plain redirect.
+        self.assertFalse(self.denied("tC", "Bash", {"command": f"git log --oneline -5 > {self.home}/notes.md"}, str(self.home)))
+        self.assertTrue(self.denied("tC", "Bash", {"command": "git log --oneline -5 > /p/notes.md"}, str(self.home)))
+
     def refusals(self, cmds):
         return py(self.env, f"import crewchief\nprint(json.dumps({{c: crewchief.hook_refusal('Bash', {{'command': c}}, {str(self.home)!r}) "
                             f"for c in {list(cmds)!r}}}))", term="tC")
