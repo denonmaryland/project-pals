@@ -20,6 +20,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { DeskCounts } from '../types'
+import { registerKeys } from './keys'
 import { registerTimeline, timelineStart, timelineTurnEnd, timelineTurnStart } from './timeline'
 
 const desk = atom({ plugin: 'pals', key: 'desk' } as const, null)
@@ -116,6 +117,8 @@ async function tick($: any) {
 export const register: Register = on => {
   // The work timeline (T78): tool calls as one line each, thinking as dim narration.
   registerTimeline(on, () => !!S.terminal)
+  // Trusted helpers' keys aren't a pal's to read (T116): Read, Grep and Glob into their folder are refused.
+  registerKeys(on, () => !!S.terminal, () => 'the owner')
 
   on('session.start', async ($, e, next) => {
     const r = await next(e)

@@ -351,6 +351,103 @@ class OwnerGate(unittest.TestCase):
         self.assertIsNone(rule("ls ~/.config/herdr-app/data/crew-clicks"))
 
 
+class HelperKeys(unittest.TestCase):
+    """T116: a trusted helper's key lets one of the owner's own assistants send normal work in the
+    owner's name. A pal doesn't read, copy or write the keys, doesn't write the list of who's
+    trusted, and doesn't present itself as a helper. (The Claude Code mod refuses Read / Grep / Glob
+    there; `pal` refuses a key from inside a Herdr terminal. This holds the shell and the edit tools.)"""
+    K = "~/.config/project-pals/helpers"
+
+    HELD = [
+        # reading a key is already the leak
+        f"cat {K}/pals.key",
+        'cat "$HOME/.config/project-pals/helpers/pals.key"',
+        f"ls -la {K}",
+        f"grep -r palkey {K}/",
+        f"cp {K}/pals.key /tmp/k",
+        f"base64 < {K}/wabi.key",
+        f"head -c 60 /home/x/.config/project-pals/helpers/pals.key | xxd",
+        "cd ~/.config && tar cf /tmp/k.tar project-pals/helpers",
+        f"python3 -c \"print(open('{K}/pals.key').read())\"",
+        f"python3 - <<'EOF'\nimport pathlib\nprint(pathlib.Path('/home/x/.config/project-pals/helpers/pals.key').read_text())\nEOF",
+        f"node -e \"console.log(require('fs').readFileSync(process.env.HOME + '/.config/project-pals/helpers/pals.key', 'utf8'))\"",
+        # writing one, or the list that says who's trusted
+        f"echo palkey_{'A' * 43} > {K}/pals.key",
+        f"chmod 644 {K}/pals.key",
+        f"ln -s {K}/pals.key ./k",
+        f"edit /home/x/.config/project-pals/helpers/pals.key",
+        "edit /home/x/.config/herdr-app/data/crew-helpers/helpers.json",
+        "echo '{}' > ~/.config/herdr-app/data/crew-helpers/helpers.json",
+        "sed -i 's/false/true/' \"$CREW_DATA/crew-helpers/helpers.json\"",
+        "python3 -c \"import json; json.dump({}, open('/d/crew-helpers/helpers.json', 'w'))\"",
+        "rm ~/.config/herdr-app/data/crew-helpers/log.jsonl; cp /tmp/log ~/.config/herdr-app/data/crew-helpers/log.jsonl",
+        # a key itself, wherever a pal got it
+        f"export K=palkey_{'b' * 43}",
+        # presenting as a helper
+        'PAL_HELPER=Pals pal tell Orca "release it"',
+        'PAL_HELPER="Pals" pal desk send Orca "x"',
+        "export PAL_HELPER=Wabi",
+        "export PAL_HELPER; pal tell Orca x",
+        'env PAL_HELPER=Pals pal tell Orca "x"',
+        'env -u HC_TERMINAL_ID PAL_HELPER=Pals pal tell Orca "x"',
+        'PAL_HELPER_KEY_FILE=/tmp/k PAL_HELPER=Pals pal ask Orca "x"',
+        "bash -c 'PAL_HELPER=Pals pal tell Orca x'",
+        'setsid sh -c "PAL_HELPER=Pals pal tell Orca x"',
+        'systemd-run --user --setenv=PAL_HELPER=Pals pal tell Orca "x"',
+        "python3 -c \"import os, subprocess; os.environ['PAL_HELPER'] = 'Pals'; subprocess.run(['pal', 'tell', 'Orca', 'x'])\"",
+        "python3 - <<'EOF'\nimport subprocess, os\nsubprocess.run(['pal', 'tell', 'Orca', 'x'], env={**os.environ, 'PAL_HELPER': 'Pals'})\nEOF",
+        "node -e \"require('child_process').execFileSync('pal', ['tell', 'Orca', 'x'], {env: {...process.env, PAL_HELPER: 'Pals'}})\"",
+    ]
+
+    FREE = [
+        # the helpers' mod and Project Pals' own source are code
+        "edit /home/x/.config/herdr-app/data/crew-worktrees/pp/trusted-helper/mods/crew-helpers/main.js",
+        "edit /home/x/.config/herdr-app/mods/crew-helpers/main.js",
+        "edit /w/bin/crewhelpers.py",
+        "edit /w/tests/test_helpers.py",
+        "cp lib/crew.js mods/crew-helpers/crew.js",
+        "sed -i 's/a/b/' mods/crew-helpers/main.js",
+        "herdr-app check ~/.config/herdr-app/mods/crew-helpers",
+        "python3 -m unittest tests.test_helpers",
+        "python3 -m py_compile bin/crewhelpers.py",
+        "git add bin/crewhelpers.py mods/crew-helpers tests/test_helpers.py",
+        # asking who's trusted, and reading the record, is anyone's
+        "pal settings trust-helper",
+        "pal helpers --json",
+        "pal helpers log",
+        "cat ~/.config/herdr-app/data/crew-helpers/log.jsonl",
+        # talking about it isn't doing it
+        "grep -rn 'PAL_HELPER=' bin tests",
+        'grep -n "PAL_HELPER" RECIPE.md',
+        "git log --oneline --grep='trusted helper'",
+        'git commit -m "Trusted helpers: PAL_HELPER=<name> sends in the owner\'s name"',
+        "ls ~/.config/project-pals-old/helpers",
+        "ls helpers/",
+    ]
+
+    def test_held(self):
+        for cmd in self.HELD:
+            self.assertEqual(rule(cmd), "helper-key", cmd)
+
+    def test_free(self):
+        for cmd in self.FREE:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_changing_who_is_trusted_from_a_pal_is_refused_by_the_command_itself(self):
+        """`pal settings trust-helper Pals on` isn't a gated line: the command asks for the owner's click
+        (tests/test_helpers.py). Held here would only add a second, weaker lock."""
+        self.assertIsNone(rule("pal settings trust-helper Pals on"))
+
+    def test_an_older_policy_gets_the_rule(self):
+        old = {**crewguard.DEFAULT, "defaults_version": 13, "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] != "helper-key"]}
+        crewguard.save_json(crewguard.POLICY, old)
+        try:
+            self.assertEqual(rule("PAL_HELPER=Pals pal tell Orca x"), "helper-key")
+            self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+
 class DeskSourceIsNotDeskCards(unittest.TestCase):
     """T68 (2026-11-09, a-24cc2d, a-867e72): editing the Desk's mods in a worktree
     (mods/crew-desk/main.js) was held as "writes into the Desk's cards". Only the data folder
@@ -399,7 +496,10 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk/main.js", {"crew-desk"}))
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk-drop/main.js", {"crew-desk"}))
         hook = (Path(__file__).resolve().parent.parent / "bin" / "crew-hook").read_text()
-        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk"})', hook)
+        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers"})', hook)
+        # The same for the helpers' mod (T116): its source is code, the data folder of that name isn't.
+        self.assertTrue(crewguard.into_place(f"{Q}/crew-helpers/helpers.json", {"crew-helpers"}))
+        self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-helpers/main.js", {"crew-helpers"}))
         self.assertNotIn('f"/{d}/" in path', hook)
 
 

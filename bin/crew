@@ -131,6 +131,11 @@ Updates
                                      take Project Pals out (the owner's: About → Uninstall): everything it added,
                                      nothing of yours; pals' data stays unless --purge (--dry-run: just list it)
 
+Trusted helpers (your own assistants, sending normal work in your name; never a click)
+  pal settings trust-helper         who's trusted (pal helpers is the same; log: what they sent and tried)
+  pal settings trust-helper <name> on|off|rotate|remove      the owner's, from Project Pals (About → Trusted helpers)
+  PAL_HELPER=<name> pal tell|ask|task add --for|desk send …   how a helper sends; PAL_HELPER=<name> pal helpers check
+
 Approvals (the owner)
   pal approvals                     guarded commands waiting on the owner
   pal approve ID | pal deny ID ["note"]
@@ -573,10 +578,10 @@ def cmd_ask(spaces, spec, text, timeout):
     deadline = time.time() + timeout
     who = crewdesk.sender(spaces)
     me, name = who["me"], who["name"]
-    head = crewdesk.who({"from": who["from"], "from_kind": who["from_kind"]}) if who["from_kind"] != "owner" else header(me, name)
     title, body = crewdesk.split_text(text)
     card = crewdesk.create("ask", f"{space['name']}#{chan(tab)}", title, body, frm=who["from"], from_kind=who["from_kind"],
                            proof=who["proof"], via="pal ask")
+    head = crewdesk.who(card) if who["from_kind"] != "owner" else header(me, name)   # (a helper's header needs its card: the ledger)
     text = crewdesk.escape_body(text)
     import crewchat
     from crewlib import QUEUE, hooked
@@ -1312,7 +1317,7 @@ def cmd_desk(spaces, rest):
                 die("that's you")
         if to == OWNER and owner:
             die(f"that's you, {OWNER}")
-        if urgency == "soon" and who["from_kind"] == "pal" and to and to != OWNER:
+        if urgency == "soon" and who["from_kind"] in ("pal", "helper") and to and to != OWNER:
             cap = int(crewdesk.conf().get("pal_soon_per_hour") or 6)
             if crewdesk.soon_count(to) >= cap:
                 urgency = "normal"
@@ -2133,6 +2138,71 @@ def cmd_owner_step(rest):
     sys.exit(3)
 
 
+def cmd_helpers(rest):
+    """pal settings trust-helper [--json] | check | <name> on|off|rotate|remove (pal helpers … is the same).
+    Trusted helpers (T116): the owner's own assistants, sending normal work in the owner's name with
+    PAL_HELPER=<name>. Listing and check are free and never show a key; every change is the owner's click."""
+    import crewhelpers
+    as_json = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+    if not rest or rest == ["log"]:
+        info = crewhelpers.listing()
+        if as_json:
+            print(json.dumps(info, ensure_ascii=False))
+            return
+        if rest == ["log"]:
+            for e in info["log"][:60]:
+                what = {"sent": f"sent {e.get('card_kind') or 'a card'} to {e.get('to')}: {e.get('title')} ({e.get('card')})",
+                        "refused": f"refused: {e.get('command')} ({e.get('what')})" + ("" if e.get("verified") else " · no valid key"),
+                        "unverified": f"went as not verified ({e.get('via')}): {e.get('why')}",
+                        "switch": f"{OWNER}: {e.get('action')}"}.get(e.get("kind"), e.get("kind"))
+                print(f"{ago(e.get('at'))} · {e.get('helper')} · {what}")
+            if not info["log"]:
+                print("(nothing yet)")
+            return
+        for x in info["helpers"]:
+            print(f"{x['name']}: {'on' if x['on'] else 'off'}" + (f" · key {x['key']}" if x["key"] else " · no key yet")
+                  + ("" if x["key_there"] or not x["key"] else " · KEY FILE MISSING (rotate makes a new one)")
+                  + (f" · last used {ago(x['last_used'])}" if x.get("last_used") else "") + f" · {x['sent']} sent, {x['refused']} refused")
+        if not info["helpers"]:
+            print(f"(no trusted helpers. {OWNER} adds one in Project Pals: About, Settings, Trusted helpers)")
+        return
+    if rest == ["check"]:
+        p = crewhelpers.presented()
+        if not p:
+            die("PAL_HELPER isn't set: PAL_HELPER=<name> pal helpers check")
+        if p.get("name"):
+            print(f"{p['name']}: trusted, key {p['fp']} accepted. pal tell / ask / task add --for / desk send go out as "
+                  f"\"from {OWNER} via {p['name']}, a trusted helper: normal work only\".")
+            return
+        die(f"{p['claim']}: not accepted: {p['why']}. Messages go as \"a shell on this computer, not verified as {OWNER}\".")
+    if len(rest) != 2 or rest[1] not in ("on", "off", "rotate", "remove"):
+        die("pal settings trust-helper | check | <name> on|off|rotate|remove")
+    require_owner("changing settings")
+    name, what = rest
+    try:
+        if what in ("on", "off"):
+            pals = []
+            if what == "on":
+                try:
+                    pals = [s["name"] for s in herdr_spaces()]
+                except CrewError:
+                    pass
+            known, e = crewhelpers.switch(name, what == "on", pals)
+            if what == "off":
+                print(f"{known}: off. Its key isn't accepted now; what it sends arrives as \"not verified as {OWNER}\".")
+                return
+            print(f"{known}: on · key {e['sha256'][:8]}\nkey file: {crewhelpers.key_path(known)} (only you can read it; Project Pals keeps its fingerprint, not the key)\n"
+                  f"Give your assistant this line: PAL_HELPER={shlex.quote(known)} pal tell \"<Pal>\" \"…\"   (from a plain terminal, not inside Herdr)")
+        elif what == "rotate":
+            known, e = crewhelpers.rotate(name)
+            print(f"{known}: new key {e['sha256'][:8]} in {crewhelpers.key_path(known)}. Every copy of the old key is dead.")
+        else:
+            print(f"{crewhelpers.remove(name)}: removed, and its key file with it. What it sent stays in the record.")
+    except crewhelpers.HelperError as e:
+        die(str(e))
+
+
 def cmd_settings(rest):
     """pal settings | pal settings owner "Sam" | pal settings head "Orchestrator" | pal settings bypass on|off | pal settings llm auto|claude|agy"""
     from crewlib import save_settings
@@ -2142,6 +2212,8 @@ def cmd_settings(rest):
             v = c.get(k)
             print(f"desk.{k} = {('on' if v else 'off') if isinstance(v, bool) else v}    ({vals}: {what})")
         return
+    if rest and rest[0] in ("trust-helper", "trusted-helpers", "helpers"):
+        return cmd_helpers(rest[1:])   # listing is free; a change asks for the click itself
     if not rest:
         st = settings()
         print(f"owner: {st['owner']}\nhead pal: {st['head']}\nhead pal's inbox topic: {'#' + head_topic() if head_topic() else 'none (the topic it shows, else its first tab)'}"
@@ -2545,6 +2617,9 @@ def cmd_home(spaces, rest):
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
     me, name = whoami(spaces)
     by = me or name
+    sent_by = crewdesk.sender(spaces)
+    if sent_by["from_kind"] == "helper":
+        by = sent_by["from"]   # a trusted helper adds to Home under its own name (it can't answer or close others' items)
     # Who may take an item off Home (T112): the owner's click, the head pal, else only whoever put it there.
     mine, _ = my_bot(spaces)
     from crewlib import is_head
@@ -2661,6 +2736,11 @@ def cmd_home(spaces, rest):
             print("Home: all seen")
         else:
             die(__doc__)
+    except crewhome.NotYours as e:
+        if os.environ.get("PAL_HELPER"):   # a helper's key doesn't take things off Home either (T116): on the record
+            import crewhelpers
+            crewhelpers.note_refused(["home", sub, *args], f"{sub} something on Home")
+        die(str(e))
     except crewhome.HomeError as e:
         die(str(e))
 
@@ -2793,6 +2873,8 @@ def main(argv):
         return cmd_factory(rest)
     if cmd == "owner-step":
         return cmd_owner_step(rest)
+    if cmd == "helpers":
+        return cmd_helpers(rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).

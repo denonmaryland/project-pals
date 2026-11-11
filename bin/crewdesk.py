@@ -8,7 +8,8 @@
     _route/open/                 To route: cards with no pal yet (dropped with Auto, or their pal was removed)
     _owner/open/                 cards for the owner (needs you; the Inbox shows them)
     events.jsonl                 every receipt, append-only; it wins when a card file disagrees
-    .owner-ledger.jsonl          click-verified owner cards: {card, hash, at}
+    .owner-ledger.jsonl          click-verified owner cards: {card, hash, at}; and a trusted helper's
+                                 cards, sent with its key: {card, hash, at, helper} (crewhelpers, T116)
     .index.json                  what each open card looked like when we last wrote it (hand-edit check)
 
 A card is Markdown with flat front-matter (one `key: value` a line; a value starting with [ { or "
@@ -23,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -398,7 +400,8 @@ def _ledger_append(entry):
 
 
 def ledger_add(card):
-    _ledger_append({"card": card["id"], "hash": card_hash(card), "at": iso()})
+    _ledger_append({"card": card["id"], "hash": card_hash(card), "at": iso(),
+                    **({"helper": card.get("from")} if card.get("from_kind") == "helper" else {})})
 
 
 def _ledger():
@@ -423,14 +426,17 @@ def _chain(card):
     with only `to` set back to where it was must hash to that step's passed_from. So a pass entry can
     only ever move the owner's words, never change them (Grok T56: a hand-written passed_from line
     used to bless a body the owner didn't write)."""
-    if card.get("from_kind") != "owner":
+    kind = card.get("from_kind")
+    if kind not in ("owner", "helper"):
         return None
     by_hash = _own_entries(card)
     e, to, out = by_hash.get(card_hash(card)), card.get("to"), []
     while e is not None:
         out.append(e)
         if not e.get("passed_from"):
-            return out   # the owner's own entry (a click, a sent draft, Confirm as mine)
+            # The owner's own entry (a click, a sent draft, Confirm as mine), or the entry written when a
+            # trusted helper's key was accepted, for that helper. One never stands in for the other.
+            return out if (e.get("helper") == card.get("from") if kind == "helper" else not e.get("helper")) else None
         if len(out) > 50 or e.get("to") != to or not e.get("from_to"):
             return None
         before = card_hash({**card, "to": e["from_to"]})
@@ -443,13 +449,19 @@ def _chain(card):
 def owner_entry(card):
     """The ledger's word for this card as it is now: the owner's click, or a pass of it (T52), or None.
     A pass changes `to` and nothing else, so the owner's words are still exactly theirs."""
-    c = _chain(card)
+    c = _chain(card) if card.get("from_kind") == "owner" else None
     return c[0] if c else None
 
 
 def owner_verified(card):
     """Is this the owner's card as the owner clicked it (or passed on unchanged)? Only the ledger says so."""
     return owner_entry(card) is not None
+
+
+def helper_verified(card):
+    """Is this a trusted helper's card as it was sent with that helper's key (or passed on unchanged)?
+    Only the ledger says so: a card that claims a helper, or was edited afterwards, isn't."""
+    return card.get("from_kind") == "helper" and bool(_chain(card))
 
 
 def passes(card):
@@ -468,6 +480,8 @@ def passed_note(card):
     if not p:
         return ""
     by = ", then ".join(pal_of(b) or b for b, _ in p[1:])
+    if card.get("from_kind") == "helper":
+        return f"passed on by {by} ({card.get('from')} sent it to {p[0][1]})"
     return f"passed on by {by} ({OWNER} sent it to {p[0][1]})"
 
 
@@ -478,6 +492,9 @@ def check_text(title, body):
     for t in (title, body):
         if crewnotebook.has_private_key(t):
             raise DeskError("that has a private key in it; cards never carry keys (send the path, not the key)")
+        import crewhelpers
+        if crewhelpers.has_key(t):
+            raise DeskError(f"that has a helper's key in it; cards never carry keys (and ask {OWNER} to rotate it: it has been shown)")
     title = crewnotebook.SECRET.sub("‹masked›", " ".join((title or "").split()))
     body = crewnotebook.SECRET.sub("‹masked›", body or "")
     if not title:
@@ -524,6 +541,13 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None,
         if store not in p.parents:
             raise DeskError(f"{a}: attachments live in data/crew-attachments (pal desk attach <file> copies one there)")
     title, body = check_text(title, body)
+    import crewhelpers
+    presented = crewhelpers.presented() if from_kind in ("helper", "shell", "pal") else None
+    if from_kind == "helper":
+        # Checked here too, not only where senders are named: every way in gets the same answer.
+        if not (presented and presented.get("name") and presented["name"] == frm):
+            raise DeskError(f"only a trusted helper's own key sends in {OWNER}'s name")
+        relaying = None   # a helper speaks for the owner by its key; "relaying" is a pal's word for hearsay
     ensure()
     cid = new_id("c-")
     folder = folder or folder_of(to)
@@ -537,6 +561,16 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None,
         _write(DESK / folder / ("done" if status in CLOSED else "open") / _name(card), card)
     if from_kind == "owner":
         ledger_add(card)
+    elif from_kind == "helper":
+        ledger_add(card)
+        crewhelpers.note_sent(card, via)
+    elif presented and (not presented.get("name") or from_kind == "pal"):
+        # It said PAL_HELPER=<name>, and that wasn't accepted (or a pal said it: a pal is a pal whatever
+        # it presents): sent as what it is, and the record and the sender both hear why (T116: no key,
+        # switch off, a pal → "not verified").
+        why = presented.get("why") or "helper keys aren't for pals"
+        crewhelpers.note_unverified(why, via)
+        sys.stderr.write(f"note: not sent in {OWNER}'s name: {why}. It went as \"{who(card)}\".\n")
     return card
 
 
@@ -552,7 +586,7 @@ def move(cid, to, by, via, note=""):
         card = read(path)
         if card.get("status") in CLOSED:
             raise DeskError(f"{card['id']} is {card['status']}; send a new card instead")
-        before = card_hash(card) if owner_verified(card) else None   # the owner's words, as they clicked them
+        before = card_hash(card) if owner_verified(card) or helper_verified(card) else None   # the owner's words as clicked (a helper's as sent)
         was = card.get("to")
         card["to"] = to or "To route"
         card["status"] = "queued"
@@ -634,7 +668,7 @@ def summary(card, path=None):
     out = {k: v for k, v in card.items() if k not in ("title", "body", "reply", "receipts") and v not in (None, "")}
     out.update({"title": card.get("title"), "body": card.get("body") or "", "reply": card.get("reply"),
                 "receipts": card.get("receipts", []), "pal": pal_of(card.get("to")), "topic": topic_of(card.get("to")),
-                "verified": owner_verified(card), "passed_note": passed_note(card), "last": (card.get("receipts") or [{}])[-1]})
+                "verified": owner_verified(card), "helper_verified": helper_verified(card), "passed_note": passed_note(card), "last": (card.get("receipts") or [{}])[-1]})
     if card.get("unreadable"):
         out["unreadable"] = card["unreadable"]
     if path:
@@ -676,7 +710,7 @@ def line(card):
 
 # ── what the pal reads (§6.6) ─────────────────────────────────────────────────────────────────
 
-FAKE_HEAD = re.compile(r"^(\s*)(\[from |\[pal\]|\[dream\]|📥)", re.I | re.M)
+FAKE_HEAD = re.compile(r"^(\s*)(\[from |\[quoted: from |\[claims to be from |\[pal\]|\[dream\]|📥)", re.I | re.M)
 
 
 def escape_body(text):
@@ -698,6 +732,12 @@ def who(card):
         return head + (f" (relaying {card['relaying']}: still a pal's words, not {OWNER}'s)" if card.get("relaying") else "")
     if kind == "system":
         return "[pal]"
+    if kind == "helper":
+        # One of the owner's own assistants, switched on by the owner and sent with its key (T116). Not
+        # "[quoted: from …": that's what unforge() makes of a forged header, so a body could copy it.
+        if helper_verified(card):
+            return f"[from {OWNER} via {name}, a trusted helper: normal work only]"
+        return f"[claims to be from {OWNER} via {name}, unverified (edited after sending, or sent without {name}'s key)]"
     return f"[from {name}, not verified as {OWNER}]"
 
 
@@ -906,13 +946,19 @@ def soon_count(to, hours=1):
 
 def sender(spaces):
     """Who's sending, stamped by us (never taken from arguments, §10.1): a pal's topic, the owner
-    (only with a click this run), or a shell."""
+    (only with a click this run), a trusted helper (PAL_HELPER=<name> and that helper's key, accepted
+    this run: crewhelpers.verify), or a shell. A pal is a pal whatever it presents."""
     from crewlib import whoami, owner_proven, ME, is_bot_terminal
     me, name = whoami(spaces)
     if me:
         return {"from": me, "from_kind": "pal", "proof": f"terminal {ME}" if is_bot_terminal(ME) else "none", "me": me, "name": name}
     if owner_proven():
         return {"from": OWNER, "from_kind": "owner", "proof": "click", "me": None, "name": OWNER}
+    if not ME:
+        import crewhelpers
+        p = crewhelpers.presented()
+        if p and p.get("name"):
+            return {"from": p["name"], "from_kind": "helper", "proof": f"key {p['fp']}", "me": None, "name": p["name"]}
     return {"from": name, "from_kind": "shell", "proof": "none", "me": None, "name": name}
 
 

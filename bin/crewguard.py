@@ -15,7 +15,7 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 13   # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56)
+DEFAULTS_VERSION = 14   # 14: helper-key (T116). 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56)
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -72,6 +72,12 @@ DEFAULT = {
         # status. Pals move cards with pal desk (its own writes aren't shell commands); the owner may
         # edit a card in an editor, and crewd notes it (Desk design §10.3, §12.2).
         {"name": "desk-write", "why": "writes into the Desk's cards (use pal desk instead)", "check": "desk-writes", "pattern": r"$^"},
+        # Trusted helpers (T116): the owner's own assistants send normal work in the owner's name with
+        # a key. A pal doesn't read, copy or write those keys, doesn't write the list that says who's
+        # trusted (data/crew-helpers), and doesn't present itself as a helper (PAL_HELPER=…). `pal`
+        # refuses a key from inside a Herdr terminal as well; this holds the attempt and tells the owner.
+        {"name": "helper-key", "why": "reaches for a trusted helper's key or name (those are the owner's assistants', not a pal's)",
+         "check": "helper-keys", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -661,8 +667,63 @@ def _writes_into(cmd, names, place):
     return any(into_place(t, names) for t in write_targets(cmd)) or writes_agent_file_via_interpreter(cmd, *place)
 
 
+# ─── Trusted helpers' keys (T116) ───────────────────────────────────────────────────────────────
+HELPERS_PLACE = _place(["crew-helpers"])
+HELPER_KEYS_DIR = re.compile(r"(?:^|[^\w-])project-pals/helpers(?![\w-])")   # ~/.config/project-pals/helpers, however it's written
+HELPER_KEY_TEXT = re.compile(r"palkey_[A-Za-z0-9_-]{20,}")                    # a key itself, wherever one turns up
+# Presenting as a helper: PAL_HELPER=Pals pal tell …, export PAL_HELPER, env PAL_HELPER=… (as a
+# command, not inside a quoted pattern), or code that puts it in a child's environment.
+HELPER_ENV = re.compile(r"\bPAL_HELPER(?:_KEY_FILE)?=|\bexport\s+(?:-\w+\s+)*PAL_HELPER")
+HELPER_ENV_CODE = re.compile(r"""\benviron\b|\bputenv\b|\bsetenv\b|\bprocess\.env\b|\bENV\s*\[|\benv\s*=|\benv\s*:""")
+
+
+def in_helper_keys(path):
+    """Is `path` in the folder where trusted helpers' keys live (by name, or once links are resolved)?"""
+    p = os.path.normpath((path or "").strip("'\""))
+    if HELPER_KEYS_DIR.search(p):
+        return True
+    try:
+        real = os.path.realpath(os.path.expanduser(p))
+        keys = os.path.realpath(os.path.expanduser("~/.config/project-pals/helpers"))
+        return real == keys or real.startswith(keys + os.sep)
+    except (OSError, ValueError):
+        return False
+
+
+def touches_helpers(cmd):
+    """A pal's command that reaches for a helper's key (reading counts: a key that's been read has
+    leaked), writes the list of who's trusted, or presents itself as a helper. The helpers' mod
+    (mods/crew-helpers/…) and Project Pals' own source are code, not the keys. Catches the plain
+    ways; it's a guard against mistakes and persuasion (README), and `pal` checks again itself."""
+    edited = _edited(cmd)
+    if edited is not None:
+        return in_helper_keys(edited) or into_place(edited, {"crew-helpers"})
+    if HELPER_KEYS_DIR.search(cmd) or HELPER_KEY_TEXT.search(cmd):
+        return True
+    # As a command: on the line itself, or in one a shell is handed (bash -c '…', eval "…"). Not
+    # commands(): it drops leading VAR=value words, which is the very thing looked for here.
+    if any(HELPER_ENV.search(mask_quotes(t)) for t in _shell_texts(cmd)):
+        return True
+    if "PAL_HELPER" in cmd and HELPER_ENV_CODE.search(cmd) and (INTERP_ANY.search(cmd) or HEREDOC.search(cmd)):
+        return True
+    return _writes_into(cmd, {"crew-helpers"}, HELPERS_PLACE)
+
+
+def _shell_texts(cmd, depth=0):
+    """The line (heredoc bodies dropped) and every line it hands a shell with -c or eval, a few levels deep."""
+    text = heredoc_free(cmd)
+    out = [text]
+    if depth < 3:
+        for m in list(INNER.finditer(text)) + list(EVAL.finditer(text)):
+            out += _shell_texts(m.group(2), depth + 1)
+    return out
+
+
+INTERP_ANY = re.compile(r"(?:^|[\s;&|(/])(?:python[\d.]*|pypy[\d.]*|node(?:js)?|deno|bun|tsx|ts-node|perl[\d.]*|ruby|php[\d.]*|lua[\d.]*)\b")
+
+
 # ─── Uninstall through a pty or from code (Grok T56 re-check) ───────────────────────────────────
-PTY_WRAPPERS = {"expect", "script", "unbuffer", "socat", "empty", "pty", "ptyrun", "faketty", "dtach",
+PTY_WRAPPERS ={"expect", "script", "unbuffer", "socat", "empty", "pty", "ptyrun", "faketty", "dtach",
                 "abduco", "tmux", "screen", "zpty", "pexpect"}
 NAMES_UNINSTALL = re.compile(r"install\.sh\b[^\n#]*--uninstall\b|\bcrewuninstall\b")
 # Code that loads the uninstaller or reaches the click tokens it trusts.
@@ -788,7 +849,7 @@ def run_strings(cmd):
 
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall}
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers}
 
 
 def _help(seg):

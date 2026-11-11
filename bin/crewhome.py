@@ -206,10 +206,14 @@ def may_move(x, by, role=None):
     return bool(mine) and (mine == theirs or ("#" in mine and "#" in theirs and _pal(mine) == _pal(theirs)))
 
 
+class NotYours(HomeError):
+    pass
+
+
 def _allow(x, by, role, what):
     if not may_move(x, by, role):
         from crewlib import OWNER
-        raise HomeError(f"{x['id']} was put on Home by {x.get('by') or '?'}: only they, the head pal or {OWNER}'s click "
+        raise NotYours(f"{x['id']} was put on Home by {x.get('by') or '?'}: only they, the head pal or {OWNER}'s click "
                         f"in Project Pals can {what} it (you're {by or 'unknown'})")
 
 

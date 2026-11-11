@@ -253,6 +253,15 @@ def agent_above():
     return None
 
 
+def helper_key(p):
+    """Is `p` a trusted helper's key file as crewhelpers writes one (a small plain file holding palkey_…)?"""
+    try:
+        return (p.is_file() and not p.is_symlink() and p.stat().st_size <= 512
+                and p.read_text(errors="replace").startswith("palkey_"))
+    except OSError:
+        return False
+
+
 def purge_list():
     """What --purge deletes on top of an uninstall, in words (the typed prompt says it all first)."""
     data = sorted(d.name for d in DATA.glob("crew-*")) if DATA.is_dir() and not unsafe(DATA / "x") else []
@@ -666,6 +675,25 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
     lib = USER / ".local" / "lib" / "herdr-crew"
     run.remove_installed(lib, f"{lib} (Project Pals' library{', a link to a checkout' if lib.is_symlink() else ''})",
                          lambda q: q.is_symlink() or (q.is_dir() and (q / "crewlib.py").is_file()))
+
+    # 4b. Trusted helpers' keys (T116, ~/.config/project-pals/helpers/<name>.key): secrets Project Pals
+    #     made when the owner switched a helper on, so they're not in the install's manifest. A key
+    #     that outlives the thing that checks it is only a secret lying about: each file that holds one
+    #     of ours goes (by its content, never through a link), then the two folders when that leaves
+    #     them empty. The list of who was trusted (data/crew-helpers) is the owner's data: --purge.
+    hk = USER / ".config" / "project-pals" / "helpers"
+    if hk.is_dir() and not hk.is_symlink():
+        for k in sorted(hk.glob("*.key")):
+            if helper_key(k):
+                run.remove(k, f"{k} (a trusted helper's key)")
+            else:
+                run.notes.append(f"left {k} alone: it isn't a key Project Pals made")
+        for d in (hk, hk.parent):
+            try:
+                if not dry and d.is_dir() and not d.is_symlink() and not unsafe(d) and not any(d.iterdir()):
+                    d.rmdir()
+            except OSError:
+                pass
 
     # 5. Herdr: off the pals layout first (so nothing shows missing mods), then the layout and mods.
     #    Project Pals' own dialogs too (About, which runs this): a layout switch leaves them open, and

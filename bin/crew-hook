@@ -197,7 +197,9 @@ def pre_tool_use(event):
         # tokens, or of crewd's message queue (a forged message), is held too. Anything else: no hook work.
         path = inp.get("file_path") or inp.get("notebook_path") or ""
         import crewguard
-        if crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk"}):   # not mods/crew-desk (T68)
+        # (… and of trusted helpers' keys or the list of who's trusted: T116.)
+        if crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers"}) \
+                or crewguard.in_helper_keys(path):   # not mods/crew-desk, mods/crew-helpers (T68)
             cmd = f"edit {path}"
         elif os.path.basename(path) in AGENT_FILES:
             cmd, extra = edit_request(tool, inp, path)

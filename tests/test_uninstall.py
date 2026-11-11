@@ -180,6 +180,33 @@ class Uninstall(unittest.TestCase):
         for gone in ("crew-install.json", "crew-footprint.json", "crew-originals"):
             self.assertFalse((data / gone).exists(), gone)
 
+    def test_trusted_helpers_keys_go_and_only_those(self):
+        """T116: a helper's key is a secret Project Pals made after the install; it doesn't outlive it.
+        Anything else in that folder is the person's and stays; a link is never followed."""
+        self.sb.install()
+        keys = self.sb.home / ".config" / "project-pals" / "helpers"
+        keys.mkdir(parents=True)
+        (keys / "pals.key").write_text("palkey_" + "A" * 43 + "\n")
+        (keys / "notes.key").write_text("my own notes\n")
+        outside = self.sb.base / "outside.key"
+        outside.write_text("palkey_" + "B" * 43 + "\n")
+        (keys / "linked.key").symlink_to(outside)
+        dry = self.sb.uninstall("--dry-run").stdout
+        self.assertIn("pals.key (a trusted helper's key)", dry)
+        self.assertTrue((keys / "pals.key").exists(), "a dry run removes nothing")
+        self.sb.uninstall()
+        self.assertFalse((keys / "pals.key").exists())
+        self.assertEqual((keys / "notes.key").read_text(), "my own notes\n")
+        self.assertTrue((keys / "linked.key").is_symlink())
+        self.assertTrue(outside.exists(), "nothing was deleted through the link")
+        # With only keys of ours in it, the folders go too.
+        self.sb.install()
+        (keys / "notes.key").unlink()
+        (keys / "linked.key").unlink()
+        (keys / "wabi.key").write_text("palkey_" + "C" * 43 + "\n")
+        self.sb.uninstall()
+        self.assertFalse((self.sb.home / ".config" / "project-pals").exists())
+
     def test_the_persons_later_edits_stay(self):
         user_config(self.sb)
         self.sb.install()
