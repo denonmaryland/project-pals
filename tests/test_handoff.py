@@ -358,7 +358,10 @@ class Seat(unittest.TestCase):
         r = run(self.sb, *args, "--click", "ab" * 16)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         left = json.loads((self.sb["data"] / "crew-seats" / "t1.json").read_text())["holders"][0]["left"]
-        self.assertEqual((left["by"], left["via"]), (crewlib.OWNER, "click"))
+        self.assertEqual(left["via"], "click")
+        # The owner's name as that run read it (this process may have loaded another sandbox's settings first).
+        self.assertNotIn(left["by"], (crewlib.SHELL_NAME, "Boss", "Navi", "Other"))
+        self.assertEqual(left["by"].lower(), crewlib._default_owner().lower())
         self.assertTrue(any(q["op"] == "power-report" and q.get("mode") == "handoff" and not q.get("refused") for q in self.app.reports))   # the toast
         r = run(self.sb, *args, "--click", "cd" * 16)                                      # a token that isn't there: refused, never downgraded
         self.assertEqual(r.returncode, 1)
