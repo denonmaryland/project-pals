@@ -57,7 +57,7 @@ try {
     export const theme = () => ({}), home = () => "/h", appHome = () => "/h/.config/herdr-app", layout = () => null, keys = () => ({});
     export const run = nop, notify = nop, openOverlay = nop, closeOverlay = nop, hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   const crew = await import(pathToFileURL(join(dir, "crew.js")).href);
   const { fixtures } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const OFF = ["--settings", '{"promptSuggestionEnabled":false}'];

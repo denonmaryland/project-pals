@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- **Trusted helpers: let your own assistant send normal work in your name.** About → Settings →
+  Trusted helpers. Switch a helper on by name and it gets a key; from then on what it sends with
+  `PAL_HELPER=<name> pal tell`, `ask`, `task add --for` or `desk send` arrives headed "from you via
+  <name>, a trusted helper: normal work only", and your pals do it as if you'd asked. One click
+  switches it off, gives it a new key or removes it. It is never your click: approvals, push,
+  publish, deploy, release, merge, messaging people, settings, missions, AGENTS.md and everything
+  waiting on Home refuse it, and each try is recorded. Home shows what helpers sent in your name
+  and what they tried (Today, and a new In your name tab). At most 20 messages an hour per helper;
+  past that they arrive as "not verified". Pals can't use a helper's key: the approval gate holds
+  the attempt and `pal` refuses a key from inside Herdr.
+- **If you ran the build that went live on 10 November** ("Trusted helper · Pals"): Pals is carried
+  over switched **off**, and its old key is deleted. That build accepted a request without any key
+  and could be used by a pal, so turn Pals on again in Trusted helpers when you want it; your
+  assistant's `pal --as-helper …` line keeps working after that.
+- **Releases need your click from any terminal.** `./release` used to be held only when a pal ran
+  it. Now the script itself asks: a request in your Inbox, then the same command once more after
+  you approve. `./release X.Y.Z --dry-run` runs every check and changes nothing.
+- **Only you answer what's on Home.** `pal home done`, `drop` and `park` used to work from any
+  shell. Now an item is taken off only by whoever put it there, the head pal, or your click, and an
+  ask its asker takes back shows as Withdrawn, never as your answer.
+
 ## 0.4.2 — 2026-11-10
 
 - **A pal's board.** Click a pal and, before any terminal, you see its topics as cards in four

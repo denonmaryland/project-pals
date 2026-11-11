@@ -58,7 +58,7 @@ try {
     export const readTextFile = async (p) => fx.files[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => [];
     export const props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {}), focused = () => null;
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods", "crew-chief", "main.js"), join(dir, "crew-chief.mjs"));
   copyFileSync(join(root, "mods", "crew-chief-bar", "main.js"), join(dir, "crew-chief-bar.mjs"));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);

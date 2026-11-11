@@ -92,6 +92,15 @@ tokens or the Desk's cards. The command waits in your Inbox until you click Appr
   `--help`) isn't held. If the gate itself fails, the command is stopped, not let through.
 - Settings, updates, roll back, uninstall, landing and renaming need your click in Project Pals too, and only
   your click sends a message as you.
+- `./release` asks for your click from any terminal, not only a pal's, and only whoever put
+  something on Home, the head pal or your click takes it off.
+- **Trusted helpers** (About → Settings): you can let one of your own assistants send normal work
+  to your pals in your name (`PAL_HELPER=<name> pal tell …`). It's off until you switch a helper
+  on, one click turns it off or gives it a new key, and Home shows everything it sent and tried. It
+  is never your click: approvals, push, release, merge, messaging people, settings and what's
+  waiting on Home still need you. Its key is a file on your computer, so anything running as you
+  that reads it can do the same, and an assistant that's been tricked by something it read will
+  pass the trick on with your name on it. That's why it covers only work that's safe to undo.
 - **It catches mistakes, not a pal set on getting around it.** Pals run as you: a determined one
   could build a command from pieces or write a script and run it later. Antigravity CLI pals are
   gated on shell commands only: their own file-edit tools aren't checked yet.
@@ -234,7 +243,9 @@ A first install has nothing to roll back to; to take it out again, use Uninstall
 ```
 
 This bumps `VERSION`, tags it, builds the tarball and `SHA256SUMS`, pushes, and creates the
-GitHub release.
+GitHub release. It first asks for the owner's go: a request in Project Pals' Inbox, then the same
+command once more after the click (without Project Pals, you type the version). `./release 0.2.0
+--dry-run` runs every check and nothing else.
 
 ## License
 

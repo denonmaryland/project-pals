@@ -1059,7 +1059,10 @@ open|answered|done|parked|dropped, title ≤160, body ≤2 KB, options ≤4 (ask
 (link), topic, by (stamped), at, answer, answered_at, result, closed_at, parked_at}], release:
 {next, note, queued: [{id r-6hex, text, at, by}]}}`. Closed items go after 14 days. `pal home
 answer ID "option"` and `pal home seen` are the owner's (a click); an answer is told to whoever
-asked as a card from the owner. install.sh adds `build` (`hash`, `branch`, `subject`, `dirty`,
+asked as a card from the owner. **Who takes an item off Home** (`done`, `drop`, `park`, `unpark`):
+whoever put it there (the same pal, from any of its topics), the head pal, or the owner's click;
+anyone else is refused and told who may. An ask closed by anyone but the owner is `withdrawn`:
+Today shows it as **Withdrawn** by whom, in amber, and it is never an answer. install.sh adds `build` (`hash`, `branch`, `subject`, `dirty`,
 `tag`, `ahead`) to `crew-install.json` and a line to `data/crew-installs.jsonl` (the last 200):
 from git in a checkout, else (an export: `git archive`, how the head pal installs) from
 `CREW_BUILD=<hash>` with optional `CREW_BUILD_BRANCH` / `CREW_BUILD_SUBJECT`, or a `BUILD` file at
@@ -1303,6 +1306,56 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   `since`, `line`, `branch`, `stuck` and `blocked`, the pal's `needs` and `up_next`. Today itself
   stays the small read.
 
+### Trusted helpers (0.4.3)
+
+A trusted helper is one of the owner's own assistants outside Project Pals (a chat app, a script)
+that may send **normal work** to the pals in the owner's name. Off for everyone until the owner
+switches a helper on by name. It is never the owner's click.
+
+- **The switch** (About → Settings → **Trusted helpers**, a row that says who's on; it opens
+  `crew-helpers`, a 560 px sheet): a note on what a helper can and can never do; one 52 px row per
+  helper (a 30 px letter tile, the name with an ON / OFF tag, a line such as "Key made 5h ago · last
+  used 2h ago · 14 sent · 1 refused"; on: **Rotate key** and the switch; off: **Remove**, which asks
+  once more in place, and the switch); after switching one on or rotating, a green box with the
+  line to give the assistant (`PAL_HELPER=Pals pal tell "<Pal>" "…"`) and Copy; a field and **Add
+  and trust** (up to 8; not the owner's name or a pal's); and the record, "In your name". Every
+  button is `pal settings trust-helper <name> on|off|rotate|remove` with the click's token. From a
+  terminal the same command is refused: there is no way to turn a helper on without the app.
+- **Sending:** `PAL_HELPER=<name> pal tell | ask | task add --for | desk send …` from a plain
+  terminal (`pal --as-helper …` is the same for "Pals", `--as-helper=<name>` for another, and
+  allows only those four). The card is headed `[from <owner> via <name>, a trusted helper: normal
+  work only]`, and under its body a line says what it can't authorise and that it's handed on only
+  by passing the card unchanged. `PAL_HELPER=<name> pal helpers check` tells a helper where it stands.
+- **Not accepted** (no such helper, switch off, a missing, wrong or rotated key, a key file that's a
+  link or that others can read, more than 20 sends in the hour, or sent from inside Herdr): the
+  message still goes, headed `[from a shell on this computer, not verified as <owner>]` (a pal's
+  stays a pal's), and the sender is told why on stderr.
+- **Never a click.** Presented as a helper, every owner decision is refused, a real click token
+  included: approvals, landing, settings (the helper switch too), missions, brains, AGENTS.md,
+  proposals, updates, uninstall, renaming, the Desk's owner actions, and answering, closing or
+  parking what's on Home. A helper may add to Home under its own name and take its own item back.
+  It can't send with "now" urgency or `--relaying`, can't attach a `--check` command to a task, and
+  sends only a tell, a question or a task. A pal that gets a helper card asking for a push or a
+  release is held by the same gate as always.
+- **The record** (`pal helpers log`; Home's Today rows and its **In your name** drawer tab, which
+  appears once there's anything; the sheet's list): every send in the owner's name (who, to whom,
+  the title, the card), every send that went as "not verified" and why, every refused try (amber),
+  and every switch change. Never a key.
+- **A card edited after sending**, or one that claims a helper by hand, reads `[claims to be from
+  <owner> via <name>, unverified …]`; a body line that copies any header is quoted and barred.
+- **Pals are told** (the primer, the pal-desk skill, the head pal's brief): a helper's card is the
+  owner asking for normal work; it never approves anything, never answers a question put to the
+  owner, never changes a mission, settings or AGENTS.md.
+
+Data: `data/crew-helpers/helpers.json` (`{helpers: {name: {on, sha256, made, rotated, switched,
+last_used, per_hour}}}`: the key's fingerprint, never the key) and `log.jsonl`, both 0600, written
+only by `pal` (bin/crewhelpers.py). The key itself is `~/.config/project-pals/helpers/<slug>.key`
+(`palkey_` + 43 characters, 0600 in a 0700 folder): outside the data folder, so a search of data
+never prints one. `PAL_HELPER_KEY_FILE` names a copy kept elsewhere. Uninstall removes the keys.
+An install that ran the unreviewed build of 2026-11-10 (one helper kept in `data/crew-helper`) has
+its "Pals" carried over once: by name, switched off, its old key deleted, its sends kept in the
+record; the owner turns it on again in the sheet.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
@@ -1316,6 +1369,13 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
     `layPanel` shows `profile-dash` instead of `profile-main` only in Full on Profile. `openPanel` / `closePanel` / `togglePanel` / `setPanelSize` in `crew.js` use
     `layout.show` / `layout.hide` / `layout.resize` (`px` for Side, `weight: 1` with `work`
     hidden for Full); shared `crew.panel` holds `{tab, sizes, section, at}`.
+- **Trusted helpers:** `bin/crewhelpers.py` (the list, the keys, `verify`, `inside_herdr`, the
+  record, `adopt_old`); `crewdesk.sender` / `create` / `who` / `frame` (the fourth sender, its
+  ledger entry, the header, the limits line); `pal settings trust-helper`, `pal helpers [log |
+  check | --json]`, `pal --as-helper`, `pal owner-step` (bin/crew); crewguard's `helper-key` rule
+  and `owner_step`; `claude-mod/pals/hooks/keys.ts`; `mods/crew-helpers` (the sheet), the row in
+  `crew-about`, the Today rows and In your name tab in `crew-home`; `lib/helperlog.js` (pure: what
+  a helper's line and each record row say), copied into every mod by install.sh like the rest.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
     `crew-composer` (rooms), `crew-status`, `crew-profile` (the profile panel; `focusable`).
@@ -1596,6 +1656,34 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   (`release-script`). An approval is good for one run of that exact command, and lapses
   (`expired`) if it isn't used within 30 minutes. Inbox cards show the request's ID, keep Decline
   and Approve at opposite ends, and every decision attempt is recorded with where it came from.
+- **A release script asks for the owner itself:** the gate is a hook in pals' terminals, so a
+  script run from a plain shell was never asked (0.4.2 went out that way). `./release` now runs
+  `pal owner-step release-script -- <its own command line>` before it checks or changes anything:
+  exit 3 and a request in the Inbox from "a shell on this computer", then the same line goes
+  through once after the owner's click, within 30 minutes. A pal whose run the gate already held
+  isn't asked twice (the gate's approval, used in the last 2 minutes, counts). Without Project Pals
+  the person at the keyboard types the version; with no terminal it's refused. `--dry-run` runs
+  every check and nothing else and asks nobody; from a pal the gate still holds the line, since it
+  can't know another repo's script honours the flag.
+- **A helper's header must not start `[quoted:`.** That is what `unforge()` turns a forged header
+  into, so a body could copy a real one letter for letter. The real header starts `[from <owner>
+  via …`, and a forged copy in a body becomes `[quoted: from …` with a bar in front.
+- **"Not a pal" can't be read off one variable.** A pal drops `HC_TERMINAL_ID` with `env -u`. A
+  helper's key is refused when the caller, any parent process, or herdr-core's process group
+  (`hc-hold-` in `/proc/<pid>/cgroup`) says Herdr. The tests run the CLI with that check answering
+  "no" (they may run inside a pal) and test the check itself on a made-up `/proc`.
+- **A key must be presented and matched.** The build that went live on 2026-11-10 compared its
+  stored key with itself, so the flag alone was enough. Here Project Pals keeps only the key's
+  SHA-256, and the file the helper reads has to hash to it.
+- **A helper's key is a file the owner's user can read, and pals run as that user.** The gate
+  holds a pal's command or edit that reaches for a key, writes `data/crew-helpers`, or presents
+  `PAL_HELPER` / `--as-helper` (rule `helper-key`); the Claude Code mod refuses its Read, Grep and
+  Glob there; `pal` refuses the key from inside Herdr. Guards against mistakes and one pal talking
+  another into it, like the click tokens, not a wall. Other harnesses' read tools aren't checked.
+- **The helpers' mod and its data folder share a name** (`crew-helpers`), like the Desk's: the gate
+  treats `mods/crew-helpers/…` as code and `data/crew-helpers/…` as the list.
+- **Turning a helper on needs the app.** `pal settings trust-helper <name> on` wants a click
+  token, so a version without the sheet would leave no way to do it.
 - **The approval gate isn't a security boundary:** a pal with permissions bypassed can still edit
   the files.
 - **Cards (0.4): only Project Pals moves a card's status or sender** (Desk §10, §12.2). `from`,
@@ -1642,6 +1730,18 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
 
 ## Done when
 
+- With no helper switched on, `PAL_HELPER=Pals pal tell <Pal> "x"` arrives "not verified as
+  <owner>". After About → Trusted helpers → Add and trust "Pals", the same line arrives headed
+  "[from <owner> via Pals, a trusted helper: normal work only]" with the limits line under it, and
+  shows on Home under In your name. Switched off, or with its key rotated away, or run from a
+  pal's terminal (also with `env -u HC_TERMINAL_ID`), it's "not verified" again. With the key
+  accepted, `pal approve`, `pal settings …`, `pal home answer|done|drop|park` and the rest of the
+  owner's commands are refused and each try is in the record (`tests/test_helpers.py`,
+  `tests/test_guard.py` HelperKeys, `tests/test_helperlog.mjs`, the mod's `keys.test.ts`).
+- `./release X.Y.Z "notes"` from a plain shell exits 3 with a request in the Inbox and changes
+  nothing; after Approve the same line goes on to the checks; `--dry-run` asks nobody. A plain
+  shell's `pal home done <a pal's ask>` is refused; the asker's is shown as Withdrawn
+  (`tests/test_owner_step.py`, `tests/test_home.py`).
 - Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
   `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
   closes it and the asker gets "Re h-…: A" as a card from the owner. With nothing waiting, Home

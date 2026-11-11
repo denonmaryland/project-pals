@@ -57,7 +57,7 @@ try {
       fx.calls.push([cmd.split("/").pop(), ...args]);
       if (cmd.endsWith("/pal") && args[0] === "welcome") return { stdout: JSON.stringify(fx.folders ?? []), stderr: "", code: 0 };
       if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "ls") return { stdout: JSON.stringify(fx.desk), stderr: "", code: 0 };
-      if (cmd === "tail") return { stdout: fx.feed ?? "", stderr: "", code: 0 };
+      if (cmd === "tail") return { stdout: String(args.at(-1)).includes("crew-helpers") ? fx.helperLog ?? "" : fx.feed ?? "", stderr: "", code: 0 };
       if (cmd === "sh") return { stdout: String(args.at(-1)).endsWith("crew-approvals") ? fx.approvals ?? "" : "", stderr: "", code: 0 };
       if (cmd.endsWith("/pal") && args[0] === "desk" && args[1] === "send") return { stdout: JSON.stringify({ card: { id: "c-abcdef", to: "Herdr Mod#desk" }, terminal: "t1", what: "queued" }), stderr: "", code: 0 };
       return { stdout: "", stderr: "", code: 0 };
@@ -67,7 +67,7 @@ try {
     export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = (o) => { (fx.overlays ??= []).push(o); return "ov1"; }, nextCommand = () => new Promise(() => {}), closeOverlay = () => { fx.closed++; };
     export const hc = exec, readTextFile = async (p) => (fx.files ?? {})[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async () => {}, knownAgents = async () => fx.known ?? [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   cpSync(join(root, "mods", "crew-home", "main.js"), join(dir, "crew-home.mjs"));
   for (const f of ["welcome.js", "welcome-text.js"]) copyFileSync(join(root, "mods", "crew-home", f), join(dir, f));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
@@ -105,6 +105,13 @@ try {
     { at: now - 10 * min, kind: "remembered", bot: "Orca" },
   ];
   fx.feed = feed.map((x) => JSON.stringify(x)).join("\n") + "\nnot json\n";
+  // Trusted helpers (T116): what one sent in your name, what it tried, and your switch (data/crew-helpers/log.jsonl).
+  fx.helperLog = [
+    { at: now - 26 * 60 * min, kind: "sent", helper: "Pals", card: "c-old001", to: "Orca#ops", card_kind: "tell", title: "Yesterday's" },
+    { at: now - 70 * min, kind: "switch", helper: "Pals", action: "on", key: "made" },
+    { at: now - 45 * min, kind: "sent", helper: "Pals", card: "c-41b9d0", to: "Orca#ops", card_kind: "tell", via: "pal tell", title: "Look into the update pill" },
+    { at: now - 9 * min, kind: "refused", helper: "Pals", verified: true, command: "pal home answer h-aaaaaa Blur them", what: "answer a question on Home" },
+  ].map((x) => JSON.stringify(x)).join("\n") + "\n";
   const home = { version: 1, seen: now - 134 * min, items: [
     { id: "h-aaaaaa", kind: "ask", status: "open", title: "Blur the journal entries?", options: ["Blur them", "Leave as is"], does: ["Re-renders the clip", ""],
       recommend: "Blur them", why: "unreleased work", links: ["https://x.test/a", "~/b.html"], images: ["crew-attachments/a.png"], by: "Orca#general", at: now - 112 * min },
@@ -165,6 +172,19 @@ try {
   const since = v.since();
   for (const k of ["install", "link", "note", "answered", "finished", "task", "card"]) assert.ok(since.some((r) => r.kind === k), `Since you last looked has ${k}`);
   assert.ok(!since.some((r) => r.kind === "finished" && r.channel === "old"));
+  // Trusted helpers: today's sends, refused tries and switches are in Today; the tab holds the whole record.
+  assert.deepEqual(since.filter((r) => r.kind === "helper").map((r) => r.e.kind), ["refused", "sent", "switch"], "newest first, yesterday's left out");
+  assert.equal(v.helperLog.length, 4);
+  v.openDrawer("name");
+  await run((cx) => draw(v, cx));
+  for (const id of ["drawer-tab-name", "name-open", "name-0", "name-3"]) assert.ok(clicks.has(id) || id.startsWith("name-"), `In your name: ${id}`);
+  assert.ok(clicks.has("drawer-tab-name") && clicks.has("name-open"));
+  clicks.get("name-open")();
+  assert.deepEqual(fx.overlays.at(-1), { mod: "crew-helpers", kind: "dialog", width: 560 }, "its link opens the Trusted helpers dialog");
+  v.openDrawer("today");
+  await run((cx) => draw(v, cx));
+  v.drawer = null;
+  v.lastTab = "today";
   const prog = v.progress();
   assert.deepEqual(prog.rows.map((r) => r.ch), ["site", "desk", "general"], "working topics and a held one, longest first");
   assert.equal(prog.rows[0].held, "draft");

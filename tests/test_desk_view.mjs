@@ -65,7 +65,7 @@ try {
     export const run = (c, a) => fx.calls.push(["run", c, JSON.stringify(a)]), notify = (n) => fx.toasts.push(n), openOverlay = nop, closeOverlay = () => { fx.closed++; };
     export const hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [], props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {});
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   for (const m of ["crew-desk", "crew-desk-drop", "crew-desk-settings"]) { cpSync(join(root, "mods", m, "main.js"), join(dir, `${m}.mjs`)); }
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);

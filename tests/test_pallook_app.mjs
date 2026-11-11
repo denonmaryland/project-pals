@@ -90,7 +90,7 @@ try {
     export const exec = async (cmd, args) => { fixtures.execs.push([cmd, args]); return { stdout: "", stderr: "", code: 0 }; };
     export const hc = async () => ({ stdout: "", stderr: "", code: 0 }), readTextFile = async () => fixtures.file ?? null, writeTextFile = async (_p, text) => { fixtures.file = text; }, knownAgents = async () => [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods/crew-pallook/main.js"), join(dir, "pallook-dialog.js"));
   copyFileSync(join(root, "mods/crew-look/main.js"), join(dir, "look-dialog.js"));
   const url = (f) => pathToFileURL(join(dir, f)).href;

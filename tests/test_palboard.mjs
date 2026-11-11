@@ -76,7 +76,7 @@ try {
     export const readTextFile = async (p) => fx.files[p] ?? null, writeTextFile = async (p, v) => { fx.files[p] = v; }, knownAgents = async () => [];
     export const props = () => fx.props ?? {}, watchFolder = () => new Promise(() => {}), focused = () => null;
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods", "crew-palboard", "main.js"), join(dir, "crew-palboard.mjs"));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const { clicks, texts, ids, reset } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);

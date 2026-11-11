@@ -97,10 +97,11 @@ for dir in "$src"/mods/crew-*; do
   cp "$src/lib/palstyles.js" "$dest/palstyles.js"
   cp "$src/lib/pallook.js" "$dest/pallook.js"
   cp "$src/lib/factories.js" "$dest/factories.js"
+  cp "$src/lib/helperlog.js" "$dest/helperlog.js"
   cp "$src/lib/crew.js" "$dest/crew.js"
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
-  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
+  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/helperlog.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
   cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
 done
 

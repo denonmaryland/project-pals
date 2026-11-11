@@ -47,11 +47,13 @@ import {
   severalFactories, currentFactory, inFactory, homeItemShown,
   withoutChief, welcomePending,
 } from "./crew.js";
+import { logRow, helperRows, helperToday } from "./helperlog.js";
 import { welcomeView, welcomeKey } from "./welcome.js";
 
 const ICON = "mods/crew-roster/icons";
 const CARD = 76, ROW = 36, PROW = 48, AGE_W = 52, DRAWER_W = 420;
-const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"]];
+// ("name": what trusted helpers sent in your name and tried, T116; shown once there's anything.)
+const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"], ["name", "In your name"]];
 const hhmm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`; };
 const midnight = (now = Date.now()) => { const t = new Date(now); t.setHours(0, 0, 0, 0); return t.getTime(); };
 const short = (name) => String(name ?? "").split(" - ")[0];
@@ -64,6 +66,7 @@ export default class CrewHome extends View {
     this.install = {};
     this.update = {};
     this.feed = [];
+    this.helperLog = [];   // data/crew-helpers/log.jsonl: what trusted helpers sent, tried, and your switches
     this.ops = { approvals: [], proposals: [], tasks: [], routines: [], stalled: {}, daemon: true };
     this.reports = {};
     this.cards = [];
@@ -98,6 +101,7 @@ export default class CrewHome extends View {
       try { this.install = JSON.parse((await read("data/crew-install.json")) ?? "{}") ?? {}; } catch { this.install = {}; }
       try { this.update = JSON.parse((await read("data/crew-update.json")) ?? "{}") ?? {}; } catch { this.update = {}; }
       try { this.feed = jsonLines((await exec("tail", ["-n", "1600", `${data}/crew-feed.jsonl`], { timeout: 5000 })).stdout); } catch {}
+      try { this.helperLog = jsonLines((await exec("tail", ["-n", "400", `${data}/crew-helpers/log.jsonl`], { timeout: 5000 })).stdout); } catch {}
       try { this.ops = await loadOps(); } catch {}
       try { this.reports = await blockedReports(this.reports); } catch {}
       if (desk || Date.now() - this.deskAt > 10000) {
@@ -197,6 +201,8 @@ export default class CrewHome extends View {
       else if ((x.status === "done" || (x.status === "dropped" && x.withdrawn)) && (x.closed_at ?? 0) > floor && x.kind !== "link" && x.kind !== "note") out.push({ kind: "closed", at: x.closed_at, x });
     }
     for (const f of feedSince(this.feed, floor, now)) if (this.onFloor(f.bot ?? f.by)) out.push(f);
+    // What a trusted helper sent in your name, or tried: yours to see whichever factory shows (T116).
+    for (const e of helperRows(this.helperLog, floor)) out.push({ kind: "helper", at: e.at, e });
     // Cards the head pal closed (Home is its Desk).
     const hs = this.headSlug();
     for (const c of this.cards) {
@@ -399,9 +405,10 @@ export default class CrewHome extends View {
     const seen = this.home.seen || 0;
     const nNew = since.filter((r) => r.at > seen).length;
     const nPark = this.home.items.filter((x) => x.status === "parked").length;
-    const count = { today: nNew || null, working: prog.rows.length || null, releases: null, parked: nPark || null };
+    const nName = this.helperLog.filter((e) => e.kind !== "switch" && (e.at ?? 0) > seen).length;
+    const count = { today: nNew || null, working: prog.rows.length || null, releases: null, parked: nPark || null, name: nName || null };
     const tabs = h_flex().h(40).flex_none().items_end().gap(2).px(10).border_b_1().border_color(d.line)
-      .children(TABS.map(([k, label]) => {
+      .children(TABS.filter(([k]) => k !== "name" || this.helperLog.length > 0).map(([k, label]) => {
         const on = tab === k;
         return h_flex().id(`drawer-tab-${k}`).h(32).flex_none().items_center().gap(6).px(10).cursor_pointer()
           .border_b_2().border_color(on ? d.fg1 : "#00000000")
@@ -434,6 +441,7 @@ export default class CrewHome extends View {
       body = prog.rows.length || prog.desk.length ? scrollArea(d, "home-prog", pb).flex_1().min_h(0)
         : div().px(14).py(10).text_size(12).text_color(d.fg4).child("Nobody's working right now.");
     } else if (tab === "releases") body = this.releaseBody(d);
+    else if (tab === "name" && this.helperLog.length) body = this.nameBody(d);
     else body = this.parkedBody(d);
     return v_flex().id("home-drawer").absolute().top(0).right(0).bottom(0).w(DRAWER_W).bg(d.bg1).border_l_1().border_color(d.lineStrong).shadow_lg()
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -463,6 +471,13 @@ export default class CrewHome extends View {
       icon = dot(d.info); bold = "Link"; rest = r.x.title === r.x.url ? r.x.url : `${r.x.title} · ${r.x.url}`; right = r.x.topic ? `#${r.x.topic.split("#")[1] ?? ""}` : short(r.x.by);
       link = true;
       onClick = () => { const u = r.x.url.startsWith("~/") ? `${(appHome() ?? "").replace(/\/\.config\/herdr-app$/, "")}/${r.x.url.slice(2)}` : r.x.url; exec("xdg-open", [u]).catch(() => {}); };
+    } else if (r.kind === "helper") {
+      const h = logRow(r.e);
+      const you = r.e.kind === "switch" && h.bold.startsWith("You ");
+      icon = dot(h.tone === "warn" ? d.warn : h.tone === "quiet" ? d.fg4 : d.info);
+      bold = you ? "You" : (r.e.helper ?? "A helper");
+      rest = `${h.bold.slice(you ? 4 : bold.length).replace(/^[\s:]+/, "")} · ${h.rest}`; right = h.card ?? (h.tone === "warn" ? "refused" : "");
+      onClick = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
     } else if (r.kind === "note") {
       icon = svg(`${ICON}/ds-notebook.svg`).size(11).text_color(d.fg2); bold = short(r.x.by); rest = r.x.title; right = "note";
     } else if (r.kind === "answered") {
@@ -553,6 +568,30 @@ export default class CrewHome extends View {
       .child(rows.length ? scrollArea(d, "home-rel", list).flex_1().min_h(0)
         : div().px(14).py(10).text_size(12).text_color(d.fg4).child(`Nothing queued. ${this.who()} adds to it with pal home queue.`))
       .child(div().h(28).flex_none().px(14).flex().items_center().border_t_1().border_color(d.line).text_size(11).text_color(d.fg4).child(checked));
+  }
+
+  // In your name (T116): everything trusted helpers sent as you, what they tried that was refused,
+  // and your own switches, newest first; the dialog (About → Trusted helpers) turns one off.
+  nameBody(d) {
+    const rows = helperRows(this.helperLog).slice(0, 200);
+    const today = helperToday(this.helperLog);
+    const open = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
+    const list = v_flex().children(rows.map((e, i) => {
+      const h = logRow(e);
+      return h_flex().id(`name-${i}`).h(ROW).flex_none().items_center().gap(10).pl(14).pr(12)
+        .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
+        .child(div().w(14).flex_none().flex().items_center().justify_center().child(div().size(6).rounded(3).bg(h.tone === "warn" ? d.warn : h.tone === "quiet" ? d.fg4 : d.info)))
+        .child(h_flex().flex_1().min_w(0).gap(6).items_center()
+          .child(div().flex_none().max_w(200).truncate().text_size(12.5).font_weight(500).text_color(h.tone === "warn" ? d.warnText : h.tone === "quiet" ? d.fg2 : d.fg1).child(h.bold))
+          .child(div().min_w(0).truncate().text_size(12.5).text_color(d.body).child(h.rest)))
+        .child(div().w(40).flex_none().text_right().text_size(11).text_color(e.at > (this.home.seen || 0) ? d.infoText : d.fg4).child(homeAge(e.at)));
+    }));
+    return v_flex().flex_1().min_h(0)
+      .child(h_flex().h(32).flex_none().items_center().pl(14).pr(8).border_b_1().border_color(d.lineSoft)
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(d.fg2).child(today ? `${today} today` : "Nothing in the last day"))
+        .child(h_flex().id("name-open").h(22).px(6).flex_none().items_center().rounded(d.r.xs).cursor_pointer().hover((s) => s.bg(d.hover)).on_click(() => open())
+          .child(div().text_size(11.5).text_color(d.body).child("Trusted helpers ›"))))
+      .child(scrollArea(d, "home-name", list).flex_1().min_h(0));
   }
 
   parkedBody(d) {

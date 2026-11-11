@@ -54,6 +54,8 @@ export default class CrewAbout extends View {
       const d = `${appHome()}/data`;
       try { this.ins = JSON.parse((await readTextFile(`${d}/crew-install.json`)) ?? "{}"); } catch { this.ins = {}; }
       try { this.state = JSON.parse((await readTextFile(`${d}/crew-update.json`)) ?? "{}"); } catch { this.state = {}; }
+      // Trusted helpers (T116): who's on, for the Settings row (the list holds fingerprints, never a key).
+      try { this.helpers = Object.entries(JSON.parse((await readTextFile(`${d}/crew-helpers/helpers.json`)) ?? "{}").helpers ?? {}); } catch { this.helpers = []; }
       // About asks GitHub again whenever the last answer is over 10 minutes old, open or opening
       // (crewd checks only every 6 hours), so a new release shows its Update button without a "Check
       // for updates" click first, even in an About left open since the last update (T64).
@@ -210,6 +212,7 @@ export default class CrewAbout extends View {
 
     // Settings, one row each.
     const bypass = Boolean(shared("crew.settings")?.bypass);
+    const helpersOn = (this.helpers ?? []).filter(([, h]) => h?.on === true);
     const llm = this.llm ?? shared("crew.settings")?.llm ?? "auto";
     // Settings can arrive after the dialog opened: fill the name in if it's still empty.
     if (!this.ownerFocused && !this.owner.value() && shared("crew.settings")?.owner) this.fillOwner = shared("crew.settings").owner;
@@ -250,6 +253,13 @@ export default class CrewAbout extends View {
           .child(div().text_size(12.5).text_color(t.muted).child(workingStyle().name))
           .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
         () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // Trusted helpers: your own assistants that may send normal work in your name (its own dialog, crew-helpers).
+      .child(row("set-helpers", "Trusted helpers", "Assistants that may send normal work in your name; never approve",
+        h_flex().items_center().gap(8)
+          .child(div().text_size(12.5).text_color(helpersOn.length ? t.accent : t.muted).child(helpersOn.length ? `${helpersOn.map(([n]) => n).join(", ")} on` : "None on"))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 }); }))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // The Desk: triage, its cap, the check-in's flags, archiving, MUSE (its own dialog, crew-desk-settings).
       .child(row("set-desk", "Desk", "How cards are placed, flagged and kept",
