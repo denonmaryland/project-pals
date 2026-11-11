@@ -4,7 +4,6 @@ by age, the hc-hold drop-in, and pal ram.
 A fake /proc (CREW_PROC: meminfo, smaps_rollup, status, cgroup, children) and a throwaway CREW_DATA and
 HOME; the one real systemd-run check is skipped where there is no user session.
 Run: python3 -m unittest tests.test_memory"""
-import atexit
 import importlib.machinery
 import importlib.util
 import io
@@ -13,15 +12,15 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 from unittest import mock
 
-TMP = Path(tempfile.mkdtemp(prefix="pals-memory-"))
-atexit.register(shutil.rmtree, TMP, True)   # /tmp is RAM on some machines (T143): leave nothing behind
+TMP = Path(pals_tmp.mkdtemp(prefix="pals-memory-"))
 os.environ["CREW_DATA"] = str(TMP / "data")
 os.environ["HERDR_APP_HOME"] = str(TMP / "app")
 os.environ.pop("HC_TERMINAL_ID", None)
@@ -49,7 +48,7 @@ def load_crew():
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.proc = Path(tempfile.mkdtemp(prefix="proc-", dir=TMP))
+        self.proc = Path(pals_tmp.mkdtemp(prefix="proc-", dir=TMP))
         (self.proc / "meminfo").write_text(MEMINFO)
         crewmem.STATE.unlink(missing_ok=True)
         crewlib.SETTINGS.unlink(missing_ok=True)
