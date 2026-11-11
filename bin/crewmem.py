@@ -28,7 +28,7 @@ PROBE_EVERY = 6 * 3600      # how often crewd re-checks that scopes work
 FLOOR_MIN_MB = 1536         # never warn at less than this floor...
 FLOOR_SHARE = 0.10          # ...or 10% of RAM, whichever is larger
 DROPIN_DIR = Path.home() / ".config" / "systemd" / "user" / "hc-hold-.service.d"
-DROPIN = DROPIN_DIR / "50-project-pals-oomd.conf"
+DROPIN = DROPIN_DIR / "00-project-pals-oomd.conf"
 
 
 def _proc(proc_dir=None):
@@ -245,6 +245,7 @@ def cgroup_of(pid, proc_dir=None):
 DROPIN_TEXT = """# Project Pals: start each pal in its own scope, so systemd-oomd takes one pal, not every terminal.
 # This makes Herdr's terminal holder (hc-hold-<id>.service, every terminal that isn't a pal's agent)
 # the last unit oomd picks under memory pressure. The 90% swap backstop ignores it.
+# Named 00- so it sorts first: a drop-in of your own in this folder (any later name) overrides it.
 # Undo: delete this file and run `systemctl --user daemon-reload` (pal uninstall does it).
 [Service]
 ManagedOOMPreference=avoid

@@ -305,6 +305,25 @@ class Seat(unittest.TestCase):
         self.assertIn("# Handoff", run(self.sb, "handoff", "brief", me="t1").stdout)
         self.assertTrue(json.loads((self.sb["data"] / "crew-handoffs" / "t1" / f"{hid}.json").read_text()).get("read"))
 
+    def test_take_starts_the_brain_in_its_own_scope(self):
+        # T153: with scopes on, the new brain starts behind systemd-run --user --scope (which execs in
+        # place); a fake systemd-run records its words and runs what follows --.
+        out, seen = self.sb["root"] / "brain-args.json", self.sb["root"] / "systemd-run.txt"
+        self.app.h_brains["codex"] = {"argv": [sys.executable, "-c", f"import sys, json; json.dump(sys.argv[1:], open({str(out)!r}, 'w'))"],
+                                      "key": "codex", "name": "Codex", "hint": ""}
+        shims = self.sb["root"] / "scope-shims"
+        shims.mkdir()
+        (shims / "systemd-run").write_text(f'#!/bin/sh\necho "$@" > {seen}\nwhile [ "$1" != -- ]; do shift; done\nshift\nexec "$@"\n')
+        (shims / "systemd-run").chmod(0o755)
+        (self.sb["data"] / "crew-memory.json").write_text(json.dumps({"scope": True, "scope_flags": ["--expand-environment=no"]}))
+        self.assertEqual(self.hand_over().returncode, 0)
+        hid = self.typed()[0].split()[-1]
+        self.sb["env"] = {**self.sb["env"], "PATH": f"{shims}:{self.sb['env']['PATH']}"}
+        r = run(self.sb, "handoff", "take", hid, me="t1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(seen.read_text(), r"^--user --scope --quiet --collect --expand-environment=no --unit=pal-navi-checkout-[0-9a-z]+ -- ")
+        self.assertIn("You hold Navi #checkout now", json.loads(out.read_text())[0])
+
     # ── hand back ──
     def test_hand_back_resumes_the_previous_holders_own_session(self):
         self.assertEqual(self.hand_over().returncode, 0)

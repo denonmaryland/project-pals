@@ -31,7 +31,7 @@ What an install adds, and what uninstall does with it:
                                                                  removed (only Project Pals' own)
   ~/.local/lib/herdr-crew                                        removed
   systemd        herdr-crew.service (crewd)                      stopped, disabled, removed
-                 hc-hold-.service.d/50-project-pals-oomd.conf    removed (a drop-in of your own stays)
+                 hc-hold-.service.d/00-project-pals-oomd.conf    removed (a drop-in of your own stays)
 
 The person's own config stays byte-identical: `record` keeps a copy of keys.json, ~/.claude/settings.json
 and ~/.gemini/config/hooks.json as they were before Project Pals first touched them
@@ -94,7 +94,7 @@ SKILL_LINKS = (USER / ".claude" / "skills", USER / ".codex" / "skills", USER / "
 UNIT = USER / ".config" / "systemd" / "user" / "herdr-crew.service"
 # The drop-in that makes Herdr's terminal holder oomd's last pick (T153; crewmem.install_dropin). Only
 # ours goes: a person's own drop-in in the same folder (any other name) stays.
-OOMD_DROPIN = USER / ".config" / "systemd" / "user" / "hc-hold-.service.d" / "50-project-pals-oomd.conf"
+OOMD_DROPIN = USER / ".config" / "systemd" / "user" / "hc-hold-.service.d" / "00-project-pals-oomd.conf"
 # Mods Project Pals shipped once and set aside since (install.sh's list), besides every crew-* mod
 # holding the shared crew.js.
 RETIRED_MODS = ("crew-rail", "crew-chat", "crew-prompt", "crew-palrail", "crew-tabs", "crew-side", "crew-tell")

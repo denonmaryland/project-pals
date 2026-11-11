@@ -236,7 +236,7 @@ if [[ $helpers -eq 1 ]]; then
       got="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewmem; print(crewmem.install_dropin())' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo failed)"
       case "$got" in
         added) systemctl --user daemon-reload
-               echo "memory: Herdr's terminal holder is oomd's last pick now (~/.config/systemd/user/hc-hold-.service.d/50-project-pals-oomd.conf; skip with --no-oomd-dropin)" ;;
+               echo "memory: Herdr's terminal holder is oomd's last pick now (~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf; skip with --no-oomd-dropin)" ;;
         ours)  echo "memory: Herdr's terminal holder is oomd's last pick (Project Pals' drop-in, already there)" ;;
         theirs) echo "memory: Herdr's terminal holder already has your own oomd drop-in (hc-hold-.service.d); left as it is" ;;
         *)     echo "memory: couldn't add the hc-hold oomd drop-in (pals still get their own scopes)" ;;

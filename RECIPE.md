@@ -1478,19 +1478,21 @@ record; the owner turns it on again in the sheet.
 
 - **Each pal's agent runs in its own systemd scope**, so systemd-oomd takes one hungry pal instead of
   Herdr's terminal holder (`hc-hold-<id>.service`) with every pal in it (2026-11-10: the crew died
-  twice). Every launch (hire, topic, waking a pal from Hidden pals, a room's wake, `pal wake`) puts
+  twice). Every launch (hire, topic, waking a pal from Hidden pals, a room's wake, `pal wake`, the new
+  brain of `pal handoff take`) puts
   `systemd-run --user --scope --quiet --collect [--expand-environment=no] --unit=pal-<pal>-<topic>-<base36>
   --` in front of the agent's command, at the moment it's run; the command on record never has it.
   Only on this machine, only when crewd's probe (every 6 h) found it works, and not with
   `"pal_scopes": false`. Without systemd it's the plain command, as before.
-- **The installer** adds `hc-hold-.service.d/50-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
+- **The installer** adds `hc-hold-.service.d/00-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
   unless a drop-in there already sets that (DeNon's own `10-oomd-avoid.conf` is left alone), and says
   which in its output; `--no-oomd-dropin` skips it, uninstall removes only Project Pals' file.
 - **Low memory:** crewd writes `data/crew-memory.json` each minute (`available`, `total`, `floor`,
   `low`, `low_since`, `scope`, `scope_flags`). The floor is `"memory_floor_mb"`, else the larger of
   1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line
   pointing at `pal sleep --idle`; the app's hire, topic and wake paths toast "Memory is low (…)" at
-  most once per 10 minutes; Home shows a 24 px row under the status line (warning dot, "Memory is
+  most once per 10 minutes for the whole app (the clock is shared state `crew.memory.toldAt`: every
+  mod has its own copy of crew.js); Home shows a 24 px row under the status line (warning dot, "Memory is
   low", the figures, **Sleep idle pals ›** running `pal sleep --idle` as the owner). A state older
   than 5 minutes says nothing about low.
 - **Idle sleep:** `"sleep_idle_hours": N` (off by default: sleeping drops a pal's warm context and

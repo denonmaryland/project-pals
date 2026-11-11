@@ -5,7 +5,7 @@
 // scoped.
 // Run: node tests/test_scope.mjs
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -30,9 +30,9 @@ try {
     export const theme = () => ({}), home = () => "/h", appHome = () => "/h/.config/herdr-app", layout = () => null, keys = () => ({});
     export const run = (name, args) => { fixtures.runs.push([name, args]); };
     export const notify = (n) => { fixtures.toasts.push(n); };
-    export const openOverlay = () => {}, hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
+    export const openOverlay = () => {}, closeOverlay = () => {}, hc = exec, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of readdirSync(join(root, "lib")).filter((f) => f.endsWith(".js"))) copyFileSync(join(root, "lib", f), join(dir, f));
   const crew = await import(pathToFileURL(join(dir, "crew.js")).href);
   const { fixtures } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
 
@@ -76,7 +76,15 @@ try {
   assert.equal(crew.warnIfLow("hiring A", now), true);
   assert.equal(crew.warnIfLow("hiring B", now + 60_000), false, "not again within ten minutes");
   assert.equal(crew.warnIfLow("hiring C", now + 11 * 60_000), true);
-  assert.equal(fixtures.toasts.length, 2);
+  // One clock for the whole app: every installed mod has its own copy of crew.js (Codex T160's repro).
+  copyFileSync(join(dir, "crew.js"), join(dir, "crew-second-mod.js"));
+  const second = await import(pathToFileURL(join(dir, "crew-second-mod.js")).href);
+  assert.notEqual(second, crew, "a separate module instance");
+  assert.equal(second.warnIfLow("second mod", now + 11 * 60_000), false, "another mod shares the ten-minute limit");
+  assert.equal(second.warnIfLow("second mod", now + 22 * 60_000), true);
+  assert.equal(crew.warnIfLow("first mod again", now + 23 * 60_000), false, "and the first mod sees the second's toast");
+  assert.equal(crew.warnIfLow("clock went back", now - 60 * 60_000), true, "a clock set back doesn't silence it for good");
+  assert.equal(fixtures.toasts.length, 4);
   assert.match(fixtures.toasts[0].title, /^Memory is low \(hiring A\)$/);
   assert.equal(fixtures.toasts[0].level, "warning");
 
