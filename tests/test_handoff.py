@@ -193,6 +193,19 @@ class Seat(unittest.TestCase):
         self.assertIn("Codex", log.splitlines()[1])
         self.assertIn("holds it now", log.splitlines()[1])
 
+    def test_limits_lists_each_awake_topic_and_where_to_hand_one_that_is_out(self):
+        (self.sb["data"] / "crew-status" / "t1.json").write_text(json.dumps({"rate_limits": {"seven_day": {"used_percentage": 100, "resets_at": 1794772800}}}))
+        r = run(self.sb, "handoff", "limits")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stdout, r'Navi#checkout  Claude Code: out until \w{3} \d\d:\d\d  →  pal handoff "Navi#checkout" --to codex')
+        self.assertNotIn("Other#general", r.stdout)                                        # asleep topics have no brain to run out
+        rows = json.loads(run(self.sb, "handoff", "limits", "--json").stdout)
+        self.assertEqual((rows[0]["seat"], rows[0]["brain"], rows[0]["limit"]["reached"], rows[0]["hand_to"]), ("Navi#checkout", "claude", True, "codex"))
+        (self.sb["data"] / "crew-status" / "t1.json").write_text(json.dumps({"rate_limits": {"seven_day": {"used_percentage": 34}}}))
+        self.assertIn("Claude Code: 34% of its week", run(self.sb, "handoff", "limits").stdout)
+        self.assertNotIn("pal handoff \"", run(self.sb, "handoff", "limits").stdout)
+        self.assertIsNone(self.agent.poll())                                               # looking changes nothing
+
     def test_dry_run_shows_the_brief_and_changes_nothing(self):
         r = self.hand_over("-n")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -340,6 +353,28 @@ class Seat(unittest.TestCase):
         self.assertNotIn("Ask Codex to do anything", brief)                                # its box and footer aren't the story
         self.assertNotIn("for shortcuts", brief)
 
+    def test_a_codex_seats_brief_quotes_codexs_session_not_its_screen(self):
+        (self.sb["data"] / "crew-sessions" / "t1.json").unlink()
+        codex_rollout(self.sb["home"] / ".codex" / "sessions", self.work)
+        row, info, _ = ts.agent_tab(self.sb, "t1", 7001, self.agent, comm="codex")
+        row["agent"], info["status"]["app"] = "codex", "codex"
+        self.tabs["t1"] = (row, info, CODEX_IDLE)
+        ts.make_fake_proc(self.sb["proc"], 7001, comm="bash", children=[self.agent.pid], address="t1", cwd=str(self.work))
+        ts.write_state(self.sb, self.spaces, self.tabs)
+        r = run(self.sb, "handoff", "Navi#checkout", "--to", "claude")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        hid = self.typed()[0].split()[-1]
+        brief = (self.sb["data"] / "crew-handoffs" / "t1" / f"{hid}.md").read_text()
+        self.assertIn("story from Codex's last reply", brief)
+        self.assertIn("T41 Stop the double charge: The late-reply test passes now; the changelog line is next.", brief)
+        self.assertIn("finish the late-reply test and prove it", brief)
+        for never in ("SECRET-TOOL-OUTPUT", "private reasoning", "AGENTS.md instructions", "environment_context", "I'm picking up Sbx"):
+            self.assertNotIn(never, brief)
+        rec = json.loads((self.sb["data"] / "crew-handoffs" / "t1" / f"{hid}.json").read_text())
+        self.assertFalse(rec["kept_session"])                                              # the card doesn't promise a resume Codex doesn't get yet
+        seat = json.loads((self.sb["data"] / "crew-seats" / "t1.json").read_text())
+        self.assertEqual(seat["holders"][0]["link"]["harness"], "codex")                   # its session is on record for when it does
+
     def test_handing_to_the_brain_it_came_from_is_a_hand_back(self):
         """The menu's click names the brain (--to); pal handoff sees it held the seat just before."""
         self.assertEqual(self.hand_over().returncode, 0)
@@ -379,6 +414,30 @@ class Seat(unittest.TestCase):
         self.assertIn("You hold Navi #checkout now", rec["message"])
 
 
+def codex_rollout(root, cwd, sid="01a1c91f-6efd-7700-a1e2-e787cb218bb7", day="2026/11/10", reply="The late-reply test passes now; the changelog line is next.",
+                  used=97.0, reached=None, complete=True):
+    """A Codex session file in the shape codex-cli 0.167 writes (the lines the reader uses, and some it must skip)."""
+    d = Path(root) / day
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"rollout-2026-11-10T21-40-42-{sid}.jsonl"
+    msg = lambda role, text, **kw: {"type": "response_item", "payload": {"type": "message", "role": role, **kw,
+                                    "content": [{"type": "output_text" if role == "assistant" else "input_text", "text": text}]}}
+    lines = [{"type": "session_meta", "payload": {"id": sid, "session_id": sid, "cwd": str(cwd), "originator": "codex-tui"}},
+             msg("user", "# AGENTS.md instructions for this repo\n" + "rule " * 50),
+             msg("user", "<environment_context>\n  <cwd>/x</cwd>\n</environment_context>"),
+             msg("user", "finish the late-reply test and prove it"),
+             msg("assistant", "Looking at the test first.", phase="commentary"),
+             {"type": "response_item", "payload": {"type": "custom_tool_call_output", "output": "SECRET-TOOL-OUTPUT sk-ant-zzzzzzzzzzzzzzzzzzzz"}},
+             {"type": "response_item", "payload": {"type": "reasoning", "summary": ["private reasoning"]}},
+             msg("assistant", reply, phase="final_answer"),
+             {"type": "event_msg", "payload": {"type": "token_count", "rate_limits": {"limit_id": "codex", "primary": {"used_percent": used, "window_minutes": 10080, "resets_at": 1794980210},
+                                                                                         "rate_limit_reached_type": reached}}}]
+    if complete:
+        lines.append({"type": "event_msg", "payload": {"type": "task_complete", "last_agent_message": reply}})
+    f.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    return f
+
+
 CODEX_IDLE = ["• I'm picking up Sbx #pass. The third line is next.", "", "  Worked for 21s • 10:14 PM", "", "",
               "› Ask Codex to do anything", "", "  GPT-6 high · ~/work/navi", "  ← for agents · ? for shortcuts"]
 
@@ -403,6 +462,61 @@ class CodexBox(unittest.TestCase):
         self.assertIn("can't see", crewsleep.check_screen(["Allow Codex to run rm -rf build?", "  1. Yes", "  2. No"], "codex"))
         busy = ["• Working (12s • esc to interrupt)", "", "› Ask Codex to do anything", "", "  GPT-6 high"]
         self.assertIn("mid-turn", crewsleep.check_screen(busy, "codex"))
+
+
+class CodexSessions(unittest.TestCase):
+    """Codex's own session files: the brief from a Codex seat quotes what Codex said, not its screen."""
+    def setUp(self):
+        self.root = Path(ts.tempfile.mkdtemp(prefix="pals-codex-"))
+        self.cwd = self.root / "work"
+        self.cwd.mkdir()
+
+    def test_the_last_turns_message_and_what_was_asked_text_only(self):
+        f = codex_rollout(self.root / "s", self.cwd)
+        reply, asked = ho.story_from_codex(f)
+        self.assertEqual(reply, "The late-reply test passes now; the changelog line is next.")
+        self.assertEqual(asked, ["finish the late-reply test and prove it"])               # not its instruction files or environment note
+        cut = codex_rollout(self.root / "s2", self.cwd, sid="02" + "a" * 34, complete=False)   # a turn that never ended: its last final message
+        self.assertEqual(ho.story_from_codex(cut)[0], "The late-reply test passes now; the changelog line is next.")
+        self.assertEqual(ho.story_from_codex(self.root / "nope.jsonl"), (None, []))
+
+    def test_its_session_is_found_by_folder_and_start_and_never_guessed(self):
+        f = codex_rollout(self.root / "s", self.cwd)
+        link = ho.codex_session(self.cwd, root=self.root / "s")
+        self.assertEqual((link["session"], link["transcript"], link["harness"], link["source"]), ("01a1c91f-6efd-7700-a1e2-e787cb218bb7", str(f), "codex", "cwd"))
+        self.assertIsNone(ho.codex_session(self.root / "elsewhere", root=self.root / "s"))
+        self.assertIsNone(ho.codex_session(self.cwd, since_ms=(time.time() + 3600) * 1000, root=self.root / "s"))   # written before this agent started
+        self.assertIsNotNone(ho.codex_session(self.cwd, since_ms=(time.time() - 60) * 1000, root=self.root / "s"))
+        codex_rollout(self.root / "s", self.cwd, sid="03" + "b" * 34)                      # a second Codex in the same folder: can't tell them apart
+        self.assertIsNone(ho.codex_session(self.cwd, root=self.root / "s"))
+        self.assertIsNone(ho.codex_session(self.cwd, root=self.root / "missing"))
+
+    def test_codexs_own_word_on_its_limit(self):
+        self.assertEqual(ho.codex_limit(codex_rollout(self.root / "a", self.cwd)),
+                         {"used": 97.0, "window_minutes": 10080, "resets_at": 1794980210000, "reached": False})
+        self.assertTrue(ho.codex_limit(codex_rollout(self.root / "b", self.cwd, used=100.0))["reached"])
+        self.assertTrue(ho.codex_limit(codex_rollout(self.root / "c", self.cwd, used=40.0, reached="primary"))["reached"])
+        self.assertIsNone(ho.codex_limit(self.root / "nope.jsonl"))
+
+    def test_claude_codes_limit_and_the_words_for_one(self):
+        self.assertIsNone(ho.claude_limit({}))
+        self.assertIsNone(ho.claude_limit(None))
+        week = ho.claude_limit({"rate_limits": {"seven_day": {"used_percentage": 34, "resets_at": 1794772800}}})
+        self.assertEqual((week["used"], week["window_minutes"], week["reached"]), (34.0, 10080, False))
+        both = ho.claude_limit({"rate_limits": {"five_hour": {"used_percentage": 100, "resets_at": 1794772800}, "seven_day": {"used_percentage": 60}}})
+        self.assertEqual((both["window_minutes"], both["reached"]), (300, True))             # the window that is reached wins
+        self.assertRegex(ho.limit_words(week), r"^34% of its week, resets \w{3} \d\d:\d\d$")
+        self.assertRegex(ho.limit_words(both), r"^out until \w{3} \d\d:\d\d$")
+        self.assertEqual(ho.limit_words(None), "no limit reported")
+        self.assertEqual(ho.suggest("t-none", "codex"), "claude")                           # never held by another: the other brain
+        self.assertEqual(ho.suggest("t-none", "claude"), "codex")
+        self.assertIsNone(ho.suggest("t-none", "codex", installed=("codex",)))
+
+    def test_a_process_start_time(self):
+        import crewsleep
+        mine = crewsleep.started_ms(os.getpid())
+        self.assertTrue(abs(mine - time.time() * 1000) < 3600 * 1000)                      # this test run started within the hour
+        self.assertIsNone(crewsleep.started_ms(os.getpid(), proc_dir=str(self.root)))       # a /proc with no stat of its own
 
 
 class Parts(unittest.TestCase):

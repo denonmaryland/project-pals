@@ -59,6 +59,20 @@ def _stat(pid, proc_dir=None):
         return None
 
 
+def started_ms(pid, proc_dir=None):
+    """When a process started, in ms since the epoch (boot time + its start in clock ticks), or
+    None when it can't be read (gone, or a test's /proc without a stat file of its own)."""
+    st = _stat(pid, proc_dir)
+    try:
+        boot = next(int(l.split()[1]) for l in (_proc(proc_dir) / "stat").read_text().splitlines() if l.startswith("btime "))
+    except (OSError, StopIteration, ValueError, IndexError):
+        return None
+    if not st:
+        return None
+    hz = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+    return int((boot + st[2] / hz) * 1000)
+
+
 def _cmdline(pid, proc_dir=None):
     try:
         raw = (_proc(proc_dir) / str(pid) / "cmdline").read_bytes()

@@ -629,6 +629,14 @@ bypassed. The handoff reports it and waits; it is DeNon's to answer (the pass mo
 folder instead). And a session started from inside another Claude Code session doesn't save its
 transcript (a marker in the environment), which matters only to sandboxes.
 
+**Added after the real pass (T139, first part): Codex's own session files are read.** Two cells
+of §13's table are out of date: a Codex session *is* readable (so a brief from a Codex seat quotes
+what Codex last said, and §5's "the story comes from the screen" is only the fallback now), and
+Codex's limit *is* known to Project Pals without reading its screen: every turn its session file
+records the percent of the window used, when it resets, and whether the limit was reached. Tried
+on one real session file of this machine (the reader's output checked by length only, nothing
+quoted) and on fixtures in the tests. Not yet used: nothing raises an offer from it.
+
 Still unverified: a topic with real desk cards arriving during the swap (the hold is unit-tested
 only); a handoff on a limit for real (Claude Code or Codex actually out); agy, Grok and the others
 as targets; another machine.
