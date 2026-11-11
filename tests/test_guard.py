@@ -390,6 +390,10 @@ class HelperKeys(unittest.TestCase):
         "cat ~/.config/herdr-app/data/crew-helper/pals.key",
         "edit /home/x/.config/herdr-app/data/crew-helper/messages.jsonl",
         "echo x >> \"$CREW_DATA/crew-helper/recent.json\"",
+        # keys are sealed at rest: asking systemd to unseal one is reaching for it
+        "systemd-creds --user --name=pal-helper-pals decrypt /tmp/copy.key -",
+        "cat /tmp/copy.key | systemd-creds --user decrypt --name=pal-helper-wabi - -",
+        "python3 -c \"import crewhelpers; print(crewhelpers._read_key('/tmp/copy.key'))\"",
         # a key itself, wherever a pal got it
         f"export K=palkey_{'b' * 43}",
         # presenting as a helper
@@ -433,6 +437,8 @@ class HelperKeys(unittest.TestCase):
         "grep -rn 'PAL_HELPER=' bin tests",
         "grep -n -- '--as-helper' bin/crew",
         "pal --help",
+        "systemd-creds --user --name=my-app-token decrypt token.cred -",
+        "systemd-creds list",
         'grep -n "PAL_HELPER" RECIPE.md',
         "git log --oneline --grep='trusted helper'",
         'git commit -m "Trusted helpers: PAL_HELPER=<name> sends in the owner\'s name"',
@@ -462,6 +468,44 @@ class HelperKeys(unittest.TestCase):
         try:
             self.assertEqual(rule("PAL_HELPER=Pals pal tell Orca x"), "helper-key")
             self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+    def test_the_live_builds_policy_at_14_gets_the_rule_too(self):
+        """Build 7692987 went live on 2026-11-10 with DEFAULTS_VERSION 14 and its own helper-write rule.
+        A version of ours that also said 14 would never have reached that install's policy file."""
+        self.assertGreater(crewguard.DEFAULTS_VERSION, 14)
+        mine = {"name": "my-own", "why": "mine", "pattern": r"^my-tool\b"}
+        live = {**crewguard.DEFAULT, "defaults_version": 14,
+                "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] != "helper-key"]
+                + [{"name": "helper-write", "why": "writes the trusted helper key or message receipts", "check": "helper-writes", "pattern": r"$^"}, mine]}
+        crewguard.save_json(crewguard.POLICY, live)
+        try:
+            self.assertEqual(rule("pal --as-helper tell Orca x"), "helper-key")
+            p = crewguard.policy()
+            got = [r["name"] for r in p["guarded"]]
+            self.assertIn("helper-key", got)
+            self.assertNotIn("helper-write", got, "that build's rule is replaced, not kept as one the owner added")
+            self.assertIn("my-own", got, "a rule the owner added stays")
+            self.assertEqual(rule("my-tool now"), "my-own")
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+    def test_two_branches_with_the_same_number_cant_strand_a_rule_again(self):
+        """By name as well as by number: a built-in rule a saved policy has never seen arrives; one the
+        owner took out on purpose (it's in the names the file was last brought up to) stays out."""
+        names = sorted(r["name"] for r in crewguard.DEFAULT["guarded"])
+        same_number = {**crewguard.DEFAULT, "defaults_version": crewguard.DEFAULTS_VERSION, "defaults_names": [n for n in names if n != "helper-key"],
+                       "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] != "helper-key"]}
+        crewguard.save_json(crewguard.POLICY, same_number)
+        try:
+            self.assertEqual(rule("PAL_HELPER=Pals pal tell Orca x"), "helper-key")
+            self.assertEqual(crewguard.policy()["defaults_names"], names)
+            removed = {**crewguard.DEFAULT, "defaults_version": crewguard.DEFAULTS_VERSION, "defaults_names": names,
+                       "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] != "post"]}
+            crewguard.save_json(crewguard.POLICY, removed)
+            self.assertIsNone(rule("gh issue comment 1 --body hi"), "the owner's own removal is respected")
+            self.assertNotIn("post", [r["name"] for r in crewguard.policy()["guarded"]])
         finally:
             crewguard.POLICY.unlink(missing_ok=True)
 

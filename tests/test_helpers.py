@@ -35,6 +35,11 @@ def helper(env, *args, name="Pals", key_file=None, outside=True, term=None):
     return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=e, timeout=60)
 
 
+def key_of(env, path):
+    """The key in `path` as pal reads it (unsealed where keys are sealed at rest)."""
+    return py(env, f"import crewhelpers; print(json.dumps(crewhelpers._read_key({str(path)!r})))")
+
+
 def log(data):
     f = data / "crew-helpers" / "log.jsonl"
     return [json.loads(l) for l in f.read_text().splitlines()] if f.exists() else []
@@ -79,7 +84,9 @@ class TheSwitch(Base):
         self.assertIn("PAL_HELPER=Pals pal tell", r.stdout)
         h = json.loads((self.data / "crew-helpers" / "helpers.json").read_text())["helpers"]["Pals"]
         self.assertTrue(h["on"])
-        key = (self.keys / "pals.key").read_text().strip()
+        raw = (self.keys / "pals.key").read_text()
+        self.assertTrue(raw.startswith("\0"), "marked binary, so a text search doesn't print it")
+        key = key_of(self.env, self.keys / "pals.key")
         self.assertTrue(key.startswith("palkey_") and len(key) > 40)
         self.assertEqual(stat.S_IMODE((self.keys / "pals.key").stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(self.keys.stat().st_mode), 0o700)
@@ -94,7 +101,7 @@ class TheSwitch(Base):
             r = helper(self.env, "settings", "trust-helper", *args)
             self.assertNotEqual(r.returncode, 0, args)
             self.assertIn("isn't a click", r.stderr)
-        self.assertEqual((self.keys / "pals.key").read_text().strip(), key)
+        self.assertEqual(key_of(self.env, self.keys / "pals.key"), key)
         shown = pal(self.env, "helpers", "--json").stdout
         self.assertEqual(json.loads(shown)["helpers"][0]["key"], h["sha256"][:8], "the app sees a short fingerprint")
         self.assertNotIn(h["sha256"], shown)
@@ -300,13 +307,38 @@ class Sending(Base):
             r = subprocess.run(["rg", "-n", ".", str(self.keys.parent)], capture_output=True, text=True, timeout=30)
             self.assertNotIn("palkey_", r.stdout, "ripgrep pointed at the folder above prints no key")
 
+    def test_a_recursive_text_search_from_any_folder_above_doesnt_print_a_key(self):
+        """T122: `grep -R pal ~/.config` printed a key (grep ignores .ignore, and the gate can't hold every
+        search that starts higher up). The key file is marked binary, so grep says it matched and no more.
+        Also for a copy a helper keeps elsewhere, and for ripgrep told to ignore nothing."""
+        self.on()
+        copy = self.root / "elsewhere" / "pals.key"
+        copy.parent.mkdir()
+        shutil.copy(self.keys / "pals.key", copy)
+        key = key_of(self.env, self.keys / "pals.key")
+        config = Path(self.env["HOME"]) / ".config"
+        grep = "/usr/bin/grep" if os.path.exists("/usr/bin/grep") else shutil.which("grep")
+        ran = 0
+        for cmd in ([grep, "-R", "pal", str(config)], [grep, "-rn", ".", self.env["HOME"]], [grep, "-R", "palkey", str(copy.parent)],
+                    ["rg", "--no-ignore", "--hidden", "-n", "pal", str(config)], ["rg", "-uuu", "palkey", self.env["HOME"]]):
+            if not cmd[0] or not shutil.which(cmd[0]):
+                continue
+            r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=60)
+            ran += 1
+            self.assertNotIn(key, r.stdout + r.stderr, cmd)
+            self.assertNotIn("palkey_", r.stdout, cmd)
+        self.assertGreater(ran, 0, "no grep here to try")
+        # And the helper still sends with it, from the keys folder or from its own copy.
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "still works"))[1].startswith(TRUSTED))
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "from a copy", key_file=copy))[1].startswith(TRUSTED))
+
     def test_a_helper_never_interrupts_or_relays_and_a_key_never_rides_a_card(self):
         self.on()
         cid, _ = self.told(helper(self.env, "desk", "send", "Helper#build", "quick", "--now", "--relaying"))
         c = card(self.env, cid)
         self.assertNotEqual(c["urgency"], "now", "only the owner interrupts")
         self.assertFalse(c.get("relaying"))
-        key = (self.keys / "pals.key").read_text().strip()
+        key = key_of(self.env, self.keys / "pals.key")
         r = helper(self.env, "tell", "Helper#build", f"here is my key {key}")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("helper's key in it", r.stderr)
@@ -398,10 +430,109 @@ class FromTheLiveBuild(Base):
         self.assertEqual(kinds[:2], [("sent", "An earlier request"), ("switch", "carried over, off")])
         # The owner turns it on again knowingly: a new key, in the keys folder, and then it works.
         self.on()
-        self.assertTrue((self.keys / "pals.key").read_text().startswith("palkey_"))
+        self.assertTrue(key_of(self.env, self.keys / "pals.key").startswith("palkey_"))
         self.assertTrue(self.told(helper(self.env, "--as-helper", "tell", "Helper#build", "now", name=""))[1].startswith(TRUSTED))
         # Carried over once: a later run doesn't switch it off again.
         self.assertTrue(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["on"])
+
+
+SEALS = bool(shutil.which("systemd-creds")) and subprocess.run(
+    ["systemd-creds", "--user", "--name=pal-helper-probe", "encrypt", "-", "-"], input=b"x", capture_output=True).returncode == 0
+
+
+class KeysAtRest(Base):
+    """T134 (Codex's T122, P1): an ordinary recursive read from a pal reached the key. On disk the key
+    is sealed for this user on this computer (systemd-creds), so whatever reads the file gets
+    ciphertext; where that isn't available it's kept marked binary, and text searches don't print it."""
+
+    # The reads Codex used and listed: a search for Project Pals' configuration, and its relatives.
+    def reads(self, key_file):
+        home, config = self.env["HOME"], str(Path(self.env["HOME"]) / ".config")
+        grep = "/usr/bin/grep" if os.path.exists("/usr/bin/grep") else "grep"
+        tarred = self.root / "c.tar"
+        copied = self.root / "copied"
+        return {
+            "grep -R pal ~/.config": [grep, "-R", "pal", config],
+            "grep -rn . ~": [grep, "-rn", ".", home],
+            "grep -Ra pal ~/.config (told to read binaries as text)": [grep, "-Ra", "pal", config],
+            "rg -uuu pal ~/.config": ["rg", "-uuu", "pal", config],
+            "rg -uuu --text . ~/.config": ["rg", "-uuu", "--text", ".", config],
+            "find ~/.config -type f -exec cat {} +": ["find", config, "-type", "f", "-exec", "cat", "{}", "+"],
+            "tar, then read the archive": ["sh", "-c", f'tar cf "{tarred}" -C "{home}" .config && cat "{tarred}"'],
+            "cp -r, then cat the copy": ["sh", "-c", f'cp -r "{config}" "{copied}" && find "{copied}" -type f -exec cat {{}} +'],
+            "python: open every file": [sys.executable, "-c", "import os,sys\nfor d,_,fs in os.walk(sys.argv[1]):\n    for f in fs:\n"
+                                        "        sys.stdout.write(open(os.path.join(d,f),errors='replace').read())", config],
+            "cat the key file itself": ["cat", str(key_file)],
+            "strings on the key file": ["strings", str(key_file)],
+        }
+
+    def ran(self, cmd):
+        if not shutil.which(cmd[0]):
+            return None
+        r = subprocess.run(cmd, capture_output=True, timeout=120)
+        return (r.stdout + r.stderr).decode(errors="replace")
+
+    @unittest.skipUnless(SEALS, "systemd-creds --user isn't available here")
+    def test_sealed_no_read_of_the_files_shows_the_key(self):
+        self.on()
+        self.on("Wabi")
+        f = self.keys / "pals.key"
+        key = key_of(self.env, f)
+        raw = f.read_bytes()
+        self.assertTrue(raw.startswith(b"\0palsealed1:pals\n"), raw[:24])
+        self.assertNotIn(key.encode(), raw)
+        self.assertTrue(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["sealed"])
+        tried = 0
+        for what, cmd in self.reads(f).items():
+            out = self.ran(cmd)
+            if out is None:
+                continue
+            tried += 1
+            self.assertNotIn(key, out, what)
+            self.assertNotIn("palkey_", out, what)
+        self.assertGreaterEqual(tried, 8)
+        # The helper still sends: pal unseals at the moment it checks. From a copy kept elsewhere too.
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "sealed"))[1].startswith(TRUSTED))
+        copy = self.root / "kept" / "mine.key"
+        copy.parent.mkdir()
+        shutil.copy(f, copy)
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "sealed copy", key_file=copy))[1].startswith(TRUSTED))
+        # Wabi's sealed file presented as Pals unseals to Wabi's key: not Pals's.
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "wrong", key_file=self.keys / "wabi.key"))[1].startswith(SHELL))
+        # A sealed file that's been cut or scribbled on doesn't unseal: not verified, with a reason.
+        bad = self.root / "bad.key"
+        bad.write_bytes(raw[:-40] + b"AAAA\n")
+        bad.chmod(0o600)
+        r = helper(self.env, "tell", "Helper#build", "tampered", key_file=bad)
+        self.assertTrue(self.told(r)[1].startswith(SHELL))
+        self.assertIn("can't be unsealed", r.stderr)
+        # Rotating seals the new key too.
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "rotate")
+        self.assertTrue(f.read_bytes().startswith(b"\0palsealed1:pals\n"))
+        self.assertNotEqual(key_of(self.env, f), key)
+
+    def test_where_it_cant_be_sealed_a_text_search_still_doesnt_print_it(self):
+        """No systemd-creds (a container, an old systemd): the key is kept marked binary. grep and
+        ripgrep, however they're pointed and whether or not they honour ignore files, say it matched
+        and no more. Dumping the file on purpose shows it there: said plainly in RECIPE."""
+        self.env = {**self.env, "PAL_HELPER_PLAIN_KEYS": "1"}
+        r = owner(self.env, self.data, "settings", "trust-helper", "Pals", "on")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        f = self.keys / "pals.key"
+        raw = f.read_bytes()
+        self.assertTrue(raw.startswith(b"\0palkey_"), raw[:12])
+        key = raw.lstrip(b"\0").strip().decode()
+        self.assertFalse(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["sealed"])
+        reads = self.reads(f)
+        tried = 0
+        for what in ("grep -R pal ~/.config", "grep -rn . ~", "rg -uuu pal ~/.config"):
+            out = self.ran(reads[what])
+            if out is None:
+                continue
+            tried += 1
+            self.assertNotIn(key, out, what)
+        self.assertGreater(tried, 0)
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "plain"))[1].startswith(TRUSTED))
 
 
 class Forgery(Base):

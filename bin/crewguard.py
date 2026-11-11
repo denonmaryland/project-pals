@@ -15,7 +15,13 @@ import time
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
 
 POLICY = DATA / "crew-policy.json"
-DEFAULTS_VERSION = 14   # 14: helper-key (T116). 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56)
+# 15: helper-key (T116). 14 was taken by the build that went live unreviewed on 2026-11-10 (7692987,
+# its helper-write rule), so an install already at 14 must still get this set: hence 15, and policy()
+# also brings any saved policy up to date when a built-in rule is missing from it, whatever number it
+# carries (two branches picking the same number can't strand a rule again).
+# 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
+DEFAULTS_VERSION = 15
+RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
         {"name": "push", "why": "pushes code to a remote", "pattern": r"git\s+(-C\s+\S+\s+)?push\b"},
@@ -85,14 +91,20 @@ DEFAULT = {
 
 def policy():
     p = load_json(POLICY, None)
+    names = sorted(r["name"] for r in DEFAULT["guarded"])
     if not p:
-        p = {**DEFAULT, "defaults_version": DEFAULTS_VERSION}
+        p = {**DEFAULT, "defaults_version": DEFAULTS_VERSION, "defaults_names": names}
         save_json(POLICY, p)
-    elif p.get("defaults_version", 1) < DEFAULTS_VERSION:
-        # Newer built-in rules replace the old built-in ones; rules people added stay.
-        ours = {r["name"] for r in DEFAULT["guarded"]}
+    elif p.get("defaults_version", 1) < DEFAULTS_VERSION \
+            or (isinstance(p.get("defaults_names"), list) and set(names) - set(p["defaults_names"])):
+        # Newer built-in rules replace the old built-in ones; rules people added stay. By number, and
+        # also by name: `defaults_names` is the built-in set this file was last brought up to, so a
+        # built-in rule it has never seen arrives even when another build used the same number first
+        # (one the owner took out on purpose is in that list, and stays out).
+        ours = set(names) | RETIRED_RULES
         p["guarded"] = DEFAULT["guarded"] + [r for r in p.get("guarded", []) if r.get("name") not in ours]
         p["defaults_version"] = DEFAULTS_VERSION
+        p["defaults_names"] = names
         save_json(POLICY, p)
     return p
 
@@ -675,6 +687,8 @@ HELPERS_PLACE = _place(sorted(HELPER_DATA))
 HELPER_KEYS_DIR = re.compile(r"(?:^|[^\w-])project-pals/helpers(?![\w-])|(?:^|[^\w.-])\.config/project-pals(?![\w-])"
                              r"|(?:^|[^\w-])crew-helper/pals\.key\b")
 HELPER_KEY_TEXT = re.compile(r"palkey_[A-Za-z0-9_-]{20,}")                    # a key itself, wherever one turns up
+# Keys are sealed at rest (crewhelpers.seal): asking systemd to unseal one is reaching for it, on purpose.
+HELPER_UNSEAL = re.compile(r"\bsystemd-creds\b[^\n]*\bpal-helper-|\bpal-helper-[^\n]*\bsystemd-creds\b|\bcrewhelpers\._(?:unseal|read_key)\b")
 # Presenting as a helper: PAL_HELPER=Pals pal tell …, export PAL_HELPER, env PAL_HELPER=… (as a
 # command, not inside a quoted pattern), or code that puts it in a child's environment.
 HELPER_ENV = re.compile(r"\bPAL_HELPER(?:_KEY_FILE)?=|\bexport\s+(?:-\w+\s+)*PAL_HELPER|(?:^|\s)--as-helper(?:=|\s|$)")
@@ -702,7 +716,7 @@ def touches_helpers(cmd):
     edited = _edited(cmd)
     if edited is not None:
         return in_helper_keys(edited) or into_place(edited, HELPER_DATA)
-    if HELPER_KEYS_DIR.search(cmd) or HELPER_KEY_TEXT.search(cmd):
+    if HELPER_KEYS_DIR.search(cmd) or HELPER_KEY_TEXT.search(cmd) or HELPER_UNSEAL.search(cmd):
         return True
     # As a command: on the line itself, or in one a shell is handed (bash -c '…', eval "…"). Not
     # commands(): it drops leading VAR=value words, which is the very thing looked for here.

@@ -11,7 +11,10 @@
   waiting on Home refuse it, and each try is recorded. Home shows what helpers sent in your name
   and what they tried (Today, and a new In your name tab). At most 20 messages an hour per helper;
   past that they arrive as "not verified". Pals can't use a helper's key: the approval gate holds
-  the attempt and `pal` refuses a key from inside Herdr.
+  the attempt and `pal` refuses a key from inside Herdr. Keys are kept outside Project Pals'
+  data and encrypted on disk for your user on this computer (systemd's credentials), so a search
+  or copy of your config folder never shows one; where that isn't available, a text search still
+  doesn't print it.
 - **If you ran the build that went live on 10 November** ("Trusted helper · Pals"): Pals is carried
   over switched **off**, and its old key is deleted. That build accepted a request without any key
   and could be used by a pal, so turn Pals on again in Trusted helpers when you want it; your

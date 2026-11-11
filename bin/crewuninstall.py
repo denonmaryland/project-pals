@@ -256,8 +256,8 @@ def agent_above():
 def helper_key(p):
     """Is `p` a trusted helper's key file as crewhelpers writes one (a small plain file holding palkey_…)?"""
     try:
-        return (p.is_file() and not p.is_symlink() and p.stat().st_size <= 512
-                and p.read_text(errors="replace").startswith("palkey_"))
+        return (p.is_file() and not p.is_symlink() and p.stat().st_size <= 8192
+                and p.read_text(errors="replace").lstrip("\0").startswith(("palkey_", "palsealed1:")))
     except OSError:
         return False
 

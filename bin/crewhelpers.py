@@ -31,7 +31,9 @@ import json
 import os
 import re
 import secrets
+import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 from crewlib import DATA, OWNER, CrewError, load_json, save_json, locked, now_ms, append_jsonl
@@ -43,6 +45,9 @@ KEYS = Path.home() / ".config" / "project-pals" / "helpers"
 
 ENV, ENV_FILE = "PAL_HELPER", "PAL_HELPER_KEY_FILE"
 PREFIX = "palkey_"
+BINARY_MARK = "\0"   # first in every key file (see _new_key)
+SEALED = "palsealed1:"   # a key file whose key is encrypted at rest (see seal)
+KEY_FILE_MAX = 8192
 KEY_TEXT = re.compile(r"palkey_[A-Za-z0-9_-]{20,}")   # a key, wherever it turns up (cards and the log never carry one)
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,23}")
 MAX = 8
@@ -168,6 +173,50 @@ def check_name(name, pals=()):
     return name
 
 
+# ─── sealed at rest ──────────────────────────────────────────────────────────────────────────
+# T134 (Codex's T122, P1): a pal reading configuration with an ordinary recursive read (grep -R over
+# ~/.config, find -exec cat, tar, cp -r, a script that opens every file) reached the key, and the
+# gate can't hold every read that starts above the keys' folder. So what's on disk isn't the key:
+# it's the key encrypted by systemd for this user on this computer (systemd-creds --user, bound to
+# the helper's name). Any read of the file, from anywhere, yields ciphertext; `pal` unseals it at
+# the moment it checks a helper. A program run as the owner can still ask systemd to unseal it on
+# purpose (the gate holds a pal's command that does); that's deliberate, not a mistake. Where
+# systemd-creds isn't there (no systemd, an old one, a container) the key is kept as before:
+# marked binary, so text searches don't print it.
+
+def _cred_name(name):
+    return f"pal-helper-{slug(name)}"
+
+
+def can_seal():
+    return os.environ.get("PAL_HELPER_PLAIN_KEYS") != "1" and bool(shutil.which("systemd-creds"))
+
+
+def seal(key, name):
+    """`key` encrypted for this user on this computer, as text; None when it can't be done here."""
+    if not can_seal():
+        return None
+    try:
+        r = subprocess.run(["systemd-creds", "--user", f"--name={_cred_name(name)}", "encrypt", "-", "-"],
+                           input=key.encode(), capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    blob = r.stdout.decode(errors="replace").strip()
+    if r.returncode != 0 or not blob:
+        return None
+    # Only trust it if it comes back: a systemd that encrypts but can't decrypt for this user would lock the helper out.
+    return blob if _unseal(blob, slug(name)) == key else None
+
+
+def _unseal(blob, cred_slug):
+    try:
+        r = subprocess.run(["systemd-creds", "--user", f"--name=pal-helper-{cred_slug}", "decrypt", "-", "-"],
+                           input=blob.encode(), capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.stdout.decode(errors="replace").strip() if r.returncode == 0 else None
+
+
 def _new_key(name):
     """Make (or replace) the helper's key file. Returns the key's fingerprint; the key stays in the file."""
     KEYS.mkdir(parents=True, exist_ok=True)
@@ -181,7 +230,13 @@ def _new_key(name):
         if not ig.exists() and not ig.is_symlink():
             _private(ig, "# Project Pals: trusted helpers' keys. Not for searching.\n*\n")
     key = PREFIX + secrets.token_urlsafe(32)
-    _private(key_path(name), key + "\n")
+    # A NUL byte first: text-search tools (grep, ripgrep, ag, ack) then take the file for binary and
+    # say "binary file matches" instead of printing the key, whatever folder the search started in
+    # and whether or not they honour ignore files (T122: `grep -R pal ~/.config` printed a key).
+    # Reading it on purpose (cat, strings, grep -a) still shows it; nothing run as the owner can't.
+    blob = seal(key, name)
+    body = f"{SEALED}{slug(name)}\n{blob}\n" if blob else key + "\n"
+    _private(key_path(name), BINARY_MARK + body)
     return fingerprint(key)
 
 
@@ -297,11 +352,19 @@ def _read_key(path):
             raise HelperError("its key file belongs to someone else")
         if st.st_mode & 0o077:
             raise HelperError("its key file can be read by others (chmod 600 it, then rotate the key)")
-        if st.st_size > 512:
+        if st.st_size > KEY_FILE_MAX:
             raise HelperError("its key file isn't a key")
-        return os.read(fd, 512).decode(errors="replace").strip()
+        text = os.read(fd, KEY_FILE_MAX).decode(errors="replace").lstrip(BINARY_MARK).strip()
     finally:
         os.close(fd)
+    if not text.startswith(SEALED):
+        return text
+    head, _, blob = text.partition("\n")
+    cred_slug = head[len(SEALED):].strip()
+    key = _unseal("".join(blob.split()), cred_slug) if re.fullmatch(r"[a-z0-9-]{1,40}", cred_slug) and blob.strip() else None
+    if not key:
+        raise HelperError("its key can't be unsealed here (it was made for this user on this computer; Rotate key makes a new one)")
+    return key
 
 
 def sent_since(name, since_ms):
@@ -445,6 +508,14 @@ def note_unverified(why, via):
 
 # ─── what the app and `pal helpers` show ─────────────────────────────────────────────────────
 
+def _is_sealed(p):
+    try:
+        with open(p, "rb") as f:
+            return f.read(64).lstrip(b"\0").startswith(SEALED.encode())
+    except OSError:
+        return False
+
+
 def listing(log_limit=200):
     adopt_old()
     h, now = _load(), now_ms()
@@ -455,7 +526,7 @@ def listing(log_limit=200):
         mine = [x for x in log_ if x.get("helper") == name]
         p = key_path(name)
         out.append({"name": name, "on": bool(e.get("on")), "key": (e.get("sha256") or "")[:8] or None, "key_file": str(p),
-                    "key_there": p.is_file() and not p.is_symlink(), "made": e.get("made"), "rotated": e.get("rotated"),
+                    "key_there": p.is_file() and not p.is_symlink(), "sealed": _is_sealed(p), "made": e.get("made"), "rotated": e.get("rotated"),
                     "switched": e.get("switched"), "last_used": e.get("last_used"),
                     "sent": sum(1 for x in mine if x.get("kind") == "sent"),
                     "refused": sum(1 for x in mine if x.get("kind") == "refused"),

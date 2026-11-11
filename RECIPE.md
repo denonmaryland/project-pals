@@ -1350,8 +1350,10 @@ switches a helper on by name. It is never the owner's click.
 Data: `data/crew-helpers/helpers.json` (`{helpers: {name: {on, sha256, made, rotated, switched,
 last_used, per_hour}}}`: the key's fingerprint, never the key) and `log.jsonl`, both 0600, written
 only by `pal` (bin/crewhelpers.py). The key itself is `~/.config/project-pals/helpers/<slug>.key`
-(`palkey_` + 43 characters, 0600 in a 0700 folder): outside the data folder, so a search of data
-never prints one. `PAL_HELPER_KEY_FILE` names a copy kept elsewhere. Uninstall removes the keys.
+(0600 in a 0700 folder; a NUL byte, then `palsealed1:<slug>` and the key, `palkey_` + 43 characters,
+encrypted with `systemd-creds --user`; plain after the NUL byte where that isn't available): outside
+the data folder, so a search of data never meets one, and sealed, so a read from higher up shows
+ciphertext. `PAL_HELPER_KEY_FILE` names a copy kept elsewhere. Uninstall removes the keys.
 An install that ran the unreviewed build of 2026-11-10 (one helper kept in `data/crew-helper`) has
 its "Pals" carried over once: by name, switched off, its old key deleted, its sends kept in the
 record; the owner turns it on again in the sheet.
@@ -1680,10 +1682,28 @@ record; the owner turns it on again in the sheet.
   `PAL_HELPER` / `--as-helper` (rule `helper-key`); the Claude Code mod refuses its Read, Grep and
   Glob there; `pal` refuses the key from inside Herdr. Guards against mistakes and one pal talking
   another into it, like the click tokens, not a wall. Other harnesses' read tools aren't checked.
-- **A search of a folder above the keys reads them** (`rg . ~/.config/project-pals` printed one in
-  review). The gate and the mod's guard count `~/.config/project-pals` itself, and both key folders
-  hold a `.ignore` with `*`, which ripgrep and the tools built on it honour. A plain `grep -r` over
-  all of `~/.config` or the home folder still finds a key: nothing here can stop that.
+- **A read that starts above the keys' folder walks into them** (in review `rg .
+  ~/.config/project-pals`, then `grep -R pal ~/.config`, each printed a key; the same goes for
+  `find -exec cat`, `tar`, `cp -r` and a script that opens every file). The gate holds a pal's
+  command, edit or Read / Grep / Glob that names the keys' folder or `~/.config/project-pals`, but
+  it can't hold every read rooted at `~/.config`, the home folder or `/`. So what's on disk isn't
+  the key: `crewhelpers.seal` encrypts it for this user on this computer (`systemd-creds --user`,
+  bound to `pal-helper-<slug>`), and `pal` unseals it only at the moment it checks a helper. Any
+  read of the file, from anywhere, yields ciphertext. The file also starts with a NUL byte (text
+  searches say "binary file matches") and the two folders hold a `.ignore` with `*`. Where
+  `systemd-creds` isn't available (no systemd, an old one, a container) the key is stored plain
+  behind that NUL byte: grep and ripgrep still don't print it, but `cat` or `grep -a` on purpose
+  does; `pal helpers --json` says `sealed: false` there. What remains is deliberate: a program run
+  as the owner can ask systemd to unseal a key. The gate holds a pal's line that does
+  (`systemd-creds … pal-helper-…`), which is the bar here: mistakes, not a pal set on it.
+- **A sealed key works only for this user on this computer.** A helper may keep a copy of the file
+  elsewhere on the same machine; a copy taken to another one doesn't unseal.
+- **Two builds picked the same policy number.** The build that went live on 2026-11-10 used
+  `DEFAULTS_VERSION` 14 for its own rule, so a version of ours at 14 would never have reached that
+  install's `crew-policy.json`. Ours is 15, that build's `helper-write` rule is dropped on upgrade,
+  and the policy also records the built-in rule names it was last brought up to (`defaults_names`):
+  a built-in rule a saved policy has never seen is added even at an equal number, while one the
+  owner removed on purpose stays out.
 - **A helper's limit and its send are one step.** Counted first and recorded after, two sends
   started together both passed a limit of one. `crewdesk.create` takes the `helpers-send` lock,
   checks the key and the count again (`crewhelpers.recheck`), writes the card and the record, and
