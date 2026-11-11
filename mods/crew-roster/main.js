@@ -12,16 +12,18 @@ import {
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
   loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
   applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, tabHasAgent, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
-  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, APP_MENU, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, saveUiSettings, palStatus, topicMark,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, openTerminal, CLOSE_LABEL } from "./crew.js";
+  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
+  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
+  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, deskMode,
+  anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
+  severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
+  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
+  toggleChief, withoutChief, isChiefRec, toggleComputer, showBoard, toggleBoard, hasBoard, boardMode, boardPal, palClickOpens } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
-// The hero's Inbox / Tasks / Desk pebbles: icon + a fixed 18 px count slot (9 + 12 + 6 + 18 + 9), and
-// with their names (about 32 px more each) from this sidebar width up: 16 of padding, three labeled
-// pebbles, four 6 px gaps and the two 28 px icon pebbles need 384.
-const HERO_PEBBLE = 54, HERO_PEBBLE_LABELED = 96, HERO_LABELS_AT = 390;
+// The hero's Inbox / Tasks / Desk pebbles show their names from this sidebar width up (each pebble
+// is a fifth of the row less the gaps; under this a name would truncate to "In…").
+const HERO_LABELS_AT = 430;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
 // Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
@@ -79,7 +81,13 @@ export default class CrewRoster extends View {
     // Then lay the window out once the layout is there (before that, applyLayout does nothing).
     const sync = () => cx.spawn(async (cx) => {
       try { await syncSettings(); } catch {}
+      try { await syncFactories(); } catch {}
+      try { await syncAreas(); } catch {}
+      this.followRenames();
       if (!this.laidOut && applyLayout()) { this.laidOut = true; cx.notify(); }
+      // A first install: the welcome tour opens on Home by itself, once per window (it resumes at
+      // the screen it was left on). A replay from the gear menu shows Home itself.
+      if (this.laidOut && !this.welcomed && welcomeMark()?.state === "new" && hasHome()) { this.welcomed = true; showHome(); cx.notify(); }
     });
     sync();
     cx.timer.every(3000, () => sync());
@@ -97,8 +105,11 @@ export default class CrewRoster extends View {
       try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
       // What needs DeNon, for the status bar's "N need you", with why each counts (published only
       // when it changes, reasons included).
-      const n = needsOf(spaces(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
+      const n = needsOf(withoutChief(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
       if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
+      // With several factories: what each one needs from you (the switcher's counts).
+      const fn = countFactoryNeeds(this.waitingNow(), this.ops, shared("crew.factory.asks") ?? []);
+      if (JSON.stringify(shared("crew.factory.needs") ?? {}) !== JSON.stringify(fn)) setShared("crew.factory.needs", fn);
       cx.notify();
     });
     ops(cx);
@@ -125,6 +136,8 @@ export default class CrewRoster extends View {
         const c = await nextCommand();
         if (c === "hire") this.hire();
         else if (c === "routines") this.routines();
+        // Fold or show the sidebar's Rooms section (T99; bind a key to crew-roster.rooms-fold).
+        else if (c === "rooms-fold") { saveUiSettings({ roomsFolded: !roomsFolded() }); cx.notify(); }
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
         else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
@@ -132,9 +145,21 @@ export default class CrewRoster extends View {
         else if (c === "profile") togglePanel(panelTab());
         // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
         else if (c === "home") toggleHome();
+        // Ctrl+Shift+J: the Chief's pop-up (again: closes it).
+        else if (c === "chief") toggleChief();
+        // Ctrl+Shift+G: the factory switcher.
+        else if (c === "factory" || c === "factories") openFactoryMenu();
+        // Ctrl+Shift+Y: the shown pal's Computer (again: back to the topic).
+        else if (c === "computer") toggleComputer();
+        else if (c === "board") toggleBoard();
         cx.notify();
       }
     });
+  }
+
+  // Topics that wait on you (a question for you), in every factory.
+  waitingNow() {
+    return withoutChief().flatMap((space) => space.tabs.filter((tb) => askingYou(tb)).map((tab) => ({ space, tab })));
   }
 
   view() { const v = shared("crew.view"); return v === "you" || v === "rooms" || v === "tasks" ? v : "bots"; }
@@ -242,21 +267,25 @@ export default class CrewRoster extends View {
 
   render() {
     const t = tone(theme());
-    const all = spaces();
-    const ps = panes();
     const c = crew();
+    const all = withoutChief(spaces(), c);   // the Chief lives in its pop-up, not the sidebar
+    const ps = panes();
     const only = shared("crew.demo");
     const rows = (only ? all.filter((s) => only.includes(s.name)) : all).map((space) => ({ space, bot: botOf(space, c, ps) }))
       // The head pal sits above everyone; then whoever needs you most.
       .sort((x, y) => (y.bot.god ? 1 : 0) - (x.bot.god ? 1 : 0) || (STATUS_RANK[y.space.status] ?? 0) - (STATUS_RANK[x.space.status] ?? 0) || x.space.index - y.space.index);
-    const asleep = sleepers(all, c);
+    // With several factories the list is the shown factory's floor, its foreman on top. The Inbox
+    // below stays everyone's: what waits on you is never hidden by a switch.
+    const several = severalFactories();
+    const floor = several ? rows.filter((r) => inFactory(r.space.name)).sort((x, y) => (runsHome(y.space, y.bot) ? 1 : 0) - (runsHome(x.space, x.bot) ? 1 : 0)) : rows;
+    const asleep = sleepers(spaces(), c).filter((b) => !isChiefRec(b)).filter((rec) => !several || inFactory(rec.name));
     // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
     const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0)
       + (shared("crew.desk")?.needs?.length ?? 0);
-    if (narrow()) return this.rail(rows, waiting, t, extra);
-    return this.focusColumn(rows, asleep, waiting, t, extra);
+    if (narrow()) return this.rail(floor, waiting, t, extra);
+    return this.focusColumn(floor, asleep, waiting, t, extra);
   }
 
   // Folded: just the pals' faces, the active one lit, a red count for what needs you.
@@ -285,7 +314,7 @@ export default class CrewRoster extends View {
           .child(mascotEl(bot, mood(palStatus(space), bot.awake), 32, t))
           .when(space.status === "blocked", (el) => el.child(div().absolute().top(4).right(4).size(8).rounded_full().bg(t.blocked)))))).flex_1().min_h(0).w_full())
       .child(icon("rail-hire", "plus", () => this.hire()))
-      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...APP_MENU })));
+      .child(icon("rail-settings", "settings", () => openOverlay({ mod: "crew-appmenu", kind: "popup", ...appMenuSpec() })));
   }
 
   brand(t) {
@@ -588,8 +617,12 @@ export default class CrewRoster extends View {
   leadTab(space) { return palLeadTab(space); }
   // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
   // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
+  // Clicking any other pal opens its board (DeNon's pick G, T108): what it's doing and what it needs
+  // before any terminal. The pal whose board is up: its terminal (they swap). Topics and keys still
+  // go straight to terminals, and Settings → palClick "terminal" brings the old click back.
   open(space) {
-    if (botOf(space).god && hasHome()) { showHome(); return; }
+    if (runsHome(space) && hasHome()) { showHome(); return; }
+    if (palClickOpens() === "board" && hasBoard() && !(boardMode() && boardPal() === space.name)) { showBoard(space); return; }
     this.go(space, this.leadTab(space));
   }
 
@@ -597,7 +630,7 @@ export default class CrewRoster extends View {
   focusColumn(rows, asleep, waiting, t, extra) {
     const d = ds(t);
     const w = this.width ?? 304;
-    const shown = rows.find((r) => r.space.active) ?? rows.find((r) => r.bot.god) ?? rows[0];
+    const shown = rows.find((r) => r.space.active) ?? rows.find((r) => runsHome(r.space, r.bot)) ?? rows[0];
     const ordered = palOrder(rows);
     const live = ordered.filter((r) => r.bot.awake || r.space.active || r.bot.starting);
     const dozing = ordered.filter((r) => !(r.bot.awake || r.space.active || r.bot.starting));
@@ -607,17 +640,22 @@ export default class CrewRoster extends View {
     const look = palListStyle();
     const root = v_flex().id("crew-roster").size_full().bg(d.bg1).border_r_1().border_color(d.line)
       // Window pixels → design pixels (Herdr's zoom scales what we draw).
-      .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
+      .on_size_change((size, cx) => { const k = Number(settings().zoom) || 1, w = size.width / k; noteWindowHeight(size.height / k); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
+    // The factory chip: only once there's a second factory.
+    if (severalFactories()) root.child(this.factoryChip(d));
     if (shown) root.child(this.heroCard(shown, t, d, w));
     // The list scrolls in our own area (scrollArea: the pill thumb sits in its 8 px right padding).
     const list = v_flex().px(8).pt(8).pb(24).gap(2)
       // A pal drag ends on release anywhere in the list, and is dropped if the pointer leaves it.
       .on_mouse_up("left", (_e, cx) => this.drop(cx))
       .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
-    const scroller = (inner) => scrollArea(d, "crew-list", inner).flex_1().min_h(0);
+    const scroller = (inner) => scrollArea(d, "crew-list", inner, { fade: "side" }).flex_1().min_h(0);
     if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
-      .child(div().flex_1().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      // How many agents are working, everywhere (T98: it moved here from the status strip, and now
+      // counts every pal, machine and factory, not just what this list shows). Hover: who.
+      .child(this.workingChip(d))
       // Trees: fold or unfold every pal's topics at once (DeNon, 2026-11-08). It's the same "palTrees"
       // as the switch in Pal list style, so it's remembered and both always agree. Fixed 20 px, like
       // the search button beside it, so nothing moves when it flips.
@@ -654,6 +692,23 @@ export default class CrewRoster extends View {
     return root.child(scroller(list));
   }
 
+  // Which factory this is, and the way to the others (design F-A, DeNon's pick 2026-11-09): a colour
+  // square, its name, its template, and an amber count of what the OTHER factories need from you.
+  factoryChip(d) {
+    const f = currentFactory();
+    const n = needsOutsideFactory();
+    return div().flex_none().px(8).pt(8).child(h_flex().id("factory-chip").h(32).items_center().gap(8).pl(10).pr(8).rounded(d.r.sm).cursor_pointer()
+      .bg(d.raised).border_1().border_color(d.lineMid)
+      .hover((s) => s.bg(d.hover)).tooltip("Switch factory")
+      .on_click(() => openFactoryMenu())
+      .child(div().size(9).flex_none().rounded(2).bg(f.color))
+      .child(div().flex_1().min_w(0).truncate().text_size(13).font_weight(600).text_color(d.fg1).child(f.name))
+      .child(div().flex_none().text_size(11).text_color(d.fg3).child(templateOf(f.template).short))
+      .when(n > 0, (el) => el.child(div().id("factory-chip-n").flex_none().h(16).px(5).flex().items_center().rounded(3).bg(d.warn).text_size(11).font_weight(600).text_color("#1A1203")
+        .tooltip(`${n} waiting on you in other factories`).child(String(n))))
+      .child(svg(`${ICON}/chevron-down.svg`).size(11).flex_none().text_color(d.fg3)));
+  }
+
   // Not on the boards, and only there while they have something: the Inbox (approvals wait for
   // your click there; channels that look stuck), and your rooms.
   extras(list, waiting, extra, d) {
@@ -667,14 +722,15 @@ export default class CrewRoster extends View {
     }
     const rs = rooms();
     if (rs.length) {
-      list.child(h_flex().h(28).mt(8).flex_none().items_center().px(8).child(div().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms")));
-      list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(6).px(8).rounded(d.r.md).cursor_pointer()
+      list.child(this.roomsHeader(rs, d));
+      if (!roomsFolded()) list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(8).px(8).rounded(d.r.md).cursor_pointer()
         .when(shownRoom()?.id === room.id, (el) => el.bg(d.sel))
         .hover((s) => s.bg(d.hover))
         .on_click((_e, cx) => { showRoom(room.id); cx.notify(); })
-        .child(div().flex_none().text_size(12).font_family(d.mono).text_color(d.fg4).child("#"))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(d.body).child(room.name))
-        .child(div().text_size(11).text_color(d.fg4).child(String(roomMembers(room).length)))));
+        // No "#" (that's a topic's): the members' heads, overlapping, say it's a group (T101). They
+        // stand in for the member count too.
+        .child(roomHeads(d, roomMembers(room), shownRoom()?.id === room.id ? d.sel : d.bg1))
+        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(shownRoom()?.id === room.id ? d.fg1 : d.body).child(room.name))));
     }
   }
 
@@ -715,7 +771,7 @@ export default class CrewRoster extends View {
     const light = d.bg1 !== "#0E0E0F";
     const ready = p && petReady(p);
     const lit = bot.awake && ["work", "done", "ask", "pr", "merged", "closing", "stuck"].includes(state);
-    const NB = 36;      // the name's band over the sprite (room for the bits that rise off it)
+    const NB = 36;      // the name's band over the sprite (what a pal wears reaches the sprite's top edge)
     const FY = NB + H + 2;   // the floor's line
     const word = !bot.awake ? "Asleep" : ({ work: "Working", ask: "Asks you", done: "Done", stuck: "Stuck", pr: "PR open", merged: "Merged", closing: "PR closed" })[state] ?? "Resting";
     const since = state === "work" || state === "ask" ? ago(tab?.changed_at) : "";
@@ -727,7 +783,10 @@ export default class CrewRoster extends View {
     // Depth without an edge: a soft radial aura behind the sprite, fading out to nothing.
     art.child(div().absolute().left(SX - 14).top(NB - 14).w(SW + 28).h(H + 24).child(image(`${ICON}/pet-aura.svg`).w(SW + 28).h(H + 24)));
     // The pool, drawn as an image so it sits behind the pet (Herdr draws svg() elements over images).
-    if (lit) art.child(div().absolute().left(0).top(FY - 58).w(W).h(72)
+    // Its glow reaches zero by the image's bottom edge (the SVG's ellipse ends a pixel inside it),
+    // and the image ends exactly at the art's bottom edge: nothing lit is cut off in a line above
+    // "Topics" (T103; the glow used to be 15% blue where its image ended, 8 px below the art).
+    if (lit) art.child(div().id("hero-pool").absolute().left(0).top(FY + 6 - 72).w(W).h(72)
       .when(state === "ask", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1100 }))
       .child(image(`${ICON}/pet-floor-${state}.svg`).w(W).h(72)));
     art.child(div().absolute().left(SX).top(NB - 4).child(ready ? petEl(p, state, SW, H, { open: true })
@@ -743,16 +802,17 @@ export default class CrewRoster extends View {
         .child(bot.name)))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its profile`));
-    // The quick actions are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look).
-    // Inbox, Tasks and Desk are icon + count pebbles of one fixed width (DeNon via Orca, 2026-11-08:
-    // five pebbles at the 304 px sidebar truncated the labels to "In…" / "Ta…"); their names are in
-    // the tooltips, and show on the pebbles only once the sidebar is wide enough for all three
-    // (HERO_LABELS_AT). Each keeps a fixed count slot, a spacer takes what's left, and profile and the
-    // moon stay icon-only on the right: a count appearing or a pal switch never moves anything.
+    // The tools are five raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look; the
+    // recessed strip that replaced them for a day went back out, T109, 2026-11-10: "go back to them
+    // looking like this, just laid out in a more uniform way"). One rule for the layout: all five
+    // are the SAME size. They share the row equally (flex-basis 0), 6 px apart, from the Topics
+    // well's left edge to its right edge; each one's icon and count sit centred together, and the
+    // count appears only when there is one, so a count or a pal switch never changes a width. The
+    // open view's pebble is the lit (primary) one. Names (Inbox, Tasks, Desk) show from
+    // HERO_LABELS_AT; under that they are in the tooltips.
     const labels = (w ?? 0) >= HERO_LABELS_AT;
-    const quick = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, slot: 18,
-      w: labels ? HERO_PEBBLE_LABELED : HERO_PEBBLE, extra: count ? (count > 99 ? "99+" : count) : null, onClick: action,
-      tooltip: tip, ...more });
+    const tool = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, even: true,
+      extra: count ? (count > 99 ? "99+" : count) : null, onClick: action, tooltip: tip, ...more });
     // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
     // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
     // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
@@ -763,30 +823,29 @@ export default class CrewRoster extends View {
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
-      .child(h_flex().px(8).pt(12).gap(6)
-        .child(quick("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
-          needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null }))
+      .child(h_flex().id("hero-tools").px(8).pt(12).gap(6)
+        .child(tool("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
+          needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null, primary: this.view() === "you" }))
         // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
-        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task).
-        .child(quick("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
+        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task). A dialog, so never "open".
+        .child(tool("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
           mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
         // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
-        // the Desk view on this pal.
-        // The head pal's Desk is its Home (Orca's call, 2026-11-08): there the pebble opens Home.
-        .child(quick("hero-desk", "ds-tell", "Desk", () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)), desk?.open ?? 0,
+        // the Desk view on this pal. The head pal's Desk is its Home (Orca's call, 2026-11-08): there
+        // the pebble opens Home, and the last pebble is the one that shows Home as open.
+        .child(tool("hero-desk", "ds-tell", "Desk", () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)), desk?.open ?? 0,
           desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting",
-          { extraColor: desk?.held ? d.warnText : null }))
-        .child(div().flex_1().min_w(0))
+          { extraColor: desk?.held ? d.warnText : null, primary: deskMode() && !(bot.god && hasHome()) }))
         // Profile: the right-side profile panel (again: closes it); the name above opens it too.
-        .child(pebble(d, { id: "hero-profile", icon: "ds-user", onClick: () => togglePanel("profile"), tooltip: "Profile (Ctrl+Shift+I)" }))
-        // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head pal, which never sleeps (its menu has no
-        // Sleep either). There it's Home (a terminal icon, primary, while Home shows: back to the
-        // topic), in the same slot, so the row is the same width for every pal and fits a narrow
-        // sidebar (a sixth pebble pushed the moon off at 281 px). Ctrl+Shift+H does the same.
+        .child(tool("hero-profile", "ds-user", null, () => togglePanel("profile"), 0, "Profile (Ctrl+Shift+I)", { primary: panelOpen() }))
+        // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head
+        // pal, which never sleeps (its menu has no Sleep either). There it's Home (a terminal icon
+        // while Home shows: back to the topic), in the same place, so the row is the same for every
+        // pal. Ctrl+Shift+H does the same.
         .child(bot.god && hasHome()
-          ? pebble(d, { id: "hero-home", icon: homeMode() ? "ds-terminal" : "ds-home", primary: homeMode(), onClick: () => toggleHome(),
-            tooltip: homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)` })
-          : pebble(d, { id: "hero-sleep", icon: "ds-moon", onClick: (cx) => this.sleep(space, bot, cx), tooltip: CLOSE_LABEL })));
+          ? tool("hero-home", homeMode() ? "ds-terminal" : "ds-home", null, () => toggleHome(), 0,
+            homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)`, { primary: homeMode() })
+          : tool("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx), 0, CLOSE_LABEL)));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a
@@ -796,15 +855,27 @@ export default class CrewRoster extends View {
   // show; more scroll. Click switches, right-click is the channel menu.
   heroChannels(space, bot, d) {
     // Pinned first, then your arrangement or the smart order (channelOrder).
-    const ordered = channelOrder(space, bot);
+    // One panes() read for the whole list (see agentTabs).
+    const ps = panes(), withAgent = agentTabs(ps), hasAgent = (x) => withAgent.has(x.id);
+    const ordered = channelOrder(space, bot, ps);
     const q = this.chSearchOpen ? this.chSearch.value().trim().toLowerCase() : "";
-    const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : ordered;
+    // Areas (T105, DeNon's pick B): once anyone has filed a topic, the list shows one view at a
+    // time, chosen from a row of chips: Live (the default), one of this pal's areas, Unsorted, or
+    // All. A search looks through every topic whatever the view. No areas anywhere: no chips, and
+    // the list is every topic, as it always was.
+    const views = anyAreas() ? areaViews(space.name, ordered, hasAgent) : null;
+    const viewId = views ? (views.some((v) => v.id === this.areaView?.[space.id]) ? this.areaView[space.id] : LIVE_VIEW) : null;
+    // (Never trust the chosen id to be there: a view that isn't must fall back to Live, not fail the
+    // whole sidebar's render. A sandbox run with a forced id showed exactly that failure.)
+    const inView = views ? (views.find((v) => v.id === viewId) ?? views[0]).tabs : ordered;
+    const list = q ? ordered.filter((x) => channelName(x).toLowerCase().includes(q)) : inView;
     const close = (cx) => { this.chSearch.set_value(""); this.chSearchOpen = false; cx.notify(); };
     const head = h_flex().id("hero-ch-head").h(32).pl(16).pr(10).items_center().gap(6);
     // No "+N more" in the header (DeNon, 2026-11-08: "Topics 18" says it; the cut fifth row, the
     // pill and the fixed box show there's more).
-    const ROWS = 4, ROW = 30, SID = "hero-ch-list";
-    const BOX = ROWS * ROW + 12;
+    // The rows sit in a recessed well (sunk "deep": T75): 1 px of edge and PAD px above the first row.
+    const ROWS = 4, ROW = 30, PAD = 4, SID = "hero-ch-list";
+    const BOX = ROWS * ROW + 12, INNER = BOX - 2;
     const sc = scrollState(SID);
     // Folded (the chevron, DeNon 2026-11-08): just this header, with what's working or asks you in
     // words. One remembered state for every pal ("heroTopicsFolded" in crew-settings.json), so the
@@ -820,7 +891,7 @@ export default class CrewRoster extends View {
           .hover((s) => s.bg(d.hover)).tooltip("Clear (Esc)").on_click((_e, cx) => close(cx))
           .child(svg(`${ICON}/x.svg`).size(10).text_color(d.fg3)));
     } else {
-      const live = bot.awake ? ordered.filter((x) => tabHasAgent(x)) : [];
+      const live = bot.awake ? ordered.filter(hasAgent) : [];
       const working = live.filter((x) => x.status === "working").length, asks = live.filter((x) => x.status === "blocked").length;
       const summary = [String(ordered.length), working && `${working} working`, asks && `${asks} need${asks === 1 ? "s" : ""} you`].filter(Boolean).join(" · ");
       head.child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3).child("Topics"))
@@ -836,6 +907,7 @@ export default class CrewRoster extends View {
           .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
     }
     if (folded) return v_flex().pt(4).child(head);
+    const chips = views ? this.areaChips(space, views, viewId, d) : null;
     // Up to four rows show (DeNon: "at most 4"); more scroll, in our own scroll area (scrollArea: a
     // pill thumb in the 11 px the rows leave at the right, so it never covers a time, pin or dot).
     // The shown topic is scrolled into view when it changes (not on every render, so a scroll you
@@ -846,18 +918,19 @@ export default class CrewRoster extends View {
       const st = bot.awake ? tab.status : null;
       const dot = st === "working" ? d.info : st === "blocked" ? d.warn : null;
       const lane = deskLane(space.name, channelName(tab));
-      return div().h(ROW).flex_none().pb(2).pr(11).child(h_flex().id(`hero-ch-${tab.id}`).h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
-        .when(on, (el) => el.bg(d.sel)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+      // The shown topic is a raised tile in the well (raisedTile).
+      return div().h(ROW).flex_none().pb(2).pr(13).child(h_flex().id(`hero-ch-${tab.id}`).relative().h(28).pl(6).pr(8).gap(8).items_center().rounded(5).cursor_pointer()
+        .when(on, (el) => raisedTile(d, el)).when(!on, (el) => el.hover((s) => s.bg(d.hover)))
         .on_click((_e, cx) => { this.go(space, tab); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "tab", space: space.id, tab: tab.id } }); })
         .child(topicMark(tab))
         .child(div().flex_none().text_size(12).line_height("16px").font_family(d.mono).text_color(on ? d.fg2 : d.fg4).child("#"))
         .child(div().flex_1().min_w(0).truncate().text_size(13).line_height("16px").when(on, (el) => el.font_weight(500))
-          .text_color(on ? d.fg1 : tabHasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
+          .text_color(on ? d.fg1 : hasAgent(tab) ? d.body : d.fg3).child(channelName(tab)))
         .when(tabPinned(tab), (el) => el.child(svg(`${ICON}/pin.svg`).size(10).flex_none().text_color(d.fg4)))
         // The Desk: "N waiting" or "held 12m" when cards wait for this topic (crew.desk, from the header).
         .when(Boolean(lane?.open), (el) => el.child(deskLaneMark(d, lane)))
-        .child(!tabHasAgent(tab) ? noAgentTag(d)
+        .child(!hasAgent(tab) ? noAgentTag(d)
           : st === "working" ? workingMark(d)
           : dot ? div().size(6).flex_none().rounded(3).bg(dot)
           : st === "done" ? svg(`${ICON}/ds-check-thin.svg`).size(11).flex_none().text_color(d.ok)
@@ -867,29 +940,89 @@ export default class CrewRoster extends View {
     // moves the quick actions or the Pals list under it (DeNon, 2026-11-08). Fewer rows leave the
     // rest blank, with a faint "+ New channel" row after the last when there's room (not while
     // searching).
-    const box = v_flex().h(BOX).flex_none().overflow_hidden();
-    const newRow = () => div().h(ROW).pb(2).pr(11).pl(8).child(h_flex().id("hero-ch-new").h(28).px(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
+    const box = sunk(d, "deep").flex().flex_col().h(BOX).mx(8).flex_none();
+    const newRow = (first = false) => div().h(ROW + (first ? PAD : 0)).flex_none().pb(2).pr(13).pl(4).when(first, (el) => el.pt(PAD)).child(h_flex().id("hero-ch-new").h(28).pl(6).pr(8).gap(8).items_center().rounded(d.r.sm).cursor_pointer()
       .hover((s) => s.bg(d.hover)).on_click(() => this.duplicate(bot))
       .child(svg(`${ICON}/ds-plus.svg`).size(11).flex_none().text_color(d.fg4))
       .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg4).child("New topic")));
     if (!list.length) {
       if (q) box.child(div().h(28).mx(8).px(8).flex().items_center().text_size(12).text_color(d.fg4).child(`No topic matches "${this.chSearch.value().trim()}"`));
-      else box.child(newRow());
-      return v_flex().pt(4).child(head).child(box);
+      else box.child(newRow(true));
+      return v_flex().pt(4).child(head).when(Boolean(chips), (el) => el.child(chips)).child(box);
     }
-    const n = list.length, h = n > ROWS ? BOX : n * ROW;
+    const n = list.length, h = n > ROWS ? INNER : PAD + n * ROW;
     const act = list.findIndex((x) => x.active);
     const key = `${space.id}|${list[act]?.id ?? ""}|${q}`;
     // A new pal or search starts at the top; then the shown topic is brought into view.
-    const listKey = `${space.id}|${q}`;
+    const listKey = `${space.id}|${q}|${viewId ?? ""}`;
     if (this.chListKey !== listKey) { this.chListKey = listKey; scrollTo(SID, 0); }
     sc.view = h;
-    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act * ROW, ROW); }
-    // Past four, the box is four rows plus 40% of the fifth (12 px), cut at its edge: the cut row says
+    if (this.chShownKey !== key) { this.chShownKey = key; if (act >= 0) scrollIntoView(SID, act ? PAD + act * ROW : 0, act ? ROW : PAD + ROW); }
+    // Past four, the well shows four rows and the top of the fifth, cut at its edge: the cut row says
     // there's more, and the pill thumb shows where you are.
-    box.child(scrollArea(d, SID, v_flex().pl(8).children(list.map(row))).h(h).flex_none().w_full());
+    box.child(scrollArea(d, SID, v_flex().pl(4).pt(PAD).children(list.map(row)), { fade: "well" }).h(h).flex_none().w_full());
     if (n < ROWS && !q) box.child(newRow());
-    return v_flex().pt(4).child(head).child(box);
+    return v_flex().pt(4).child(head).when(Boolean(chips), (el) => el.child(chips)).child(box);
+  }
+
+  // The area chips (T105): ONE 26 px row whatever the pal has (DeNon: "one row of chips"), so the
+  // hero is the same height for every pal. More chips than fit scroll sideways with the wheel (or a
+  // trackpad's sideways swipe); the chosen chip is brought into view when it changes. A chip: the
+  // view's name, how many topics, and a dot while one in it works (blue) or asks you (amber). The
+  // chosen one is filled. Widths are estimated (areaChipW) for the scroll's limits only.
+  areaChips(space, views, viewId, d) {
+    const GAP = AREA_CHIP_GAP, PADX = 8;
+    const widths = views.map(areaChipW);
+    const total = widths.reduce((a, w) => a + w, 0) + GAP * (views.length - 1);
+    const room = Math.max(120, (this.width ?? 304) - 2 * PADX);
+    const max = Math.max(0, total + 12 - room);
+    const xs = this.areaX ??= {};
+    let x = Math.max(0, Math.min(max, xs[space.id] ?? 0));
+    // Bring the chosen chip into view when the choice (or the pal) changes.
+    const at = views.findIndex((v) => v.id === viewId);
+    const key = `${space.id}|${viewId}`;
+    if (this.areaShownKey !== key) {
+      this.areaShownKey = key;
+      const left = widths.slice(0, at).reduce((a, w) => a + w + GAP, 0), right = left + widths[at];
+      if (left < x) x = left; else if (right > x + room) x = right - room;
+      x = Math.max(0, Math.min(max, x));
+    }
+    xs[space.id] = x;
+    const chip = (v) => {
+      const on = v.id === viewId;
+      const dot = v.asks ? d.warn : v.working ? d.info : null;
+      const what = [`${v.tabs.length} topic${v.tabs.length === 1 ? "" : "s"}`, v.working && `${v.working} working`, v.asks && `${v.asks} need${v.asks === 1 ? "s" : ""} you`].filter(Boolean).join(", ");
+      return h_flex().id(`hero-area-${v.id}`).h(22).flex_none().items_center().gap(5).px(8).rounded(11).cursor_pointer()
+        .bg(on ? d.me : d.raised).border_1().border_color(on ? d.meEdge + "66" : d.line)
+        .when(!on, (el) => el.hover((s) => s.bg(d.hover)))
+        .tooltip(`${v.name}: ${what}`)
+        .on_click((_e, cx) => { (this.areaView ??= {})[space.id] = v.id; cx.notify(); })
+        .child(div().flex_none().text_size(11).line_height("14px").font_weight(500).text_color(on ? d.actFg : d.fg2).child(v.name))
+        .child(div().flex_none().text_size(11).line_height("14px").text_color(on ? d.infoText : d.fg4).child(String(v.tabs.length)))
+        .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot)));
+    };
+    return div().id("hero-areas").h(26).flex_none().px(PADX).pb(4)
+      .child(div().id("hero-areas-track").relative().h(22).overflow_hidden()
+        .on_scroll_wheel((e, cx) => {
+          const dx = (e.delta?.x || e.delta?.y || 0) / (Number(settings().zoom) || 1);
+          const next = Math.max(0, Math.min(max, (xs[space.id] ?? 0) - dx));
+          if (next !== xs[space.id]) { xs[space.id] = next; cx.stop_propagation(); cx.notify(); }
+        })
+        .child(h_flex().absolute().left(-Math.round(x)).top(0).h(22).gap(GAP).children(views.map(chip))));
+  }
+
+  // Topics filed under areas are filed by name (crewareas), so a rename has to be followed: the
+  // roster remembers each tab's name and, when one changes, says so (only for a topic that is filed).
+  followRenames() {
+    const names = this.tabNames ??= new Map();
+    const live = new Set();
+    for (const sp of spaces()) for (const tab of sp.tabs) {
+      live.add(tab.id);
+      const now = channelName(tab), was = names.get(tab.id);
+      if (was !== undefined && was !== now) topicRenamed(sp.name, was, now).catch(() => {});
+      names.set(tab.id, now);
+    }
+    for (const id of [...names.keys()]) if (!live.has(id)) names.delete(id);
   }
 
   // Put a pal to sleep (the hero's moon; the same as its menu's): keep its record (folder, brain,
@@ -917,8 +1050,10 @@ export default class CrewRoster extends View {
     const bot = spaces().map((sp) => botOf(sp)).find((b) => b.id === dg.id);
     const o = dg.over;
     if (bot && o.id !== bot.id) {
-      const rows = spaces().map((sp) => ({ space: sp, bot: botOf(sp) }));
-      const sec = palSections(rows).find((x) => (x.group?.id ?? null) === (o.gid ?? null));
+      const rows = withoutChief().map((sp) => ({ space: sp, bot: botOf(sp) }));
+      // The head pal has a section of its own (group undefined) that comes first; skip it, or a drop
+      // among ungrouped pals is looked up there, isn't found, and the pal always lands last (T104).
+      const sec = palSections(rows).find((x) => x.group !== undefined && (x.group?.id ?? null) === (o.gid ?? null));
       const ids = (sec?.rows ?? []).map((r) => r.bot.id).filter((id) => id !== bot.id);
       let before = null;
       if (o.header) before = ids[0] ?? null;
@@ -966,6 +1101,31 @@ export default class CrewRoster extends View {
   // (pals in the groups, not the head pal or hidden ones) a drag: press, move 5 px, and a 2 px line
   // shows where it will land (above or below the row under the pointer); release drops it. The
   // Trees option (any look) adds a working pal's live topics under it, each opening its own topic.
+  // "● 5 working" beside "Pals": a blue dot and the count (grey at zero), who in the tooltip.
+  workingChip(d) {
+    const w = workingEverywhere();
+    return h_flex().id("pals-working").flex_1().min_w(0).h(20).items_center().gap(6).pl(10).tooltip(w.tip)
+      .child(div().size(6).flex_none().rounded(3).bg(w.count ? d.info : d.lineStrong))
+      .child(div().truncate().text_size(11).line_height("14px").text_color(w.count ? d.fg2 : d.fg4).child(`${w.count} working`));
+  }
+  // The Rooms header (T99): "Rooms", how many, a dot while a room is busy (blue: a topic in it is
+  // working; amber: one asks you), and a 22 px chevron that folds the rooms away or shows them
+  // (the same button as the Topics list's, the same kind of remembered setting: "roomsFolded").
+  // The whole header takes the click; crew-roster.rooms-fold does it from the keyboard.
+  roomsHeader(rs, d) {
+    const folded = roomsFolded();
+    const members = rs.flatMap((room) => roomMembers(room));
+    const dot = members.some((m) => m.status === "blocked") ? d.warn : members.some((m) => m.status === "working") ? d.info : null;
+    return h_flex().id("rooms-head").h(28).mt(8).flex_none().items_center().gap(6).pl(8).pr(2).rounded(d.r.sm).cursor_pointer()
+      .hover((s) => s.bg(d.hover)).tooltip(folded ? "Show rooms" : "Fold rooms")
+      .on_click((_e, cx) => { saveUiSettings({ roomsFolded: !folded }); cx.notify(); })
+      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms"))
+      .child(div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(String(rs.length)))
+      .when(Boolean(dot), (el) => el.child(div().id("rooms-dot").size(6).flex_none().rounded(3).bg(dot)))
+      .child(div().flex_1())
+      .child(div().size(22).flex_none().flex().items_center().justify_center()
+        .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
+  }
   // The Pals header's fold-all / unfold-all button: unfolded shows the tree, folded a plain list.
   treesToggle(d) {
     const on = palTreesOn();

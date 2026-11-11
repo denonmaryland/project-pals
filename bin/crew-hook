@@ -48,6 +48,10 @@ def crew_bot():
 
 def startup_context(bot, ch):
     from crewlib import PRIMER, memory_text, records
+    import crewchief
+    if crewchief.is_chief(records().get("name:" + bot)):
+        # The Chief: no cards arrive, no tasks to claim; its brief is AGENTS.md in its folder.
+        return "\n\n".join(x for x in (crewchief.primer(bot, ch), memory_text(bot)) if x)
     import crewtasks
     pinned = (records().get("name:" + bot) or {}).get("memory", "")
     parts = [PRIMER, f"You are {bot}, in topic #{ch}."]
@@ -162,10 +166,29 @@ def edit_request(tool, inp, path):
     return cmd, {"diff": diff[:20000], "path": path, "edit_hash": h(payload), "base_hash": h(base)}
 
 
+def chief_refusal(tool, inp, event):
+    """The Chief's own tool calls: no writes outside its folder, no typing into terminals, no git
+    changes (crewchief.hook_refusal). Only looked into when a Chief has been hired."""
+    from crewlib import records
+    import crewchief
+    recs = records()
+    if not crewchief.record(recs):
+        return None
+    me = crew_bot()
+    if not me or not crewchief.is_chief_pal(me[1], recs):
+        return None
+    return crewchief.hook_refusal(tool, inp, event.get("cwd"))
+
+
 def pre_tool_use(event):
     tool = event.get("tool_name")
     inp = event.get("tool_input") or {}
     extra = None
+    why = chief_refusal(tool, inp, event)
+    if why:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                 "permissionDecisionReason": why[0].upper() + why[1:]}}))
+        return
     if tool == "Bash":
         cmd = inp.get("command") or ""
     elif tool in EDIT_TOOLS:
@@ -173,7 +196,8 @@ def pre_tool_use(event):
         # agents-file rule): the owner changes those with a click (P6). An edit of the owner's click
         # tokens, or of crewd's message queue (a forged message), is held too. Anything else: no hook work.
         path = inp.get("file_path") or inp.get("notebook_path") or ""
-        if any(f"/{d}/" in path for d in ("crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk")):
+        import crewguard
+        if crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk"}):   # not mods/crew-desk (T68)
             cmd = f"edit {path}"
         elif os.path.basename(path) in AGENT_FILES:
             cmd, extra = edit_request(tool, inp, path)

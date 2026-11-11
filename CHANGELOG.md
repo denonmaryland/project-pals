@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.4.2)
+## Unreleased
 
 - **Handoff: hand a topic to another brain, and back.** `pal handoff "Pal#topic" --to codex` changes
   the brain in a topic and keeps everything else: the same tab, the same name, branch, desk cards,
@@ -11,13 +11,56 @@
   command line, for Claude Code and Codex on this computer; the click and the offer when a brain
   runs out come next.
 
+## 0.4.2 — 2026-11-10
+
+- **A pal's board.** Click a pal and, before any terminal, you see its topics as cards in four
+  columns by what each one waits for: Needs you (with the buttons to answer right there), Working,
+  Resting and Up next (tasks nobody has picked up). Each card has a sentence or two in the pal's own
+  words, how long it has run or waited, and its branch with + and −. The message box under the
+  columns says who it talks to; it sends to the topic you clicked, or adds a task. Clicking a topic
+  and every key still go straight to terminals, Esc goes to the terminal, and the app menu's
+  "Clicking a pal opens…" brings the old click back. Ctrl+Shift+U opens it for the shown pal.
+
+
+- **Pal look: colour presets for your pals and their laptop screens.** Settings → Pal look. Pick
+  who gets which colour: each its own (as before, and still the default), all one colour, a
+  two-, three- or four-colour split down your list (8 pals are 4 + 4, 3 + 3 + 2 or 2 + 2 + 2 + 2),
+  by brain, by state, by project or factory, or your theme's own colours. Pick what the laptop
+  screens do, separately: the state's light (as before), the pal's colour, its contrast pair, or
+  one colour for all. The dialog says how well the two read together and previews a made-up crew
+  of 1, 4, 8 or 12 as you click. A colour you picked for one pal is never lost: it shows under
+  Each its own. The choice is kept in your settings, which updates don't touch.
+
+- **A welcome from your head pal.** A new install now starts with the Orchestrator: open Herdr
+  and it's on Home with a short tour, seven screens of one message each. It says who it is, what a
+  pal is, offers to hire your first pal on one of your project folders (it finds the brains you
+  have installed and suggests folders by name and date, reading nothing inside them), shows what
+  Home is for, how to talk to it, and that pushes, releases and deploys wait for your click. Skip
+  it on any screen; replay it from the gear menu (Welcome tour). Installs that already have pals
+  aren't interrupted. The head pal is hired on your first click, and `pal hire --god` now starts
+  it in the folder with its brief. A first install also switches Herdr to the `pals` layout.
+
+- **Pop out: a topic in its own window you can pin.** "Pop out" (the bar of Home's chat window, and
+  "Pop out to a window" on a terminal's right-click) opens that topic's live terminal in a small
+  desktop window of its own. On Hyprland it floats, its bar has a Pin button (every workspace;
+  Omarchy's Super+O works on it too), it resizes freely with the terminal following, and its size,
+  place and pin are remembered per topic. Closing the window never stops the pal.
 - **The pocket pets are redrawn.** Each pal has a lit, rounded body with clearer eyes and cheeks,
   and its species has its own marks (a fox's tail tip, an owl's beak, a pup's muzzle). What it
-  wears has a clean edge against the body. The laptop has a real keyboard deck and a lid whose
+  wears has a clean edge against the body, and the head pal's crown is white dots like the rest of
+  the pet, not a yellow shape. The laptop has a real keyboard deck and a lid whose
   screen faces the pal and glows in the state's colour (code scrolls while it works; the lid is
-  shut while it sleeps). Small pets (in lists, rooms and menus) show the head alone, so they stay
+  shut while it sleeps; the three dots that used to float up off it while a pal worked are gone,
+  since the screen's glow says it). Small pets (in lists, rooms and menus) show the head alone, so they stay
   sharp. Tails and raised arms are no longer cut off at the left edge, and the floating marks
   (z, sparkle, ?) are whole dots. Every pet is drawn again the first time the new version runs.
+
+- **Factories, phase 1.** A big project can have a crew of its own: a factory, with its own
+  foreman and Home. Ctrl+Shift+G (or "Factories" in the command bar) makes one and switches
+  between them; a pal's right-click moves it to another factory. Once there's a second factory, a
+  chip above the hero names the one you're in and counts what the others need from you, and the
+  pal list and Home follow it. Your crew is the default factory: with only one, nothing changes
+  and nothing new is written. `pal factory` from the command line.
 
 - **Check for updates says what it found, and when.** About and the update dialog show GitHub's
   newest version and the time they asked ("You have 0.4.0. GitHub's newest: 0.4.1 · checked
@@ -25,6 +68,9 @@
   longer says "up to date" after a new release. The button always asks GitHub afresh. A check that
   fails says so ("Couldn't check for updates", and why) instead of showing the old answer as new,
   and every check is a line in `data/crew-update.log`.
+- Pals editing the Desk's own code (`mods/crew-desk/…`) are no longer held for your approval as if
+  they were writing Desk cards. Writes into the cards themselves are still held, including through
+  a link that leads into them.
 
 ## 0.4.1: sleep, wake and a clean uninstall
 

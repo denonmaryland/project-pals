@@ -88,17 +88,19 @@ for dir in "$src"/mods/crew-*; do
   # main.js goes in LAST, after the shared JS and the mod's other files: Herdr reloads a mod when
   # its files change, and a reload that ran between main.js and crew.js kept the old crew.js (seen
   # live 2026-11-08: Trees didn't show; nothing errored, as the old crew.js had every name). So:
-  # the shared JS (crew.js, pets.js, palstyles.js: the pal list's looks, machines.js: which computer
+  # the shared JS (crew.js, pets.js, palstyles.js: the pal list's looks, pallook.js: the pets' colour presets, machines.js: which computer
   # a pal works on), then the mirror (keeping
   # the files Herdr writes itself: jsconfig.json, *.d.ts; the shared JS and main.js are excluded,
   # which also keeps --delete off them), then main.js, copied fresh so the last change is its own.
   cp "$src/lib/machines.js" "$dest/machines.js"
   cp "$src/lib/pets.js" "$dest/pets.js"
   cp "$src/lib/palstyles.js" "$dest/palstyles.js"
+  cp "$src/lib/pallook.js" "$dest/pallook.js"
+  cp "$src/lib/factories.js" "$dest/factories.js"
   cp "$src/lib/crew.js" "$dest/crew.js"
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
-  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
+  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
   cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
 done
 
@@ -143,11 +145,16 @@ fi
 # panel, 2026-11-08), ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
 # it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
 # crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
-# crew-roster.home (Home, the head pal's page; free in both too). Each only when
+# crew-roster.home (Home, the head pal's page; free in both too) and ctrl-shift-j → crew-roster.chief
+# (the Chief's pop-up; free in both, checked 2026-11-09) and ctrl-shift-g → crew-roster.factory (the
+# factory switcher, T66; free in both, checked the same day) and ctrl-shift-y → crew-roster.computer
+# (the shown pal's Computer, T81; free in both, checked 2026-11-09) and ctrl-shift-u →
+# crew-roster.board (the shown pal's board, T108; free in both, checked 2026-11-09; some Linux input
+# methods use it to type a symbol by its code, and there the key stays theirs). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home"; do
+for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher" "ctrl-shift-y crew-roster.computer the pal Computer" "ctrl-shift-u crew-roster.board the pal board"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
@@ -249,9 +256,25 @@ fi
 # Settings: who the pals work for (your git name, else your username) and bypass (off). Set once;
 # change them in About → Settings (pal settings changes them only with the owner's click from the app).
 mkdir -p "$home/data"
+first_install=""
 if [[ ! -f "$home/data/crew-settings.json" ]]; then
-  python3 -c 'import sys, json; sys.path.insert(0, sys.argv[1]); import crewlib; json.dump({"owner": crewlib._default_owner(), "bypass": False}, open(sys.argv[2], "w"), indent=2)' \
-    "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json"
+  # A first install: the welcome tour starts by itself on Home ("welcome": "new"; RECIPE "The
+  # welcome tour"). An install that was already here has no mark, and the tour waits in the gear menu.
+  # Pals on record without a settings file is an install from before settings: not a first one.
+  python3 - "$HOME/.local/lib/herdr-crew" "$home/data/crew-settings.json" "$home/shared.json" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import crewlib
+try:
+    had = bool(json.load(open(sys.argv[3])).get("crew", {}).get("bots"))
+except (OSError, ValueError, AttributeError):
+    had = False
+s = {"owner": crewlib._default_owner(), "bypass": False}
+if not had:
+    s["welcome"] = {"state": "new", "beat": 0}
+json.dump(s, open(sys.argv[2], "w"), indent=2)
+PY
+  grep -q '"welcome"' "$home/data/crew-settings.json" && first_install=1
 fi
 # Codex pals get the Desk's MCP server (desk_check …) on their own command line, from here.
 python3 - "$home/data/crew-settings.json" "$bin/crew-mcp" <<'PY'
@@ -311,6 +334,15 @@ python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib
 if [[ -f "$src/partner/AGENTS.md" ]]; then
   install -m 644 "$src/partner/AGENTS.md" "$HOME/.local/lib/herdr-crew/partner-AGENTS.md"
   python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_partner()' "$HOME/.local/lib/herdr-crew"
+fi
+# The Chief's brief (crew-boards/chief/design.md): its home is data/crew-chief, made by the owner's
+# pal hire --chief. Re-rendered here only once there is one (its notes files are never touched).
+if [[ -f "$src/chief/AGENTS.md" ]]; then
+  install -m 644 "$src/chief/AGENTS.md" "$HOME/.local/lib/herdr-crew/chief-AGENTS.md"
+  if [[ -d "$home/data/crew-chief" ]]; then
+    [[ -f "$home/data/crew-chief/AGENTS.md" ]] && { mkdir -p "$backup/crew-chief"; cp -a "$home/data/crew-chief/AGENTS.md" "$backup/crew-chief/"; }
+    python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewchief; crewchief.render()' "$HOME/.local/lib/herdr-crew"
+  fi
 fi
 
 # The Desk (every pal's cards): data/crew-desk with its README and trays, the desk settings that are
@@ -400,7 +432,11 @@ HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record-installed "$sr
 
 echo "installed Project Pals $version into $home"
 [[ -d "$backup" ]] && echo "previous copies: $backup"
-if [[ -n "$was_shown" ]]; then herdr-app do layout.switch '{"name":"pals"}' >/dev/null 2>&1 && echo "switched Herdr to the pals layout"; fi
+if [[ -n "$was_shown" || -n "$first_install" ]]; then herdr-app do layout.switch '{"name":"pals"}' >/dev/null 2>&1 && echo "switched Herdr to the pals layout"; fi
+if [[ -n "$first_install" ]]; then
+  head="$(HERDR_APP_HOME="$home" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; print(crewlib.settings()["head"])' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo Orchestrator)"
+  echo "Open Herdr (the pals layout: Ctrl+Shift+L): $head is waiting on Home to show you around."
+fi
 
 if command -v herdr-app >/dev/null; then
   fail=0

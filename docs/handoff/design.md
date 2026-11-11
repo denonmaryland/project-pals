@@ -593,8 +593,16 @@ Where the build differs from the design above, and why:
 - **The head pal's seat is always refused** in this slice, for DeNon too.
 - **No `--wait`, no late note, no `turns`, no first-time notice** yet: slices 2 to 4.
 
-Still unverified after slice 1: **no handoff has been run against a real agent.** The tests use
-stand-in processes and fake `hc`. Before this is installed for real it needs one live pass in a
-sandbox window: Claude Code to Codex and back, to check that the brain started through
-`pal handoff take` shows up to Herdr and to sleep like one typed by hand, that Codex takes its
-first message as an argument of this length, and how long the swap really takes.
+**Run live on 2026-11-10, with stand-in agents** (shell scripts named `claude` and `codex`), on a
+separate herdr-core with no window: real `hc`, a real shell, the real `/proc`. Claude Code to Codex,
+back, and over again. Seen: the same terminal throughout; the old agent stopped with TERM; the
+typed line; the card; the brain replacing `pal handoff take` under the shell with its first message
+as one argument; `hc` reporting the new agent; `pal sleep -n` seeing it like one typed by hand; the
+hold ending. The command took 6.6 s end to end. Two fixes came out of it (the Picking up line no
+longer quotes screen text; the CLI doesn't wait on the first turn).
+
+Still unverified: **no handoff has been run with the real Claude Code or Codex.** That needs
+DeNon's go, because it spends both subscriptions' quota: one pass in a sandbox, Claude Code to
+Codex and back, to check that Codex takes a first message of this length, that it runs
+`pal handoff brief` on its own, that hand back resumes Claude Code's session, and how long the
+swap takes with real start-up times. The app side (`handoff-brain`) has only run in its node test.

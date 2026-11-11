@@ -33,12 +33,14 @@ import crewroutines
 import crewupdate
 import crewguard
 import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
+import crewchief  # the Chief: nothing is ever typed into it (crew-boards/chief/design.md)
 import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
 import crewsleep  # pals put to sleep in place (their markers)
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
 REVIEW_EVERY = 6        # review a channel's memory after this many finished turns
+TRUST_GRACE = 60        # an announced trust question survives its terminal dropping out or not reading this long
 REVIEW_GAP = 30 * 60    # and at most this often per channel
 DISTILL_AT = "03:30"
 DREAM_AT = "03:30"      # the Dream loop (crewdream), after the memory distill
@@ -121,6 +123,10 @@ class Crewd:
         self.stalled = health.get("stalled", {})
         self.trust = health.get("trust", {})   # terminal → {bot, channel, since}: on the folder-trust question
         self.last_trust_check = 0
+        # terminal → when its trust question was announced. Kept (and saved) apart from self.trust, so
+        # a screen that doesn't read for a tick, or a restart, never announces the same question twice (T96).
+        self.trust_told = health.get("trust_told", {})
+        self.trust_away = {}   # terminal → when it dropped out or its screen stopped reading
         self.drafts = health.get("drafts", {})   # terminal → {bot, channel, since}: holding its messages
         self.first_seen = {}   # terminal → when crewd first saw it (the trust question only comes first)
         self.reviews = load_json(DATA / "crew-reviews.json", {})   # terminal → {turn, at}
@@ -217,6 +223,9 @@ class Crewd:
             if first:
                 continue
             bot, ch = split_where(t.get("where"))
+            if now == "working" and before != "working":
+                # A turn starting: with "finished" it bounds a work block (the pal Computer's calendar).
+                feed("working", terminal=addr, bot=bot, channel=ch)
             if before == "working" and now != "working" and now != "blocked":
                 feed("finished", terminal=addr, bot=bot, channel=ch, turn=t.get("turn"))
                 self.callbacks(addr, t, "finished")
@@ -247,6 +256,8 @@ class Crewd:
         # One note per sender: several things asked of the same turn share one reply.
         by_sender = {}
         for d in fire:
+            if crewchief.is_chief_terminal(d.get("from")):
+                continue   # the Chief pulls: it sees how its cards went on its dashboard, not in its terminal
             by_sender.setdefault(d["from"], []).append(d)
         lines = screen(addr) if what != "blocked" and by_sender else []
         for sender, ds in by_sender.items():
@@ -354,6 +365,11 @@ class Crewd:
             if not items:
                 continue
             t = terms.get(addr)
+            if crewchief.is_chief_terminal(addr, terms):
+                # The Chief only pulls: whatever got here (a hand-written file?) is dropped, never typed.
+                for f, _ in items:
+                    f.unlink(missing_ok=True)
+                continue
             if not t or t.get("state") != "live":
                 # The terminal is gone: drop what was waiting for it.
                 if t is None or t.get("state") == "finished":
@@ -453,7 +469,7 @@ class Crewd:
             last = self.nudged.get(addr, 0) if hasattr(self, "nudged") else 0
             if not hasattr(self, "nudged"):
                 self.nudged = {}
-            if mins < 15 or time.time() - last < 3600:
+            if mins < 15 or time.time() - last < 3600 or crewchief.is_chief_terminal(addr):
                 return
             self.nudged[addr] = time.time()
             enqueue(addr, f"You were stuck about {mins}m in #{ch}. If something was missing (a tool, a skill, a rule, context, "
@@ -463,17 +479,46 @@ class Crewd:
             log(f"notebook nudge for {bot} #{ch} failed: {e}")
 
     def save_health(self):
-        save_json(DATA / "crew-health.json", {"stalled": self.stalled, "trust": self.trust, "drafts": self.drafts})
+        save_json(DATA / "crew-health.json", {"stalled": self.stalled, "trust": self.trust, "trust_told": self.trust_told, "drafts": self.drafts})
 
     # ── Claude Code's folder-trust question ──
     def trust_prompts(self, terms):
         """A new Claude Code channel in a folder it hasn't seen waits on 'trust this folder?' before
         doing anything. Point the owner (and the head pal) at it once; never answer it for them."""
-        changed = False
+        changed, now = False, time.time()
+        seen = {}   # terminal → its screen, read once per check
+        def read(addr):
+            if addr not in seen:
+                seen[addr] = screen(addr)
+            return seen[addr]
+        def away(addr):
+            """Gone, not live, or its screen didn't read: for longer than a blip?"""
+            return now - self.trust_away.setdefault(addr, now) > TRUST_GRACE
         for addr in list(self.trust):
             t = terms.get(addr)
-            if not t or t.get("state") != "live" or (t.get("turn") or 0) > 1 or not trust_prompt(screen(addr)):
-                self.trust.pop(addr)   # answered (or gone)
+            if t and (t.get("turn") or 0) > 1:
+                gone = True    # past its start: answered
+            elif not t or t.get("state") != "live" or not read(addr):
+                gone = away(addr)   # a one-tick blip keeps it (hc read timing out re-announced t6d)
+            else:
+                self.trust_away.pop(addr, None)
+                gone = not trust_prompt(read(addr))   # a screen that read, without the question: answered
+                if not gone:
+                    self.first_seen[addr] = now   # still asking: keep reading it for a while after
+            if gone:
+                self.trust.pop(addr)
+                self.trust_away.pop(addr, None)
+                changed = True
+        # What was announced is forgotten only once its terminal is past its start or gone for good.
+        for addr in list(self.trust_told):
+            if addr in self.trust:
+                continue
+            t = terms.get(addr)
+            if t and (t.get("turn") or 0) <= 1:
+                self.trust_away.pop(addr, None)
+            elif t or away(addr):
+                self.trust_told.pop(addr)
+                self.trust_away.pop(addr, None)
                 changed = True
         for addr, t in terms.items():
             # Not by agent name: until Claude Code reports a status (it hasn't yet, on this question)
@@ -483,16 +528,25 @@ class Crewd:
                 continue
             if (t.get("turn") or 0) > 1 or t.get("status") == "working":
                 continue   # past its start: the question only comes first
-            if time.time() - self.first_seen.setdefault(addr, time.time()) > 10 * 60:
-                continue   # been around a while: not a new channel (saves reading every idle screen)
-            if not trust_prompt(screen(addr)):
+            told = addr in self.trust_told
+            if now - self.first_seen.setdefault(addr, now) > 10 * 60:
+                continue   # been around a while, and not asking lately: not a new channel (saves reading every idle screen)
+            if not trust_prompt(read(addr)):
                 continue
             bot, ch = split_where(t.get("where"))
-            self.trust[addr] = {"bot": bot, "channel": ch, "since": now_ms()}
+            self.trust[addr] = {"bot": bot, "channel": ch, "since": (self.trust_told.get(addr) if told else None) or now_ms()}
+            self.trust_away.pop(addr, None)
+            self.first_seen[addr] = now
             changed = True
+            if told:
+                continue   # still the question it was told about: back on the list, said once
+            self.trust_told[addr] = self.trust[addr]["since"]
             feed("trust", terminal=addr, bot=bot, channel=ch)
             log(f"{bot} #{ch} is waiting on Claude Code's folder-trust question")
-            self.tell_head(f"[pal] {trust_notice(bot, ch)} Tell {OWNER}; don't answer it yourself.", exclude=addr)
+            notice = trust_notice(bot, ch)
+            if crewchief.is_chief_terminal(addr, terms):
+                notice = crewchief.trust_notice(bot)   # its space is hidden: the question is in its pop-up
+            self.tell_head(f"[pal] {notice} Tell {OWNER}; don't answer it yourself.", exclude=addr)
         if changed:
             self.save_health()
 

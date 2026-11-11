@@ -206,6 +206,7 @@ class InstallRecordsTheBuild(unittest.TestCase):
         self.assertIn("dirty", rec["build"])
         keys = json.loads((self.app / "keys.json").read_text())["global"]
         self.assertEqual(keys.get("ctrl-shift-h"), "crew-roster.home")
+        self.assertEqual(keys.get("ctrl-shift-g"), "crew-roster.factory", "the factory switcher (T66)")
         self.install()
         log = [json.loads(x) for x in (self.app / "data" / "crew-installs.jsonl").read_text().splitlines()]
         self.assertEqual(len(log), 2, "one line per install")
@@ -253,6 +254,8 @@ class InstallRecordsTheBuild(unittest.TestCase):
         out = self.install()
         self.assertEqual(json.loads((self.app / "keys.json").read_text())["global"]["ctrl-shift-h"], "pane.go:left")
         self.assertIn("ctrl-shift-h is taken", out)
+        self.assertEqual(json.loads((self.app / "keys.json").read_text())["global"].get("ctrl-shift-g"), "crew-roster.factory",
+                         "a taken key doesn't stop the free ones")
 
 
 if __name__ == "__main__":

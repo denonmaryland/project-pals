@@ -6,15 +6,19 @@
 // - A sleeping pal: wake it, unpin it, or forget it (its memory folder stays on disk).
 // - A room: open it, sleep or wake everyone in it, or close it (its transcript is kept).
 // - A chat message: copy it, or one of its code blocks.
+// - The factory switcher (props.what "factory"; the sidebar's chip, Ctrl+Shift+G, the command bar):
+//   every factory with what it needs from you, then New / Rename / Remove.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
+  areasOf, areaOfTopic, fileTopic,
   canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
   crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview,
-  powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL } from "./crew.js";
+  powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL,
+  factories, severalFactories, currentFactory, factoryOf, factoryNeeds, switchFactory, removeFactory, movePalToFactory, setForeman, templateOf } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -82,8 +86,43 @@ export default class CrewMenu extends View {
         .child(careful("m-close-room", "Close room", "Click again to close it", () => { deleteRoom(room.id); showTabs(); this.close(); }));
     }
 
+    // The factory switcher.
+    if (p.what === "factory") {
+      const cur = currentFactory();
+      const needs = factoryNeeds();
+      const dialog = (props) => openOverlay({ mod: "crew-factory", kind: "dialog", width: 440, props });
+      const row = (f) => h_flex().id(`m-fac-${f.id}`).h(44).px(10).gap(10).items_center().rounded(8).cursor_pointer()
+        .when(f.id === cur.id, (el) => el.bg(a(t.foreground, "0c")))
+        .hover((s) => s.bg(a(t.foreground, "0c")))
+        .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); switchFactory(f.id); this.close(); })
+        .child(div().size(9).flex_none().rounded(2).bg(f.color))
+        .child(v_flex().flex_1().min_w(0)
+          .child(div().truncate().text_size(13).font_weight(600).text_color(t.foreground).child(f.name))
+          .child(div().truncate().text_size(11).text_color(t.dim).child(`${templateOf(f.template).name} · ${f.foreman || "no foreman yet"}`)))
+        .when((needs[f.id] ?? 0) > 0, (el) => el.child(div().flex_none().h(16).px(5).flex().items_center().rounded(3).border_1().border_color(a(t.blocked, "66"))
+          .text_size(11).text_color(t.blocked).child(`${needs[f.id]} need${needs[f.id] === 1 ? "s" : ""} you`)));
+      return root
+        .child(title(severalFactories() ? "Factories" : "One factory: your crew"))
+        .children(factories().map(row))
+        .child(line())
+        .child(item("m-fac-new", "plus", "New factory…", () => dialog({ mode: "new" })))
+        .child(item("m-fac-rename", null, `Rename ${cur.name}…`, () => dialog({ mode: "rename", factory: cur.id })))
+        .when(!cur.default, (el) => el.child(careful("m-fac-rm", `Remove ${cur.name}`, "Click again: its pals go back to your crew", () => { removeFactory(cur.id); this.close(); })));
+    }
+
     if (!space) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That's gone."));
 
+    // A topic's area: the pal's areas and Unsorted, the current one ticked (T105).
+    if (p.what === "area") {
+      const tab = space?.tabs.find((x) => x.id === p.tab);
+      if (!tab) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That topic is gone."));
+      const cur = areaOfTopic(space.name, channelName(tab))?.id ?? null;
+      root.child(title(`#${channelName(tab)} · area`));
+      for (const a of [...areasOf(space.name).areas, { id: null, name: "Unsorted" }]) {
+        root.child(item(`m-area-${a.id ?? "none"}`, cur === a.id ? "check" : null, a.name, () => { if (cur !== a.id) fileTopic(space.name, channelName(tab), a.id ? a.name : null); }));
+      }
+      return root;
+    }
     if (p.what === "tab") {
       const tab = space.tabs.find((x) => x.id === p.tab);
       if (!tab) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That topic is gone."));
@@ -112,6 +151,12 @@ export default class CrewMenu extends View {
         .child(moves("m-move", (dir) => canMoveChannel(space, tab, dir), (dir) => moveChannel(space, tab, dir)))
         .child(div().px(10).pt(8).pb(4).text_size(12).text_color(t.dim).child("Color"))
         .child(h_flex().px(8).pb(6).gap(4).flex_wrap().child(swatch(null)).children(TAB_COLORS.map((k) => swatch(k))))
+        // Area (T105): which of the pal's areas this topic is filed under; a click opens the list
+        // (its own small menu, so this one doesn't grow by a row per area). Only once the pal has
+        // areas (made with `pal topic area`, or by the pal sorting its own topics).
+        .when(areasOf(space.name).areas.length > 0, (el) => el.child(line())
+          .child(item("m-area", "ds-tree", `Area: ${areaOfTopic(space.name, channelName(tab))?.name ?? "Unsorted"}`,
+            () => openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "area", space: space.id, tab: tab.id } }))))
         .child(line())
         .child(item("m-rename", null, "Rename", () => renameChannel(tab)))
         .child(item("m-close", "x", "Close topic", () => run("tab.close", { id: tab.id }), t.blocked));
@@ -160,6 +205,16 @@ export default class CrewMenu extends View {
           el.child(item(`m-grp-${g.id ?? "none"}`, cur === g.id ? "check" : null, g.name, () => { if (cur !== g.id) setPalGroup(bot, g.id); }));
         }
         return el.child(item("m-grp-new", "plus", "New group…", () => openOverlay({ mod: "crew-group", kind: "dialog", width: 400, props: { mode: "new", bot: bot.id } })));
+      })
+      // Its factory (only once there are several): one row per factory, the current one checked;
+      // and, on a floor that isn't the default one, making this pal its foreman.
+      .when(!bot.god && severalFactories(), (el) => {
+        const mine = factoryOf(space.name);
+        el.child(line()).child(div().px(10).pt(4).pb(2).text_size(12).text_color(t.dim).child("Factory"));
+        for (const f of factories()) el.child(item(`m-fac-${f.id}`, mine === f.id ? "check" : null, f.name, () => { if (mine !== f.id) movePalToFactory(space.name, f.id); }));
+        const f = factories().find((x) => x.id === mine);
+        if (f && !f.default && f.foreman !== space.name) el.child(item("m-fac-foreman", null, `Make it ${f.name}'s foreman`, () => setForeman(f.id, space.name)));
+        return el;
       })
       // Close pal: closes its space (every topic stops; Herdr asks first); it waits under Hidden pals
       // and a click wakes it.

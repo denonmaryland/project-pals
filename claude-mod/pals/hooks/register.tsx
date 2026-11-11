@@ -20,6 +20,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { DeskCounts } from '../types'
+import { registerTimeline, timelineStart, timelineTurnEnd, timelineTurnStart } from './timeline'
 
 const desk = atom({ plugin: 'pals', key: 'desk' } as const, null)
 
@@ -113,10 +114,14 @@ async function tick($: any) {
 }
 
 export const register: Register = on => {
+  // The work timeline (T78): tool calls as one line each, thinking as dim narration.
+  registerTimeline(on, () => !!S.terminal)
+
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     S.terminal = await $.env.get('HC_TERMINAL_ID')
     if (!S.terminal) return r
+    await timelineStart($, r?.cwd ?? e.cwd)
     const home = (await $.env.get('HOME')) ?? ''
     const crewData = await $.env.get('CREW_DATA')
     const app = (await $.env.get('HERDR_APP_HOME')) ?? `${home}/.config/herdr-app`
@@ -130,7 +135,7 @@ export const register: Register = on => {
 
   // Busy or idle: the main loop's turns (a subagent's carry an agentId).
   on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined) { S.busy = true; S.lastStep = await $.clock.now() }
+    if (e.agentId === undefined) { S.busy = true; S.lastStep = await $.clock.now(); if (S.terminal) await timelineTurnStart($) }
     return next(e)
   })
   on('turn.step', async function* ($, e, next) {
@@ -141,6 +146,7 @@ export const register: Register = on => {
     const r = await next(e)
     if (e.agentId === undefined) {
       S.busy = false
+      if (S.terminal) await timelineTurnEnd($)
       // Appended after the turn's last step: the model never read it. Start a turn that will.
       if (S.lastAppend > S.lastStep) { S.lastAppend = 0; void $.prompt.submit({ text: NUDGE }) }
     }

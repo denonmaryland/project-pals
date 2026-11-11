@@ -14,6 +14,7 @@ home.json:
               "recommend": an option, "why": the asker's reason, "links": [...], "images": [...]
               (paths under data/crew-attachments), "command" (login), "url" (link),
               "topic": "Pal#topic" (its button opens it), "by": stamped by pal home, "at": ms,
+              "factory": "f-…" | "default" (only once there are several factories: crewfactories.py),
               "answer", "answered_at", "result", "closed_at", "parked_at"}],
    "release": {"next": "0.4.1", "note": "held for your OK", "queued": [{"id": "r-6hex", "text", "at", "by"}]},
    "recs": {"a-… | c-… | h-…": {"option", "why", "by", "at"}}}   a recommendation for an approval, a
@@ -97,6 +98,12 @@ def _body(s):
     return s
 
 
+def _factory(item):
+    import crewfactories
+    store = crewfactories.load()
+    return crewfactories.factory_of_item(item, store) if crewfactories.several(store) else None
+
+
 def _find(h, iid):
     iid = (iid or "").strip()
     for x in h["items"]:
@@ -166,6 +173,11 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
         item["url"] = u
     if topic:
         item["topic"] = topic
+    # With several factories, the item says which one it belongs to (the pal it's about, else who
+    # added it). With one factory nothing is added.
+    fac = _factory(item)
+    if fac:
+        item["factory"] = fac
     if status == "parked":
         item["parked_at"] = item["at"]
     with locked("home"):

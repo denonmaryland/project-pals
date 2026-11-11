@@ -3,7 +3,7 @@
 Everything lives under ~/.config/herdr-app/data (HERDR_APP_HOME picks another home):
   crew-queue/<terminal>/*.json   messages waiting for a pal's turn to end (crewd delivers them)
   crew-daemon.json               crewd's heartbeat
-  crew-feed.jsonl                what happened: finished, blocked, stalled, approvals, tasks
+  crew-feed.jsonl                what happened: working (a turn starts), finished, blocked, stalled, approvals, tasks
   crew-delegations.json          who asked whom for what (results flow back to the asker)
   crew-routines.json             scheduled prompts; crew-routines.log.jsonl their runs
   crew-tasks.json                the task board
@@ -122,6 +122,11 @@ def save_settings(**changes):
     save_json(SETTINGS, s)
     render_god()
     render_partner()
+    try:
+        import crewchief
+        crewchief.render()
+    except Exception:
+        pass
     return settings()
 
 
@@ -608,6 +613,9 @@ def enqueue(terminal, text, sender=None, kind="msg", not_before=0.0, urgent=Fals
     Without crewd running, it's typed in now (after not_before)."""
     if not terminal:
         raise CrewError("no terminal")
+    import crewchief
+    if crewchief.is_chief_terminal(terminal):
+        raise CrewError(f"{terminal} is the {crewchief.NAME}'s: nothing is typed into it but {OWNER}'s own words in its pop-up")
     item = {"id": new_id(), "at": now_ms(), "terminal": terminal, "from": sender, "kind": kind,
             "text": text, "not_before": int(not_before * 1000) if not_before else 0, "urgent": urgent, **(meta or {})}
     if daemon_alive():
@@ -860,6 +868,8 @@ def renamed(old, new):
     desk = _desk()
     if desk:
         desk.renamed(old, new)
+    import crewfactories   # here, not at the top: it imports this module
+    crewfactories.renamed(old, new)
 
 
 def memory_dir(bot_name):

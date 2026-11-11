@@ -130,8 +130,9 @@ export default class CrewHeader extends View {
     const all = spaces();
     const space = all.find((s) => s.active) ?? all.find((s) => s.id === focused()?.space);
     const tab = space?.tabs.find((x) => x.active);
-    // "MODE · Focus": a 52 px bar on the chat background, a #18181A hairline under it, 16 px in.
-    const root = h_flex().id("crew-header").size_full().items_center().px(16).bg(d.bg0).border_b_1().border_color(d.lineSoft)
+    // "MODE · Focus": a 52 px bar on the chat background, 16 px in. No line under it (T97, DeNon
+    // 2026-11-10: the hairline across the top went).
+    const root = h_flex().id("crew-header").size_full().items_center().px(16).bg(d.bg0)
       .on_size_change((size, cx) => { if (size.width !== this.w) { this.w = size.width; cx.notify(); } })
       .on_mouse_move((e) => { if (e.local_position) this.origin = { x: e.position.x - e.local_position.x, y: e.position.y - e.local_position.y }; });
 

@@ -2,6 +2,8 @@
 result. Claiming and finishing tell the people involved: the owner hears when a task is assigned
 or unblocked, and whoever created it hears when it's done or blocked. A task with a check command
 can only be marked done when the check passes (run in the owner's project folder)."""
+import datetime
+import re
 import subprocess
 import time
 
@@ -10,6 +12,66 @@ from crewlib import (DATA, CrewError, OWNER, load_json, save_json, locked, enque
 
 STORE = DATA / "crew-tasks.json"
 OPEN = ("open", "claimed", "blocked")
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def parse_due(text, today=None):
+    """A due date as the person writes it → "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (local time), or None
+    for "none"/"" (clears it). Takes: 2026-11-14, 2026-11-14T17:00, 2026-11-14 17:00, today, tomorrow,
+    a weekday (mon…sun, or the full name: the next one, a week out if it's today), +3d, +2w, and any of
+    those followed by a time (fri 17:00). Raises CrewError for anything else."""
+    raw = " ".join(str(text or "").lower().split())
+    if raw in ("", "none", "clear", "-"):
+        return None
+    today = today or datetime.date.today()
+    m = re.fullmatch(r"(.+?)(?:[ t](\d{1,2}):(\d{2}))?", raw)
+    day, hh, mm = m.group(1), m.group(2), m.group(3)
+    d = None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        try:
+            d = datetime.date.fromisoformat(day)
+        except ValueError:
+            d = None
+    elif day == "today":
+        d = today
+    elif day == "tomorrow":
+        d = today + datetime.timedelta(days=1)
+    elif re.fullmatch(r"\+(\d{1,3})([dw])", day):
+        n, unit = re.fullmatch(r"\+(\d{1,3})([dw])", day).groups()
+        d = today + datetime.timedelta(days=int(n) * (7 if unit == "w" else 1))
+    elif day[:3] in DAYS and (day == day[:3] or datetime.date(2024, 1, 1 + DAYS.index(day[:3])).strftime("%A").lower() == day):
+        ahead = (DAYS.index(day[:3]) - today.weekday()) % 7 or 7
+        d = today + datetime.timedelta(days=ahead)
+    if d is None:
+        raise CrewError(f"can't read the due date '{text}'. Try: fri, tomorrow, 2026-11-14, +3d, fri 17:00, none")
+    if hh is None:
+        return d.isoformat()
+    if int(hh) > 23 or int(mm) > 59:
+        raise CrewError(f"can't read the time in '{text}'")
+    return f"{d.isoformat()}T{int(hh):02d}:{mm}"
+
+
+def due_label(due, today=None):
+    """How a due date reads in a list: "due today", "due Wed", "due Nov 20", "overdue 2d"."""
+    if not due:
+        return ""
+    today = today or datetime.date.today()
+    try:
+        d = datetime.date.fromisoformat(due[:10])
+    except ValueError:
+        return f"due {due}"
+    at = f" {due[11:16]}" if len(due) > 10 else ""
+    gap = (d - today).days
+    if gap < 0:
+        return f"overdue {-gap}d"
+    if gap == 0:
+        return f"due today{at}"
+    if gap == 1:
+        return f"due tomorrow{at}"
+    if gap < 7:
+        return f"due {d.strftime('%a')}{at}"
+    return f"due {d.strftime('%b')} {d.day}{at}"
 
 
 def load():
@@ -72,10 +134,11 @@ def line(t):
     card = ""
     if c and t["status"] in OPEN and c.get("status") not in ("done", "cancelled", "expired"):
         card = f" · card {c['id']} {c.get('status')}" + (f" ({c['held']})" if c.get("held") else "")
-    return f"{t['id']} [{t['status']}] {t['title']} · {who}{deps}{card}"
+    due = f" · {due_label(t['due'])}" if t.get("due") and t["status"] in OPEN else ""
+    return f"{t['id']} [{t['status']}] {t['title']} · {who}{deps}{due}{card}"
 
 
-def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None, notify_assignee=True):
+def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None, notify_assignee=True, due=None):
     if assignee:
         s, tab = find(assignee, spaces)
         assignee = f"{s['name']}#{chan(tab)}" if "#" in assignee else s["name"]
@@ -86,6 +149,8 @@ def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=Non
         t = {"id": f"T{board['next']}", "title": title, "body": body or "", "assignee": assignee, "status": "open",
              "deps": [get(board, d)["id"] for d in deps], "by": me_name, "by_spec": me, "created": now_ms(),
              "updated": now_ms(), "notes": [], "result": None, "check": check}
+        if due:
+            t["due"] = due
         board["next"] += 1
         board["tasks"].append(t)
         save_json(STORE, board)
@@ -112,7 +177,8 @@ def task_card(t, spaces, me, me_name):
                spaces, me_name)
 
 
-def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=False, assignee=None, from_card=False):
+def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=False, assignee=None, from_card=False,
+           due=False):
     """Change a task. Its open Desk card follows (claimed → working, blocked, done with the result,
     cancelled), unless the change came from that card (from_card: pal desk take / done / block)."""
     with locked("tasks"):
@@ -133,6 +199,12 @@ def update(tid, spaces, me, me_name, status=None, note=None, result=None, claim=
             t["assignee"] = f"{s['name']}#{chan(tab)}" if "#" in assignee else s["name"]
         if note:
             t["notes"].append({"at": now_ms(), "by": me_name, "text": note})
+        if due is not False:          # False: leave it; None: clear it; a string: set it (parse_due's form)
+            if due:
+                t["due"] = due
+            else:
+                t.pop("due", None)
+            t["notes"].append({"at": now_ms(), "by": me_name, "text": f"due {due}" if due else "due date cleared"})
         if status == "done" and t.get("check"):
             folder = None
             owner = t.get("claimed_by") or t.get("assignee")

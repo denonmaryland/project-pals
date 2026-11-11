@@ -30,8 +30,13 @@ The Desk (everything sent to you is a card with a status and receipts)
                                      the idea partner's draft: it waits for the owner's Send (ls --drafts)
   (the owner, from Project Pals: urgency ID LEVEL, confirm ID, send-draft ID [--to …], discard ID, prune --older 180d)
 
+Pop out (the owner, from Project Pals: a topic's live terminal in its own desktop window)
+  pal popout ls                     the pop-outs that are open
+  (the owner's click: popout <Pal[#topic]>, popout pin KEY, popout close KEY. The window floats, can be
+   pinned to every workspace (Hyprland), resizes freely, and remembers its size, place and pin.)
+
 Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
-  pal home [--json]                 what's on Home
+  pal home [--json] [--factory NAME|all]   what's on Home (with several factories: the one you're in)
   pal home ask "question" [--option A [--does "what A does"]]... [--recommend A --why "…"] [--topic P#t]
             [--body …] [--link URL]... [--image FILE]...   a decision for the owner (options: one click each)
   pal home recommend <a-…|c-…|h-…> <option> --why "…"   your pick for an approval (approve|decline),
@@ -40,13 +45,26 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  pal welcome                       where the welcome tour stands (it runs on Home; replay it from the gear menu)
+  pal welcome folders [--json]      the project folders the tour would suggest for a new pal (names and dates only)
+  pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
+                                    crew is the default one; until you make another, nothing changes
+  pal factory new NAME [--template project-crew|platform-lanes] [--foreman Pal] [--foreman-topic T]
+  pal factory switch NAME | move PAL NAME | foreman NAME [PAL] [--topic T] | rename NAME NEW | rm NAME
+                                    (changes are the owner's: a click in Project Pals)
   (the owner, from Project Pals: answer ID "option", seen)
 
 Hiring
   pal hire <Name> [--harness claude|agy|…] [--model M] [--role R] [--topic general] [--folder DIR] [--machine M] [--task T]
   pal hire --partner [Name]         the idea partner (MUSE by default): you riff, it drafts cards you Send
-  pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--worktree [--base BRANCH]]
-                                     a new topic (a tab); --worktree gives it its own git branch and folder.
+  (the owner, from Project Pals: hire --chief [Name], the Chief: a pop-up chief of staff that only reads
+   and hands work to the head pal's #ops; Ctrl+Shift+J)
+  pal topic <Pal> <name> [--brief T] [--category C] [--harness H] [--model M] [--area A] [--worktree [--base BRANCH]]
+                                     a new topic (a tab); --worktree gives it its own git branch and folder;
+                                     --area files it under one of the pal's areas (made if new).
+  pal topic area ls [Pal] [--json] | add <Pal> <Area> | set <Pal#topic> <Area|none> | rm <Pal> <Area> | rename <Pal> <Area> <New>
+                                     areas: a pal's topics filed under a few names, for listing only.
+                                     Pal#topic stays the address; an area is never part of it.
                                      pal channel is the same command (topics were called channels before 0.4.0)
   pal sleep [<Pal[#topic]>... | #topic | --idle] [-n]
                                      Sleep (keep topics, free RAM): stop a pal's agent; its tabs and room seats
@@ -63,9 +81,14 @@ Hiring
   pal handoff brief [<Pal#topic>|--id h-…] | log [<Pal#topic>]   the brief a seat was handed with; who held it when
 
 Work
-  pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"]
+  pal task add "<title>" [--for Pal[#topic]] [--after T1,T2] [--body T] [--check "cmd"] [--due fri]
   pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
             | assign T Pal | cancel T | reopen T
+  pal task due T <when|none>         when: fri, tomorrow, 2026-11-14, +3d, fri 17:00 (a pal: its own tasks)
+  pal computer [Pal] [today|todo|calendar|journal|pages] [--json] [--start D] [--days N]
+                                     what a pal's Computer shows (read-only)
+  pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
+                                     its freeform pages (a pal writes its own), in its Computer's Notes
   pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
@@ -152,6 +175,7 @@ import crewguard
 import crewupdate
 import crewdesk
 import crewhome
+import crewfactories
 
 
 def opts(rest, flags, bools=()):
@@ -242,23 +266,108 @@ def watch_start(bot, channel, brain="its brain", wait=20):
     return False
 
 
+def without_chief(spaces, recs):
+    """The pals without the Chief: it's the owner's pop-up, not a pal to message, and its screen is
+    the owner's conversation. One line says it's there."""
+    import crewchief
+    chief = crewchief.record(recs)
+    if not chief:
+        return spaces
+    print(f"({chief['name']}, {OWNER}'s chief of staff, is in its pop-up: it takes no messages; it reads, and hands work to {crewchief.inbox_label()})")
+    return [s for s in spaces if not crewchief.is_chief_space(s, recs)]
+
+
 def cmd_bots(spaces):
     if not spaces:
         print('no pals yet: open a space in Herdr, or hire one: pal hire "Name" --folder ~/Projects/x')
         return
     recs = records()
+    import crewareas
+    areas = crewareas.load()
     me, _ = whoami(spaces)
+    spaces = without_chief(spaces, recs)
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
         r = record_of(s, recs)
         apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
         brain = max(set(apps), key=apps.count) if apps else "asleep (no agent running)"
         bits = ["HEAD PAL" if r.get("god") else None, r.get("role"), brain, f"on {s['machine']}" if s.get("machine") else None]
         print(f"{s['name']}  ({' · '.join(b for b in bits if b)})" + (f"\n  folder: {s['folder']}" if s.get("folder") else ""))
-        for t in s["tabs"]:
-            x = lead(t)
-            mine = "  ← you" if me == f"{s['name']}#{chan(t)}" else ""
-            st = (x or {}).get("status") or ("idle" if (x or {}).get("app") else "asleep")
-            print(f"  #{chan(t)}: {st}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
+        # Topics under their areas when the pal has any (pal topic area …), else as they come.
+        by_name = {chan(t): t for t in s["tabs"]}
+        groups = crewareas.grouped(s["name"], list(by_name), areas)
+        for area, names in groups:
+            if len(groups) > 1 or area:
+                print(f"  {area or 'Unsorted'} ({len(names)})")
+            for n in names:
+                t = by_name[n]
+                x = lead(t)
+                mine = "  ← you" if me == f"{s['name']}#{chan(t)}" else ""
+                st = (x or {}).get("status") or ("idle" if (x or {}).get("app") else "asleep")
+                print(("    " if len(groups) > 1 or area else "  ") + f"#{chan(t)}: {st}" + (f" ({x['terminal']})" if x else " (no terminal)") + mine)
+
+
+def cmd_topic_area(spaces, args):
+    """pal topic area …: a pal's topics filed under areas (crewareas.py). An area is never part of
+    an address; these commands only change how topics are listed."""
+    import crewareas
+    from crewlib import norm
+    sub = args[0] if args else "ls"
+    rest = args[1:]
+    pos, o = opts(rest, (), ("json",))
+
+    def pal_of_spec(spec):
+        """A pal's exact name from what was typed (a live pal by any of find's rules, else as typed)."""
+        try:
+            return find(spec.split("#")[0], spaces)[0]["name"]
+        except CrewError:
+            return " ".join(spec.split("#")[0].split())
+
+    def topics_of(pal):
+        s = next((x for x in spaces if norm(x["name"]) == norm(pal)), None)
+        return [chan(t) for t in s["tabs"]] if s else []
+
+    if sub == "ls":
+        me, _ = whoami(spaces)
+        names = [pal_of_spec(pos[0])] if pos else ([me.split("#")[0]] if me else [s["name"] for s in spaces])
+        store = crewareas.load()
+        if o.get("json"):
+            print(json.dumps({n: {"areas": crewareas.of_pal(n, store)["areas"],
+                                  "groups": [{"area": a, "topics": ts} for a, ts in crewareas.grouped(n, topics_of(n), store)]} for n in names}, indent=2))
+            return
+        for n in names:
+            rec = crewareas.of_pal(n, store)
+            if not rec["areas"]:
+                print(f"{n}: no areas yet (make one: pal topic area set \"{n}#<topic>\" \"<Area>\")")
+                continue
+            print(f"{n}: {len(rec['areas'])} area{'s' if len(rec['areas']) != 1 else ''}")
+            shown = set()
+            for a, ts in crewareas.grouped(n, topics_of(n), store):
+                print(f"  {a or 'Unsorted'} ({len(ts)}): " + (", ".join("#" + t for t in ts) or "none"))
+                shown.add(a)
+            for a in rec["areas"]:
+                if a["name"] not in shown:
+                    print(f"  {a['name']} (0)")
+    elif sub == "add" and len(pos) >= 2:
+        a = crewareas.add(pal_of_spec(pos[0]), " ".join(pos[1:]))
+        print(f"{pal_of_spec(pos[0])} has the area {a['name']}")
+    elif sub == "set" and len(pos) >= 2 and "#" in pos[0]:
+        pal, topic = pal_of_spec(pos[0]), pos[0].split("#", 1)[1]
+        live = topics_of(pal)
+        if live and not any(norm(t) == norm(topic) for t in live):
+            raise CrewError(f"{pal} has no topic #{topic}. Its topics: " + ", ".join("#" + t for t in live))
+        topic = next((t for t in live if norm(t) == norm(topic)), topic)
+        a = crewareas.file(pal, topic, " ".join(pos[1:]))
+        print(f"{pal} #{topic} is under {a['name']}" if a else f"{pal} #{topic} is unsorted")
+    elif sub == "rm" and len(pos) >= 2:
+        out = crewareas.remove(pal_of_spec(pos[0]), " ".join(pos[1:]))
+        print(f"removed the area {out['area']['name']}; {out['topics']} topic{'s' if out['topics'] != 1 else ''} unsorted again (nothing else changed)")
+    elif sub == "rename" and len(pos) == 3:
+        a = crewareas.rename(pal_of_spec(pos[0]), pos[1], pos[2])
+        print(f"the area is now {a['name']}")
+    elif sub == "renamed" and len(pos) == 3:   # the app, when it sees a topic's name change
+        print("moved" if crewareas.renamed(pal_of_spec(pos[0]), pos[1], pos[2]) else "nothing to move")
+    else:
+        die("pal topic area ls [Pal] [--json] | add <Pal> <Area> | set <Pal#topic> <Area|none> | rm <Pal> <Area> | rename <Pal> <Area> <New>")
 
 
 def cmd_overview(spaces, deep=False):
@@ -269,6 +378,7 @@ def cmd_overview(spaces, deep=False):
     stalled, trust, drafts = health.get("stalled", {}), health.get("trust", {}), health.get("drafts", {})
     waiting = []
     print(f"# The Project Pals, {time.strftime('%a %d %b %H:%M')}" + ("" if daemon_alive() else "  (crewd isn't running: no queue, routines or callbacks)") + "\n")
+    spaces = without_chief(spaces, recs)
     for s in sorted(spaces, key=lambda s: not record_of(s, recs).get("god")):
         r = record_of(s, recs)
         apps = [x.get("app") for t in s["tabs"] for x in t.get("terminals", []) if x and x.get("app")]
@@ -354,7 +464,8 @@ def cmd_feed(spaces, show_all, n):
     cursors = load_json(DATA / "crew-feed-cursors.json", {})
     since = 0 if show_all else cursors.get(who, now_ms() - 6 * 3600 * 1000)
     lines = FEED.read_text().splitlines() if FEED.exists() else []
-    events = [e for e in (json.loads(l) for l in lines if l.strip()) if e.get("at", 0) > since][-n:]
+    # "working" (a turn starting) only bounds the Computer's calendar blocks; the feed shows "finished".
+    events = [e for e in (json.loads(l) for l in lines if l.strip()) if e.get("at", 0) > since and e.get("kind") != "working"][-n:]
     for e in events:
         k = e["kind"]
         where = f"{e.get('bot', '')}" + (f" #{e['channel']}" if e.get("channel") else "")
@@ -436,6 +547,8 @@ def target(spaces, spec):
 
 
 def cmd_tell(spaces, spec, text, now=False):
+    import crewchief
+    crewchief.refuse_target(spec, "messages")
     space, tab, t = target(spaces, spec)
     who = crewdesk.sender(spaces)
     me, name = who["me"], who["name"]
@@ -460,6 +573,8 @@ def cmd_tell(spaces, spec, text, now=False):
 
 
 def cmd_ask(spaces, spec, text, timeout):
+    import crewchief
+    crewchief.refuse_target(spec, "questions")
     space, tab, t = target(spaces, spec)
     deadline = time.time() + timeout
     who = crewdesk.sender(spaces)
@@ -1136,11 +1251,15 @@ def cmd_task(spaces, rest):
     me, name = whoami(spaces)
     sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
     if sub == "add":
-        pos, o = opts(args, ("for", "after", "body", "check"))
+        pos, o = opts(args, ("for", "after", "body", "check", "due"))
         if not pos:
-            die('pal task add "<title>" [--for Pal] [--after T1,T2]')
+            die('pal task add "<title>" [--for Pal] [--after T1,T2] [--due fri]')
         deps = [d.strip() for d in (o.get("after") or "").split(",") if d.strip()]
-        t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"))
+        if o.get("for"):
+            import crewchief
+            crewchief.refuse_target(o["for"], "tasks")
+        due = crewtasks.parse_due(o["due"]) if o.get("due") else None
+        t = crewtasks.add(" ".join(pos), spaces, me, name, o.get("body"), o.get("for"), deps, o.get("check"), due=due)
         print(f"added {crewtasks.line(t)}")
     elif sub in ("ls", "list"):
         board = crewtasks.load()["tasks"]
@@ -1157,7 +1276,8 @@ def cmd_task(spaces, rest):
     elif sub == "show" and args:
         t = crewtasks.get(crewtasks.load(), args[0])
         print(crewtasks.line(t))
-        print(f"by {t['by']}, {ago(t['created'])}" + (f"\ncheck: {t['check']}" if t.get("check") else ""))
+        print(f"by {t['by']}, {ago(t['created'])}" + (f"\ncheck: {t['check']}" if t.get("check") else "")
+              + (f"\ndue: {t['due']} ({crewtasks.due_label(t['due'])})" if t.get("due") else ""))
         if t["body"]:
             print(t["body"])
         for n in t["notes"]:
@@ -1188,13 +1308,22 @@ def cmd_task(spaces, rest):
         if me:
             print('Anything slow along the way? Note it: pal notebook "did: …" --hiccup "… (cost: ~15m)" --lesson "…"')
     elif sub == "assign" and len(args) >= 2:
+        import crewchief
+        crewchief.refuse_target(args[1], "tasks")
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, assignee=args[1])))
+    elif sub == "due" and len(args) >= 2:
+        # The owner sets any task's due date; a pal only its own (assigned to it, claimed by it, or made by it).
+        t = crewtasks.get(crewtasks.load(), args[0])
+        if me and not any(crewtasks.same(t.get(k) or "", me) for k in ("assignee", "claimed_by", "by_spec")):
+            die(f"{t['id']} isn't yours: only its pal or the owner can set its due date")
+        due = crewtasks.parse_due(" ".join(args[1:]))
+        print(crewtasks.line(crewtasks.update(t["id"], spaces, me, name, due=due)))
     elif sub == "cancel" and args:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="cancelled")))
     elif sub == "reopen" and args:
         print(crewtasks.line(crewtasks.update(args[0], spaces, me, name, status="open")))
     else:
-        die("pal task add|ls|ready|show|claim|note|block|done|assign|cancel|reopen (see crew --help)")
+        die("pal task add|ls|ready|show|claim|note|block|done|due|assign|cancel|reopen (see crew --help)")
 
 
 # ── the Desk (docs/desk/design.md) ────────────────────────────────────────────────────────────
@@ -1352,6 +1481,13 @@ def cmd_desk(spaces, rest):
         card = crewdesk.move(card["id"], to, by, via, " ".join(args[2:]) or "")
         card, t, what = crewdesk.deliver(card, spaces)
         print(f"passed {card['id']} to {card['to']}: {what}")
+    elif sub == "due" and len(args) >= 2:
+        # The owner sets any task's due date; a pal only its own (assigned to it, claimed by it, or made by it).
+        t = crewtasks.get(crewtasks.load(), args[0])
+        if me and not any(crewtasks.same(t.get(k) or "", me) for k in ("assignee", "claimed_by", "by_spec")):
+            die(f"{t['id']} isn't yours: only its pal or the owner can set its due date")
+        due = crewtasks.parse_due(" ".join(args[1:]))
+        print(crewtasks.line(crewtasks.update(t["id"], spaces, me, name, due=due)))
     elif sub == "cancel" and args:
         _, card = desk_card(args[0])
         desk_may(card, who, "cancel", sender_ok=True)
@@ -1387,12 +1523,17 @@ def cmd_desk(spaces, rest):
             die("send what? pal desk send <to> \"text\" (or -F file)")
         urgency = o.get("urgency") or ("now" if o.get("now") else "soon" if o.get("soon") else "low" if o.get("low") else "normal")
         to = pos[0]
+        import crewchief
         auto = to.lower() == "auto"
-        if to.lower() in ("route", "to route", "auto"):
+        if crewchief.caller_is_chief():
+            to = crewchief.send_target(to, spaces)   # only ever <head>#ops
+            auto = False
+        elif to.lower() in ("route", "to route", "auto"):
             to = ""
         elif to.lower() in (OWNER.lower(), "owner"):
             to = OWNER
         else:
+            crewchief.refuse_target(to)
             space, tab = find(to, spaces)
             to = f"{space['name']}#{chan(tab)}" if "#" in to else space["name"]
             if who["me"] and to.lower() == who["me"].lower():
@@ -1548,6 +1689,8 @@ def cmd_routine(spaces, rest):
         pos, o = opts(args, ("name", "channel"))
         if len(pos) < 3:
             die('pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]')
+        import crewchief
+        crewchief.refuse_target(pos[0], "routines (a scheduled prompt is a push)")
         space, _ = find(pos[0], spaces)
         r = crewroutines.add(space["name"], pos[1], " ".join(pos[2:]), o.get("name"), o.get("channel", "routines"), by=name)
         print(f"added {r['id']} {r['name']}: {space['name']} #{r['channel']}, {crewroutines.describe(r['rule'])}"
@@ -2397,6 +2540,205 @@ def home_answer_to(spaces, x, answer):
     return f"told {dest} ({what}) · card {card['id']}"
 
 
+def board_data(today, space, rec, name, tasks, cards):
+    """Read what the board adds to Today (bin/crewboard.py): the feed, held approvals, Home asks, each
+    topic's line from its session file, its branch, crewd's stalled marks and blocked topics' questions."""
+    import datetime
+    import crewboard
+    import crewchat
+    import crewcomputer
+    links = crewchat.links()
+    wts = rec.get("worktrees") or {}
+    lines, branches, msgs = {}, {}, {}
+    for t in today["topics"]:
+        tab = next((x for x in space.get("tabs", []) if chan(x) == t["topic"]), None)
+        if t.get("terminal") and t["state"] not in ("shell",):
+            lines[t["topic"]] = crewboard.read_line(t["terminal"], t["state"], links)
+        wt = (wts.get(tab["name"]) or wts.get("#" + t["topic"])) if tab else None
+        # Branch facts cost two git calls each: only for topics with a pal running in them.
+        if wt and t["state"] not in ("shell", "asleep"):
+            branches[t["topic"]] = crewboard.branch_facts(wt)
+        if t["state"] == "blocked" and t.get("terminal"):
+            msgs[t["terminal"]] = ((term_info(t["terminal"]) or {}).get("status") or {}).get("msg") or ""
+    desk = []
+    for c in cards:
+        try:
+            at = int(datetime.datetime.fromisoformat(str(c.get("updated") or c.get("created") or "")).timestamp() * 1000)
+        except ValueError:
+            at = 0
+        desk.append({**c, "at_ms": at})
+    return crewboard.board_view(today, tasks=tasks, cards=desk, feed=crewcomputer.read_feed(3),
+                                approvals=crewguard.all_requests(), asks=crewhome.load()["items"], lines=lines,
+                                branches=branches, stalled=load_json(DATA / "crew-health.json", {}).get("stalled") or {},
+                                msgs=msgs, now_ms=now_ms())
+
+
+def cmd_computer(spaces, rest):
+    """pal computer [Pal] [today|board|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
+    What a pal's Computer shows (crew-boards/pal-computer/design.md), and its board (`board`: Today
+    grown with what each topic waits for, its line, branch and what it needs from the owner;
+    crew-boards/pal-page/design.md). Read-only: it's a view."""
+    import crewbrain
+    import crewcomputer
+    import crewdesk
+    import crewnotebook
+    import crewroutines
+    import crewsleep
+    import crewtasks
+    views = ("today", "board", "todo", "calendar", "journal", "pages")
+    pos, o = opts(rest, ("start", "days"), ("json",))
+    view = next((p for p in pos if p in views), "today")
+    who = [p for p in pos if p not in views]
+    space, rec, name = pal_of(spaces, " ".join(who) if who else None)
+    tasks = crewtasks.load()["tasks"]
+    cards = [c for _, c in crewdesk.mine(name)]
+    if view in ("today", "todo", "board"):
+        if view == "todo":
+            out = crewcomputer.todo(name, tasks, cards)
+        else:
+            d = crewbrain.brain_dir(name, {**rec, "folder": rec.get("folder") or space.get("folder")})
+            mission = crewbrain.parse_mission(crewbrain.read(d, "mission.md"))
+            live = hc_terminals()
+            asleep = {t.get("terminal") for t in space.get("tabs", []) for t in t.get("terminals", []) if t
+                      and crewsleep.slept(t.get("terminal"))}
+            out = crewcomputer.today_view(name, space, live, tasks, cards, mission, asleep)
+            if view == "board":
+                out = board_data(out, space, rec, name, tasks, cards)
+    elif view == "calendar":
+        import datetime
+        try:
+            start = datetime.date.fromisoformat(o["start"]) if o.get("start") else None
+        except ValueError:
+            die("--start takes a date: 2026-11-09")
+        today = datetime.date.today()
+        start = start or today - datetime.timedelta(days=today.weekday())
+        days = max(1, min(42, int(o.get("days") or 7)))
+        s_ms = int(datetime.datetime.combine(start, datetime.time()).timestamp() * 1000)
+        e_ms = s_ms + days * crewcomputer.DAY_MS
+        routines = crewroutines.load()
+        runs = {r["id"]: crewcomputer.routine_runs(r, s_ms, e_ms) for r in routines if crewcomputer.norm(r.get("bot") or "") == crewcomputer.norm(name)}
+        feed_days = max(8, (today - start).days + 2)
+        out = crewcomputer.calendar(name, crewcomputer.read_feed(feed_days), tasks, routines, start, days, next_runs=runs)
+    elif view == "journal":
+        out = {"pal": name, "days": crewnotebook.days(name, int(o.get("days") or 7)), "week": crewnotebook.week(name)}
+    else:
+        out = {"pal": name, "pages": crewcomputer.pages(name), "folder": str(crewcomputer.pages_dir(name))}
+    if o.get("json"):
+        print(json.dumps(out, ensure_ascii=False))
+        return
+    # A short human read; the desktop and the Chief use --json.
+    if view == "board":
+        for n in out["needs"]:
+            print(f"needs you  {n['kind']:<9} {('#' + n['topic']) if n['topic'] else name:<16} {n['title']}")
+        for t in out["topics"]:
+            print(f"  #{t['topic']:<14} {t['state']:<8} waits for {t['waits_for']:<8} " + ((t.get('line') or {}).get('text') or ''))
+        for r in out["up_next"]:
+            print(f"  up next: {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
+    elif view == "today":
+        print(f"{name}'s computer · today" + (f"\nfocus: {out['focus']}" if out["focus"] else ""))
+        for t in out["topics"]:
+            print(f"  #{t['topic']:<14} {t['state']:<8} " + (f"{t['task']['id']} {t['task']['title']}" if t["task"] else ""))
+        for r in out["next"]:
+            print(f"  next: {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
+        print(f"  desk: {out['desk']['open']} open" + (f", {out['desk']['needs_you']} need you" if out["desk"]["needs_you"] else ""))
+    elif view == "todo":
+        for k in ("doing", "next", "blocked", "done_today"):
+            for r in out[k]:
+                print(f"{k.replace('_', ' '):<10} {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
+        for c in out["cards"]:
+            print(f"card       {c['id']} [{c['status']}] {c['title']}")
+    elif view == "calendar":
+        for e in sorted(out["events"], key=lambda e: e.get("start") or e.get("at") or 0):
+            if e["kind"] == "work":
+                print(f"{time.strftime('%a %H:%M', time.localtime(e['start'] / 1000))}-{time.strftime('%H:%M', time.localtime(e['end'] / 1000))} #{e['topic']} worked")
+            elif e["kind"] == "due":
+                print(f"{e['day']} {e['task']} due: {e['title']}")
+            else:
+                print(f"{time.strftime('%a %H:%M', time.localtime(e['at'] / 1000))} {e['kind']} {e.get('task') or e.get('name') or e.get('routine') or ''}")
+    elif view == "journal":
+        for d in out["days"]:
+            print(f"{d['day']}: {len(d['entries'])} entries")
+    else:
+        print("\n".join(p["name"] for p in out["pages"]) or f"(no pages yet: {out['folder']})")
+
+
+def cmd_page(spaces, rest):
+    """pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
+    A pal's freeform pages (crew-memory/<pal>/pages/*.md), shown in its Computer's Notes. A pal writes
+    only its own; the owner edits any in Notes' folder (Obsidian or an editor)."""
+    import crewbrain
+    import crewcomputer
+    sub, args = (rest[0], rest[1:]) if rest and rest[0] in ("ls", "show", "write", "rm") else ("ls", rest)
+    if sub == "-F":
+        sub = "ls"
+    pos, o = opts(args, ("pal", "file"), ())
+    if sub == "ls":
+        _, _, name = pal_of(spaces, (pos[0] if pos else None) or o.get("pal"))
+        print("\n".join(p["name"] for p in crewcomputer.pages(name)) or f"(no pages for {name} yet)")
+        return
+    if not pos:
+        die(f'pal page {sub} "<title>"')
+    title = " ".join(pos)
+    if sub == "show":
+        _, _, name = pal_of(spaces, o.get("pal"))
+        path = crewcomputer.page_path(name, title)
+        if not path.exists():
+            die(f"{name} has no page called '{title}'")
+        print(path.read_text())
+        return
+    space, _ = my_bot(spaces)
+    if not space:
+        die("only a pal writes pages (its own); edit any page in its Computer's Notes folder")
+    path = crewcomputer.page_path(space["name"], title)
+    if sub == "rm":
+        if not path.exists():
+            die(f"no page called '{title}'")
+        path.unlink()
+        print(f"removed {space['name']}'s page '{title}'")
+        return
+    text = file_opt(o)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    crewbrain.write(path.parent, path.name, text if text.endswith("\n") else text + "\n")
+    print(f"wrote {space['name']}'s page '{title}' ({len(text)} characters)")
+
+
+def cmd_popout(spaces, rest):
+    """pal popout: a topic's live terminal in its own desktop window (bin/crewpopout.py). Putting a
+    window on the owner's desktop, pinning it or closing it is the owner's click; ls is anyone's."""
+    import crewpopout
+    pos = [a for a in owner_args()[1:]]
+    sub = pos[0] if pos else "ls"
+    if sub == "ls":
+        keys = crewpopout.open_keys()
+        print("\n".join(keys) if keys else "no pop-outs open")
+        return
+    if sub in ("pin", "close") and len(pos) == 2:
+        require_owner(f"{sub} a pop-out window")
+        key = crewpopout.slug(pos[1])
+        if sub == "close":
+            print("closed" if crewpopout.close_popout(key) else "it wasn't open")
+            return
+        state = crewpopout.toggle_pin(key)
+        if state is None:
+            die("couldn't pin it: no pop-out window found, or this isn't Hyprland (pin it with your window manager)")
+        print("pinned" if state else "unpinned")
+        return
+    if len(pos) != 1:
+        die('usage: pal popout <Pal[#topic]> | ls | pin KEY | close KEY')
+    require_owner("pop a topic out into its own window")
+    space, tab = find(pos[0], spaces)
+    x = lead(tab)
+    if not x or not x.get("terminal"):
+        die(f"{space['name']} #{chan(tab)} has no terminal (it's asleep: open the topic to wake it)")
+    name = space["name"].split(" - ")[0]
+    try:
+        key, what = crewpopout.open_popout(x["terminal"], f"{space['name']}#{chan(tab)}",
+                                           {"pal": name, "topic": chan(tab), "space": space.get("id"), "tab": tab.get("id"), "home": str(HOME)})
+    except FileNotFoundError as e:
+        die(str(e))
+    print(f"{what} {key}")
+
+
 def cmd_home(spaces, rest):
     sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
@@ -2429,8 +2771,18 @@ def cmd_home(spaces, rest):
         die("only pal home ask takes --option, --does, --link and --image")
     try:
         if sub in ("ls", "list", "show"):
-            pos, o = opts(args, (), ("json", "all"))
+            pos, o = opts(args, ("factory",), ("json", "all"))
             h = crewhome.load()
+            # With several factories, Home is the factory you're in: a pal's own, else the one the app
+            # shows. --factory NAME picks another, --factory all shows every factory's.
+            fstore = crewfactories.load()
+            if crewfactories.several(fstore) or o.get("factory"):
+                want = o.get("factory") or (crewfactories.factory_of(name, fstore) if me else crewfactories.current(fstore))
+                for x in h["items"]:
+                    x["factory"] = crewfactories.factory_of_item(x, fstore)
+                if want != "all":
+                    fid = crewfactories.get(want, fstore)["id"]
+                    h["items"] = [x for x in h["items"] if x["factory"] == fid]
             if o.get("json"):
                 print(json.dumps({**h, "installs": crewhome.installs(10)}, ensure_ascii=False))
                 return
@@ -2508,6 +2860,79 @@ def cmd_home(spaces, rest):
         die(str(e))
 
 
+def cmd_factory(rest):
+    """pal factory: the factories. Reading is anyone's; every change is the owner's click."""
+    sub = rest[0] if rest and not rest[0].startswith("--") else "ls"
+    args = rest[1:] if rest and not rest[0].startswith("--") else rest
+    # Every pal there is: the ones Project Pals has notes on, and (when the app answers) every open space.
+    names = {b["name"] for b in records().values() if b.get("name")}
+    try:
+        names |= {sp["name"] for sp in herdr_spaces()}
+    except CrewError:
+        pass
+    # The Chief sits above every factory and is in none of them.
+    import crewchief
+    names = sorted(n for n in names if not crewchief.is_chief_pal(n))
+
+    def not_chief(pal):
+        if pal and crewchief.is_chief_pal(pal):
+            die(f"{pal} is the Chief: it's above every factory, and in none of them")
+        return pal
+    try:
+        if sub in ("ls", "list"):
+            pos, o = opts(args, (), ("json",))
+            store = crewfactories.load()
+            if o.get("json"):
+                v = crewfactories.view(store)
+                for f in v["factories"]:
+                    f["members"] = crewfactories.pals_of(f["id"], names, store)
+                print(json.dumps(v, ensure_ascii=False))
+                return
+            print("\n".join(crewfactories.line(f, store, names) for f in crewfactories.factories(store)))
+            if not crewfactories.several(store):
+                print("One factory: your crew. pal factory new NAME makes another (from Project Pals: Ctrl+Shift+G).")
+        elif sub == "show":
+            pos, o = opts(args, (), ("json",))
+            store = crewfactories.load()
+            f = crewfactories.get(pos[0] if pos else crewfactories.current(store), store)
+            members = crewfactories.pals_of(f["id"], names, store)
+            if o.get("json"):
+                print(json.dumps({**f, "members": members, "home": crewfactories.TEMPLATES[f["template"]]["home"]}, ensure_ascii=False))
+                return
+            print(crewfactories.line(f, store, names))
+            print(f"  foreman: {f['foreman'] or '(none yet)'}" + (f" #{f['foreman_topic']}" if f["foreman"] and f["foreman_topic"] else ""))
+            print(f"  pals: {', '.join(members) or '(none yet)'}")
+            print(f"  Home: {', '.join(crewfactories.TEMPLATES[f['template']]['home'])}")
+        elif sub == "new" and args:
+            pos, o = opts(args, ("template", "foreman", "foreman-topic"))
+            require_owner("making a factory")
+            f = crewfactories.new(" ".join(pos), o.get("template") or "project-crew", not_chief(o.get("foreman")), o.get("foreman-topic"))
+            print(f"made the factory {f['name']} ({f['id']})")
+        elif sub == "switch" and args:
+            require_owner("switching the factory the app shows")
+            print(f"showing {crewfactories.switch(' '.join(args))['name']}")
+        elif sub == "move" and len(args) >= 2:
+            require_owner("moving a pal to another factory")
+            f = crewfactories.move(not_chief(args[0]), " ".join(args[1:]))
+            print(f"{args[0]} is in {f['name']}")
+        elif sub == "foreman" and args:
+            pos, o = opts(args, ("topic",))
+            require_owner("naming a factory's foreman")
+            f = crewfactories.set_foreman(pos[0], not_chief(pos[1] if len(pos) > 1 else ""), o.get("topic"))
+            print(f"{f['name']}: foreman {f['foreman'] or '(none)'}")
+        elif sub == "rename" and len(args) >= 2:
+            require_owner("renaming a factory")
+            print(f"it's {crewfactories.rename(args[0], ' '.join(args[1:]))['name']} now")
+        elif sub in ("rm", "remove") and args:
+            require_owner("removing a factory")
+            f, back = crewfactories.remove(" ".join(args))
+            print(f"removed {f['name']}" + (f"; back in your crew: {', '.join(back)}" if back else ""))
+        else:
+            die("pal factory [ls|show NAME] | new NAME [--template T] [--foreman Pal] | switch NAME | move PAL NAME | foreman NAME [PAL] | rename NAME NEW | rm NAME")
+    except crewfactories.FactoryError as e:
+        die(str(e))
+
+
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
 def main(argv):
@@ -2525,6 +2950,12 @@ def main(argv):
         prove_owner(owner_args(), click_of())
     if cmd in ("-h", "--help", "help"):
         print(__doc__); return
+    # The Chief (crew-boards/chief/design.md) only reads and hands work to the head pal's #ops.
+    import crewchief
+    if crewchief.caller_is_chief():
+        why = crewchief.cli_refusal(cmd, rest)
+        if why:
+            die(why)
     if cmd == "room":
         os.execvp("pal-room", ["pal-room", *rest])
     if cmd == "primer":
@@ -2553,6 +2984,8 @@ def main(argv):
         return cmd_uninstall(rest)
     if cmd == "settings":
         return cmd_settings(rest)
+    if cmd in ("factory", "factories"):
+        return cmd_factory(rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).
@@ -2580,9 +3013,33 @@ def main(argv):
         pos, o = opts(rest, ("lines", "n"))
         cmd_peek(spaces, pos[0], int(o.get("lines") or o.get("n") or 60))
     elif cmd == "hire" and rest:
-        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner"))
+        pos, o = opts(rest, ("harness", "role", "channel", "folder", "machine", "task", "model"), ("god", "show", "partner", "chief"))
         if not pos and o.get("god"):
             pos = [settings()["head"]]
+        if o.get("god"):
+            # The head pal lives where its brief is (data/crew-god, rendered by install.sh), so
+            # whatever brain runs it reads the brief. A folder given by hand wins.
+            from crewlib import render_god
+            render_god()
+            if (HOME / "data" / "crew-god" / "AGENTS.md").exists():
+                o.setdefault("folder", str(HOME / "data" / "crew-god"))
+        if o.get("chief"):
+            # The Chief (crew-boards/chief/design.md): the owner's chief of staff, above the head pal.
+            # Only the owner hires it (the pop-up's Hire button, a click), at most one, in its own home
+            # with its brief, in #chief, on Opus unless a model is given.
+            import crewchief
+            require_owner("hiring the Chief")
+            if crewchief.record():
+                die(f"you already have a Chief: {crewchief.name()}")
+            pos = pos or [crewchief.NAME]
+            home = crewchief.render(chief=" ".join(pos))
+            if not home:
+                die("the Chief's brief isn't installed (run ./install.sh)")
+            o["folder"] = str(home)
+            o["role"] = crewchief.ROLE
+            o.setdefault("channel", "chief")
+            if (o.get("harness") or "claude") == "claude":
+                o.setdefault("model", "opus")
         if o.get("partner"):
             # The idea partner, MUSE (Desk §13): its own home with its brief, the Idea partner role, and
             # Sonnet unless a model is given.
@@ -2601,11 +3058,17 @@ def main(argv):
         if o.get("folder"):
             o["folder"] = os.path.abspath(os.path.expanduser(o["folder"]))
         out = request("hire", spaces, name=" ".join(pos), **o)
-        print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
+        if o.get("chief"):
+            print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. It lives in its pop-up: Ctrl+Shift+J; nothing is sent to it but your words there.")
+        else:
+            print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
+    elif cmd in ("topic", "channel") and rest and rest[0] in ("area", "areas"):
+        cmd_topic_area(spaces, rest[1:])
     elif cmd in ("topic", "channel") and len(rest) >= 2:   # pal channel: the name before 0.4.0
-        pos, o = opts(rest, ("brief", "category", "harness", "base", "model"), ("worktree",))
+        pos, o = opts(rest, ("brief", "category", "harness", "base", "model", "area"), ("worktree",))
+        area = o.pop("area", None)
         extra = {}
         if o.pop("worktree", False):
             space, _ = find(pos[0], spaces)
@@ -2619,8 +3082,15 @@ def main(argv):
         if out.get("guessed"):
             print(f"({out['bot']}'s own brain isn't on record, so this uses {'yours' if out.get('why') == 'yours' else 'the default'}; "
                   f"pick another with --harness)")
+        if area:
+            import crewareas
+            a = crewareas.file(out["bot"], out["channel"], area)
+            print(f"filed under {a['name']}" if a else "left unsorted")
         watch_start(out["bot"], out["channel"], brain)
     elif cmd == "invite" and len(rest) >= 2:
+        import crewchief
+        for w in rest[1:]:
+            crewchief.refuse_target(w, "room invites")
         out = request("invite", spaces, room=rest[0], who=rest[1:])
         if out.get("added"):
             print(f"added {', '.join(out['added'])} to #{rest[0].lstrip('#')} (briefed)")
@@ -2640,6 +3110,25 @@ def main(argv):
         cmd_desk(spaces, rest)
     elif cmd == "home":
         cmd_home(spaces, rest)
+    elif cmd == "welcome":
+        # The welcome tour (RECIPE "The welcome tour"). Read-only from here: the tour runs on Home.
+        import crewwelcome
+        pos, o = opts(rest, (), ("json",))
+        if pos[:1] == ["folders"]:
+            taken = [b.get("folder") for b in records().values() if b.get("folder")]
+            found = crewwelcome.folders(taken=taken)
+            if o.get("json"):
+                print(json.dumps(found, ensure_ascii=False))
+            else:
+                print("\n".join(f"{f['show']}  ({f['name']})" for f in found) or "no project folders found in the usual places")
+        else:
+            print(crewwelcome.status(settings()))
+    elif cmd == "popout":
+        cmd_popout(spaces, rest)
+    elif cmd == "computer":
+        cmd_computer(spaces, rest)
+    elif cmd in ("page", "pages"):
+        cmd_page(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":

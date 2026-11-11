@@ -595,10 +595,44 @@ def writes_agent_file_via_interpreter(cmd, path_re=None, file_re=None):
 
 
 def _place(names):
-    """For one of Project Pals' own data folders: (a quoted path into it in code, a path argument into it)."""
+    """For one of Project Pals' own data folders: (a quoted path into it in code, a path argument into it).
+    A folder of that name right under mods/ is a mod's source code (mods/crew-desk), not the data (T68)."""
     alt = "|".join(re.escape(n) for n in names)
-    return (re.compile(r"""['"][^'"`\n]*\b(?:""" + alt + r""")(?![\w.-])[^'"`\n]*['"]"""),
-            re.compile(r"(?:^|/)(?:" + alt + r")(?:/|$)"))
+    return (re.compile(r"""['"][^'"`\n]*(?<!\bmods/)\b(?:""" + alt + r""")(?![\w.-])[^'"`\n]*['"]"""),
+            re.compile(r"(?:^|(?<!\bmods)/)(?:" + alt + r")(?:/|$)"))
+
+
+SOURCE_DIRS = {"mods"}   # where a folder named like the data is code: the repo's mods/, Herdr's mods/
+
+
+def into_place(path, names):
+    """Is `path` inside one of Project Pals' data folders `names` (crew-desk, crew-clicks, …)?
+    T68 (2026-11-09): the Desk's mods (mods/crew-desk/main.js) were held as card writes. A folder of
+    that name right under mods/ is a mod's source, not the data, unless the path resolves (links
+    included) into the real data folder. Any other place with that folder name still counts: data
+    may live elsewhere (CREW_DATA, a variable we can't expand)."""
+    p = os.path.normpath(path.strip("'\""))
+    comps = p.split(os.sep)
+    for i, c in enumerate(comps):
+        if c in names:
+            parent = comps[i - 1] if i else ("" if os.path.isabs(p) else os.path.basename(os.getcwd()))
+            if parent not in SOURCE_DIRS:
+                return True
+    try:
+        real = os.path.realpath(os.path.expanduser(p))
+        for n in names:
+            d = os.path.realpath(DATA / n)
+            if real == d or real.startswith(d + os.sep):
+                return True
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def _edited(cmd):
+    """The path of an Edit-tool write (the hook passes it as `edit <path>`), else None."""
+    m = re.match(r"^edit\s+(.+)$", cmd)
+    return m.group(1).strip() if m else None
 
 
 CLICK_PLACE, QUEUE_PLACE, DESK_PLACE = _place(["crew-clicks"]), _place(["crew-queue", "crew-queue-sent"]), _place(["crew-desk"])
@@ -607,20 +641,24 @@ CLICK_PLACE, QUEUE_PLACE, DESK_PLACE = _place(["crew-clicks"]), _place(["crew-qu
 def writes_click(cmd):
     """A write INTO data/crew-clicks (redirect, tee, cp/mv onto it, …, or from a script: Grok review
     H2); mentioning it isn't one."""
-    return any("crew-clicks" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-clicks/", cmd)) or writes_agent_file_via_interpreter(cmd, *CLICK_PLACE)
+    return _writes_into(cmd, {"crew-clicks"}, CLICK_PLACE)
 
 
 def writes_queue(cmd):
     """A write INTO data/crew-queue (as writes_click); `pal tell` writing its own file isn't a shell write."""
-    return any({"crew-queue", "crew-queue-sent"} & set(os.path.normpath(t.strip("'\"")).split(os.sep)) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-queue(?:-sent)?/", cmd)) or writes_agent_file_via_interpreter(cmd, *QUEUE_PLACE)
+    return _writes_into(cmd, {"crew-queue", "crew-queue-sent"}, QUEUE_PLACE)
 
 
 def writes_desk(cmd):
-    """A write INTO data/crew-desk (as writes_queue)."""
-    return any("crew-desk" in os.path.normpath(t.strip("'\"")).split(os.sep) for t in write_targets(cmd)) \
-        or bool(re.match(r"^edit\s+.*/crew-desk/", cmd)) or writes_agent_file_via_interpreter(cmd, *DESK_PLACE)
+    """A write INTO data/crew-desk (as writes_queue); the Desk's mods (mods/crew-desk/…) aren't its cards (T68)."""
+    return _writes_into(cmd, {"crew-desk"}, DESK_PLACE)
+
+
+def _writes_into(cmd, names, place):
+    edited = _edited(cmd)
+    if edited is not None:
+        return into_place(edited, names)
+    return any(into_place(t, names) for t in write_targets(cmd)) or writes_agent_file_via_interpreter(cmd, *place)
 
 
 # ─── Uninstall through a pty or from code (Grok T56 re-check) ───────────────────────────────────

@@ -115,9 +115,12 @@ git clone https://github.com/denonmaryland/project-pals && cd project-pals
 ./install.sh            # or ./install.sh --no-helpers for just the layout, mods and commands
 ```
 
-Needs Linux, Herdr (open it once first), `python3`, `curl` and `rsync`. Then switch Herdr to the
-`pals` layout (Ctrl+Shift+L). Without a systemd user session the install still works, but crewd is
-skipped: messages are typed in directly and routines and callbacks don't run.
+Needs Linux, Herdr (open it once first), `python3`, `curl` and `rsync`. A first install switches
+Herdr to the `pals` layout (Ctrl+Shift+L if it didn't), and your head pal is waiting on Home with
+a one-minute welcome tour: it introduces itself and offers to hire your first pal on one of your
+project folders. Skip it any time; it's in the gear menu as Welcome tour. Without a systemd user
+session the install still works, but crewd is skipped: messages are typed in directly and routines
+and callbacks don't run.
 
 ### Supported Herdr
 
@@ -207,7 +210,7 @@ Project Pals never answers it for you: trusting a folder is your call. It tells 
 
 ## Updates
 
-When a newer release is out, a quiet **Update available · 0.x.y** pill shows in the status bar.
+When a newer release is out, a quiet **Update · 0.x.y** pill shows at the bottom of the sidebar.
 Click it for the version and its highlights, then **Update now** or **Later** (the pill stays away
 for 3 days for that version). The gear menu has **Check for updates** too: it always asks GitHub,
 and says what the newest release is and when it asked. Project Pals looks by itself every 6 hours

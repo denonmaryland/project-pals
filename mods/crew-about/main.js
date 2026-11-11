@@ -6,7 +6,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, notify, appHome, readTextFile, exec, home, shared } from "herdr";
-import { crewCli, ownerCli, checkDue, checkLine, checkedAt, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle } from "./crew.js";
+import { crewCli, ownerCli, checkDue, checkLine, checkedAt, a, tone, ds, scrollArea, sheetFace, headPet, workingStyle, workingMark, palListStyle, openPalStyle, palLook, openPalLook } from "./crew.js";
+import { PET_LOOKS, SCREEN_LOOKS } from "./pallook.js";
 
 const ICON = "mods/crew-roster/icons";
 const LLM_ORDER = ["auto", "claude", "agy"];
@@ -262,7 +263,14 @@ export default class CrewAbout extends View {
         h_flex().items_center().gap(8)
           .child(div().text_size(12.5).text_color(t.muted).child(palListStyle().name))
           .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
-        () => { closeOverlay(props().overlay); openPalStyle(); }));
+        () => { closeOverlay(props().overlay); openPalStyle(); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      // The pets' colours and their laptop screens: its own dialog, presets beside a live preview (crew-pallook).
+      .child(row("set-pallook", "Pal look", "Colours for your pals and their laptop screens",
+        h_flex().items_center().gap(8)
+          .child(div().text_size(12.5).text_color(t.muted).child(`${PET_LOOKS.find((x) => x.id === palLook().pets).name} · screens ${SCREEN_LOOKS.find((x) => x.id === palLook().screen).name.toLowerCase()}`))
+          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openPalLook(); }));
 
     return v_flex().id("crew-about").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().bg(t.popover).text_color(t.foreground)

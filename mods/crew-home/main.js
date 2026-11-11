@@ -30,6 +30,9 @@
 //   stuck ones, what's open on the head pal's desk: Home is its Desk), Releases (public / installed
 //   + build / next, queued, deploys) and Parked (Unpark, Drop).
 //
+// - The welcome tour (welcome.js; RECIPE "The welcome tour"): on a first install, and from the gear
+//   menu's Welcome tour, seven screens in the head pal's voice take the page until done or skipped.
+//
 // Nothing jumps (DeNon's fixed-height rule): every row has a fixed height, counts and ages sit in
 // fixed right-aligned slots, text truncates, and lists scroll on their own (our pill thumb).
 // Data is read only while Home shows: every 4 s (files) and 10 s (the desk), and at once when shown.
@@ -41,7 +44,10 @@ import {
   ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
   openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
+  severalFactories, currentFactory, inFactory, homeItemShown,
+  withoutChief, welcomePending,
 } from "./crew.js";
+import { welcomeView, welcomeKey } from "./welcome.js";
 
 const ICON = "mods/crew-roster/icons";
 const CARD = 76, ROW = 36, PROW = 48, AGE_W = 52, DRAWER_W = 420;
@@ -87,11 +93,11 @@ export default class CrewHome extends View {
     cx.spawn(async (cx) => {
       const data = `${appHome()}/data`;
       const read = async (f) => { try { return await readTextFile(`${appHome()}/${f}`); } catch { return null; } };
-      try { this.home = homeData(await read(HOME_FILE)); } catch {}
+      try { this.all = homeData(await read(HOME_FILE)); this.home = this.floorOf(this.all); } catch {}
       try { this.installs = jsonLines(await read(INSTALLS_FILE)).reverse(); } catch {}
       try { this.install = JSON.parse((await read("data/crew-install.json")) ?? "{}") ?? {}; } catch { this.install = {}; }
       try { this.update = JSON.parse((await read("data/crew-update.json")) ?? "{}") ?? {}; } catch { this.update = {}; }
-      try { this.feed = jsonLines((await exec("tail", ["-n", "800", `${data}/crew-feed.jsonl`], { timeout: 5000 })).stdout); } catch {}
+      try { this.feed = jsonLines((await exec("tail", ["-n", "1600", `${data}/crew-feed.jsonl`], { timeout: 5000 })).stdout); } catch {}
       try { this.ops = await loadOps(); } catch {}
       try { this.reports = await blockedReports(this.reports); } catch {}
       if (desk || Date.now() - this.deskAt > 10000) {
@@ -137,11 +143,24 @@ export default class CrewHome extends View {
   }
 
   // ── what's where ─────────────────────────────────────────────────────────────────────────────
-  headSlug() { return deskSlug(headName()); }
+  // With several factories Home is the shown factory's (design: crew-boards/chief, Part 2): its
+  // items, its pals' questions and work, its foreman's desk. The release track is the default
+  // factory's. With one factory nothing is filtered.
+  floorOf(h) {
+    if (!severalFactories()) return h;
+    const mine = currentFactory().default;
+    return { ...h, items: h.items.filter((x) => homeItemShown(x)), release: mine ? h.release : { next: null, note: null, queued: [] } };
+  }
+  onFloor(pal) { return !severalFactories() || inFactory(String(pal ?? "").split("#")[0]); }
+
+  // Whose desk Home is: the head pal's; with several factories the shown one's foreman (none yet: nobody's).
+  foreman() { return severalFactories() ? currentFactory().foreman : headName(); }
+  who() { return this.foreman() || "the foreman"; }
+  headSlug() { const f = this.foreman(); return f ? deskSlug(f) : "\u0000"; }
 
   needs() {
     const out = [];
-    const all = spaces();
+    const all = withoutChief();
     for (const ap of this.ops.approvals ?? []) out.push({ key: `ap-${ap.id}`, kind: "approval", at: ap.at, pal: ap.bot, ap });
     for (const x of this.home.items) if (x.status === "open" && (x.kind === "ask" || x.kind === "login")) out.push({ key: `h-${x.id}`, kind: x.kind, at: x.at, pal: (x.by ?? "").split("#")[0], x });
     // Topics asking you (the roster's crew.needs: a pal asking another pal isn't counted, T19).
@@ -160,7 +179,8 @@ export default class CrewHome extends View {
     }
     for (const p of this.ops.proposals ?? []) out.push({ key: `p-${p.id}`, kind: "proposal", at: p.at, pal: p.pal ?? p.by, p });
     for (const [term, st] of Object.entries(this.ops.stalled ?? {})) out.push({ key: `s-${term}`, kind: "stuck", at: st.since, pal: st.bot, st });
-    return out.sort((x, y) => (x.at || 0) - (y.at || 0));
+    // Home items were filtered on load; everything else goes by its pal.
+    return out.filter((n) => n.kind === "ask" || n.kind === "login" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
   }
 
   since() {
@@ -168,13 +188,14 @@ export default class CrewHome extends View {
     const now = Date.now();
     const floor = midnight(now);
     const out = [];
-    for (const i of this.installs) if (i.at > floor) out.push({ kind: "install", at: i.at, i });
+    // Installs are Project Pals' own: the default factory's news.
+    if (!severalFactories() || currentFactory().default) for (const i of this.installs) if (i.at > floor) out.push({ kind: "install", at: i.at, i });
     for (const x of this.home.items) {
       if ((x.kind === "link" || x.kind === "note") && x.at > floor) out.push({ kind: x.kind, at: x.at, x });
       else if (x.status === "answered" && (x.answered_at ?? 0) > floor) out.push({ kind: "answered", at: x.answered_at, x });
       else if (x.status === "done" && (x.closed_at ?? 0) > floor && x.kind !== "link" && x.kind !== "note") out.push({ kind: "closed", at: x.closed_at, x });
     }
-    for (const f of feedSince(this.feed, floor, now)) out.push(f);
+    for (const f of feedSince(this.feed, floor, now)) if (this.onFloor(f.bot ?? f.by)) out.push(f);
     // Cards the head pal closed (Home is its Desk).
     const hs = this.headSlug();
     for (const c of this.cards) {
@@ -185,7 +206,7 @@ export default class CrewHome extends View {
   }
 
   progress() {
-    const all = spaces();
+    const all = withoutChief();
     const c = crew();
     const rows = [];
     const held = {};
@@ -193,7 +214,7 @@ export default class CrewHome extends View {
     const stalled = Object.values(this.ops.stalled ?? {});
     for (const ag of agents().filter((a) => a.status === "working")) {
       const s = all.find((x) => x.id === ag.space);
-      if (!s) continue;
+      if (!s || !this.onFloor(s.name)) continue;
       const tab = s.tabs.find((t) => t.id === ag.tab);
       const ch = tab ? channelName(tab) : channelName({ name: ag.tab_name ?? "" });
       const bot = botOf(s, c);
@@ -205,7 +226,7 @@ export default class CrewHome extends View {
     // Held topics that aren't working (a draft in the box, a prompt, asleep): they show here too.
     for (const [to, list] of Object.entries(held)) {
       const f = this.locate(list[0].to);
-      if (!f) continue;
+      if (!f || !this.onFloor(f.space.name)) continue;
       rows.push({ key: `h-${to}`, s: f.space, bot: botOf(f.space, c), ch: f.tab ? channelName(f.tab) : "", tab: f.tab, since: Date.parse(list[0].held_since ?? "") || 0,
         line: `${list.length} card${list.length === 1 ? "" : "s"} wait: ${list[0].held ?? "held"}`, held: list[0].held ?? "held", nHeld: list.length, stuck: false, idle: true });
     }
@@ -328,7 +349,7 @@ export default class CrewHome extends View {
   // Nothing waiting: the head pal's pet, "All caught up", one quiet line.
   caughtUp(d, t) {
     const answered = this.home.items.filter((x) => x.status === "answered" && (x.answered_at ?? 0) >= midnight()).length;
-    const head = headName();
+    const head = this.who();
     return v_flex().id("caught-up").flex_1().min_h(0).items_center().justify_center().gap(10)
       .child(this.face(head, "idle", 120, t))
       .child(div().pt(6).text_size(18).line_height("24px").font_weight(600).text_color(d.fg1).child("All caught up"))
@@ -405,7 +426,7 @@ export default class CrewHome extends View {
       const pb = v_flex().children(prog.rows.map((r, i) => this.progressRow(d, t, r, i)));
       if (prog.desk.length) {
         pb.child(h_flex().h(28).flex_none().items_center().px(14).border_t_1().border_color(d.line)
-          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`On ${headName()}'s desk · ${prog.desk.length}`)));
+          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`On ${this.who()}'s desk · ${prog.desk.length}`)));
         pb.children(prog.desk.map((c, i) => this.deskRow(d, c, i)));
       }
       body = prog.rows.length || prog.desk.length ? scrollArea(d, "home-prog", pb).flex_1().min_h(0)
@@ -447,7 +468,7 @@ export default class CrewHome extends View {
     } else if (r.kind === "closed") {
       icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = "Done"; rest = `${r.x.title}${r.x.result ? ` · ${r.x.result}` : ""}`; right = short(r.x.closed_by ?? r.x.by);
     } else {
-      icon = svg(`${ICON}/ds-inbox.svg`).size(11).text_color(d.fg2); bold = `${headName()} closed`; rest = `${r.c.title}${r.c.result ? ` · ${r.c.result}` : ""}`; right = r.c.id;
+      icon = svg(`${ICON}/ds-inbox.svg`).size(11).text_color(d.fg2); bold = `${this.who()} closed`; rest = `${r.c.title}${r.c.result ? ` · ${r.c.result}` : ""}`; right = r.c.id;
     }
     const isNew = r.at > (this.home.seen || 0);
     return h_flex().id(`since-${i}`).h(ROW).flex_none().items_center().gap(10).pl(14).pr(12)
@@ -527,7 +548,7 @@ export default class CrewHome extends View {
     return v_flex().flex_1().min_h(0)
       .child(strip)
       .child(rows.length ? scrollArea(d, "home-rel", list).flex_1().min_h(0)
-        : div().px(14).py(10).text_size(12).text_color(d.fg4).child(`Nothing queued. ${headName()} adds to it with pal home queue.`))
+        : div().px(14).py(10).text_size(12).text_color(d.fg4).child(`Nothing queued. ${this.who()} adds to it with pal home queue.`))
       .child(div().h(28).flex_none().px(14).flex().items_center().border_t_1().border_color(d.line).text_size(11).text_color(d.fg4).child(checked));
   }
 
@@ -646,6 +667,8 @@ export default class CrewHome extends View {
   }
 
   key(e, list, cx) {
+    // The welcome tour has the page, and its own keys.
+    if (welcomePending()) { if (welcomeKey(this, e, cx)) { cx.stop_propagation(); cx.notify(); } return; }
     const k = e.keystroke;
     const n = this.mode === "review" ? this.current(list) : null;
     // Esc: the chat window first (Home keeps its id), then the drawer, then review ↔ list.
@@ -701,7 +724,7 @@ export default class CrewHome extends View {
     const whoName = sp.who ? short(sp.who.split("#")[0]) : ownerName();
     const whoTopic = sp.topic && sp.topic.includes("#") ? `#${sp.topic.split("#")[1]}` : "";
     const who = h_flex().min_h(56).mt(18).flex_none().items_center().gap(12)
-      .child(this.face(sp.who ? sp.who.split("#")[0] : headName(), n.kind === "approval" || n.kind === "question" || n.kind === "stuck" ? "blocked" : "idle", 56, t))
+      .child(this.face(sp.who ? sp.who.split("#")[0] : this.who(), n.kind === "approval" || n.kind === "question" || n.kind === "stuck" ? "blocked" : "idle", 56, t))
       .child(v_flex().min_w(0).gap(2)
         .child(h_flex().gap(6).items_center().min_w(0)
           .child(div().flex_none().text_size(13).font_weight(600).text_color(d.fg1).child(whoName))
@@ -795,6 +818,8 @@ export default class CrewHome extends View {
   focusSoon(cx) { cx.timer.after(0, () => { try { this.handle.focus(); } catch {} }); }
 
   render(cx) {
+    // The shown factory can change between reads (the switcher): Home follows at once.
+    if (this.all) this.home = this.floorOf(this.all);
     const t = tone(theme());
     const d = ds(t);
     this.d = d;
@@ -818,6 +843,8 @@ export default class CrewHome extends View {
       // Its width, in design pixels: narrow, the review's top bar shows only the key caps.
       .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs((this.w ?? 0) - w) > 1) { this.w = w; cx.notify(); } })
       .on_mouse_down("left", () => this.handle.focus());
+    // The welcome tour (a first install, or replayed from the gear menu) has the whole page.
+    if (welcomePending()) return root.child(welcomeView(this, d, t, cx));
     if (needs.length && this.mode === "review") {
       return root.child(this.review(d, t, needs)).when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));
     }
@@ -832,16 +859,20 @@ export default class CrewHome extends View {
     // Orca's terminal, one click (or T) away, next to What happened today.
     const termBtn = h_flex().id("open-terminal").h(26).px(9).mb(0).flex_none().items_center().gap(7).rounded(5).cursor_pointer()
       .bg("#1C1C1E").border_1().border_color("#00000080").hover((s) => s.border_color(d.lineStrong))
-      .tooltip(`${headName()}'s terminal (T, or Ctrl+Shift+H)`)
+      .tooltip(`${this.who()}'s terminal (T, or Ctrl+Shift+H)`)
       .on_click((_e, cx) => { openTerminal(); cx.notify(); })
       .child(svg(`${ICON}/ds-terminal.svg`).size(12).flex_none().text_color(d.iconOn))
-      .when(!narrow, (el) => el.child(div().text_size(12).font_weight(500).text_color(d.body).child(`Talk to ${headName()}`)))
+      .when(!narrow, (el) => el.child(div().text_size(12).font_weight(500).text_color(d.body).child(`Talk to ${this.who()}`)))
       .child(div().flex_none().h(16).px(4).flex().items_center().rounded(3).border_1().border_color(d.lineStrong)
         .text_size(10.5).font_family(d.mono).text_color(d.fg2).child("T"));
     const page = v_flex().id("home-page").size_full().px(28).pt(20).pb(24).gap(12)
       .child(h_flex().h(28).flex_none().items_end().gap(12)
         .child(div().flex_none().text_size(20).line_height("26px").font_weight(600).text_color(d.fg1).child("Needs you"))
         .child(div().w(40).flex_none().text_size(20).line_height("26px").font_weight(600).text_color(needs.length ? d.warnText : d.fg3).child(String(needs.length)))
+        // Whose Home this is, once there are several factories.
+        .when(severalFactories(), (el) => el.child(h_flex().id("home-factory").h(22).mb(2).px(7).flex_none().items_center().gap(6).rounded(d.r.xs).border_1().border_color(d.lineMid)
+          .child(div().size(8).flex_none().rounded(2).bg(currentFactory().color))
+          .child(div().text_size(12).font_weight(500).text_color(d.body).child(currentFactory().name))))
         .child(div().flex_1())
         .when(Boolean(reviewBtn), (el) => el.child(reviewBtn))
         .child(link)
