@@ -8,10 +8,11 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,7 +55,7 @@ def tree(root, skip=()):
 
 class Sandbox:
     def __init__(self):
-        self.base = Path(tempfile.mkdtemp(prefix="pals-uninstall-"))
+        self.base = Path(pals_tmp.mkdtemp(prefix="pals-uninstall-"))
         self.home = self.base / "home"
         self.app = self.home / ".config" / "herdr-app"
         self.app.mkdir(parents=True)

@@ -5,14 +5,15 @@ import json
 import multiprocessing
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 # The fake home is a plain temp folder, wherever TMPDIR is: the notebook's path guard checks $HOME
 # itself, not only paths that look like a home (/home/…, /Users/…), so these tests don't depend on
 # where the real home is (readiness B1, M1).
-TMP = tempfile.mkdtemp(prefix="pals-prof-")
+TMP = pals_tmp.mkdtemp(prefix="pals-prof-")
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ["HOME"] = TMP

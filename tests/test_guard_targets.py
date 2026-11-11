@@ -3,14 +3,15 @@
 Run: python3 -m unittest discover -s tests   (uses a throwaway CREW_DATA; touches nothing real)."""
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 # A throwaway data folder: another test module's, when one already set it (crewlib reads it once,
 # at import), else our own. Never the real one.
 if "pals-test-" not in os.environ.get("CREW_DATA", ""):
-    TMP = tempfile.mkdtemp(prefix="pals-test-")
+    TMP = pals_tmp.mkdtemp(prefix="pals-test-")
     os.environ["CREW_DATA"] = TMP
     os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)
@@ -65,7 +66,7 @@ ALLOWED = {
 
 class Targets(unittest.TestCase):
     def setUp(self):
-        self.dir = Path(tempfile.mkdtemp(prefix="pals-guard-"))
+        self.dir = Path(pals_tmp.mkdtemp(prefix="pals-guard-"))
 
     def run_as(self, name, code, ext=".py"):
         f = self.dir / (name.replace(" ", "-") + ext)

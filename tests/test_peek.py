@@ -5,11 +5,12 @@ import importlib.machinery
 import importlib.util
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
-TMP = tempfile.mkdtemp(prefix="pals-test-")
+TMP = pals_tmp.mkdtemp(prefix="pals-test-")
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)

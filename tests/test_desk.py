@@ -8,10 +8,11 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 REPO = Path(__file__).resolve().parent.parent
 BIN = REPO / "bin"
@@ -21,7 +22,7 @@ OWNER = "Dee Tester"
 
 def sandbox(helper_state="live", crewd=True):
     """Two pals: Worker (#general, tW) and Helper (#build, tH; `helper_state` "live" or "finished")."""
-    root = Path(tempfile.mkdtemp(prefix="pals-desk-"))
+    root = Path(pals_tmp.mkdtemp(prefix="pals-desk-"))
     home, data, shims = root / "home", root / "data", root / "shims"
     for d in (home, data, shims):
         d.mkdir(parents=True)
@@ -100,7 +101,7 @@ class Format(unittest.TestCase):
 
     def test_fixtures(self):
         sys.path.insert(0, str(BIN))
-        os.environ.setdefault("CREW_DATA", tempfile.mkdtemp())
+        os.environ.setdefault("CREW_DATA", pals_tmp.mkdtemp(prefix="pals-desk-data-"))
         import crewdesk
         for md in sorted(FIX.glob("*.md")):
             want = json.loads(md.with_suffix(".json").read_text())

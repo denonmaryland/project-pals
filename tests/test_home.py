@@ -10,9 +10,10 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_desk import sandbox, pal, owner, click, py, OWNER  # noqa: E402
@@ -231,7 +232,7 @@ class HomeCli(unittest.TestCase):
 @unittest.skipUnless((REPO / ".git").exists(), "needs a git checkout")
 class InstallRecordsTheBuild(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="pals-home-install-"))
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-home-install-"))
         self.home = self.root / "home"
         app = self.home / ".config" / "herdr-app"
         app.mkdir(parents=True)

@@ -14,17 +14,18 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 
 if "crewlib" not in sys.modules:
-    _T = Path(tempfile.mkdtemp(prefix="pals-sleep-boot-"))
+    _T = Path(pals_tmp.mkdtemp(prefix="pals-sleep-boot-"))
     _SHIMS = _T / "shims"
     _SHIMS.mkdir()
     for _name in ("hc", "herdr-app", "systemctl"):
@@ -82,7 +83,7 @@ def set_children(root, pid, children):
 
 
 def make_sandbox():
-    root = Path(tempfile.mkdtemp(prefix="pals-sleep-case-"))
+    root = Path(pals_tmp.mkdtemp(prefix="pals-sleep-case-"))
     home, app, proc, shims = root / "home", root / "app", root / "proc", root / "shims"
     data = app / "data"
     state, calls = root / "state.json", root / "hc-calls.jsonl"
@@ -208,7 +209,7 @@ def reap(*procs):
 
 class SleepChecks(unittest.TestCase):
     def setUp(self):
-        self.proc = Path(tempfile.mkdtemp(prefix="pals-proc-"))
+        self.proc = Path(pals_tmp.mkdtemp(prefix="pals-proc-"))
         self.env = mock.patch.dict(os.environ, {"CREW_PROC": str(self.proc)})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -333,7 +334,7 @@ class SleepChecks(unittest.TestCase):
 
 class StopAgent(unittest.TestCase):
     def setUp(self):
-        self.proc = Path(tempfile.mkdtemp(prefix="pals-stop-"))
+        self.proc = Path(pals_tmp.mkdtemp(prefix="pals-stop-"))
         self.env = mock.patch.dict(os.environ, {"CREW_PROC": str(self.proc)})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -374,7 +375,7 @@ class StopAgent(unittest.TestCase):
 
 class ResumeRules(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="pals-resume-"))
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-resume-"))
         self.cwd = "/work/navi"
         import crewchat
         self.tr = crewchat.project_dir(self.cwd) / "33333333-3333-3333-3333-333333333333.jsonl"
@@ -438,7 +439,7 @@ class ResumeRules(unittest.TestCase):
 
 class CrewdAsleep(unittest.TestCase):
     def test_reaps_bare_agy_shell_and_hands_cards_back_to_the_desk(self):
-        proc = Path(tempfile.mkdtemp(prefix="pals-crewd-proc-"))
+        proc = Path(pals_tmp.mkdtemp(prefix="pals-crewd-proc-"))
         fd1 = make_fake_proc(proc, 5150, comm="fish", children=[], address="tBare")
         crewd = load_crewd()
         daemon = crewd.Crewd()
