@@ -365,6 +365,11 @@ class HelperKeys(unittest.TestCase):
         f"ls -la {K}",
         f"grep -r palkey {K}/",
         f"cp {K}/pals.key /tmp/k",
+        # the folder above the keys: a recursive search walks into them (T122)
+        "rg -n . ~/.config/project-pals",
+        "grep -r palkey \"$HOME/.config/project-pals/\"",
+        "find /home/x/.config/project-pals -type f -exec cat {} +",
+        "tar czf /tmp/p.tgz -C ~ .config/project-pals",
         f"base64 < {K}/wabi.key",
         f"head -c 60 /home/x/.config/project-pals/helpers/pals.key | xxd",
         "cd ~/.config && tar cf /tmp/k.tar project-pals/helpers",
@@ -432,6 +437,9 @@ class HelperKeys(unittest.TestCase):
         "git log --oneline --grep='trusted helper'",
         'git commit -m "Trusted helpers: PAL_HELPER=<name> sends in the owner\'s name"',
         "ls ~/.config/project-pals-old/helpers",
+        "rg -n helper ~/Projects/project-pals",
+        "cd ~/Projects/project-pals && git status",
+        "ls ~/.config/herdr-app/data/crew-worktrees/project-pals-herdr-mod",
         "ls helpers/",
     ]
 

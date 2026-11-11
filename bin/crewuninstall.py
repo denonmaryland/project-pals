@@ -690,7 +690,13 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
                 run.notes.append(f"left {k} alone: it isn't a key Project Pals made")
         for d in (hk, hk.parent):
             try:
-                if not dry and d.is_dir() and not d.is_symlink() and not unsafe(d) and not any(d.iterdir()):
+                if dry or not d.is_dir() or d.is_symlink() or unsafe(d):
+                    continue
+                ig = d / ".ignore"   # ours (crewhelpers: so searches skip the keys), when nothing else is left beside it
+                if ig.is_file() and not ig.is_symlink() and ig.read_text(errors="replace").startswith("# Project Pals:") \
+                        and [p.name for p in d.iterdir()] == [".ignore"]:
+                    ig.unlink()
+                if not any(d.iterdir()):
                     d.rmdir()
             except OSError:
                 pass

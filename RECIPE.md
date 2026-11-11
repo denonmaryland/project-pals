@@ -1680,6 +1680,14 @@ record; the owner turns it on again in the sheet.
   `PAL_HELPER` / `--as-helper` (rule `helper-key`); the Claude Code mod refuses its Read, Grep and
   Glob there; `pal` refuses the key from inside Herdr. Guards against mistakes and one pal talking
   another into it, like the click tokens, not a wall. Other harnesses' read tools aren't checked.
+- **A search of a folder above the keys reads them** (`rg . ~/.config/project-pals` printed one in
+  review). The gate and the mod's guard count `~/.config/project-pals` itself, and both key folders
+  hold a `.ignore` with `*`, which ripgrep and the tools built on it honour. A plain `grep -r` over
+  all of `~/.config` or the home folder still finds a key: nothing here can stop that.
+- **A helper's limit and its send are one step.** Counted first and recorded after, two sends
+  started together both passed a limit of one. `crewdesk.create` takes the `helpers-send` lock,
+  checks the key and the count again (`crewhelpers.recheck`), writes the card and the record, and
+  only then lets go; a send that no longer passes goes as a shell's.
 - **The helpers' mod and its data folder share a name** (`crew-helpers`), like the Desk's: the gate
   treats `mods/crew-helpers/…` as code and `data/crew-helpers/…` as the list.
 - **Turning a helper on needs the app.** `pal settings trust-helper <name> on` wants a click

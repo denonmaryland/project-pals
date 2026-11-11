@@ -8,7 +8,8 @@
 import type { Register } from 'claude-code'
 
 // The keys' folder, however the path is written; or a key itself, wherever one turns up.
-const FOLDER = /(^|\/)project-pals\/helpers(\/|$)/
+// (The folder above them counts: a search pointed at ~/.config/project-pals reads the keys. T122)
+const FOLDER = /(^|\/)project-pals\/helpers(\/|$)|(^|\/)\.config\/project-pals(\/|$)/
 const KEY = /palkey_[A-Za-z0-9_-]{20,}/
 const FIELDS = ['file_path', 'notebook_path', 'path', 'pattern', 'glob'] as const
 

@@ -253,6 +253,53 @@ class Sending(Base):
         self.assertIn("which is the limit", r.stderr)
         self.assertEqual(log(self.data)[-1]["kind"], "unverified")
 
+    def test_two_sends_at_the_same_instant_cant_both_pass_the_limit(self):
+        """T122: the limit was counted, then the send recorded, with nothing holding the two together,
+        so two processes started together both got through a limit of one."""
+        self.on()
+        f = self.data / "crew-helpers" / "helpers.json"
+        h = json.loads(f.read_text())
+        h["helpers"]["Pals"]["per_hour"] = 1
+        f.write_text(json.dumps(h))
+        import threading
+        out = []
+        go = threading.Barrier(6)
+
+        def send(i):
+            go.wait()
+            out.append(helper(self.env, "tell", "Helper#build", f"at once {i}"))
+
+        threads = [threading.Thread(target=send, args=(i,)) for i in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertTrue(all(r.returncode == 0 for r in out), [r.stderr for r in out])
+        heads = [frame(self.env, cid_of(r.stdout)).split(" 📥")[0] for r in out]
+        self.assertEqual(heads.count(TRUSTED), 1, heads)
+        self.assertEqual(heads.count(SHELL), 5, "the rest still arrive, as not verified")
+        kinds = [e["kind"] for e in log(self.data) if e["kind"] != "switch"]
+        self.assertEqual((kinds.count("sent"), kinds.count("unverified")), (1, 5))
+
+    def test_a_switch_off_or_rotation_between_the_check_and_the_send_wins(self):
+        self.on()
+        code = ("import os, crewhelpers, crewdesk\ncrewhelpers.inside_herdr = lambda *a, **k: None\nos.environ['PAL_HELPER'] = 'Pals'\n"
+                "who = crewdesk.sender([])\nassert who['from_kind'] == 'helper', who\n"
+                "crewhelpers.switch('Pals', False)\n"   # the owner's click lands after this run was accepted
+                "c = crewdesk.create('tell', 'Helper#build', 'late', frm=who['from'], from_kind=who['from_kind'], proof=who['proof'], via='pal tell')\n"
+                "print(json.dumps([c['from_kind'], c['from']]))")
+        self.assertEqual(py(self.env, code), ["shell", "a shell on this computer"])
+        self.assertEqual(log(self.data)[-1]["kind"], "unverified")
+
+    def test_searches_that_honour_ignore_files_skip_the_keys(self):
+        self.on()
+        for d in (self.keys, self.keys.parent):
+            self.assertEqual((d / ".ignore").read_text().splitlines()[-1], "*", d)
+            self.assertEqual(stat.S_IMODE((d / ".ignore").stat().st_mode), 0o600)
+        if shutil.which("rg"):
+            r = subprocess.run(["rg", "-n", ".", str(self.keys.parent)], capture_output=True, text=True, timeout=30)
+            self.assertNotIn("palkey_", r.stdout, "ripgrep pointed at the folder above prints no key")
+
     def test_a_helper_never_interrupts_or_relays_and_a_key_never_rides_a_card(self):
         self.on()
         cid, _ = self.told(helper(self.env, "desk", "send", "Helper#build", "quick", "--now", "--relaying"))
@@ -394,8 +441,17 @@ class Forgery(Base):
         self.assertTrue(frame(self.env, cid).startswith(f"[claims to be from {OWNER} via Wabi, unverified"))
 
     def test_code_cant_make_a_helper_card_without_the_key(self):
+        """crewdesk.create is checked inside, not only where senders are named: code that asks for a
+        helper's card without presenting its key gets a shell's card, and the record says so."""
         self.on()
-        code = ("import crewdesk\ntry:\n    crewdesk.create('tell', 'Helper#build', 'x', frm='Pals', from_kind='helper', proof='key 00000000')\n"
+        code = ("import crewdesk\nc = crewdesk.create('tell', 'Helper#build', 'x', frm='Pals', from_kind='helper', proof='key 00000000')\n"
+                "print(json.dumps([c['id'], c['from_kind'], c['from']]))")
+        cid, kind, frm = py(self.env, code)
+        self.assertEqual((kind, frm), ("shell", "a shell on this computer"))
+        self.assertTrue(frame(self.env, cid).startswith(SHELL))
+        self.assertEqual(log(self.data)[-1]["kind"], "unverified")
+        # … and the inner maker refuses outright if it's reached around the check.
+        code = ("import crewdesk\ntry:\n    crewdesk._create('tell', 'Helper#build', 'x', frm='Pals', from_kind='helper', proof='key 00000000')\n"
                 "    print(json.dumps('made'))\nexcept crewdesk.DeskError as e:\n    print(json.dumps(str(e)))")
         self.assertIn("only a trusted helper's own key", py(self.env, code))
 

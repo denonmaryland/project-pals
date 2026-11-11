@@ -174,6 +174,12 @@ def _new_key(name):
     if KEYS.is_symlink() or KEYS.parent.is_symlink():
         raise HelperError(f"{KEYS} is a link: not putting a key behind it")
     os.chmod(KEYS, 0o700)
+    # Search tools that honour ignore files (ripgrep, and what's built on it) skip the keys even when
+    # pointed at a folder above this one (T122: `rg . ~/.config/project-pals` printed a key).
+    for d in (KEYS, KEYS.parent):
+        ig = d / ".ignore"
+        if not ig.exists() and not ig.is_symlink():
+            _private(ig, "# Project Pals: trusted helpers' keys. Not for searching.\n*\n")
     key = PREFIX + secrets.token_urlsafe(32)
     _private(key_path(name), key + "\n")
     return fingerprint(key)
@@ -329,10 +335,29 @@ def verify(name, key_file=None):
 _presented = None   # this run's answer, worked out once
 
 
+def recheck(name):
+    """At the moment a card is made, holding the caller's "helpers-send" lock: is `name` still good
+    to send (not switched off or rotated since this run started, and under the hourly limit counting
+    every send that got in first)? Returns the reason it isn't, and makes that this run's answer, so
+    the card goes as a shell's and the record says why; None when it's good."""
+    global _presented
+    claim = " ".join((os.environ.get(ENV) or "").split())
+    try:
+        known, fp = verify(name, os.environ.get(ENV_FILE) or None)
+        if not claim or canonical(claim) != known:
+            raise HelperError("this run didn't present that helper")
+        return None
+    except HelperError as e:
+        _presented = {"claim": claim or name, "name": None, "fp": None, "why": str(e), "rechecked": True}
+        return str(e)
+
+
 def presented():
     """Who this run says it is: None (no PAL_HELPER), or {"claim", "name", "fp", "why"}: `name` and
     `fp` when the key was accepted, else `why` it wasn't (and the message goes as an unverified shell's)."""
     global _presented
+    if _presented and _presented.get("rechecked"):
+        return _presented   # refused at the moment of sending (recheck): that stands for this run
     claim = " ".join((os.environ.get(ENV) or "").split())
     if not claim:
         return None
@@ -414,7 +439,7 @@ def note_refused(argv, what):
 
 
 def note_unverified(why, via):
-    claim = " ".join((os.environ.get(ENV) or "").split())
+    claim = " ".join((os.environ.get(ENV) or "").split()) or ((_presented or {}).get("claim") or "")
     return log("unverified", canonical(claim) or claim, why=why, via=via) if claim else None
 
 

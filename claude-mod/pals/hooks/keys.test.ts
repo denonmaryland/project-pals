@@ -19,6 +19,11 @@ test('what counts as reaching for a helper key', async () => {
   expect(refusal({ pattern: '**/project-pals/helpers/*.key' })).toBeTruthy()
   expect(refusal({ path: '/w', glob: 'project-pals/helpers/*' })).toBeTruthy()
   expect(refusal({ pattern: 'palkey_' + 'A'.repeat(43) })).toBeTruthy()
+  // The folder above the keys, which a recursive search would walk into (T122).
+  expect(refusal({ path: '/home/dee/.config/project-pals', pattern: '.' })).toBeTruthy()
+  expect(refusal({ path: '~/.config/project-pals/', pattern: 'x' })).toBeTruthy()
+  expect(refusal({ pattern: '/home/dee/.config/project-pals/**' })).toBeTruthy()
+  expect(refusal({ path: '/home/dee/Projects/project-pals', pattern: 'helpers' })).toBe(null)
   // Not the keys: the mod's and the tests' own source, the data folder's record, look-alike names.
   expect(refusal({ file_path: '/w/mods/crew-helpers/main.js' })).toBe(null)
   expect(refusal({ file_path: '/w/bin/crewhelpers.py' })).toBe(null)

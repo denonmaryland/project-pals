@@ -671,7 +671,9 @@ def _writes_into(cmd, names, place):
 HELPER_DATA = {"crew-helpers", "crew-helper"}   # (crew-helper: where build 7692987 kept its key and receipts, until carried over)
 HELPERS_PLACE = _place(sorted(HELPER_DATA))
 # ~/.config/project-pals/helpers, however it's written; and the older build's key inside the data folder.
-HELPER_KEYS_DIR = re.compile(r"(?:^|[^\w-])project-pals/helpers(?![\w-])|(?:^|[^\w-])crew-helper/pals\.key\b")
+# The folder above the keys counts too: a search pointed at ~/.config/project-pals reads them (T122).
+HELPER_KEYS_DIR = re.compile(r"(?:^|[^\w-])project-pals/helpers(?![\w-])|(?:^|[^\w.-])\.config/project-pals(?![\w-])"
+                             r"|(?:^|[^\w-])crew-helper/pals\.key\b")
 HELPER_KEY_TEXT = re.compile(r"palkey_[A-Za-z0-9_-]{20,}")                    # a key itself, wherever one turns up
 # Presenting as a helper: PAL_HELPER=Pals pal tell …, export PAL_HELPER, env PAL_HELPER=… (as a
 # command, not inside a quoted pattern), or code that puts it in a child's environment.
@@ -686,7 +688,7 @@ def in_helper_keys(path):
         return True
     try:
         real = os.path.realpath(os.path.expanduser(p))
-        keys = os.path.realpath(os.path.expanduser("~/.config/project-pals/helpers"))
+        keys = os.path.realpath(os.path.expanduser("~/.config/project-pals"))
         return real == keys or real.startswith(keys + os.sep)
     except (OSError, ValueError):
         return False

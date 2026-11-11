@@ -204,6 +204,8 @@ class Uninstall(unittest.TestCase):
         (keys / "notes.key").unlink()
         (keys / "linked.key").unlink()
         (keys / "wabi.key").write_text("palkey_" + "C" * 43 + "\n")
+        for d in (keys, keys.parent):   # as crewhelpers leaves them: an ignore file, so searches skip the keys
+            (d / ".ignore").write_text("# Project Pals: trusted helpers' keys. Not for searching.\n*\n")
         self.sb.uninstall()
         self.assertFalse((self.sb.home / ".config" / "project-pals").exists())
 

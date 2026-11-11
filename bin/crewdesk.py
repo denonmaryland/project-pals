@@ -518,10 +518,25 @@ def split_text(text):
     return first.strip(), rest.strip()
 
 
-def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None, urgency="normal", status="queued",
-           by=None, via="pal desk send", task=None, thread=None, depth=0, reply_to=None, expires=None,
-           attachments=(), extra=None, folder=None):
-    """A new card on `to`'s desk ('Pal#topic', 'Pal', the owner, or '' for To route). Returns it."""
+def create(kind, to, title, body="", *, frm, from_kind, proof="", **kw):
+    """A new card on `to`'s desk ('Pal#topic', 'Pal', the owner, or '' for To route). Returns it.
+    A trusted helper's card is checked and written in one step, one at a time (T122: two sends at
+    the same instant both passed the hourly limit, each counting before the other was on the
+    record): the key and the count are looked at again here, under a lock held until the send is in
+    the record. One that no longer passes goes as a shell's, like any helper message not accepted."""
+    if from_kind != "helper":
+        return _create(kind, to, title, body, frm=frm, from_kind=from_kind, proof=proof, **kw)
+    import crewhelpers
+    from crewlib import SHELL_NAME
+    with locked("helpers-send"):
+        if crewhelpers.recheck(frm):
+            return _create(kind, to, title, body, frm=SHELL_NAME, from_kind="shell", proof="none", **{**kw, "relaying": None})
+        return _create(kind, to, title, body, frm=frm, from_kind=from_kind, proof=proof, **kw)
+
+
+def _create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None, urgency="normal", status="queued",
+            by=None, via="pal desk send", task=None, thread=None, depth=0, reply_to=None, expires=None,
+            attachments=(), extra=None, folder=None):
     if kind not in KINDS:
         raise DeskError(f"kind is one of {', '.join(KINDS)}")
     import crewchief
