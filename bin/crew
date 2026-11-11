@@ -2717,7 +2717,8 @@ def cmd_update(rest):
                 # (the newest snapshot may be a second branch tried on top of the first).
                 snap = (trial or {}).get("snapshot")
                 snap = snap if snap and os.path.isfile(snap) else None
-                out = {"ok": True, "restored": str(crewupdate.rollback(snap, log=lambda m: (update_log(m), say(m))))}
+                out = {"ok": True, "restored": str(crewupdate.rollback(snap, log=lambda m: (update_log(m), say(m)),
+                                                                       wrote=trial.get("wrote") if snap else None))}
                 crewupdate.live_save(trying=None, tests=None, pending=None)
                 # On the Live channel, a rolled-back head commit would be installed again at once:
                 # hold it until the branch moves. (After a trial there's nothing to hold: main catches up.)

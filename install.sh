@@ -76,15 +76,16 @@ HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record || echo "could
 # to whatever release the updater last replaced (on 2026-11-08 that put 0.2.1 back over the new build).
 # Only over an existing install (a fresh one has nothing to go back to); the last 5 are kept.
 if [[ "$from" == "local" && -d "$home/mods/crew-roster" ]]; then
-  HERDR_APP_HOME="$home" python3 - "$src/bin" <<'PY' || echo "couldn't snapshot the current install for Roll back; continuing" >&2
+  snap_local="$(HERDR_APP_HOME="$home" python3 - "$src/bin" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])
 import crewupdate
-crewupdate._snapshot(f"from-{crewupdate.installed().get('version', 'unknown')}-local")
+print(crewupdate._snapshot(f"from-{crewupdate.installed().get('version', 'unknown')}-local"))
 local = [p for p in crewupdate.backups() if "-local-" in p.name]
 for p in local[:-5]:
-    p.unlink(missing_ok=True)
+    crewupdate.drop_snapshot(p)
 PY
+)" || { snap_local=""; echo "couldn't snapshot the current install for Roll back; continuing" >&2; }
 fi
 
 light=0; [[ "$from" == "live" || "$from" == "try" ]] && light=1   # the updater's snapshot is the backup
@@ -460,6 +461,13 @@ tmp = log + ".tmp"
 open(tmp, "w").write("\n".join(lines) + "\n")
 os.replace(tmp, log)
 PY
+
+# Beside this install's snapshot: what it wrote under data/ (the briefs, the shipped skill). Roll back
+# puts those back only while they still are that, so an edit made after this install is never lost.
+if [[ -n "${snap_local:-}" && -f "$snap_local" ]]; then
+  HERDR_APP_HOME="$home" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewupdate; crewupdate.note_wrote(sys.argv[2])' \
+    "$HOME/.local/lib/herdr-crew" "$snap_local" || true
+fi
 
 # The manifest: what this install placed, so an uninstall removes only that (bin/crewuninstall.py).
 HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record-installed "$src" || echo "couldn't record what was installed; an uninstall will check each file's content instead" >&2

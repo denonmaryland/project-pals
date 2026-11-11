@@ -253,6 +253,71 @@ def restore_config(snap, log=print):
 APP = "@app"   # snapshot names under Herdr's home start with this (it needn't be inside $HOME)
 
 
+# ─── Files under data/ that an install writes over, and people edit (Codex T94, P1) ──────────────
+# An install renders the head pal's, the Chief's and the idea partner's briefs and replaces the
+# shipped pal-desk skill (unless it was edited). A snapshot holds them so that undoing an install
+# (Back after a trial, Roll back, a swap that didn't come up) can put them back. But between the
+# install and its undoing, a pal or the owner may have edited one: that edit is theirs, and
+# everything under data/ is the user's first. So a snapshot's copy of such a file goes back only
+# when the file on disk still is exactly what the install being undone wrote (`wrote`: its hash,
+# taken right after that install, kept beside the snapshot as <snapshot>.wrote.json and, for a
+# trial, in crew-live.json). Edited, deleted, or no record of what the install wrote: left as it is.
+# The install record (crew-install.json) is Project Pals' own and always goes back.
+def rendered_files():
+    d = HOME / "data"
+    return [d / "crew-god" / "AGENTS.md", d / "crew-chief" / "AGENTS.md", d / "crew-partner" / "AGENTS.md",
+            d / "crew-skills" / "pal-desk" / "SKILL.md", d / "crew-skills" / ".shipped.json"]
+
+
+def _file_hash(p):
+    try:
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest() if Path(p).is_file() else None
+    except OSError:
+        return None
+
+
+def data_hashes():
+    """What those files hold now: {path under Herdr's home: sha256, or None when it isn't there}."""
+    return {p.relative_to(HOME).as_posix(): _file_hash(p) for p in rendered_files()}
+
+
+def wrote_file(snap):
+    return Path(str(snap) + ".wrote.json")
+
+
+def note_wrote(snap, wrote=None):
+    """Beside a snapshot: what the install that followed it wrote (for a later Roll back)."""
+    wrote = data_hashes() if wrote is None else wrote
+    try:
+        save_json(wrote_file(snap), wrote)
+    except OSError:
+        pass   # without it, a Roll back leaves those files alone
+    return wrote
+
+
+def drop_snapshot(snap):
+    Path(snap).unlink(missing_ok=True)
+    wrote_file(snap).unlink(missing_ok=True)
+
+
+def _theirs(dest, m, wrote, log):
+    """Is this snapshot member a file under data/ that must be left as it is?"""
+    if not m.isfile():
+        return False
+    target = dest / m.name
+    try:
+        rel = target.resolve().relative_to((HOME / "data").resolve())
+    except (ValueError, OSError):
+        return False
+    if target.resolve() == INSTALL.resolve():
+        return False
+    key = (Path("data") / rel).as_posix()
+    if wrote is not None and key in wrote and wrote[key] is not None and _file_hash(target) == wrote[key]:
+        return False   # still what the install wrote: nobody's edit is lost by putting the old one back
+    log(f"left {key} as it is (it was changed since, or there's no record of what the install wrote)")
+    return True
+
+
 def _snapshot(label):
     """Everything an update replaces, in one tarball, so it can be put back. Files in Herdr's home
     are stored as @app/<path there>, the rest relative to $HOME."""
@@ -260,11 +325,7 @@ def _snapshot(label):
     path = BACKUPS / f"update-{label}-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
     home = Path.home()
     app = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
-    app += [HOME / "data" / "crew-god" / "AGENTS.md", INSTALL]
-    # The other files an install renders over (T90: Back after a trial must put these back too): the
-    # Chief's and the idea partner's briefs, and the shipped pal-desk skill with its record.
-    app += [HOME / "data" / "crew-chief" / "AGENTS.md", HOME / "data" / "crew-partner" / "AGENTS.md",
-            HOME / "data" / "crew-skills" / "pal-desk" / "SKILL.md", HOME / "data" / "crew-skills" / ".shipped.json"]
+    app += [INSTALL, *rendered_files()]
     user = [home / ".local" / "bin" / n for n in ("pal", "pal-room", "buddy", "buddy-room", "botz", "botz-room", "crew", "crew-room", "crewd", "crew-hook", "crew-hook-fast", "crew-statusline", "crew-mcp")]
     user += [home / ".local" / "lib" / "herdr-crew", home / ".config" / "systemd" / "user" / "herdr-crew.service"]
     user += [home / ".claude" / "project-pals"]   # the Desk's Claude Code mod (pals load it with --plugin-dir)
@@ -290,10 +351,15 @@ def backups():
     return sorted(BACKUPS.glob("update-*.tar.gz"), key=lambda p: p.stat().st_mtime) if BACKUPS.exists() else []
 
 
-def rollback(path=None, log=print):
+def rollback(path=None, log=print, wrote=None):
+    """Put a snapshot back. wrote: what the install being undone wrote under data/ (data_hashes()
+    taken after it); without it, the record kept beside the snapshot. See _theirs."""
     path = Path(path) if path else (backups()[-1] if backups() else None)
     if not path or not path.exists():
         raise CrewError("no update backup to roll back to")
+    if wrote is None:
+        wrote = load_json(wrote_file(path), None)
+        wrote = wrote if isinstance(wrote, dict) else None
     home = Path.home()
     with tarfile.open(path) as tar:
         members = tar.getmembers()
@@ -347,7 +413,7 @@ def rollback(path=None, log=print):
             m.name = m.name[len(APP) + 1:] if m.name != APP else "."
         crewd_before = crewd_fingerprint()
         for dest, group in ((HOME, ours), (home, rest)):
-            group = _to_write(tar, dest, group)
+            group = _to_write(tar, dest, [m for m in group if not _theirs(dest, m, wrote, log)])
             if not group:
                 continue
             if hasattr(tarfile, "data_filter"):
@@ -444,12 +510,13 @@ def apply(log=print, version=None):
         try:
             r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
         except BaseException as e:
-            rollback(snap, log=log)
+            rollback(snap, log=log, wrote=data_hashes())
             raise CrewError(f"installing {new_version} stopped ({type(e).__name__}), so the previous version was put back")
         if r.returncode != 0:
-            rollback(snap, log=log)
+            rollback(snap, log=log, wrote=data_hashes())
             tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
             raise CrewError(f"version {new_version} didn't install cleanly, so the previous one was put back:\n{tail}")
+        note_wrote(snap)
         log(f"installed {new_version}")
         return {"ok": True, "updated": True, "version": new_version, "backup": str(snap)}
     finally:
@@ -805,7 +872,7 @@ def _prune_snapshots():
     for kind in ("-live-", "-try-"):
         ours = [p for p in backups() if kind in p.name and str(p) not in keep]
         for p in ours[:-KEEP_SNAPSHOTS]:
-            p.unlink(missing_ok=True)
+            drop_snapshot(p)
 
 
 def install_tree(root, source, log=print):
@@ -818,15 +885,16 @@ def install_tree(root, source, log=print):
     except (OSError, tarfile.TarError) as e:
         for half in backups()[-1:]:
             if f"-{source}-" in half.name and time.time() - half.stat().st_mtime < 120:
-                half.unlink(missing_ok=True)   # a half-written one mustn't be what Roll back restores
+                drop_snapshot(half)   # a half-written one mustn't be what Roll back restores
         raise CrewError(f"couldn't keep a copy of the running build ({e}), so nothing was installed")
     log(f"kept the running build ({snap.name})")
 
     def put_back():
         # The snapshot now equals what's installed again: kept, it would be the newest one, and the
         # next Roll back would restore it, change nothing and say it worked.
-        rollback(snap, log=log)
-        snap.unlink(missing_ok=True)
+        # (Seconds after the install started: what's under data/ now is what it wrote.)
+        rollback(snap, log=log, wrote=data_hashes())
+        drop_snapshot(snap)
     mods0, crewd0, errors0 = mods_fingerprint(), crewd_fingerprint(), _app_errors()
     args = ["bash", str(root / "install.sh"), f"--from-{source}", "--keep-crewd"]
     if not ins.get("helpers", True):
@@ -853,7 +921,8 @@ def install_tree(root, source, log=print):
         put_back()
         raise CrewError(f"couldn't check the new build ({type(e).__name__}: {e}), so the build before it was put back")
     mods1 = mods_fingerprint()
-    return {"backup": str(snap), "reloaded": sorted(m for m in mods1 if mods0.get(m) != mods1[m]),
+    wrote = note_wrote(snap)
+    return {"backup": str(snap), "wrote": wrote, "reloaded": sorted(m for m in mods1 if mods0.get(m) != mods1[m]),
             "crewd_changed": crewd0 != crewd_fingerprint() and ins.get("helpers", True),
             "version": (root / "VERSION").read_text().strip()}
 
@@ -904,7 +973,7 @@ def _swap(repo, sha, branch, source, log, extra=None, undo=None):
     c = channel()
     subject = _git(repo, "log", "-1", "--format=%s", sha, check=False)[:160]
     rec = {"id": f"{int(time.time())}-{sha[:7]}", "action": source, "hash": sha[:12], "branch": branch, "subject": subject}
-    root, keep_root, backup, installed_ok = None, False, None, False
+    root, keep_root, backup, wrote, installed_ok = None, False, None, None, False
     try:
         root = export(repo, sha, branch)
         if not _knows_live(root):
@@ -921,7 +990,7 @@ def _swap(repo, sha, branch, source, log, extra=None, undo=None):
                 raise CrewError(f"the tests don't pass, so nothing was installed: {detail}")
         log(f"installing {branch} {sha[:7]}")
         res = install_tree(root, source, log)
-        backup = res["backup"]
+        backup, wrote = res["backup"], res["wrote"]
         rec.update(reloaded=res["reloaded"], crewd=False, backup=res["backup"], version=res["version"])
         live_save(last={**rec, "state": "done", "at": time.time()}, **(extra(res) if extra else {}))
         if res["crewd_changed"] and _systemd():
@@ -941,8 +1010,8 @@ def _swap(repo, sha, branch, source, log, extra=None, undo=None):
         # unexpected): take the swap back, and the snapshot with it (it equals what's installed again).
         if backup and not installed_ok:
             try:
-                rollback(backup, log=log)
-                Path(backup).unlink(missing_ok=True)
+                rollback(backup, log=log, wrote=wrote)
+                drop_snapshot(backup)
                 if _systemd() and not crewd_active():   # it may have died on the new code: start the old again
                     subprocess.run(["systemctl", "--user", "restart", "herdr-crew.service"], capture_output=True, timeout=120)
                 e = CrewError(f"{e}\nSo the build before it was put back.")
@@ -1021,7 +1090,9 @@ def try_branch(repo, branch, spec=None, log=print, into=None):
 
     def started(res):
         return {"trying": {"branch": branch, "hash": sha[:12], "spec": spec, "since": time.time(), "repo": str(repo), "into": into,
-                           "snapshot": (was or {}).get("snapshot") or res["backup"], "base": base}}
+                           "snapshot": (was or {}).get("snapshot") or res["backup"], "base": base,
+                           # What this install wrote under data/: Back puts back only what's still that.
+                           "wrote": res["wrote"]}}
     return _swap(repo, sha, branch, "try", log, extra=started, undo={"trying": was})
 
 
@@ -1033,7 +1104,7 @@ def back(log=print):
     snap = Path(t.get("snapshot") or "")
     if not snap.is_file():
         raise CrewError(f"the build from before the trial is gone ({snap.name}); About → Roll back, or install again")
-    rollback(snap, log=log)
+    rollback(snap, log=log, wrote=t.get("wrote"))
     live_save(trying=None, tests=None, last={"id": f"{int(time.time())}-back", "action": "back", "state": "done", "branch": t.get("branch"),
                                              "hash": (t.get("base") or {}).get("hash"), "at": time.time()})
     log(f"put back what was running before {t.get('branch')}")

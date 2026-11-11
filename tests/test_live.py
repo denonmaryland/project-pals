@@ -226,6 +226,8 @@ class Live(unittest.TestCase):
         self.git("checkout", "-q", "-b", "parked")   # like the real one: the project folder isn't on main
         with open(wt / "chief" / "AGENTS.md", "a") as f:
             f.write("\nTRIAL-BRIEF\n")
+        with open(wt / "skills" / "pal-desk" / "SKILL.md", "a") as f:
+            f.write("\nTRIAL-SKILL\n")
         tip = self.commit("mods/crew-review/main.js", "\n// tried\n", "Review: tried", at=wt)
         (self.app / "fake-spaces.json").write_text(json.dumps({"spaces": [
             {"id": "s1", "name": "Builder", "folder": str(self.proj), "tabs": [{"id": "t1", "name": "#x", "active": True, "terminals": []}]}]}))
@@ -248,6 +250,8 @@ class Live(unittest.TestCase):
         self.assertIn("trying crew/x", self.ok("version"))
         self.assertEqual(trying["into"], "main")
         self.assertIn("TRIAL-BRIEF", brief.read_text())
+        skill = self.data / "crew-skills" / "pal-desk" / "SKILL.md"
+        self.assertIn("TRIAL-SKILL", skill.read_text())
 
         # A branch cut before trials existed would install its way out of them (no strip, no Back): refused.
         self.git("checkout", "-q", "--orphan", "old")
@@ -299,8 +303,13 @@ class Live(unittest.TestCase):
         self.assertNotIn("// zed", (self.app / "mods" / "crew-status" / "main.js").read_text())
         self.assertNotIn("// tried", (self.app / "mods" / "crew-review" / "main.js").read_text())
         self.assertNotIn("TRIAL-BRIEF", brief.read_text(), "the Chief's brief is back as it was too")
+        self.assertNotIn("TRIAL-SKILL", skill.read_text(), "and the shipped skill, which nobody edited")
         self.assertNotIn("trying", self.live())
         self.ok("update", "try", "Builder#x", "--json", click=True)   # and on with the first branch
+        # A pal edits the skill while the trial runs (Codex T94, P1): that edit is theirs. Back puts
+        # back only what the trial's install wrote and nobody changed since.
+        self.assertIn("TRIAL-SKILL", skill.read_text())
+        skill.write_text(skill.read_text() + "\nMY-EDIT: what I learned during the trial\n")
 
         # main moves during the trial: it waits.
         self.git("checkout", "-q", "main")
@@ -314,6 +323,8 @@ class Live(unittest.TestCase):
         self.assertNotEqual(self.pal("update", "back", "--json").returncode, 0, "Back is the owner's click too")
         out = self.ok("update", "back", "--json", click=True)
         self.assertTrue(out.get("followed"), out)
+        self.assertIn("MY-EDIT", skill.read_text(), "Back left the skill that was edited during the trial alone")
+        self.assertNotIn("TRIAL-BRIEF", brief.read_text(), "while a file nobody touched went back")
         self.assertNotIn("// tried", (self.app / "mods" / "crew-review" / "main.js").read_text())
         self.assertTrue(sha3.startswith(self.running()["hash"]))
         self.assertNotIn("trying", self.live())
@@ -455,6 +466,92 @@ class Live(unittest.TestCase):
         self.assertIn("1 test failed", self.live()["tests"]["detail"])
         r = self.pal("update", "run-tests", str(self.proj), "c" * 40)
         self.assertNotEqual(r.returncode, 0, "only a build the updater exported")
+
+
+DRIVER = r'''
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import crewupdate
+from crewlib import DATA
+skill = DATA / "crew-skills" / "pal-desk" / "SKILL.md"
+brief = DATA / "crew-chief" / "AGENTS.md"
+record = DATA / "crew-install.json"
+for f in (skill, brief, record):
+    f.parent.mkdir(parents=True, exist_ok=True)
+out = {}
+quiet = lambda *_: None
+
+# 1. Codex's reproduction: snapshot, the skill is edited, the snapshot is put back with no record of
+#    what an install wrote. The edit stays.
+skill.write_text("SHIPPED-1"); brief.write_text("BRIEF-1"); record.write_text('{"version": "1"}')
+snap = crewupdate._snapshot("from-1-try")
+skill.write_text("EDITED AFTER THE SNAPSHOT")
+crewupdate.rollback(snap, log=quiet)
+out["no_record"] = skill.read_text()
+
+# 2. A trial's install writes a new shipped skill and brief; the skill is then edited, the brief not.
+skill.write_text("SHIPPED-1"); brief.write_text("BRIEF-1"); record.write_text('{"version": "1"}')
+snap = crewupdate._snapshot("from-1-try")
+skill.write_text("SHIPPED-2 (the trial's)"); brief.write_text("BRIEF-2 (the trial's)"); record.write_text('{"version": "2"}')
+wrote = crewupdate.data_hashes()
+skill.write_text("SHIPPED-2 (the trial's) + MY EDIT")
+crewupdate.rollback(snap, log=quiet, wrote=wrote)
+out["edited_in_trial"] = skill.read_text()
+out["untouched_brief"] = brief.read_text()
+out["install_record"] = json.loads(record.read_text())["version"]
+
+# 3. The skill was the pal's own before the trial (an install keeps such a skill), then edited again.
+skill.write_text("CUSTOM-0")
+snap = crewupdate._snapshot("from-1-try")
+wrote = crewupdate.data_hashes()
+skill.write_text("CUSTOM-1")
+crewupdate.rollback(snap, log=quiet, wrote=wrote)
+out["custom_before"] = skill.read_text()
+
+# 4. Nobody edited anything: what the trial wrote goes back to what was there.
+skill.write_text("SHIPPED-1")
+snap = crewupdate._snapshot("from-1-try")
+skill.write_text("SHIPPED-2 (the trial's)")
+crewupdate.rollback(snap, log=quiet, wrote=crewupdate.data_hashes())
+out["unedited"] = skill.read_text()
+
+# 5. A skill deleted during the trial stays deleted.
+snap = crewupdate._snapshot("from-1-try")
+wrote = crewupdate.data_hashes()
+skill.unlink()
+crewupdate.rollback(snap, log=quiet, wrote=wrote)
+out["deleted"] = skill.exists()
+print(json.dumps(out))
+'''
+
+
+class Restore(unittest.TestCase):
+    """Codex T94, P1: putting a snapshot back (Back, Roll back, a failed swap) restores a file under
+    data/ only when it still is what the install being undone wrote. A skill or brief somebody edited
+    meanwhile is theirs: it stays. The install record (crew-install.json) always goes back."""
+
+    def test_only_what_the_install_wrote_goes_back(self):
+        t = Path(tempfile.mkdtemp(prefix="pals-restore-"))
+        try:
+            home = t / "home"
+            (home / ".config" / "herdr-app").mkdir(parents=True)
+            shims = t / "shims"
+            shims.mkdir()
+            (shims / "systemctl").write_text("#!/bin/sh\nexit 1\n")
+            (shims / "systemctl").chmod(0o755)
+            env = {"HOME": str(home), "HERDR_APP_HOME": str(home / ".config" / "herdr-app"), "PATH": f"{shims}:/usr/bin:/bin"}
+            r = subprocess.run([sys.executable, "-c", DRIVER, str(ROOT / "bin")], env=env, capture_output=True, text=True, timeout=120)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            out = json.loads(r.stdout.strip().splitlines()[-1])
+            self.assertEqual(out["no_record"], "EDITED AFTER THE SNAPSHOT", "with no record of what an install wrote, a skill is never overwritten")
+            self.assertEqual(out["edited_in_trial"], "SHIPPED-2 (the trial's) + MY EDIT")
+            self.assertEqual(out["untouched_brief"], "BRIEF-1", "a rendered file nobody touched goes back")
+            self.assertEqual(out["install_record"], "1", "the install record always goes back")
+            self.assertEqual(out["custom_before"], "CUSTOM-1")
+            self.assertEqual(out["unedited"], "SHIPPED-1")
+            self.assertFalse(out["deleted"])
+        finally:
+            shutil.rmtree(t, ignore_errors=True)
 
 
 if __name__ == "__main__":

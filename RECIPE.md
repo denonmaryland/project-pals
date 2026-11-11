@@ -437,8 +437,13 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   it: it equals what's installed again, and would make the next Roll back a no-op). A commit that
   fails (before or after the swap) is **held**: not tried again until the branch moves. Putting a
   snapshot back writes only the files that differ, a mod's `main.js` last, and restarts crewd only
-  when its code differs. The snapshot also holds the Chief's and the idea partner's rendered briefs
-  and the shipped pal-desk skill, so Back restores those too.
+  when its code differs. The snapshot also holds the files an install renders under `data/` (the
+  head pal's, the Chief's and the idea partner's briefs, the shipped pal-desk skill and its
+  record), but those are the user's first: one goes back only while it still is exactly what the
+  install being undone wrote (its hashes are taken after each install, kept beside the snapshot as
+  `<snapshot>.wrote.json` and in a trial's record). A skill or brief edited or deleted since, or
+  with no record, is left as it is (Codex T94: Back overwrote a skill edited during the trial).
+  `crew-install.json` always goes back.
   The installer writes only files whose content changed (`cmp`, `rsync --checksum` without times),
   so only the mods that changed reload; `main.js` still goes last in a mod that changed.
   A toast says what happened, once per swap (the status bar reads `data/crew-live.json`): "main
