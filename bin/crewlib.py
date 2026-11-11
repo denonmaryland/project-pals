@@ -249,6 +249,13 @@ def head_inbox(space, recs=None):
     return next((t for t in space.get("tabs", []) if chan(t).lower() == want), None)
 
 
+def is_head(space, recs=None):
+    """Is this space the head pal's (its record says so, or it carries the head pal's name)?"""
+    if not space:
+        return False
+    return bool(record_of(space, records() if recs is None else recs).get("god") or norm(space["name"]) == norm(HEAD))
+
+
 def head_terminal(spaces, exclude=None):
     """Where a push for the head pal goes: its inbox topic when one is set and an agent runs there,
     else (as before T60) its first topic with an agent. None when there's no head pal awake."""

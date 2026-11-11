@@ -193,7 +193,8 @@ export default class CrewHome extends View {
     for (const x of this.home.items) {
       if ((x.kind === "link" || x.kind === "note") && x.at > floor) out.push({ kind: x.kind, at: x.at, x });
       else if (x.status === "answered" && (x.answered_at ?? 0) > floor) out.push({ kind: "answered", at: x.answered_at, x });
-      else if (x.status === "done" && (x.closed_at ?? 0) > floor && x.kind !== "link" && x.kind !== "note") out.push({ kind: "closed", at: x.closed_at, x });
+      // (An ask its asker or the head pal took back shows too, done or dropped: it wasn't your answer. T112)
+      else if ((x.status === "done" || (x.status === "dropped" && x.withdrawn)) && (x.closed_at ?? 0) > floor && x.kind !== "link" && x.kind !== "note") out.push({ kind: "closed", at: x.closed_at, x });
     }
     for (const f of feedSince(this.feed, floor, now)) if (this.onFloor(f.bot ?? f.by)) out.push(f);
     // Cards the head pal closed (Home is its Desk).
@@ -268,7 +269,8 @@ export default class CrewHome extends View {
       const ap = n.ap;
       tag = this.tag(d, "Approval", d.err);
       title = `${short(ap.bot)} wants to ${wantsTo(ap.why || ap.rule)}`;
-      sub = `${clip(ap.command, 140)} · #${ap.channel ?? "?"} · ${ap.id}`;
+      // (A request from a plain shell, e.g. ./release asking for itself, has no topic. T110)
+      sub = `${clip(ap.command, 140)}${ap.channel ? ` · #${ap.channel}` : ""} · ${ap.id}`;
       // Decline and Approve apart, Approve last (as in the Inbox), so one isn't hit for the other.
       acts = [B("no", "Decline", (cx) => this.act(n.key, ["deny", ap.id, "--inbox"], `Declined for ${short(ap.bot)}`, cx)), div().w(10).flex_none(),
         B("ok", "Approve", (cx) => this.act(n.key, ["approve", ap.id, "--inbox"], `Approved for ${short(ap.bot)}`, cx), { primary: true })];
@@ -466,7 +468,8 @@ export default class CrewHome extends View {
     } else if (r.kind === "answered") {
       icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = "You answered"; rest = `${r.x.title} → ${r.x.answer}`; right = short(r.x.by);
     } else if (r.kind === "closed") {
-      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = "Done"; rest = `${r.x.title}${r.x.result ? ` · ${r.x.result}` : ""}`; right = short(r.x.closed_by ?? r.x.by);
+      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(r.x.withdrawn ? d.warn : d.ok); bold = r.x.withdrawn ? "Withdrawn" : "Done";
+      rest = `${r.x.title}${r.x.result ? ` · ${r.x.result}` : ""}`; right = short(r.x.closed_by ?? r.x.by);
     } else {
       icon = svg(`${ICON}/ds-inbox.svg`).size(11).text_color(d.fg2); bold = `${this.who()} closed`; rest = `${r.c.title}${r.c.result ? ` · ${r.c.result}` : ""}`; right = r.c.id;
     }
@@ -579,10 +582,10 @@ export default class CrewHome extends View {
     const owner = (args, what) => (cx) => this.act(n.key, args, what, cx);
     if (n.kind === "approval") {
       const ap = n.ap, r = recs[ap.id];
-      return { tag: ["Approval", this.d.err], who: ap.bot, topic: `${ap.bot}#${ap.channel ?? ""}`, sub: `held ${homeAge(n.at)} ago · rule ${ap.rule ?? "?"} · ${ap.id}`,
+      return { tag: ["Approval", this.d.err], who: ap.bot, topic: ap.channel ? `${ap.bot}#${ap.channel}` : null, sub: `held ${homeAge(n.at)} ago · rule ${ap.rule ?? "?"} · ${ap.id}`,
         title: `${short(ap.bot)} wants to ${wantsTo(ap.why || ap.rule)}`, mono: ap.command, diff: ap.diff ?? null,
         rec: r ? { option: r.option === "approve" ? "Approve" : "Decline", why: r.why, by: r.by } : null,
-        options: [o("Decline", "The command is refused; the pal is told", owner(["deny", ap.id, "--inbox"], `Declined for ${short(ap.bot)}`)),
+        options: [o("Decline", ap.terminal === "shell" ? "The command stays refused" : "The command is refused; the pal is told", owner(["deny", ap.id, "--inbox"], `Declined for ${short(ap.bot)}`)),
           o("Approve", ap.diff ? "Lets exactly this edit through, once" : "Lets exactly this command run, once", owner(["approve", ap.id, "--inbox"], `Approved for ${short(ap.bot)}`), { gapBefore: true })] };
     }
     if (n.kind === "ask") {

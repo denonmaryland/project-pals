@@ -389,7 +389,7 @@ export default class CrewRoster extends View {
           .child(mascotEl(bot, "blocked", 32, t))
           .child(v_flex().flex_1().min_w(0).gap(2)
             .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${ap.bot.split(" - ")[0]} wants to ${wantsTo(ap.why || ap.rule)}`))
-            .child(div().truncate().text_size(12).text_color(t.dim).child(`#${ap.channel} · ${ago(ap.at)} · ${ap.id}`))))
+            .child(div().truncate().text_size(12).text_color(t.dim).child(`${ap.channel ? `#${ap.channel} · ` : ""}${ago(ap.at)} · ${ap.id}`))))
         .child(div().px(10).py(7).rounded(6).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
           .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
         // An AGENTS.md / CLAUDE.md edit: the exact change it would make, in full (review H2). Approving

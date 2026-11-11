@@ -129,6 +129,62 @@ class HomeCli(unittest.TestCase):
         self.ok("unqueue", qid)
         self.assertEqual(home(self.data)["release"]["queued"], [])
 
+    def test_only_the_asker_the_head_pal_or_the_owner_takes_an_item_off(self):
+        """T112: on 2026-11-10 a plain shell closed a pal's ask (h-ddbb91, 'closed by a shell on this
+        computer'). An item goes only by whoever put it there, the head pal, or the owner's click."""
+        self.ok("ask", "Land it?", "--option", "Land", "--option", "Hold")   # Worker#general asks
+        iid = home(self.data)["items"][0]["id"]
+        for sub in (["done", iid, "we did it"], ["drop", iid], ["park", iid]):
+            for term, who in ((None, "a shell on this computer"), ("tH", "Helper#build"), ("tZ", "terminal tZ")):
+                r = pal(self.env, "home", *sub, term=term)
+                self.assertNotEqual(r.returncode, 0, f"{who} must not {sub[0]} Worker's ask")
+                self.assertIn("put on Home by Worker#general", r.stderr)
+                self.assertIn(who, r.stderr)
+        x = home(self.data)["items"][0]
+        self.assertEqual(x["status"], "open")
+        self.assertNotIn("closed_by", x)
+        # Parked by the owner's click: a shell or another pal can't bring it back either.
+        self.assertEqual(owner(self.env, self.data, "home", "park", iid).returncode, 0)
+        self.assertNotEqual(pal(self.env, "home", "unpark", iid).returncode, 0)
+        self.assertNotEqual(pal(self.env, "home", "unpark", iid, term="tH").returncode, 0)
+        self.assertEqual(home(self.data)["items"][0]["status"], "parked")
+        self.assertEqual(owner(self.env, self.data, "home", "unpark", iid).returncode, 0)
+        # The asker takes its own ask back: withdrawn, never an answer.
+        out = self.ok("done", iid, "settled in chat")
+        x = home(self.data)["items"][0]
+        self.assertEqual((x["status"], x["closed_by"], x.get("withdrawn"), x.get("answer")), ("done", "Worker#general", True, None))
+        self.assertIn("withdrawn by Worker#general", out)
+
+    def test_the_head_pal_another_topic_of_the_asker_and_the_owner_can(self):
+        (self.data / "crew-settings.json").write_text(json.dumps({"owner": OWNER, "head": "Helper"}))   # Helper is the head pal
+        for closer, how in (("tH", "head"), ("tD", "head")):
+            self.ok("ask", f"Q for {closer}?", "--option", "A", "--option", "B")
+            iid = home(self.data)["items"][-1]["id"]
+            self.assertEqual(pal(self.env, "home", "drop", iid, term=closer).returncode, 0, how)
+            x = home(self.data)["items"][-1]
+            self.assertEqual((x["status"], x.get("withdrawn")), ("dropped", True))
+        # Another topic of the same pal (Helper#docs closes what Helper#build put there), when it isn't the head.
+        (self.data / "crew-settings.json").write_text(json.dumps({"owner": OWNER, "head": "Boss"}))
+        self.ok("deploy", "the site", term="tH")
+        iid = home(self.data)["items"][-1]["id"]
+        self.assertNotEqual(pal(self.env, "home", "done", iid, term="tW").returncode, 0)
+        self.assertEqual(pal(self.env, "home", "done", iid, term="tD").returncode, 0)
+        self.assertNotIn("withdrawn", home(self.data)["items"][-1], "only an ask is withdrawn")
+        # The owner's click closes anyone's ask, and that isn't a withdrawal.
+        self.ok("ask", "And this?", "--option", "A", "--option", "B")
+        iid = home(self.data)["items"][-1]["id"]
+        r = owner(self.env, self.data, "home", "drop", iid)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        x = home(self.data)["items"][-1]
+        self.assertEqual((x["status"], x["closed_by"]), ("dropped", OWNER))
+        self.assertNotIn("withdrawn", x)
+        # A shell still takes off what a shell put there (a script's own note or reminder).
+        r = pal(self.env, "home", "park", "Look at this later")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        iid = home(self.data)["items"][-1]["id"]
+        self.assertEqual(pal(self.env, "home", "drop", iid).returncode, 0)
+        self.assertNotEqual(pal(self.env, "home", "answer", iid, "A").returncode, 0)
+
     def test_only_the_owner_answers_and_the_asker_hears(self):
         self.ok("ask", "Blur them?", "--option", "Blur them", "--option", "Leave as is")
         iid = home(self.data)["items"][0]["id"]

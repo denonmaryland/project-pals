@@ -4,17 +4,47 @@
 #
 #   ./release 0.2.0 "What changed, a few lines"
 #   ./release 0.2.0 -F notes.md
+#   ./release 0.2.0 --dry-run        every check, and nothing else: no commit, tag, push or release
 #
 # It sets VERSION, commits, tags v0.2.0, builds dist/project-pals-0.2.0.tar.gz plus SHA256SUMS
 # (the updater refuses a download that doesn't match), pushes, and creates the GitHub release.
-# Needs: a clean tree on main, the GitHub repo in pals.json created, and gh signed in.
+# Needs: a clean tree on main, the GitHub repo in pals.json created, gh signed in, and the owner's
+# go (below). --dry-run needs none of the last.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# What was asked for, word for word: the owner approves exactly this line (owner_go).
+asked="./release $*"
+dry=""; rest=()
+for a in "$@"; do if [[ "$a" == "--dry-run" ]]; then dry=1; else rest+=("$a"); fi; done
+set -- "${rest[@]}"
+
 version="${1:-}"; shift || true
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: ./release X.Y.Z \"notes\" | -F notes.md" >&2; exit 2; }
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: ./release X.Y.Z \"notes\" | -F notes.md | --dry-run" >&2; exit 2; }
 if [[ "${1:-}" == "-F" ]]; then notes="$(cat "$2")"; else notes="${1:-}"; fi
-[[ -n "$notes" ]] || { echo "say what changed: ./release $version \"notes\"" >&2; exit 2; }
+[[ -n "$notes" || -n "$dry" ]] || { echo "say what changed: ./release $version \"notes\"" >&2; exit 2; }
+
+# The owner's go (T110). On 2026-11-10 this script ran from a plain shell and nothing asked the
+# owner: Project Pals' approval gate only watches its pals' terminals. So the script asks itself,
+# wherever it runs: the request waits in Project Pals' Inbox, and after the owner's click there the
+# same command goes through once (within 30 minutes). A pal whose run the gate already held and the
+# owner approved isn't asked twice. Without Project Pals on this computer, the person at the
+# keyboard types the version. This stops a release nobody decided on; it isn't a wall against a
+# program that runs git push and gh release by hand (protect the branch and tags on GitHub for that).
+owner_go() {
+  if command -v pal >/dev/null 2>&1 && pal owner-step --probe >/dev/null 2>&1; then
+    pal owner-step release-script -- "$asked"
+    return $?
+  fi
+  if ! { : >/dev/tty; } 2>/dev/null; then
+    echo "releasing $version needs the owner's go: run it from Project Pals (it asks in the Inbox), or yourself in a terminal" >&2
+    return 3
+  fi
+  printf 'Releasing %s pushes to GitHub and publishes it to every install.\nType %s to go ahead: ' "$version" "$version" >/dev/tty
+  local typed=""
+  read -r typed </dev/tty || true
+  [[ "$typed" == "$version" ]] || { echo "not released" >&2; return 3; }
+}
 
 repo="$(python3 -c 'import json; print(json.load(open("pals.json"))["repo"])')"
 current="$(cat VERSION)"
@@ -30,6 +60,9 @@ PY
 gh repo view "$repo" >/dev/null 2>&1 || { echo "GitHub repo $repo doesn't exist yet. Create it first, e.g.: gh repo create $repo --public --source . --push" >&2; exit 2; }
 
 for f in install.sh VERSION pals.json layouts/pals.json; do [[ -e "$f" ]] || { echo "missing $f" >&2; exit 2; }; done
+
+# Before anything is checked at length or changed: the owner's go. A dry run changes nothing, so it's free.
+if [[ -z "$dry" ]]; then owner_go || exit 3; fi
 
 # Preflight: nothing broken goes out.
 git fetch -q origin main 2>/dev/null || true
@@ -53,6 +86,11 @@ if command -v claude >/dev/null; then
 fi
 if command -v node >/dev/null; then for t in tests/*.mjs; do [ -f "$t" ] && { node "$t" || { echo "test failed: $t" >&2; exit 2; }; }; done; fi
 find . -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+
+if [[ -n "$dry" ]]; then
+  echo "dry run: every check passed for $version. Nothing was committed, tagged, pushed or published."
+  exit 0
+fi
 
 printf '%s\n' "$version" > VERSION
 git add VERSION

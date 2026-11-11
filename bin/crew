@@ -134,6 +134,8 @@ Updates
 Approvals (the owner)
   pal approvals                     guarded commands waiting on the owner
   pal approve ID | pal deny ID ["note"]
+  pal owner-step <rule> -- <command line>   a script asks for the owner's go itself (./release does):
+                                     exit 0 go ahead once, exit 3 it waits in the Inbox; then run it again
 
 "Pal" matches a pal's name or the start of it ("docs" finds "Docs Site"); without
 #topic you get the one it's showing (Pal#topic: a pal's tabs are its topics; --channel and
@@ -2093,13 +2095,42 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
         require_owner(f"{decide.capitalize()} a held command")
         via = "the Inbox"
         r = crewguard.decide(rid, decide == "approve", note, via=via)
-        print(f"{r['status']}: {r['bot']} #{r['channel']}: {r['command']}")
+        print(f"{r['status']}: {r['bot']}{' #' + r['channel'] if r.get('channel') else ''}: {r['command']}")
         return
     pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
     for a in pend:
-        print(f"{a['id']} · {a['bot']} #{a['channel']} · {a['why'] or a['rule']} · {ago(a['at'])}\n    {a['command']}")
+        print(f"{a['id']} · {a['bot']}{' #' + a['channel'] if a.get('channel') else ''} · {a['why'] or a['rule']} · {ago(a['at'])}\n    {a['command']}")
     if not pend:
         print("(nothing waiting)")
+
+
+def cmd_owner_step(rest):
+    """pal owner-step <rule> -- <the command line>: a program asks for the owner's go itself (T110:
+    ./release, wherever it's run). Exit 0: go ahead, this once. Exit 3: it waits in the Inbox; run the
+    same command again after the owner's click there. --probe: does this pal have the command."""
+    if rest[:1] == ["--probe"]:
+        print("owner-step 1")
+        return
+    if len(rest) < 3 or rest[1] != "--" or not " ".join(rest[2:]).strip():
+        die("pal owner-step <rule> -- <the command line>")
+    from crewlib import SHELL_NAME
+    rule, cmd = rest[0], " ".join(rest[2:]).strip()
+    bot, channel = SHELL_NAME, None
+    if ME:
+        try:
+            s, t = where_of(ME, herdr_spaces())
+        except CrewError:
+            s = t = None
+        bot, channel = (s["name"], chan(t)) if s else (f"terminal {ME}", None)
+    try:
+        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule)
+    except CrewError as e:
+        die(str(e))
+    if not held:
+        return
+    sys.stderr.write(f"held for {OWNER}: {held['why'] or rule}. It waits in Project Pals' Inbox as {held['id']} ({bot}).\n"
+                     f"After {OWNER}'s click there, run exactly the same command again within {crewguard.EXPIRE_MIN} minutes; it goes through once.\n")
+    sys.exit(3)
 
 
 def cmd_settings(rest):
@@ -2514,6 +2545,10 @@ def cmd_home(spaces, rest):
     args = rest[1:] if rest and not rest[0].startswith("--") else rest
     me, name = whoami(spaces)
     by = me or name
+    # Who may take an item off Home (T112): the owner's click, the head pal, else only whoever put it there.
+    mine, _ = my_bot(spaces)
+    from crewlib import is_head
+    role = "owner" if owner_proven() else "head" if is_head(mine) else None
     # Repeatable: --option (each may be followed by --does "what it does"), --link, --image.
     options, does, links, images, clean, i = [], [], [], [], [], 0
     while i < len(args):
@@ -2601,17 +2636,17 @@ def cmd_home(spaces, rest):
             q = crewhome.unqueue(args[0])
             print(f"unqueued {q['id']} {q['text']}")
         elif sub == "done" and args:
-            print(crewhome.line(crewhome.close(args[0], "done", by=by, result=" ".join(args[1:]) or None)))
+            print(crewhome.line(crewhome.close(args[0], "done", by=by, result=" ".join(args[1:]) or None, role=role)))
         elif sub == "drop" and args:
-            print(crewhome.line(crewhome.close(args[0], "dropped", by=by)))
+            print(crewhome.line(crewhome.close(args[0], "dropped", by=by, role=role)))
         elif sub == "park" and args:
             text = " ".join(args)
             if re.fullmatch(r"h-[0-9a-f]{2,6}", text):
-                print(crewhome.line(crewhome.park(text, by=by)))
+                print(crewhome.line(crewhome.park(text, by=by, role=role)))
             else:
                 print(crewhome.line(crewhome.add("later", text, by=by, status="parked")))
         elif sub == "unpark" and args:
-            print(crewhome.line(crewhome.unpark(args[0], by=by)))
+            print(crewhome.line(crewhome.unpark(args[0], by=by, role=role)))
         elif sub == "answer" and len(args) >= 2:
             # The owner's pick, from a click in Project Pals (main proved it); never a pal's, never typed.
             if not owner_proven():
@@ -2756,6 +2791,8 @@ def main(argv):
         return cmd_settings(rest)
     if cmd in ("factory", "factories"):
         return cmd_factory(rest)
+    if cmd == "owner-step":
+        return cmd_owner_step(rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).

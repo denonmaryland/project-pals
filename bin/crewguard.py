@@ -876,6 +876,40 @@ def check(terminal, bot, channel, cmd, extra=None):
     return r
 
 
+SHELL = "shell"   # the "terminal" of a request that comes from no Herdr terminal (a plain shell)
+
+
+def owner_step(terminal, bot, channel, cmd, rule, why=None):
+    """A program asking for the owner's go itself, wherever it runs (T110: on 2026-11-10 ./release ran
+    from a plain shell and nothing asked the owner, because the hook only sees pals' terminals).
+    None: go ahead, once. Either the owner approved exactly this command (used up now), or the gate
+    just let this terminal's `rule` command through (a pal whose run was approved isn't asked twice).
+    Else the request that waits in the Inbox."""
+    terminal = terminal or SHELL
+    named = next((r for r in policy().get("guarded", []) if r.get("name") == rule), None)
+    if not named:
+        raise CrewError(f"no guarded rule called {rule}")
+    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule)):
+        return None
+    k = key(terminal, f"{rule}\n{cmd}")
+    with locked("approvals"):
+        expire_stale()
+        for r in all_requests():
+            if r.get("key") != k:
+                continue
+            if r["status"] == "approved":
+                r["status"], r["used"] = "used", now_ms()
+                save_json(APPROVALS / f"{r['id']}.json", r)
+                return None
+            if r["status"] == "pending":
+                return r
+        r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
+             "command": cmd, "rule": rule, "why": why or named.get("why", ""), "status": "pending", "asked_by": "the program itself"}
+        save_json(APPROVALS / f"{r['id']}.json", r)
+    feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
+    return r
+
+
 def recently_used(terminal, rule, seconds=120):
     """Did the owner's approval of a `rule` command from this terminal just go through?"""
     return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
@@ -908,6 +942,8 @@ def decide(rid, approve, note=None, via=None):
         msg = f"[pal] {OWNER} approved: {r['command']}\nRun that exact command again now; it'll go through once."
     else:
         msg = f"[pal] {OWNER} said no to: {r['command']}" + (f"\nTheir note: {note}" if note else "") + f"\nDon't retry it; carry on without it or ask {OWNER}."
+    if r.get("terminal") == SHELL:
+        return r   # nobody to tell: whoever ran it from a plain shell runs it again (owner_step)
     try:
         enqueue(r["terminal"], msg, sender=f"{OWNER}", kind="approval")
     except CrewError:

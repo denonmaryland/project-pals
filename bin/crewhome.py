@@ -21,7 +21,10 @@ home.json:
                                     Desk card or an ask, from whoever asked (Home's review shows it)
 
 Anyone may add (a pal, the owner, a shell); `by` is who we say it was, never an argument. Only the
-owner answers an ask or marks Home seen (a click in Project Pals: crewlib.owner_gate).
+owner answers an ask or marks Home seen (a click in Project Pals: crewlib.owner_gate). An item is
+taken off (done, drop, park, unpark) only by whoever put it there, the head pal, or the owner's click
+(T112: a plain shell closed a pal's ask on 2026-11-10); an ask closed by anyone but the owner is
+`withdrawn`, never an answer.
 """
 import re
 import time
@@ -189,7 +192,28 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
     return item
 
 
-def close(iid, status, *, by, result=None):
+def _pal(who):
+    return (who or "").split("#")[0].strip().lower()
+
+
+def may_move(x, by, role=None):
+    """Who takes an item off Home (T112): whoever put it there (the same pal, from any of its topics),
+    the head pal (role "head": it keeps Home current), or the owner (role "owner": the caller has
+    checked the click). Checked here, in the module, so every way in gets the same answer."""
+    if role in ("owner", "head"):
+        return True
+    mine, theirs = (by or "").strip(), (x.get("by") or "").strip()
+    return bool(mine) and (mine == theirs or ("#" in mine and "#" in theirs and _pal(mine) == _pal(theirs)))
+
+
+def _allow(x, by, role, what):
+    if not may_move(x, by, role):
+        from crewlib import OWNER
+        raise HomeError(f"{x['id']} was put on Home by {x.get('by') or '?'}: only they, the head pal or {OWNER}'s click "
+                        f"in Project Pals can {what} it (you're {by or 'unknown'})")
+
+
+def close(iid, status, *, by, result=None, role=None):
     if status not in ("done", "dropped"):
         raise HomeError("close as done or dropped")
     with locked("home"):
@@ -197,30 +221,35 @@ def close(iid, status, *, by, result=None):
         x = _find(h, iid)
         if x.get("status") in CLOSED:
             raise HomeError(f"{x['id']} is {x['status']} already")
+        _allow(x, by, role, "close")
         x["status"], x["closed_at"], x["closed_by"] = status, now_ms(), by
+        if x.get("kind") == "ask" and role != "owner":
+            x["withdrawn"] = True   # taken back by its asker or the head pal: not the owner's answer
         if result:
             x["result"] = _one_line(result, 300, "the result")
         _save(h)
     return x
 
 
-def park(iid, *, by):
+def park(iid, *, by, role=None):
     with locked("home"):
         h = load()
         x = _find(h, iid)
         if x.get("status") != "open":
             raise HomeError(f"{x['id']} is {x['status']}; only an open item can be parked")
+        _allow(x, by, role, "park")
         x["status"], x["parked_at"], x["parked_by"] = "parked", now_ms(), by
         _save(h)
     return x
 
 
-def unpark(iid, *, by):
+def unpark(iid, *, by, role=None):
     with locked("home"):
         h = load()
         x = _find(h, iid)
         if x.get("status") != "parked":
             raise HomeError(f"{x['id']} isn't parked")
+        _allow(x, by, role, "unpark")
         x["status"] = "open"
         x.pop("parked_at", None)
         x["unparked_by"] = by
@@ -356,5 +385,7 @@ def line(x):
         bits.append(f"in {x['topic']}")
     if x.get("answer"):
         bits.append(f"→ {x['answer']}")
+    if x.get("withdrawn"):
+        bits.append(f"withdrawn by {x.get('closed_by') or '?'}")
     bits.append(f"· {x.get('by', '?')} · {ago(x.get('at'))}")
     return "  ".join(b for b in bits if b)
