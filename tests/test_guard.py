@@ -872,6 +872,15 @@ class LiveBranchRefs(unittest.TestCase):
         ("", "wt", "git pull -j 1 . feature:main"),
         ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/main . refs/heads/feature"),
         ("", "wt", "echo feature:main | git fetch --stdin ."),
+        # an option turned off again, or given twice: what counts is what git ends up with (Codex T164)
+        ("", "wt", "git branch --list --no-list -f main feature"),
+        ("", "wt", "git branch --copy --no-copy -f main feature"),
+        ("", "wt", "git branch -l --no-list -f main feature"),
+        ("", "wt", "git branch --delete --no-delete -f main feature"),
+        ("", "wt", "git rebase --root --no-root feature main"),
+        ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/main --refmap=+refs/heads/feature:refs/heads/other . refs/heads/feature"),
+        ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/other --refmap=+refs/heads/feature:refs/heads/main . refs/heads/feature"),
+        ("", "wt", "git fetch --stdin --no-stdin . feature:main"),
         ("", "wt", "git rebase --empty keep feature main"),
         ("", "wt", "git rebase --whitespace nowarn feature main"),
         ("", "wt", "git rebase -C 1 feature main"),
@@ -985,7 +994,8 @@ class LiveBranchRefs(unittest.TestCase):
         crewguard.HOOK_CWD = p[where]
         held = rule(cmd)
         before = self.main_ref(p["repo"])
-        self.sp.run(["bash", "-c", cmd], cwd=p[where], env=self.env, capture_output=True, text=True)
+        self.sp.run(["bash", "-c", cmd], cwd=p[where], env=self.env, capture_output=True, text=True,
+                    stdin=self.sp.DEVNULL, timeout=60)
         return cmd, held, before != self.main_ref(p["repo"])
 
     def test_every_command_that_moves_the_followed_branch_is_held(self):
@@ -1106,6 +1116,41 @@ class LiveBranchRefs(unittest.TestCase):
                             slipped.append(f"{cmd} ({channel})")
         self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
         self.assertGreater(moved_n, 120, f"of {ran} commands, most must really move it (else the sweep proves little)")
+
+    def test_option_state_is_what_git_ends_up_with(self):
+        """Codex T164: `git branch --list --no-list -f main x` and `git rebase --root --no-root x main`
+        moved main unheld (the turned-off option still counted), and so did a first --refmap onto main
+        followed by a harmless second one (only the last was kept). Swept from git's own tables: every
+        option of these commands that git can turn off, turned on then off and off then on, and every
+        option that takes a value, given twice; in front of what the command acts on, each run in a
+        real repository (Stable: the always-on rule, which the Live rule only adds to)."""
+        import githelp
+        cores = {**self.CORES, "branch": ["-f main feature", "-M feature main", "-C feature main", "-D main"]}
+        scratch = self.repo("")
+        slipped, moved_n, ran = [], 0, 0
+        for sub, subcores in cores.items():
+            t = githelp.table(sub, scratch["wt"], self.env)
+            every = t["V"] | t["O"] | t["P"]
+            forms = []
+            for name in sorted(every):
+                if name.startswith("no-") or f"no-{name}" not in every or name in t["V"] and name.startswith("no-"):
+                    continue
+                on = f"--{name}" + (f" {self.VALUES.get(name, '1')}" if name in t["V"] else "")
+                forms += [f"{on} --no-{name}", f"--no-{name} {on}"]
+            for name in sorted(t["V"]):
+                v = self.VALUES.get(name, "1")
+                forms.append(f"--{name} {v} --{name} {v}")
+            for f in forms:
+                if sub in ("switch", "checkout", "worktree add") and re.search(r"--(create|force-create|orphan)\b", f):
+                    continue   # (these name the branch themselves: the core does that here)
+                for core in subcores:
+                    cmd, held, moved = self.case("", "wt", f"git {sub} {f} {core}", "stable")
+                    ran += 1
+                    moved_n += moved
+                    if moved and not held:
+                        slipped.append(cmd)
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+        self.assertGreater(moved_n, ran // 3, f"of {ran} commands, many must really move it (else the sweep proves little)")
 
     def test_no_harmless_option_hides_a_move(self):
         """Every way of writing the core commands with an option that changes nothing about what they

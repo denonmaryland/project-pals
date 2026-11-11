@@ -525,7 +525,11 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   new option, and sweep every option of those commands in every spelling (next word, `=`,
   abbreviated, short, stuck) in front of what the command acts on, in real repositories, channel
   on and off. `--refmap` onto the branch, refspecs from `--stdin` and `rebase --root <branch>` are
-  held too. Like the rest of the gate it catches the plain ways, not a pal
+  held too. Options are applied in order, as git does: `--no-X` turns X off again and a later `--X`
+  back on, and a value option given twice keeps every value (Codex T164: `git branch --list
+  --no-list -f main x` still counted as listing, and a first `--refmap` onto main was lost behind a
+  second). A sweep turns every option git can turn off on-then-off and off-then-on, and gives every
+  value option twice, in real repositories. Like the rest of the gate it catches the plain ways, not a pal
   set on getting round it.
   `pal update run-tests` (the background suite) only runs for the build a swap just announced.
   `pal land` no longer needs the project folder to be on the base branch: where the base is checked

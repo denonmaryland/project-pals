@@ -1017,7 +1017,12 @@ def git_opts(sub):
 
 def git_parse(sub, args):
     """A git command's arguments, read as git's own parser reads them → (opts, pos, odd).
-    opts: {option's long name (a short letter's long name, else the letter): its value, or True};
+    opts: what git ends up with once every option has been applied IN ORDER (Codex T164): {option's
+    long name (a short letter's long name, else the letter): [every value it was given, True for a
+    switch]}. `--no-X` turns X off again (a later `--X` turns it back on); a value option given twice
+    keeps both values (git keeps every --refmap, --exec …; where git keeps only the last, holding on
+    either is the safe side). An option whose own name starts with no- and takes a value
+    (--no-contains <commit>) is that option, not a negation.
     pos: what's left, in order (the repository and refspecs, the upstream and branch, the names);
     odd: something wasn't understood (an option that isn't in the table, an ambiguous abbreviation,
     a value that's missing). Callers treat odd as "can't tell" and hold what they'd otherwise let go.
@@ -1029,6 +1034,17 @@ def git_parse(sub, args):
     if t is None:
         return opts, [a for a in args if not a.startswith("-")], True
     every = t["V"] | t["O"] | t["P"]
+
+    def set_(key, val):
+        opts.setdefault(key, []).append(val)
+
+    def unset(name):
+        # --no-X, its abbreviation included: X (and its letters, which are X too) is off again.
+        base = name[3:]
+        if name not in t["V"] and base in every:
+            opts.pop(base, None)
+            return True
+        return False
     while i < len(args):
         a = args[i]
         i += 1
@@ -1044,35 +1060,38 @@ def git_parse(sub, args):
             if not full:
                 odd = True
                 continue
+            if full.startswith("no-") and not eq and unset(full):
+                continue
             if full in t["V"]:
                 if eq:
-                    opts[full] = val
+                    set_(full, val)
                 elif i < len(args) and (full not in GIT_LASTARG or not args[i].startswith("-")):
-                    opts[full] = args[i]
+                    set_(full, args[i])
                     i += 1
                 else:
-                    opts[full] = True
+                    set_(full, True)
                     odd = odd or full not in GIT_LASTARG
             else:
-                opts[full] = val if eq else True
+                set_(full, val if eq else True)
         elif a.startswith("-") and len(a) > 1:
             for k, ch in enumerate(a[1:]):
                 key = t["alias"].get(ch, ch)
                 rest = a[k + 2:]
                 if ch in t["sv"]:
                     if rest:
-                        opts[key] = rest
+                        set_(key, rest)
                     elif i < len(args):
-                        opts[key] = args[i]
+                        set_(key, args[i])
                         i += 1
                     else:
-                        opts[key], odd = True, True
+                        set_(key, True)
+                        odd = True
                     break
                 if ch in t["so"]:
-                    opts[key] = rest or True
+                    set_(key, rest or True)
                     break
                 if ch in t["sp"]:
-                    opts[key] = True
+                    set_(key, True)
                     continue
                 odd = True
                 break
@@ -1155,7 +1174,7 @@ def _creates(sub, args, branch):
     and --create=main are all seen); when something isn't understood, by the look of the words."""
     table = "worktree add" if sub == "worktree" and args[:1] == ["add"] else sub
     opts, _pos, odd = git_parse(table, args[1:] if table == "worktree add" else args)
-    if any(opts.get(k) == branch for k in CREATES.get(table, ())):
+    if any(branch in opts.get(k, []) for k in CREATES.get(table, ())):
         return True
     if not odd:
         return False
@@ -1270,7 +1289,8 @@ def moved_branch(cmd, branches, live=None, strict=True):
                 # [<repository> [<refspec>...]], after the options and their values. A refspec that
                 # writes the branch, a --refmap that maps onto it, or refspecs from stdin (unread).
                 opts, pos, odd = git_parse(sub, args)
-                specs = names if odd else pos + [v for v in (opts.get("refmap"),) if isinstance(v, str)]
+                # (every --refmap counts: git applies them all, Codex T164)
+                specs = names if odd else pos + [v for v in opts.get("refmap", []) if isinstance(v, str)]
                 writes = any(_refspec_writes(a.lstrip("+"), b) for a in specs) or (sub != "push" and "stdin" in opts and bool(pos))
                 # The always-on rule lets the branch come from a real remote: only when the repository
                 # word is known for what it is (nothing odd before it) and isn't this checkout or a folder.
