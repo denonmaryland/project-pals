@@ -82,9 +82,11 @@ Reports from other harnesses are welcome.
 ## Try it in 10 minutes
 
 Project Pals is early software. Start with a disposable project folder and one pal.
-You need **Linux with a systemd user session**, **Herdr 0.1.8+ (below 0.2)** and
+You need **Linux**, **Herdr 0.1.8+ (below 0.2)** and
 **herdr-core 0.1.11+ (below 0.2)**, plus an installed, signed-in coding harness.
 Open Herdr once first. Agent usage uses your harness's account and may cost money.
+Use a systemd user session for the full experience: without one, the crewd background helper
+is skipped, messages are typed in directly, and routines and callbacks don't run.
 
 1. Follow [Install](#install), including the prerequisites. Read
    [what it changes](#what-it-changes-on-your-computer) first, then select the **pals**

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -100,12 +101,33 @@ class Report(unittest.TestCase):
     def test_probe_errors_and_timeout_do_not_escape(self):
         for error in (FileNotFoundError("private"), PermissionError("private"),
                       subprocess.TimeoutExpired(["private"], 3, output=b"secret")):
-            with patch.object(report.subprocess, "run", side_effect=error):
+            with patch.object(report.subprocess, "Popen", side_effect=error):
                 self.assertIsNone(report.probe(["missing"]))
         self.assertIsNone(report.probe([sys.executable, "-c", "import sys; sys.exit(1)"]))
         self.assertIsNone(report.probe([sys.executable, "-c", "print('x'*70000)"]))
         with patch.object(report, "TIMEOUT", 0.05):
             self.assertIsNone(report.probe([sys.executable, "-c", "import time; time.sleep(5)"]))
+
+    def test_timeout_stops_wrapper_children(self):
+        pidfile = self.base / "child-pid"
+        shell = (shlex.quote(sys.executable) + " -c 'import time; time.sleep(30)' & "
+                 + "echo $! > " + shlex.quote(str(pidfile)) + "; wait")
+        with patch.object(report, "TIMEOUT", 0.5):
+            self.assertIsNone(report.probe(["/bin/sh", "-c", shell]))
+        pid = int(pidfile.read_text())
+        try:
+            # A killed grandchild may be a zombie until init reaps it; it must not run.
+            status = Path(f"/proc/{pid}/stat")
+            try:
+                state = status.read_text().rsplit(")", 1)[1].split()[0]
+            except FileNotFoundError:
+                state = "gone"
+            self.assertIn(state, ("Z", "gone"))
+        finally:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     def test_cli_before_install_uses_only_safe_probes_and_writes_no_data(self):
         shims = self.base / "shims"
@@ -117,7 +139,7 @@ class Report(unittest.TestCase):
             shim = shims / cmd
             shim.write_text('#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$CALL_LOG"\nprintf "%s\\n" ' + shlex.quote(output) + '\n')
             shim.chmod(0o755)
-        for cmd in ("claude", "git"):
+        for cmd in ("claude", "git", "agent", "pi"):
             shim = shims / cmd
             shim.write_text('#!/bin/sh\necho UNEXPECTED >> "$CALL_LOG"\nexit 1\n')
             shim.chmod(0o755)
@@ -130,6 +152,8 @@ class Report(unittest.TestCase):
         self.assertIn("Project Pals installed: unknown", result.stdout)
         self.assertIn("Herdr: 0.1.14", result.stdout)
         self.assertIn("LoadState=not-found", result.stdout)
+        harness_line = next(x for x in result.stdout.splitlines() if x.startswith("Harness commands"))
+        self.assertTrue(harness_line.endswith(": claude"), harness_line)
         self.assertNotIn("PRIVATE-CANARY", result.stdout)
         self.assertFalse((self.base / "missing-data").exists())
         self.assertFalse((self.base / "nonexistent-home").exists())

@@ -7,7 +7,7 @@ These drafts don't claim a stable release, universal harness coverage, or an end
 
 ## X
 
-Looking for early Linux testers for Project Pals: coding agents as pocket pets in Herdr. Needs Herdr 0.1.8+ (below 0.2). Try hiring one pal and sending it a task; tell me what works or breaks. Early software, Linux only.
+Early Linux testers wanted for Project Pals: coding agents as pocket pets. Herdr 0.1.8+, hc 0.1.11+ (both below 0.2); systemd for the background helper. Hire a pal, send a task, report what works or breaks.
 https://github.com/denonmaryland/project-pals
 
 ## Herdr community
@@ -19,8 +19,10 @@ I'm looking for a few early Linux testers to try the first ten minutes: install,
 in a disposable folder, and send it a small task. Tell me where you got stuck, what felt
 confusing, or which harness worked. A successful first run is useful feedback too.
 
-It's early software, Linux only, and needs a systemd user session, Herdr 0.1.8+ and herdr-core
-0.1.11+, both below 0.2. Bring an installed, signed-in coding harness; its normal usage costs
+It's early software, Linux only, and needs Herdr 0.1.8+ and herdr-core 0.1.11+, both below 0.2.
+Use a systemd user session for the full experience; without it the background helper is skipped,
+messages are typed in directly, and routines and callbacks don't run.
+Bring an installed, signed-in coding harness; its normal usage costs
 apply. Claude Code is tested daily and Codex has been tried as a pal; more reports from
 Antigravity CLI and other harnesses would help. Hooks and the approval gate cover Claude Code
 and Antigravity CLI only, and the gate catches mistakes rather than providing isolation.
@@ -42,8 +44,9 @@ named topics, shared tasks and a Desk for messages.
 
 **Description:** Organize coding agents as pals, each with topics that remain real terminals.
 See who's working or needs you, send cards through the Desk, and keep project tasks and notes
-together. Early software seeking Linux testers. Requires a systemd user session, Herdr 0.1.8+
-and herdr-core 0.1.11+, both below 0.2, plus your own installed coding harness. Harness coverage
+together. Early software seeking Linux testers. Requires Herdr 0.1.8+ and herdr-core 0.1.11+,
+both below 0.2, plus your own installed coding harness. A systemd user session enables the
+background helper; without it, messages are typed in directly and routines and callbacks don't run. Harness coverage
 varies; see the README before installing. No macOS support yet.
 
 **Source, install and uninstall:** https://github.com/denonmaryland/project-pals

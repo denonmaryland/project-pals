@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
@@ -15,7 +16,8 @@ import tempfile
 LIMIT = 64 * 1024
 TIMEOUT = 3
 HARNESS_COMMANDS = ("claude", "agy", "codex", "grok", "gemini", "opencode", "hermes",
-                    "copilot", "cursor-agent", "agent", "pi", "amp", "kimi", "crush")
+                    "copilot", "cursor-agent", "amp", "kimi", "crush")
+# Generic executable names (agent, pi) are ambiguous; don't launch harnesses to identify them.
 DISTROS = frozenset(("arch", "omarchy", "ubuntu", "debian", "fedora", "linuxmint", "pop", "nixos",
                     "manjaro", "endeavouros", "cachyos", "opensuse-tumbleweed", "opensuse-leap",
                     "gentoo", "alpine", "rhel", "centos", "rocky", "almalinux", "void"))
@@ -49,12 +51,23 @@ def probe(argv):
     # stderr (which can contain paths or credentials) is never consumed or printed.
     try:
         with tempfile.TemporaryFile() as out:
-            result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=out,
-                                    stderr=subprocess.DEVNULL, timeout=TIMEOUT,
-                                    env={**os.environ, "LC_ALL": "C", "SYSTEMD_COLORS": "0"})
+            with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out,
+                                  stderr=subprocess.DEVNULL, start_new_session=True,
+                                  env={**os.environ, "LC_ALL": "C", "SYSTEMD_COLORS": "0"}) as child:
+                try:
+                    code = child.wait(timeout=TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    # Version commands can be shell wrappers. Stop their whole group, not
+                    # just the wrapper, so a timed-out probe doesn't leave a child running.
+                    try:
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    child.wait()
+                    return None
             out.seek(0)
             raw = out.read(LIMIT + 1)
-        if result.returncode or len(raw) > LIMIT:
+        if code or len(raw) > LIMIT:
             return None
         return raw.decode("utf-8")
     except (OSError, UnicodeError, subprocess.TimeoutExpired):
