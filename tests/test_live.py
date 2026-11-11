@@ -332,6 +332,27 @@ class Live(unittest.TestCase):
         # ── Try again, then Land: no checkout is touched, the trial ends on main ──
         self.ok("update", "try", "Builder#x", "--json", click=True)
         parked_head = self.git("rev-parse", "HEAD")
+        # Another project lands a branch with the same name on its own main (Codex T94, P2): that's
+        # not this trial's branch. The trial goes on, and nothing of Project Pals is installed for it.
+        other = self.t / "other"
+        other.mkdir()
+        self.git("init", "-q", "-b", "main", at=other)
+        (other / "README").write_text("another project\n")
+        self.git("add", "-A", at=other)
+        self.git("commit", "-q", "-m", "one", at=other)
+        self.git("checkout", "-q", "-b", "parked", at=other)
+        self.git("worktree", "add", "-q", "-b", "crew/x", str(self.t / "other-x"), "main", at=other)
+        self.commit("README", "more\n", "two", at=self.t / "other-x")
+        doc["crew"]["bots"].append({"name": "Other", "space": "s2", "folder": str(other), "worktrees": {
+            "#x": {"path": str(self.t / "other-x"), "branch": "crew/x", "base": "main", "repo": str(other)}}})
+        shared.write_text(json.dumps(doc))
+        both["spaces"].append({"id": "s2", "name": "Other", "folder": str(other), "tabs": [{"id": "o1", "name": "#x", "active": True, "terminals": []}]})
+        (self.app / "fake-spaces.json").write_text(json.dumps(both))
+        was = self.live()["trying"]
+        self.assertIn(f"landed crew/x on main in {other}", self.ok("land", "Other#x", click=True))
+        self.assertEqual(self.live().get("trying"), was, "the Project Pals trial is still the trial")
+        self.assertNotIn("pending", self.live(), "and nothing was queued to install")
+        self.assertEqual(self.running()["branch"], "crew/x")
         # The strip's Land names the commit that was tried: a branch that moved since doesn't land on it.
         tried = self.live()["trying"]["hash"]
         tip = self.commit("mods/crew-review/main.js", "\n// later\n", "Review: after the trial started", at=wt)

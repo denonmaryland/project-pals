@@ -869,7 +869,7 @@ def cmd_land(spaces, spec, check=None, at=None):
     # A branch that was being tried in the live install: the trial is over, and the base it landed on
     # is installed once, so what runs is what landed (bin/crewupdate.py).
     try:
-        if crewupdate.landed(wt["branch"], wt["base"]):
+        if crewupdate.landed(wt["branch"], wt["base"], wt["path"]):
             crewupdate.detach([str(Path.home() / ".local" / "bin" / "pal"), "update", "follow", "--json"], "project-pals-live")
     except Exception:
         pass
@@ -2719,7 +2719,7 @@ def cmd_update(rest):
                 snap = snap if snap and os.path.isfile(snap) else None
                 out = {"ok": True, "restored": str(crewupdate.rollback(snap, log=lambda m: (update_log(m), say(m)),
                                                                        wrote=trial.get("wrote") if snap else None))}
-                crewupdate.live_save(trying=None, tests=None, pending=None)
+                crewupdate.live_save(trying=None, tests=None, pending=None, pending_repo=None)
                 # On the Live channel, a rolled-back head commit would be installed again at once:
                 # hold it until the branch moves. (After a trial there's nothing to hold: main catches up.)
                 c = crewupdate.channel()

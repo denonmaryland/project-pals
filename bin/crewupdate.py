@@ -540,6 +540,7 @@ def apply(log=print, version=None):
 #                        trying: the branch being tried {branch, hash, spec, since, snapshot, base}
 #                        tests:  the full suite for a build {hash, state: running|passed|failed, detail}
 #                        pending: "land" when a tried branch landed and main is to be installed once
+#                                (pending_repo: the checkout it landed in)
 #
 # Who may: switching the channel, Try, Back and Back to stable are the owner's click (bin/crew). Follow
 # takes no arguments and only ever installs the followed branch's newest commit, which is what crewd
@@ -1041,7 +1042,7 @@ def follow_due():
     """For crewd, each few seconds and cheap: is there a commit to install? → its hash, or None."""
     st = live_state()
     c = channel()
-    repo = c["repo"] or (installed().get("build") or {}).get("repo")
+    repo = c["repo"] or st.get("pending_repo") or (installed().get("build") or {}).get("repo")
     if st.get("trying") or (c["channel"] != "live" and st.get("pending") != "land") or not repo:
         return None
     head = _git(repo, "rev-parse", "-q", "--verify", f"{c['branch']}^{{commit}}", check=False, timeout=10)
@@ -1060,10 +1061,10 @@ def follow(log=print):
         return {"ok": True, "updated": False, "message": f"trying {st['trying'].get('branch')}: {c['branch']} waits until Land or Back"}
     if c["channel"] != "live" and not landed:
         return {"ok": True, "updated": False, "message": "the Live channel is off (About → Update channel)"}
-    repo = c["repo"] or find_repo(branch=c["branch"])
+    repo = c["repo"] or (st.get("pending_repo") if landed else None) or find_repo(branch=c["branch"])
     head = ref_hash(repo, c["branch"])
     if same_commit(head, running_hash()):
-        live_save(pending=None)
+        live_save(pending=None, pending_repo=None)
         return {"ok": True, "updated": False, "message": f"{c['branch']} {head[:7]} is what's running"}
     hold = st.get("hold") or {}
     if same_commit(head, hold.get("hash")) and not landed:
@@ -1072,9 +1073,9 @@ def follow(log=print):
         out = _swap(repo, head, c["branch"], "live", log)
     except CrewError as e:
         # Not tried again until the branch moves: a build that doesn't come up shouldn't loop.
-        live_save(hold={"hash": head[:12], "why": str(e).splitlines()[0][:300], "at": time.time()}, pending=None)
+        live_save(hold={"hash": head[:12], "why": str(e).splitlines()[0][:300], "at": time.time()}, pending=None, pending_repo=None)
         raise
-    live_save(hold=None, pending=None)
+    live_save(hold=None, pending=None, pending_repo=None)
     return out
 
 
@@ -1118,14 +1119,30 @@ def back(log=print):
     return out
 
 
-def landed(branch, base=None):
-    """A branch landed (pal land): if it's the one being tried and it landed on the branch that's
-    followed, the trial is over and that branch is installed once, whatever the channel, so what runs
-    is what landed. Landed anywhere else, the trial goes on (Back ends it)."""
-    t = live_state().get("trying")
-    if not t or t.get("branch") != branch or (base and base != channel()["branch"]):
+def same_repo(a, b):
+    """Two folders of the same checkout (its main folder, or any worktree of it)?"""
+    if not a or not b:
         return False
-    live_save(trying=None, pending="land")
+    ra, rb = repo_root(a) or a, repo_root(b) or b
+    try:
+        return os.path.realpath(ra) == os.path.realpath(rb)
+    except OSError:
+        return False
+
+
+def landed(branch, base=None, repo=None):
+    """A branch landed (pal land). If it's the branch being tried, IN THE CHECKOUT it's being tried
+    from, and it landed on the branch that's followed, the trial is over and that branch is
+    installed once, whatever the channel, so what runs is what landed. A branch of the same name in
+    another project (Codex T94, P2: every project has a crew/x and a main), or landed on another
+    base: nothing to do with this trial, which goes on (Back ends it)."""
+    t = live_state().get("trying")
+    c = channel()
+    if not t or t.get("branch") != branch or not same_repo(repo, t.get("repo")) or (base and base != c["branch"]):
+        return False
+    if c["channel"] == "live" and c["repo"] and not same_repo(c["repo"], t.get("repo")):
+        return False   # Live follows another checkout: this landing isn't what it installs
+    live_save(trying=None, pending="land", pending_repo=t.get("repo"))
     return True
 
 
@@ -1158,7 +1175,7 @@ def stable(log=print):
         raise CrewError("there are no releases to go back to")
     out = apply(log=log, version=info["latest"])
     set_channel("stable")
-    live_save(trying=None, pending=None, hold=None, tests=None)
+    live_save(trying=None, pending=None, pending_repo=None, hold=None, tests=None)
     live_save(last={"id": f"{int(time.time())}-stable", "action": "stable", "state": "done", "version": out.get("version"), "at": time.time()})
     return out
 

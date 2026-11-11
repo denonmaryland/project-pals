@@ -467,7 +467,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   on top keeps the first snapshot, so Back, and About's Roll back during a trial, both return to
   the build from before any trial. Land runs `pal land <Pal#topic> --at <the tried commit>`: a
   branch that got a commit since the trial started is refused ("has moved since"), so one click
-  never lands code that wasn't looked at. A tried branch that lands on the followed branch ends the
+  never lands code that wasn't looked at. A tried branch that lands on the followed branch, in the
+  checkout it is being tried from (a trial is tied to its repository: every project has a `crew/x`
+  and a `main`, and another project's landing leaves the trial alone; Codex T94), ends the
   trial and that branch is installed once, whatever the channel, so what runs is what landed (on
   Stable that brings in everything landed on main, not only this branch). Failing tests turn the
   strip red and hold its Land.
