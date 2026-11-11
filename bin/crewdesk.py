@@ -547,6 +547,8 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None,
         # Checked here too, not only where senders are named: every way in gets the same answer.
         if not (presented and presented.get("name") and presented["name"] == frm):
             raise DeskError(f"only a trusted helper's own key sends in {OWNER}'s name")
+        if kind not in ("tell", "ask", "task"):
+            raise DeskError("a helper sends a tell, a question or a task, nothing else")
         relaying = None   # a helper speaks for the owner by its key; "relaying" is a pal's word for hearsay
     ensure()
     cid = new_id("c-")
@@ -765,6 +767,9 @@ def frame(card):
     out = f"{who(card)} 📥 Desk card {cid} · {' · '.join(bits)}\n{esc(card.get('title'))}"
     if body:
         out += "\n" + body
+    if helper_verified(card):
+        import crewhelpers
+        out += "\n→ " + crewhelpers.limits(card.get("from") or "It")   # what it can't authorise, on the card itself
     if card.get("kind") == "checkin":
         out += (f"\n→ For each: pal desk pass <id> \"Pal#topic\" \"why\" to a topic that can take it, cancel it if it's stale, "
                 f"or tell {OWNER} in one line. Never clear an input box or answer a prompt yourself. Then pal desk done {cid}.")

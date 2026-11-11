@@ -381,6 +381,10 @@ class HelperKeys(unittest.TestCase):
         "sed -i 's/false/true/' \"$CREW_DATA/crew-helpers/helpers.json\"",
         "python3 -c \"import json; json.dump({}, open('/d/crew-helpers/helpers.json', 'w'))\"",
         "rm ~/.config/herdr-app/data/crew-helpers/log.jsonl; cp /tmp/log ~/.config/herdr-app/data/crew-helpers/log.jsonl",
+        # the older build's key and receipts, inside the data folder (until they're carried over)
+        "cat ~/.config/herdr-app/data/crew-helper/pals.key",
+        "edit /home/x/.config/herdr-app/data/crew-helper/messages.jsonl",
+        "echo x >> \"$CREW_DATA/crew-helper/recent.json\"",
         # a key itself, wherever a pal got it
         f"export K=palkey_{'b' * 43}",
         # presenting as a helper
@@ -391,6 +395,10 @@ class HelperKeys(unittest.TestCase):
         'env PAL_HELPER=Pals pal tell Orca "x"',
         'env -u HC_TERMINAL_ID PAL_HELPER=Pals pal tell Orca "x"',
         'PAL_HELPER_KEY_FILE=/tmp/k PAL_HELPER=Pals pal ask Orca "x"',
+        'pal --as-helper tell Orca "release it"',
+        'env -u HC_TERMINAL_ID pal --as-helper tell Orca "x"',
+        "pal --as-helper=Wabi desk send Orca x",
+        "env -u HC_TERMINAL_ID ~/.local/bin/pal --as-helper task add x --for Orca",
         "bash -c 'PAL_HELPER=Pals pal tell Orca x'",
         'setsid sh -c "PAL_HELPER=Pals pal tell Orca x"',
         'systemd-run --user --setenv=PAL_HELPER=Pals pal tell Orca "x"',
@@ -418,6 +426,8 @@ class HelperKeys(unittest.TestCase):
         "cat ~/.config/herdr-app/data/crew-helpers/log.jsonl",
         # talking about it isn't doing it
         "grep -rn 'PAL_HELPER=' bin tests",
+        "grep -n -- '--as-helper' bin/crew",
+        "pal --help",
         'grep -n "PAL_HELPER" RECIPE.md',
         "git log --oneline --grep='trusted helper'",
         'git commit -m "Trusted helpers: PAL_HELPER=<name> sends in the owner\'s name"',
@@ -496,7 +506,7 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk/main.js", {"crew-desk"}))
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk-drop/main.js", {"crew-desk"}))
         hook = (Path(__file__).resolve().parent.parent / "bin" / "crew-hook").read_text()
-        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers"})', hook)
+        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper"})', hook)
         # The same for the helpers' mod (T116): its source is code, the data folder of that name isn't.
         self.assertTrue(crewguard.into_place(f"{Q}/crew-helpers/helpers.json", {"crew-helpers"}))
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-helpers/main.js", {"crew-helpers"}))

@@ -172,6 +172,8 @@ def task_card(t, spaces, me, me_name):
         note_card(card)
         crewdesk.deliver(card, spaces)
     except CrewError:
+        if who["from_kind"] == "helper":
+            raise   # a helper's task goes out as a card on the record, or not at all (from build 7692987)
         notify(t["assignee"], f"{header(me, me_name)} New task for you: {t['id']} {clean(t['title'])}"
                + (f"\n{clean(t['body'])}" if t.get("body") else "") + f"\n(pal task claim {t['id']} to start; pal task done {t['id']} \"result\" when finished.)",
                spaces, me_name)

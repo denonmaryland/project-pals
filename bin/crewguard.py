@@ -668,12 +668,14 @@ def _writes_into(cmd, names, place):
 
 
 # ─── Trusted helpers' keys (T116) ───────────────────────────────────────────────────────────────
-HELPERS_PLACE = _place(["crew-helpers"])
-HELPER_KEYS_DIR = re.compile(r"(?:^|[^\w-])project-pals/helpers(?![\w-])")   # ~/.config/project-pals/helpers, however it's written
+HELPER_DATA = {"crew-helpers", "crew-helper"}   # (crew-helper: where build 7692987 kept its key and receipts, until carried over)
+HELPERS_PLACE = _place(sorted(HELPER_DATA))
+# ~/.config/project-pals/helpers, however it's written; and the older build's key inside the data folder.
+HELPER_KEYS_DIR = re.compile(r"(?:^|[^\w-])project-pals/helpers(?![\w-])|(?:^|[^\w-])crew-helper/pals\.key\b")
 HELPER_KEY_TEXT = re.compile(r"palkey_[A-Za-z0-9_-]{20,}")                    # a key itself, wherever one turns up
 # Presenting as a helper: PAL_HELPER=Pals pal tell …, export PAL_HELPER, env PAL_HELPER=… (as a
 # command, not inside a quoted pattern), or code that puts it in a child's environment.
-HELPER_ENV = re.compile(r"\bPAL_HELPER(?:_KEY_FILE)?=|\bexport\s+(?:-\w+\s+)*PAL_HELPER")
+HELPER_ENV = re.compile(r"\bPAL_HELPER(?:_KEY_FILE)?=|\bexport\s+(?:-\w+\s+)*PAL_HELPER|(?:^|\s)--as-helper(?:=|\s|$)")
 HELPER_ENV_CODE = re.compile(r"""\benviron\b|\bputenv\b|\bsetenv\b|\bprocess\.env\b|\bENV\s*\[|\benv\s*=|\benv\s*:""")
 
 
@@ -697,7 +699,7 @@ def touches_helpers(cmd):
     ways; it's a guard against mistakes and persuasion (README), and `pal` checks again itself."""
     edited = _edited(cmd)
     if edited is not None:
-        return in_helper_keys(edited) or into_place(edited, {"crew-helpers"})
+        return in_helper_keys(edited) or into_place(edited, HELPER_DATA)
     if HELPER_KEYS_DIR.search(cmd) or HELPER_KEY_TEXT.search(cmd):
         return True
     # As a command: on the line itself, or in one a shell is handed (bash -c '…', eval "…"). Not
@@ -706,7 +708,7 @@ def touches_helpers(cmd):
         return True
     if "PAL_HELPER" in cmd and HELPER_ENV_CODE.search(cmd) and (INTERP_ANY.search(cmd) or HEREDOC.search(cmd)):
         return True
-    return _writes_into(cmd, {"crew-helpers"}, HELPERS_PLACE)
+    return _writes_into(cmd, HELPER_DATA, HELPERS_PLACE)
 
 
 def _shell_texts(cmd, depth=0):

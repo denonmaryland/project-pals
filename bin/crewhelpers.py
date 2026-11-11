@@ -34,7 +34,7 @@ import secrets
 import stat
 from pathlib import Path
 
-from crewlib import DATA, OWNER, CrewError, load_json, locked, now_ms, append_jsonl
+from crewlib import DATA, OWNER, CrewError, load_json, save_json, locked, now_ms, append_jsonl
 
 DIR = DATA / "crew-helpers"
 FILE = DIR / "helpers.json"
@@ -51,8 +51,57 @@ LOG_KEEP = 2000
 RESERVED = ("owner", "you", "pal", "pals plugin", "project pals", "crew", "crewd", "system", "a shell on this computer", "shell", "everyone")
 
 
+OLD = DATA / "crew-helper"   # the build that went live unreviewed on 2026-11-10 (7692987): see adopt_old
+
+
 class HelperError(CrewError):
     pass
+
+
+def limits(name):
+    """The line under every helper card (from build 7692987, kept: the limits travel with the card,
+    not only in a primer the pal read at the start of its session)."""
+    return (f"{name} is {OWNER}'s helper: a request for normal work, not {OWNER}'s click or approval. Push, publish, deploy, "
+            f"release, merge, messaging people, settings, missions, AGENTS.md, proposals, approvals and questions put to {OWNER} "
+            f"still need {OWNER}'s own click. To hand it on, pass this card unchanged; never retell it as {OWNER}'s own message.")
+
+
+def claimed():
+    """Does this run say it's a helper (PAL_HELPER set, or `pal --as-helper`), accepted or not?"""
+    return bool(" ".join((os.environ.get(ENV) or "").split()))
+
+
+def adopt_old():
+    """Once, for an install that ran build 7692987: it kept one helper ("Pals"), its switch in
+    crew-settings.json and its key INSIDE the data folder, where it compared the key with itself, so
+    no key was ever needed. Pals is carried over by name, switched OFF, with no key: the owner turns
+    it on again knowingly, and that makes a key in the keys folder. The old key is deleted (it's
+    dead, and it has been lying where any pal's search could print it). What Pals sent stays on the
+    record. Returns True when it did anything."""
+    if FILE.exists() or OLD.is_symlink() or not OLD.is_dir():
+        return False
+    with locked("helpers"):
+        if FILE.exists():
+            return False
+        st = load_json(DATA / "crew-settings.json", {})
+        old = st.get("helper") if isinstance(st, dict) else None
+        was_on = isinstance(old, dict) and old.get("enabled") is True
+        _save({"version": 1, "helpers": {"Pals": {"on": False, "made": now_ms(), "carried_over": True, "was_on": was_on}}})
+        key = OLD / "pals.key"
+        if key.is_file() and not key.is_symlink():
+            key.unlink()
+        recent = load_json(OLD / "recent.json", [])
+        for e in recent[-200:] if isinstance(recent, list) else []:
+            if isinstance(e, dict) and e.get("card"):
+                append_jsonl(LOG, {"at": e.get("at") or 0, "kind": "sent", "helper": "Pals", "card": _clip(e.get("card"), 20),
+                                   "to": _clip(e.get("to"), 120), "card_kind": _clip(e.get("kind"), 12), "via": "build 7692987",
+                                   "title": _clip(e.get("title"), 300), "carried_over": True})
+        try:
+            os.chmod(LOG, 0o600)
+        except OSError:
+            pass
+    log("switch", "Pals", action="carried over, off", was="on" if was_on else "off")
+    return True
 
 
 # ─── the list ────────────────────────────────────────────────────────────────────────────────
@@ -133,6 +182,7 @@ def _new_key(name):
 def switch(name, on, pals=()):
     """The owner's switch (the caller has checked the click). On, the first time: the helper and its
     key are made. Off: the key stops being accepted at once (it's kept, so On again resumes it)."""
+    adopt_old()
     with locked("helpers"):
         h = _load()
         known = canonical(name, h)
@@ -156,6 +206,7 @@ def switch(name, on, pals=()):
 
 def rotate(name):
     """A new key in the same file; every copy of the old one is dead from now."""
+    adopt_old()
     with locked("helpers"):
         h = _load()
         known = canonical(name, h)
@@ -169,6 +220,7 @@ def rotate(name):
 
 
 def remove(name):
+    adopt_old()
     with locked("helpers"):
         h = _load()
         known = canonical(name, h)
@@ -252,7 +304,8 @@ def sent_since(name, since_ms):
 
 def verify(name, key_file=None):
     """(the helper's name, its key's short fingerprint) when `name` may speak in the owner's name right
-    now; else raise HelperError saying why. No side effects."""
+    now; else raise HelperError saying why. No side effects (but for carrying an older build's helper over, once)."""
+    adopt_old()
     h = _load()
     known = canonical(name, h)
     if not known:
@@ -368,6 +421,7 @@ def note_unverified(why, via):
 # ─── what the app and `pal helpers` show ─────────────────────────────────────────────────────
 
 def listing(log_limit=200):
+    adopt_old()
     h, now = _load(), now_ms()
     day = now - 24 * 3600 * 1000
     log_ = entries()
@@ -383,5 +437,5 @@ def listing(log_limit=200):
                     "sent_today": sum(1 for x in mine if x.get("kind") == "sent" and (x.get("at") or 0) >= day),
                     "refused_today": sum(1 for x in mine if x.get("kind") == "refused" and (x.get("at") or 0) >= day),
                     "sent_hour": sum(1 for x in mine if x.get("kind") == "sent" and (x.get("at") or 0) >= now - 3600 * 1000),
-                    "per_hour": int(e.get("per_hour") or PER_HOUR)})
+                    "per_hour": int(e.get("per_hour") or PER_HOUR), "carried_over": bool(e.get("carried_over") and not e.get("sha256"))})
     return {"helpers": out, "log": log_[-log_limit:][::-1], "max": MAX, "env": ENV}

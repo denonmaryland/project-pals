@@ -582,6 +582,10 @@ def cmd_ask(spaces, spec, text, timeout):
     card = crewdesk.create("ask", f"{space['name']}#{chan(tab)}", title, body, frm=who["from"], from_kind=who["from_kind"],
                            proof=who["proof"], via="pal ask")
     head = crewdesk.who(card) if who["from_kind"] != "owner" else header(me, name)   # (a helper's header needs its card: the ledger)
+    helper_limits = ""
+    if who["from_kind"] == "helper":
+        import crewhelpers
+        helper_limits = "\n→ " + crewhelpers.limits(who["from"])
     text = crewdesk.escape_body(text)
     import crewchat
     from crewlib import QUEUE, hooked
@@ -612,7 +616,7 @@ def cmd_ask(spaces, spec, text, timeout):
         linked = t in crewchat.links()
         sent_at = now_ms()
         try:
-            send_now(t, f"{head} asks ({card['id']}): {text}" + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
+            send_now(t, f"{head} asks ({card['id']}): {text}" + helper_limits + ("" if linked else f"\n(Answer right here in your reply; {name} is reading your screen.)"))
         except CrewError:
             crewdesk.mark(card["id"], "cancelled", "pal ask", "pal ask", "couldn't type it in")
             raise
@@ -1029,6 +1033,11 @@ def cmd_task(spaces, rest):
     sub, args = (rest[0], rest[1:]) if rest else ("ls", [])
     if sub == "add":
         pos, o = opts(args, ("for", "after", "body", "check", "due"))
+        import crewhelpers
+        if crewhelpers.claimed() and o.get("check") is not None:
+            # A --check is a command a pal's side runs to call the task done: not something to take from
+            # outside the crew (from build 7692987).
+            die("a helper's task can't carry a --check command: the pal that takes it adds its own check")
         if not pos:
             die('pal task add "<title>" [--for Pal] [--after T1,T2] [--due fri]')
         deps = [d.strip() for d in (o.get("after") or "").split(",") if d.strip()]
@@ -2358,6 +2367,10 @@ def cmd_uninstall(rest):
     if bad:
         die("pal uninstall [--purge] [--dry-run] [--json]")
     dry, as_json = "--dry-run" in rest, "--json" in rest
+    if not dry and os.environ.get("PAL_HELPER"):
+        import crewhelpers
+        crewhelpers.note_refused(["uninstall", *rest], "uninstall Project Pals")
+        die(f"uninstalling is {OWNER}'s: a trusted helper's key isn't a click")
     if not dry:
         update_log(f"uninstall{' --purge' if '--purge' in rest else ''} asked by {f'terminal {ME}' if ME else 'the app or a shell'}"
                    f"{'' if click_of() else ', no click'}")
@@ -2822,6 +2835,16 @@ def cmd_factory(rest):
 
 def main(argv):
     global ARGV
+    # `pal --as-helper tell …` (how build 7692987's helper sends): the same as PAL_HELPER=Pals for this
+    # one command; --as-helper=<name> for another helper. Only the four sends (and asking where it
+    # stands): the identity can't wander into another command.
+    if argv and (argv[0] == "--as-helper" or argv[0].startswith("--as-helper=")):
+        name = argv[0].partition("=")[2].strip() or os.environ.get("PAL_HELPER") or "Pals"
+        os.environ["PAL_HELPER"] = name
+        argv = argv[1:]
+        ok = argv[:1] in (["tell"], ["ask"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
+        if not ok or "--click" in argv:
+            die(f"--as-helper is only for tell, ask, task add and desk send; anything that's {OWNER}'s still needs their click in Project Pals")
     if not argv:
         argv = ["bots"]
     # -F is --file (pal mission propose -F draft.md).
