@@ -175,14 +175,104 @@ def send_target(to, spaces):
 # ── the Chief's own tool calls (Claude Code PreToolUse) ───────────────────────────────────────
 
 HC_WRITES = {"send", "keys", "interrupt", "kill", "run", "rm", "label", "keep", "put", "attach", "server", "update", "machine", "file", "exec"}
-GIT_READS = {"log", "status", "show", "diff", "branch", "rev-parse", "rev-list", "describe", "shortlog", "ls-files",
-             "blame", "remote", "config", "tag", "worktree", "for-each-ref", "cat-file", "grep", "reflog", "help", "--version"}
-GIT_READ_ONLY_FORMS = {"branch": re.compile(r"\s-(?:[dDmMcC]|-delete|-move|-copy|-set-upstream|-unset-upstream)\b|\s--edit-description\b"),
-                       "tag": re.compile(r"\s-(?:[adsfmF]|-delete|-annotate|-sign|-force|-message|-file)\b"),
-                       "remote": re.compile(r"\s(?:add|remove|rm|rename|set-url|set-head|set-branches|prune|update)\b"),
-                       "config": re.compile(r"\s(?:--add|--unset|--unset-all|--replace-all|--rename-section|--remove-section|--edit|-e)\b|^\S+\s+(?!--get|-l|--list)\S+\s+\S+"),
-                       "worktree": re.compile(r"\s(?:add|remove|move|prune|lock|unlock|repair)\b"),
-                       "reflog": re.compile(r"\s(?:delete|expire)\b")}
+GIT_READS = {"log", "status", "show", "diff", "rev-parse", "rev-list", "describe", "shortlog", "ls-files",
+             "blame", "for-each-ref", "cat-file", "grep", "help"}
+# Subcommands that read or write depending on their arguments. These pass only in an explicit read
+# form, and everything else is refused: `git branch x`, `git tag x` and `git config user.name X`
+# are writes with no flag to spot, so listing the writing flags let them through (Codex's 0.4.2
+# review, T121). Per subcommand: `flags` take no value, `optional` take one only as --opt=value,
+# `valued` take one (--opt=value or the next word), `short` maps -x to its long name, `digits` are
+# short options that carry a number (-n3); `forms` is what the refusal offers instead.
+_LIST_MODE = {"--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}   # these make branch and tag list
+_CONFIG_PLACE = {"--global", "--system", "--local", "--worktree", "--includes", "--no-includes"}
+_CONFIG_GETS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "--list"}
+GIT_MIXED = {
+    "branch": {"flags": {"--list", "--all", "--remotes", "--verbose", "--show-current", "--no-color", "--no-column",
+                         "--no-abbrev", "--ignore-case", "--omit-empty"},
+               "optional": {"--color", "--column", "--abbrev"} | _LIST_MODE, "valued": {"--sort", "--format"},
+               "short": {"a": "--all", "r": "--remotes", "v": "--verbose", "l": "--list", "i": "--ignore-case"},
+               "forms": "git branch (alone), --list [pattern], -a, -r, -v, --show-current, --contains / --merged <commit>"},
+    "tag": {"flags": {"--list", "--ignore-case", "--no-color", "--no-column", "--omit-empty"},
+            "optional": {"--color", "--column"} | _LIST_MODE, "valued": {"--sort", "--format"},
+            "short": {"l": "--list", "i": "--ignore-case", "n": "-n"}, "digits": {"-n"},
+            "forms": "git tag (alone), -l [pattern], -n, --contains / --merged <commit>"},
+    "config": {"flags": _CONFIG_PLACE | _CONFIG_GETS | {"--name-only", "--show-origin", "--show-scope", "--bool", "--int", "--bool-or-int",
+                         "--path", "--expiry-date", "--null", "--all", "--regexp", "--fixed-value", "--show-names", "--no-show-names"},
+               "valued": {"--file", "--blob", "--type", "--default", "--value", "--url"},
+               "short": {"l": "--list", "z": "--null", "f": "--file"},
+               "forms": "git config --get <name>, --get-all, --get-regexp <pattern>, --list (or: git config get <name>, git config list)"},
+    "remote": {"flags": {"--verbose", "--push", "--all"}, "short": {"v": "--verbose", "n": "-n"},
+               "forms": "git remote (alone), -v, show <name>, get-url <name>"},
+    "worktree": {"forms": "git worktree list"},
+    "reflog": {"forms": "git reflog (alone), show [ref], list, exists <ref>"},
+}
+
+
+def _git_options(args, spec):
+    """A mixed subcommand's arguments as (the options given, by long name; the other words; the
+    options given before the first of those words), or None when one of them isn't a read option of
+    that subcommand."""
+    flags, optional, valued = spec.get("flags", set()), spec.get("optional", set()), spec.get("valued", set())
+    short, digits = spec.get("short", {}), spec.get("digits", set())
+    seen, pos, early, i = set(), [], set(), 0
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if not pos:
+            early = set(seen)
+        if a == "--":
+            pos += args[i:]
+            break
+        if a.startswith("--"):
+            name, eq, _ = a.partition("=")
+            if name in valued:
+                i += 0 if eq else 1
+            elif not (name in optional or (name in flags and not eq)):
+                return None
+            seen.add(name)
+        elif a.startswith("-") and len(a) > 1:
+            j = 1
+            while j < len(a):
+                name = short.get(a[j])
+                j += 1
+                if not name:
+                    return None
+                seen.add(name)
+                if name in valued:              # -f FILE or -fFILE: the rest is its value
+                    i += 0 if j < len(a) else 1
+                    break
+                while name in digits and j < len(a) and a[j].isdigit():
+                    j += 1
+        else:
+            pos.append(a)
+    return seen, pos, (early if pos else seen)
+
+
+def git_reads_only(sub, args):
+    """Is `git <sub> <args…>` one of the explicit read forms of a mixed subcommand (GIT_MIXED)?"""
+    if sub == "worktree":
+        return args[:1] == ["list"]
+    if sub == "reflog":                         # only its first word picks what it does; the rest are log's options
+        first = next((a for a in args if not a.startswith("-")), None)
+        return first in (None, "show", "list", "exists")
+    got = _git_options(args, GIT_MIXED[sub])
+    if got is None:
+        return False
+    seen, pos, early = got
+    if sub == "branch":                         # a name with nothing that makes it list creates that branch (-v x does)
+        return not pos or bool(seen & ({"--list", "--show-current"} | _LIST_MODE))
+    if sub == "tag":
+        return not pos or bool(seen & ({"--list", "-n"} | _LIST_MODE))
+    if sub == "config":
+        # `git config name` reads and `git config name value` sets: neither passes. git stops reading
+        # config's options at the first name, so `git config user.name --get` SETS it to "--get": the
+        # reading option has to come before any name.
+        return args[:1] in (["get"], ["list"]) or bool(early & _CONFIG_GETS)
+    if sub == "remote":
+        return not pos or pos[0] in ("show", "get-url")
+    return False
+
+
 OTHER_PALS = {"crew-room", "pal-room", "buddy-room", "botz-room", "crew-hook", "crewd", "herdr-app"}
 PAL_NAMES = {"pal", "crew", "buddy", "botz"}
 
@@ -228,9 +318,14 @@ def hook_refusal(tool, inp, cwd=None):
             while j < len(rest) and rest[j].startswith("-"):
                 j += 2 if rest[j] in crewguard.GIT_VALUE_OPTS else 1
             sub = rest[j] if j < len(rest) else ""
-            tail = " " + " ".join(rest[j + 1:])
-            if sub not in GIT_READS or (sub in GIT_READ_ONLY_FORMS and GIT_READ_ONLY_FORMS[sub].search(tail)):
-                return f"the {NAME} reads git (log, status, diff, show, branch…) but doesn't change it (git {sub}). Hand it to {inbox_label()}."
+            args = rest[j + 1:]
+            if sub in GIT_MIXED:
+                if not git_reads_only(sub, args):
+                    return (f"the {NAME} reads git but doesn't change it, and `git {' '.join([sub, *args])}` isn't a read form of "
+                            f"git {sub} (the rest create, move, delete or set). Read with: {GIT_MIXED[sub]['forms']}. "
+                            f"Hand a change to {inbox_label()}.")
+            elif sub not in GIT_READS:
+                return f"the {NAME} reads git (log, status, diff, show, branch --list…) but doesn't change it (git {sub}). Hand it to {inbox_label()}."
         if head in PAL_NAMES:
             sub = rest[0] if rest else ""
             why = cli_refusal(sub, rest[1:])

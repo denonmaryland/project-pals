@@ -1135,6 +1135,14 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   refused. Its own tool calls (`crew-hook pre-tool-use`, checked only once a Chief is hired): no
   `hc send/keys/…`, no git subcommand that changes anything, no `pal` command it couldn't run, no
   `crew-room`/`crewd`/`herdr-app`, no file write outside `data/crew-chief`. Denied, with why.
+  Git is an allow-list: the reading subcommands (log, status, show, diff, rev-parse, blame, grep …),
+  and for the ones that read or write by their arguments only an explicit read form
+  (`GIT_MIXED`): `branch` alone or with `--list / -a / -r / -v / --show-current / --contains /
+  --merged`, `tag` alone or `-l / -n / --contains`, `config --get… / --list` (or `config get / list`),
+  `remote` alone, `-v / show / get-url`, `worktree list`, `reflog` alone, `show / list / exists`. A
+  name with nothing that makes it a listing is a write (`git branch x`, `git branch -v x`,
+  `git tag x`), and so is `git config name [value]`; config's reading option must come before the
+  name (`git config user.name --get` sets it to "--get"). The refusal names the read forms.
 - **The pop-up** (`toggleChief`, `crew-roster.chief`, **Ctrl+Shift+J**, bound by install.sh when free
   and taken out by the uninstaller; also "Chief" in the gear menu and command bar): a Herdr window
   (`key: "chief"`, `keep: true`, so it comes back where it was dropped and after a restart). Split

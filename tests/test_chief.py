@@ -237,6 +237,68 @@ class TheChiefsToolCalls(unittest.TestCase):
                     "pal-room read war-room", "cat /p/README.md"):
             self.assertFalse(self.denied("tC", "Bash", {"command": cmd}, str(self.home)), cmd)
 
+    # Codex's 0.4.2 review (P2, T121): branch, tag and config were "reads" with some writing flags
+    # excluded, so the plain writes that carry no flag passed. Only explicit read forms pass now.
+    GIT_WRITES = (
+        "git branch review-notes", "git tag review-note", "git config user.name Example",          # the three reported
+        "git branch review-notes main", "git branch -v review-notes", "git branch --sort=refname x", "git branch -f x main",
+        "git branch -d old", "git branch -m old new", "git branch -c old new", "git branch -u origin/main",
+        "git branch --set-upstream-to=origin/main", "git branch --unset-upstream", "git branch --edit-description",
+        "git branch --track x origin/x", "git branch -- x", "git -C /p branch x", "cd /p && git branch x",
+        "git tag v1 HEAD", "git tag -a v1 -m x", "git tag -d v1", "git tag -f v1", "git tag -s v1", "git tag --sort=refname v1",
+        "git tag -m note v1", "git tag -F notes.txt v1", "git tag -- v1",
+        "git config user.name", "git config --global user.email a@b.c", "git config set user.name X", "git config unset user.name",
+        "git config --unset user.name", "git config --add remote.origin.fetch x", "git config --replace-all a.b c",
+        "git config --rename-section a b", "git config --remove-section a", "git config --edit", "git config -e",
+        "git config edit", "git config rename-section a b", "git config --global set user.name X", "git config",
+        "git config user.name --get", "git config a.b --list", "git config --global a.b --get-all", "git config a.b user.name --get-regexp",
+        "git remote add up https://example.com/x.git", "git remote set-url origin x", "git remote rm origin", "git remote -v update",
+        "git remote prune origin", "git remote rename a b",
+        "git worktree add ../x", "git worktree remove x", "git worktree prune", "git worktree",
+        "git reflog expire --all", "git reflog delete HEAD@{1}", "git reflog drop --all", "git reflog write a b c d",
+    )
+    GIT_READ_FORMS = (
+        "git branch", "git branch -a", "git branch -r", "git branch -v", "git branch -vv", "git branch -avv", "git branch --all --verbose",
+        "git branch --list", "git branch --list 'crew/*'", "git branch -l 'crew/*' -v", "git branch --show-current",
+        "git branch --contains HEAD", "git branch --contains=HEAD", "git branch -r --merged main", "git branch --no-merged",
+        "git branch --points-at HEAD", "git branch --sort=-committerdate --format='%(refname:short)'", "git branch --no-color -a",
+        "git branch --format '%(refname)' --list", "git -C /p --no-pager branch -a",
+        "git tag", "git tag -l", "git tag --list 'v0.4.*'", "git tag -l -n3", "git tag -n", "git tag --contains HEAD",
+        "git tag --sort=-creatordate", "git tag --merged main --format='%(refname:short)'", "git tag --points-at HEAD",
+        "git config --get user.name", "git config --get-all remote.origin.fetch", "git config --get-regexp '^remote'", "git config --list",
+        "git config -l --show-origin", "git config --global --get user.email", "git config --type=bool --get core.bare",
+        "git config -f .gitmodules --list", "git config get user.name", "git config list --show-scope", "git config get --all --default x a.b",
+        "git remote", "git remote -v", "git remote show origin", "git remote show -n origin", "git remote get-url --push origin",
+        "git worktree list", "git worktree list --porcelain",
+        "git reflog", "git reflog show HEAD", "git reflog -5", "git reflog list", "git reflog exists refs/heads/main",
+        "git log --oneline -5", "git status", "git diff --stat", "git show HEAD", "git rev-parse HEAD",
+    )
+
+    def refusals(self, cmds):
+        return py(self.env, f"import crewchief\nprint(json.dumps({{c: crewchief.hook_refusal('Bash', {{'command': c}}, {str(self.home)!r}) "
+                            f"for c in {list(cmds)!r}}}))", term="tC")
+
+    def test_git_only_in_read_forms(self):
+        why = self.refusals(self.GIT_WRITES)
+        for cmd in self.GIT_WRITES:
+            self.assertTrue(why[cmd], f"passed: {cmd}")
+        for cmd in ("git branch review-notes", "git tag review-note", "git config user.name Example"):
+            sub = cmd.split()[1]
+            self.assertIn(f"`{cmd}`", why[cmd])                      # denied with why: what it ran,
+            self.assertIn(f"Read with: git {sub}", why[cmd])         # the forms that do read,
+            self.assertIn("Boss#ops", why[cmd])                      # and where a change goes
+        ok = self.refusals(self.GIT_READ_FORMS)
+        for cmd in self.GIT_READ_FORMS:
+            self.assertIsNone(ok[cmd], f"refused: {cmd}")
+
+    def test_the_hook_denies_a_plain_git_write(self):
+        for cmd in ("git branch review-notes", "git tag review-note", "git config user.name Example"):
+            self.assertTrue(self.denied("tC", "Bash", {"command": cmd}, str(self.home)), cmd)
+        for cmd in ("git branch --list", "git tag -l", "git config --get user.name"):
+            self.assertFalse(self.denied("tC", "Bash", {"command": cmd}, str(self.home)), cmd)
+        # Another pal's git is not the Chief's business.
+        self.assertFalse(self.denied("tW", "Bash", {"command": "git branch review-notes"}))
+
     def test_edits(self):
         self.assertTrue(self.denied("tC", "Write", {"file_path": "/p/src/app.py", "content": "x"}, str(self.home)))
         self.assertTrue(self.denied("tC", "Edit", {"file_path": str(self.data / "crew-god" / "notes.md"), "old_string": "a", "new_string": "b"}, str(self.home)))

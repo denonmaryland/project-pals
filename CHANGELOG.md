@@ -7,6 +7,12 @@
   weren't looking at, or a Desk card it sent you, was on that factory's Home but not in its count,
   so the chip could show nothing waiting there. Both count now, for the factory of the pal that
   made the proposal or sent the card. (From Codex's review of 0.4.2.)
+- **The Chief can't make a branch, a tag or a git setting.** The Chief only reads git, but
+  `git branch name`, `git tag name` and `git config user.name X` went through: they change things
+  without any flag that says so. Git commands that can do both now pass only in a form that
+  plainly reads (`git branch --list`, `git tag -l`, `git config --get name`, `git remote -v`,
+  `git worktree list`, `git reflog show`); anything else is refused, and the refusal lists the
+  reading forms. (From Codex's review of 0.4.2.)
 
 ## 0.4.2 — 2026-11-10
 
