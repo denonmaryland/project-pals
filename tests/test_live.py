@@ -310,6 +310,10 @@ class Live(unittest.TestCase):
         # back only what the trial's install wrote and nobody changed since.
         self.assertIn("TRIAL-SKILL", skill.read_text())
         skill.write_text(skill.read_text() + "\nMY-EDIT: what I learned during the trial\n")
+        # … and a second branch is tried on top (Codex T130): its install keeps the edited skill, which
+        # must not make the edit count as something a trial wrote.
+        self.ok("update", "try", "Builder#z", "--json", click=True)
+        self.assertIn("MY-EDIT", skill.read_text())
 
         # main moves during the trial: it waits.
         self.git("checkout", "-q", "main")
@@ -514,7 +518,7 @@ out["no_record"] = skill.read_text()
 skill.write_text("SHIPPED-1"); brief.write_text("BRIEF-1"); record.write_text('{"version": "1"}')
 snap = crewupdate._snapshot("from-1-try")
 skill.write_text("SHIPPED-2 (the trial's)"); brief.write_text("BRIEF-2 (the trial's)"); record.write_text('{"version": "2"}')
-wrote = crewupdate.data_hashes()
+wrote = crewupdate.note_wrote(snap)
 skill.write_text("SHIPPED-2 (the trial's) + MY EDIT")
 crewupdate.rollback(snap, log=quiet, wrote=wrote)
 out["edited_in_trial"] = skill.read_text()
@@ -524,7 +528,8 @@ out["install_record"] = json.loads(record.read_text())["version"]
 # 3. The skill was the pal's own before the trial (an install keeps such a skill), then edited again.
 skill.write_text("CUSTOM-0")
 snap = crewupdate._snapshot("from-1-try")
-wrote = crewupdate.data_hashes()
+wrote = crewupdate.note_wrote(snap)      # the install kept the custom skill: it wrote nothing there
+out["kept_is_not_written"] = "data/crew-skills/pal-desk/SKILL.md" in wrote
 skill.write_text("CUSTOM-1")
 crewupdate.rollback(snap, log=quiet, wrote=wrote)
 out["custom_before"] = skill.read_text()
@@ -533,15 +538,41 @@ out["custom_before"] = skill.read_text()
 skill.write_text("SHIPPED-1")
 snap = crewupdate._snapshot("from-1-try")
 skill.write_text("SHIPPED-2 (the trial's)")
-crewupdate.rollback(snap, log=quiet, wrote=crewupdate.data_hashes())
+crewupdate.rollback(snap, log=quiet, wrote=crewupdate.note_wrote(snap))
 out["unedited"] = skill.read_text()
 
 # 5. A skill deleted during the trial stays deleted.
 snap = crewupdate._snapshot("from-1-try")
-wrote = crewupdate.data_hashes()
+wrote = crewupdate.note_wrote(snap)
 skill.unlink()
 crewupdate.rollback(snap, log=quiet, wrote=wrote)
 out["deleted"] = skill.exists()
+
+# 6. Codex T130: a second branch tried on top of the first. Trial A's install writes its skill; a pal
+#    edits it; trial B's install keeps the edited skill (it doesn't write there). Back puts back the
+#    snapshot from before A, with what the two installs wrote between them: the edit is neither's.
+skill.write_text("SHIPPED-1"); brief.write_text("BRIEF-1")
+first = crewupdate._snapshot("from-1-try")
+skill.write_text("A's skill"); brief.write_text("A's brief")
+wrote_a = crewupdate.note_wrote(first)
+skill.write_text("A's skill + MY EDIT")
+second = crewupdate._snapshot("from-1-try")
+out["snapshots_differ"] = str(first) != str(second)
+brief.write_text("B's brief")                       # B renders its brief; the skill it leaves alone
+wrote_b = crewupdate.note_wrote(second)
+crewupdate.rollback(first, log=quiet, wrote=crewupdate.merge_wrote(wrote_a, wrote_b))
+out["stacked_edit"] = skill.read_text()
+out["stacked_brief"] = brief.read_text()
+
+# 7. The same, with nobody editing: what A wrote and B left is still A's, and goes back.
+skill.write_text("SHIPPED-1"); brief.write_text("BRIEF-1")
+first = crewupdate._snapshot("from-1-try")
+skill.write_text("A's skill"); brief.write_text("A's brief")
+wrote_a = crewupdate.note_wrote(first)
+second = crewupdate._snapshot("from-1-try")
+brief.write_text("B's brief")
+crewupdate.rollback(first, log=quiet, wrote=crewupdate.merge_wrote(wrote_a, crewupdate.note_wrote(second)))
+out["stacked_unedited"] = [skill.read_text(), brief.read_text()]
 print(json.dumps(out))
 '''
 
@@ -571,6 +602,11 @@ class Restore(unittest.TestCase):
             self.assertEqual(out["custom_before"], "CUSTOM-1")
             self.assertEqual(out["unedited"], "SHIPPED-1")
             self.assertFalse(out["deleted"])
+            self.assertFalse(out["kept_is_not_written"], "a file an install left alone isn't recorded as written by it")
+            self.assertTrue(out["snapshots_differ"], "two snapshots in the same second don't share a file")
+            self.assertEqual(out["stacked_edit"], "A's skill + MY EDIT", "an edit made between two stacked trials survives Back")
+            self.assertEqual(out["stacked_brief"], "BRIEF-1", "while what the second trial rendered goes back")
+            self.assertEqual(out["stacked_unedited"], ["SHIPPED-1", "BRIEF-1"])
         finally:
             shutil.rmtree(t, ignore_errors=True)
 

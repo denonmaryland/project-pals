@@ -440,9 +440,14 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   when its code differs. The snapshot also holds the files an install renders under `data/` (the
   head pal's, the Chief's and the idea partner's briefs, the shipped pal-desk skill and its
   record), but those are the user's first: one goes back only while it still is exactly what the
-  install being undone wrote (its hashes are taken after each install, kept beside the snapshot as
-  `<snapshot>.wrote.json` and in a trial's record). A skill or brief edited or deleted since, or
-  with no record, is left as it is (Codex T94: Back overwrote a skill edited during the trial).
+  install being undone wrote. What an install wrote is the files that differ from the snapshot
+  taken just before it, with their hashes (beside the snapshot as `<snapshot>.wrote.json` and in a
+  trial's record); a file it left alone, such as a customised skill it kept, was never its own.
+  Trials stacked on one snapshot merge their records, the later install's writes over the
+  earlier's, so an edit made between two trials is still an edit. A skill or brief edited or
+  deleted since, left alone by the install, or with no record, stays as it is (Codex T94: Back
+  overwrote a skill edited during the trial; T130: and still did when a second branch was tried
+  on top).
   `crew-install.json` always goes back.
   The installer writes only files whose content changed (`cmp`, `rsync --checksum` without times),
   so only the mods that changed reload; `main.js` still goes last in a mod that changed.

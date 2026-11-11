@@ -259,9 +259,11 @@ APP = "@app"   # snapshot names under Herdr's home start with this (it needn't b
 # (Back after a trial, Roll back, a swap that didn't come up) can put them back. But between the
 # install and its undoing, a pal or the owner may have edited one: that edit is theirs, and
 # everything under data/ is the user's first. So a snapshot's copy of such a file goes back only
-# when the file on disk still is exactly what the install being undone wrote (`wrote`: its hash,
-# taken right after that install, kept beside the snapshot as <snapshot>.wrote.json and, for a
-# trial, in crew-live.json). Edited, deleted, or no record of what the install wrote: left as it is.
+# when the file on disk still is exactly what the install being undone wrote. `wrote` holds the
+# files that install changed (compared with the snapshot taken just before it) and their hashes,
+# kept beside the snapshot as <snapshot>.wrote.json and, for a trial, in crew-live.json; trials
+# stacked on one snapshot merge theirs (merge_wrote). Edited, deleted, left alone by the install,
+# or no record of what it wrote: left as it is.
 # The install record (crew-install.json) is Project Pals' own and always goes back.
 def rendered_files():
     d = HOME / "data"
@@ -281,13 +283,35 @@ def data_hashes():
     return {p.relative_to(HOME).as_posix(): _file_hash(p) for p in rendered_files()}
 
 
+def changed_since(snap):
+    """What the install that followed this snapshot WROTE under data/: the files that now differ
+    from the snapshot's copy, with their hash now. A file the install left alone (a customised skill
+    it kept) isn't in here, whatever it holds: it was never the install's (Codex T130)."""
+    was = {}
+    try:
+        with tarfile.open(snap) as tar:
+            for m in tar.getmembers():
+                if m.isfile() and m.name.startswith(f"{APP}/data/"):
+                    was[m.name[len(APP) + 1:]] = hashlib.sha256(tar.extractfile(m).read()).hexdigest()
+    except (OSError, tarfile.TarError):
+        return {}   # nothing known to be the install's: those files are left alone
+    return {k: h for k, h in data_hashes().items() if h != was.get(k)}
+
+
+def merge_wrote(earlier, later):
+    """Trials stacked on one snapshot: what the installs since it wrote, between them. The later
+    install's writes replace the earlier's; a file the later one left alone keeps the earlier
+    record, so an edit made in between still counts as an edit."""
+    return {**(earlier or {}), **(later or {})}
+
+
 def wrote_file(snap):
     return Path(str(snap) + ".wrote.json")
 
 
-def note_wrote(snap, wrote=None):
+def note_wrote(snap):
     """Beside a snapshot: what the install that followed it wrote (for a later Roll back)."""
-    wrote = data_hashes() if wrote is None else wrote
+    wrote = changed_since(snap)
     try:
         save_json(wrote_file(snap), wrote)
     except OSError:
@@ -300,7 +324,7 @@ def drop_snapshot(snap):
     wrote_file(snap).unlink(missing_ok=True)
 
 
-def _theirs(dest, m, wrote, log):
+def _theirs(tar, dest, m, wrote, log):
     """Is this snapshot member a file under data/ that must be left as it is?"""
     if not m.isfile():
         return False
@@ -312,8 +336,11 @@ def _theirs(dest, m, wrote, log):
     if target.resolve() == INSTALL.resolve():
         return False
     key = (Path("data") / rel).as_posix()
-    if wrote is not None and key in wrote and wrote[key] is not None and _file_hash(target) == wrote[key]:
+    now = _file_hash(target)
+    if wrote is not None and key in wrote and wrote[key] is not None and now == wrote[key]:
         return False   # still what the install wrote: nobody's edit is lost by putting the old one back
+    if now == hashlib.sha256(tar.extractfile(m).read()).hexdigest():
+        return True    # it is what the snapshot holds: nothing to put back, nothing to say
     log(f"left {key} as it is (it was changed since, or there's no record of what the install wrote)")
     return True
 
@@ -322,7 +349,11 @@ def _snapshot(label):
     """Everything an update replaces, in one tarball, so it can be put back. Files in Herdr's home
     are stored as @app/<path there>, the rest relative to $HOME."""
     BACKUPS.mkdir(parents=True, exist_ok=True)
-    path = BACKUPS / f"update-{label}-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
+    stem = f"update-{label}-{time.strftime('%Y%m%d-%H%M%S')}"
+    path, n = BACKUPS / f"{stem}.tar.gz", 1
+    while path.exists():   # two in one second: never over the first (it may be a trial's way back)
+        n += 1
+        path = BACKUPS / f"{stem}-{n}.tar.gz"
     home = Path.home()
     app = [p for p in (HOME / "mods").glob("crew-*")] + [HOME / "layouts" / n for n in ("pals.json", "pals.svg", "buddies.json", "buddies.svg", "crew.json", "crew.svg")]
     app += [INSTALL, *rendered_files()]
@@ -352,8 +383,8 @@ def backups():
 
 
 def rollback(path=None, log=print, wrote=None):
-    """Put a snapshot back. wrote: what the install being undone wrote under data/ (data_hashes()
-    taken after it); without it, the record kept beside the snapshot. See _theirs."""
+    """Put a snapshot back. wrote: what the install(s) being undone wrote under data/ (changed_since,
+    merge_wrote); without it, the record kept beside the snapshot. See _theirs."""
     path = Path(path) if path else (backups()[-1] if backups() else None)
     if not path or not path.exists():
         raise CrewError("no update backup to roll back to")
@@ -413,7 +444,7 @@ def rollback(path=None, log=print, wrote=None):
             m.name = m.name[len(APP) + 1:] if m.name != APP else "."
         crewd_before = crewd_fingerprint()
         for dest, group in ((HOME, ours), (home, rest)):
-            group = _to_write(tar, dest, [m for m in group if not _theirs(dest, m, wrote, log)])
+            group = _to_write(tar, dest, [m for m in group if not _theirs(tar, dest, m, wrote, log)])
             if not group:
                 continue
             if hasattr(tarfile, "data_filter"):
@@ -510,10 +541,10 @@ def apply(log=print, version=None):
         try:
             r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
         except BaseException as e:
-            rollback(snap, log=log, wrote=data_hashes())
+            rollback(snap, log=log, wrote=changed_since(snap))
             raise CrewError(f"installing {new_version} stopped ({type(e).__name__}), so the previous version was put back")
         if r.returncode != 0:
-            rollback(snap, log=log, wrote=data_hashes())
+            rollback(snap, log=log, wrote=changed_since(snap))
             tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-12:])
             raise CrewError(f"version {new_version} didn't install cleanly, so the previous one was put back:\n{tail}")
         note_wrote(snap)
@@ -893,8 +924,8 @@ def install_tree(root, source, log=print):
     def put_back():
         # The snapshot now equals what's installed again: kept, it would be the newest one, and the
         # next Roll back would restore it, change nothing and say it worked.
-        # (Seconds after the install started: what's under data/ now is what it wrote.)
-        rollback(snap, log=log, wrote=data_hashes())
+        # What differs from the snapshot now is what this install wrote, seconds ago.
+        rollback(snap, log=log, wrote=changed_since(snap))
         drop_snapshot(snap)
     mods0, crewd0, errors0 = mods_fingerprint(), crewd_fingerprint(), _app_errors()
     args = ["bash", str(root / "install.sh"), f"--from-{source}", "--keep-crewd"]
@@ -1092,8 +1123,9 @@ def try_branch(repo, branch, spec=None, log=print, into=None):
     def started(res):
         return {"trying": {"branch": branch, "hash": sha[:12], "spec": spec, "since": time.time(), "repo": str(repo), "into": into,
                            "snapshot": (was or {}).get("snapshot") or res["backup"], "base": base,
-                           # What this install wrote under data/: Back puts back only what's still that.
-                           "wrote": res["wrote"]}}
+                           # What the trial installs wrote under data/ (this one, and any it was tried
+                           # on top of): Back puts back only what's still that.
+                           "wrote": merge_wrote((was or {}).get("wrote"), res["wrote"])}}
     return _swap(repo, sha, branch, "try", log, extra=started, undo={"trying": was})
 
 
