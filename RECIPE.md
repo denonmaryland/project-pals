@@ -1020,6 +1020,16 @@ shows, the header hides the split buttons.
   one window by address, never the active window; the bar re-reads the store every 3 s so a pin made
   with Super+O shows. No Hyprland: the window still opens and Pin says to use the window manager.
   Opening a topic that's already out focuses its window. Closing never ends the terminal.
+  **Whose window it is:** the key is the topic's exact address, `key_of("Pal#topic")`: the slug's
+  first 37 characters, `-`, and 10 hex of the address's SHA-256 (`orca-ops-190e8ce702`; 48 at
+  most). The slug alone folds punctuation and cuts long names, so `App#build-api` and
+  `App#build_api` shared one through 0.4.2 and the second got the first's window. An open window
+  is reused only when its state names the same label AND terminal (`shows`), looked for under every
+  open key, so a window 0.4.2 left open under its slug is still found. The same topic on another
+  terminal (the topic was closed and reopened): that window is closed and a new one opens. Another
+  topic under our key: refused with its name, nothing reused, nothing built over. Geometry from
+  0.4.2 (under the slug) is copied to the new key the first time (`adopt`); the old entry stays.
+  `pal popout pin|close` takes an open pop-out's key or its `Pal#topic`.
   Watch-outs: nothing is written to the Hypr config (no window rule); `pal popout` open / pin /
   close refuse everyone but the owner's click (`ls` is anyone's).
 - **Chat about it** opens a window (key `home-chat`, 560×520) over Home: a 34 px bar

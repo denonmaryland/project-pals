@@ -13,6 +13,12 @@
   plainly reads (`git branch --list`, `git tag -l`, `git config --get name`, `git remote -v`,
   `git worktree list`, `git reflog show`); anything else is refused, and the refusal lists the
   reading forms. (From Codex's review of 0.4.2.)
+- **Pop out opens the topic you asked for.** Two topics whose names differ only in punctuation
+  (`#build-api` and `#build_api`), or long names with the same first 48 characters, shared one
+  pop-out: opening the second brought up the first one's window, where you could type into the
+  wrong topic. Every topic has its own pop-out now, and an open window is brought up again only
+  when it shows that topic's terminal. A window left showing a terminal the topic no longer has is
+  replaced. Sizes, places and pins you already had are kept. (From Codex's review of 0.4.2.)
 
 ## 0.4.2 — 2026-11-10
 

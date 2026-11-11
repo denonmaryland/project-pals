@@ -2484,11 +2484,13 @@ def cmd_popout(spaces, rest):
         return
     if sub in ("pin", "close") and len(pos) == 2:
         require_owner(f"{sub} a pop-out window")
-        key = crewpopout.slug(pos[1])
+        key = crewpopout.open_key(pos[1])     # an open one, by its key or its topic: never a guess from the name
         if sub == "close":
-            print("closed" if crewpopout.close_popout(key) else "it wasn't open")
+            if not key and crewpopout.KEY_RE.fullmatch(pos[1]):
+                crewpopout.cleanup(pos[1])        # nothing open under it: clear what a window that died left
+            print("closed" if key and crewpopout.close_popout(key) else "it wasn't open")
             return
-        state = crewpopout.toggle_pin(key)
+        state = crewpopout.toggle_pin(key) if key else None
         if state is None:
             die("couldn't pin it: no pop-out window found, or this isn't Hyprland (pin it with your window manager)")
         print("pinned" if state else "unpinned")
@@ -2504,7 +2506,7 @@ def cmd_popout(spaces, rest):
     try:
         key, what = crewpopout.open_popout(x["terminal"], f"{space['name']}#{chan(tab)}",
                                            {"pal": name, "topic": chan(tab), "space": space.get("id"), "tab": tab.get("id"), "home": str(HOME)})
-    except FileNotFoundError as e:
+    except (FileNotFoundError, crewpopout.PopoutError) as e:
         die(str(e))
     print(f"{what} {key}")
 
