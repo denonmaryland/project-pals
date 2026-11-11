@@ -11,18 +11,33 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, props, closeOverlay, openOverlay, spaces, run } from "herdr";
+import { theme, props, closeOverlay, openOverlay, spaces, run, knownAgents } from "herdr";
 import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
   areasOf, areaOfTopic, fileTopic,
   canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
   crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview,
-  powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL,
+  powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL, HANDOFF_BRAINS, topicBrain, seatHolders, handOff, brainLogo, ds,
   factories, severalFactories, currentFactory, factoryOf, factoryNeeds, switchFactory, removeFactory, movePalToFactory, setForeman, templateOf } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
 export default class CrewMenu extends View {
+  // A topic's menu offers Hand to: the installed brains (asked of Herdr once, when it opens) and who
+  // held the seat before.
+  init(_props, cx) {
+    this.brains = null;
+    this.holders = [];
+    const p = props() ?? {};
+    if (p.what !== "tab") return;
+    cx.spawn(async (cx) => {
+      const tab = spaces().find((s) => s.id === p.space)?.tabs.find((x) => x.id === p.tab);
+      try { this.brains = (await knownAgents({ on: null })).filter((x) => x.installed && HANDOFF_BRAINS.includes(x.key)); } catch { this.brains = []; }
+      if (tab) this.holders = await seatHolders(tab);
+      cx.notify();
+    });
+  }
+
   close() { closeOverlay(props()?.overlay); }
 
   render() {
@@ -139,8 +154,32 @@ export default class CrewMenu extends View {
             .when(Boolean(fill), (el) => el.bg(fill))
             .when(!fill, (el) => el.border_1().border_color(a(t.foreground, "40")).child(svg(`${ICON}/x.svg`).size(10).text_color(t.dim))));
       };
+      // Hand to (T119): this topic's seat to another brain, one click. A tile per installed brain it
+      // can go to; the one that holds it is marked and does nothing; the one it came from says
+      // "back" (pal handoff resumes its session). pal handoff refuses a busy topic and says why.
+      // Not for a pal on another machine or the head pal (refused there), nor with one brain only.
+      const d = ds(t);
+      const holds = topicBrain(space, tab);
+      const before = this.holders.length >= 2 ? this.holders[this.holders.length - 2].brain : null;
+      const brains = this.brains ?? [];
+      const names = Object.fromEntries(brains.map((x) => [x.key, x.name]));
+      const canHand = !space.machine && !botOf(space).god && brains.some((x) => x.key !== holds);
+      const brainTile = (ag) => {
+        const on = ag.key === holds;
+        return v_flex().id(`m-hand-${ag.key}`).flex_1().h(46).gap(3).items_center().justify_center().rounded(4)
+          .border_1().border_color(a(t.foreground, on ? "10" : "24"))
+          .when(!on, (el) => el.cursor_pointer().bg(a(t.foreground, "06")).hover((s) => s.bg(a(t.foreground, "14")).border_color(a(t.foreground, "60")))
+            .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); handOff(space, tab, ag.key, names); this.close(); }))
+          .child(h_flex().gap(6).items_center().child(brainLogo(ag.key, 14, d, brains))
+            .child(div().text_size(12).text_color(on ? t.dim : t.foreground).child(ag.name)))
+          .child(div().text_size(10).text_color(t.dim).child(on ? "holds it" : ag.key === before ? "hand back" : "hand over"));
+      };
       return root
         .child(title(`#${channelName(tab)}`))
+        .when(canHand, (el) => el
+          .child(div().px(10).pt(2).pb(4).text_size(12).text_color(t.dim).child("Hand to"))
+          .child(h_flex().px(8).pb(4).gap(4).children(brains.map(brainTile)))
+          .child(line()))
         .child(item("m-pin", "pin", pinned ? "Unpin topic" : "Pin topic", () => pinTab(space, tab, !pinned)))
         // A worktree channel's branch: its diff against where it came from, with comments and Land.
         .when(Boolean(worktreeOf(botOf(space), tab)), (el) => el.child(item("m-review", "ds-review", "Review changes", () => openReview(space, tab))))

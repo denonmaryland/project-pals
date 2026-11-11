@@ -39,6 +39,7 @@ MEMORY = DATA / "crew-memory"
 SKILLS = DATA / "crew-skills"
 APPROVALS = DATA / "crew-approvals"
 WORKTREES = DATA / "crew-worktrees"
+HANDOFFS = DATA / "crew-handoffs"   # <terminal>/now.json while its seat changes hands; <id>.json + .md per handoff
 ME = os.environ.get("HC_TERMINAL_ID", "")
 SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu", "nushell", "elvish", "xonsh", "pwsh"}
 OSC_CLEAR = b"\x1b]7501;state=clear\x07"
@@ -497,6 +498,39 @@ def clear_osc_status(pid, proc_dir=None):
         return False
 
 
+# What a full-screen agent switches on in its terminal and should switch off as it leaves: mouse
+# reporting, focus reporting, the alternate screen, the kitty keyboard protocol, a hidden cursor.
+# Claude Code restores them on TERM. Codex 0.167 doesn't (found live, T119): mouse reports then
+# pour into the bare shell as text, and its keyboard mode turns the Ctrl+C typed before a command
+# into "9;5u" stuck to the command's front. The main and the alternate screen each keep their own
+# keyboard stack: Codex sets its mode on the main one and dies on the alternate one, so the stack
+# is emptied on both sides of leaving it (tried on herdr-core 0.1.20: one side alone isn't enough).
+MODES_OFF = (b"\x1b[<8u\x1b[=0;1u"                                    # the keyboard stack of the screen it died on
+             b"\x1b[?1049l"                                           # back to the main screen
+             b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1004l"   # mouse and focus reports
+             b"\x1b[<8u\x1b[=0;1u\x1b[>4;0m\x1b[?25h")              # the main screen's keyboard stack; the cursor
+
+
+def settle_terminal(pid, proc_dir=None):
+    """After an agent was stopped: put its terminal back to a plain shell's modes (written to the
+    shell's pty, as clear_osc_status does), so the next thing typed there is read as typed."""
+    if not pid:
+        return False
+    proc = _proc_root(proc_dir)
+    fd1 = proc / str(pid) / "fd" / "1"
+    try:
+        if proc == Path("/proc") and not os.readlink(fd1).startswith("/dev/pts/"):
+            return False
+        fd = os.open(fd1, os.O_WRONLY | os.O_APPEND | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            os.write(fd, MODES_OFF)
+        finally:
+            os.close(fd)
+        return True
+    except OSError:
+        return False
+
+
 def owns_terminal(pid, address, proc_dir=None):
     """pid is this machine's shell for that terminal. A remote pal's pid names some other process
     here, and nothing may be killed or written to on its account."""
@@ -697,13 +731,25 @@ def batch_text(msgs):
     return "Messages that came in while you were busy:\n\n" + "\n\n".join(item_text(m) for m in msgs)
 
 
+def changing_hands(terminal):
+    """This terminal's seat is changing hands right now (pal handoff: one brain has left, the next
+    hasn't taken its first turn). Nothing is delivered to it meanwhile, by crewd, a hook or the mod:
+    its queue waits. The marker ends by itself (`until`), so a handoff that died can't hold a desk."""
+    f = HANDOFFS / terminal / "now.json"
+    m = load_json(f, None)
+    if m and m.get("until", 0) <= now_ms():
+        f.unlink(missing_ok=True)   # over: the marker goes with it
+        return False
+    return bool(m)
+
+
 def claim_queue(terminal, only=None):
     """Take this terminal's due messages off the queue: [(claimed path, message)], oldest first.
     Each file is renamed before it's read, so crewd and a hook never both deliver the same one;
     `only` (paths) limits it to those. Put them back with unclaim(), or drop them with
     finish_claimed() once they've been delivered."""
     d = QUEUE / terminal
-    if not d.is_dir():
+    if not d.is_dir() or changing_hands(terminal):
         return []
     out = []
     for f in sorted(only if only is not None else d.glob("*.json")):

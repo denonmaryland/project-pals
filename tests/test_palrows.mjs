@@ -623,6 +623,48 @@ try {
     await crew.requestHandlers["power-report"]({ op: "power-report", mode: "sleep", lines: ["not putting X to sleep: it's mid-turn (working)"], refused: true });
     assert.equal(fixtures.notes[0].title, "Sleep (keep topics, free RAM)"); assert.equal(fixtures.notes[0].level, "warning");
     assert.match(fixtures.notes[0].body, /mid-turn/);
+    // T119, pal handoff: the brain a seat is handed to. Asking changes nothing; `keep` records it as
+    // this topic's brain (what wake starts again); a brain that isn't installed is an error, said.
+    const CODEX_IN = { key: "codex", name: "Codex", run: ["codex"], installed: true };
+    fixtures.known = [CLAUDE, AGY, CODEX_IN];
+    fixtures.shared.crew = before;
+    const brainsOf = () => fixtures.shared.crew.bots.find((b) => b.id === rec.id)?.brains ?? {};
+    const ask = await crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex" });
+    assert.equal(ask.ok, true); assert.equal(ask.key, "codex"); assert.equal(ask.name, "Codex"); assert.equal(ask.argv[0], "codex");
+    assert.equal(ask.agy, false);
+    assert.match(ask.hint, /pal primer/, "a brain without Project Pals' hooks is told where its primer is");
+    assert.equal(brainsOf()[tab.id], undefined, "asking records nothing");
+    await crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex", keep: true });
+    assert.equal(brainsOf()[tab.id], "codex", "kept as this topic's brain");
+    const woke = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id });
+    assert.equal(woke.argv[0], "codex", "wake starts the seat's holder");
+    fixtures.known = [CLAUDE, AGY, CODEX];
+    await assert.rejects(crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex" }), /isn't installed/);
+    await assert.rejects(crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: "nope", to: "codex" }), /isn't open/);
+    fixtures.notes = [];
+    await crew.requestHandlers["power-report"]({ op: "power-report", mode: "handoff", lines: ["handed X #y to Codex (was Claude Code)"], refused: false });
+    assert.equal(fixtures.notes[0].title, "Handoff (same seat, another brain)"); assert.equal(fixtures.notes[0].level, "success");
+    // The click (T138): who holds a topic's seat, and Hand to in the topic's menu.
+    const sA = fixtures.spaces.find((s) => s.id === "s1"), sB = fixtures.spaces.find((s) => s.id === "s2");
+    assert.equal(crew.topicBrain(sA, sA.tabs[0]), "claude", "the agent running there");
+    assert.equal(crew.topicBrain(sB, sB.tabs[0]), "codex");
+    const asleepTab = sA.tabs[3];   // #notes: no pane, so its brain on record, else the pal's
+    fixtures.shared.crew = { ...before, bots: before.bots.map((b) => (b.id === rec.id ? { ...b, brains: { [asleepTab.id]: "codex" } } : b)) };
+    if (crew.botOf(sA).record?.id === rec.id) assert.equal(crew.topicBrain(sA, asleepTab), "codex", "asleep: this topic's brain on record");
+    fixtures.shared.crew = before;
+    assert.deepEqual(await crew.seatHolders(sA.tabs[0]), [], "a seat that never changed hands");
+    assert.deepEqual(crew.HANDOFF_BRAINS, ["claude", "codex"]);
+    fixtures.notes = [];
+    crew.handOff(sA, sA.tabs[0], "codex", { codex: "Codex" });
+    assert.equal(fixtures.notes[0].title, "Handing #indicators to Codex…");
+    crew.handOff(sA, sA.tabs[0], null);
+    assert.equal(fixtures.notes.length, 1, "no brain named: nothing happens");
+    const crewSrc = readFileSync(join(root, "lib/crew.js"), "utf8");
+    assert.match(crewSrc, /const args = \["handoff", spec, "--to", to, "--notify"\];[\s\S]{0,500}JSON\.stringify\(\{ args, at: Date\.now\(\) \}\)[\s\S]{0,120}\.\.\.args\]/,
+      "pal handoff is started with the click's token for exactly its arguments");
+    const handMenu = readFileSync(join(root, "mods/crew-menu/main.js"), "utf8");
+    assert.match(handMenu, /const canHand = !space\.machine && !botOf\(space\)\.god && brains\.some\(\(x\) => x\.key !== holds\)/, "not on another machine, not the head pal, not with one brain");
+    assert.match(handMenu, /when\(!on, \(el\) => el\.cursor_pointer\(\)[\s\S]{0,260}handOff\(space, tab, ag\.key, names\); this\.close\(\)/, "the holder's own tile does nothing; another's hands over");
     fixtures.shared.crew = before; fixtures.known = undefined; fixtures.notes = [];
   }
   // Factories (T66). One factory: the whole sidebar draws as it always did, with no chip.
