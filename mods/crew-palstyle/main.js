@@ -89,8 +89,7 @@ export default class CrewPalStyle extends View {
       const big = st.id === "large";
       box.child(div().flex().h(big ? 40 : 30).flex_none().items_center().gap(big ? 12 : 10).px(8).when(!big, (el) => el.mt(4))
         .child(div().w(st.pet).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(big ? 15 : 13).text_color(d.icon)))
-        .child(div().flex_1().text_size(big ? 13 : 12).text_color(d.fg2).child("Hidden pals"))
-        .child(div().text_size(big ? 12 : 11).text_color(d.fg2).child(String(n))));
+        .child(div().flex_1().text_size(big ? 13 : 12).text_color(d.fg2).child("Hidden pals")));
       // A few of them, so the dimmed look shows too.
       box.children(dozing.slice(0, 2).map(row));
       box.children(asleep.slice(0, Math.max(0, 2 - dozing.length)).map((rec) =>

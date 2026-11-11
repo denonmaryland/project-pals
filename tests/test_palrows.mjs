@@ -142,10 +142,17 @@ try {
     const words = text(rows[0]);
     const want = {
       large: ["Needs you", "#command-bar"], folder: ["~/Projects/project-pals", "#command-bar"], tight: ["~/Projects/project-pals · crew/command-bar"],
-      wrap: ["Needs you"], rich: [" · crew/command-bar", "1 blocked", "2 tasks"], table: ["4", "2"],
+      wrap: ["Needs you"], rich: [" · crew/command-bar", "1 blocked", "2 tasks"], table: ["Project Pals - Herdr Mod"],
       progress: ["1/3 tasks"], project: ["project-pals", "crew/command-bar"], grouped: ["#command-bar"], card: ["~/Projects/project-pals", "Needs you"],
     }[st.id];
     for (const w of want) assert.ok(words.includes(w), `${st.id}: "${w}" in ${JSON.stringify(words)}`);
+    // Table has no count columns (DeNon, 2026-11-10: "these numbers right here can also go"): no
+    // topic or task count, and no "·" placeholder, on an open pal's row or a closed one's.
+    if (st.id === "table") for (const r of [rows[0], rows[1], rows[3]]) {
+      const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
+      const own = all(r).filter((n) => !String(n.args.id?.[0] ?? "").includes("-tp-")).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
+      assert.deepEqual(own.filter((x) => /^\s*(\d+|·)\s*$/.test(x)), [], `table: no count columns (${JSON.stringify(own)})`);
+    }
     // Clicks, right-click and drag stay on the row's own element.
     const top = rows[0].node.kids.length && rows[0].node.calls.includes("id") ? rows[0].node : rows[0].node.kids[0].node;
     for (const h of ["on_click", "on_mouse_move"]) assert.ok(top.calls.includes(h), `${st.id} row keeps ${h}`);
@@ -171,15 +178,15 @@ try {
       assert.ok(shade.length >= 3 && shade[0].args.top?.[0] === 0 && shade[0].args.h?.[0] === 1 && shade.at(-1).args.bottom?.[0] === 0, `${st.id}: the well's shade and bottom line`);
       assert.ok(sub.every((n) => well.kids.some((k) => k.node === n)), `${st.id}: the topic rows are in the well`);
       // Status stays on the left (a 16 px slot first); the topic on screen is a shade lighter with
-      // a 2 px blue edge; a finished topic says when, on the right.
+      // a 2 px blue edge; no topic says a time, a finished one neither (DeNon, 2026-11-10).
       assert.ok(sub.every((n) => n.kids[0].node.args.w?.[0] === 16), `${st.id}: the status mark comes first`);
       const shown = sub.find((n) => n.args.id[0].endsWith("-tp-t1")), quiet = sub.find((n) => n.args.id[0].endsWith("-tp-t2"));
       const edge = (n) => n.kids.map((k) => k.node).find((x) => x.calls.includes("absolute") && x.args.w?.[0] === 2);
       assert.ok(shown.args.bg?.[0] === d.hover && edge(shown)?.args.bg?.[0] === d.info, `${st.id}: the shown topic has the blue edge`);
       assert.ok(!quiet.args.bg && !edge(quiet), `${st.id}: other topics are plain`);
       const done = sub.find((n) => n.args.id[0].endsWith("-tp-t3"));
-      assert.match(text({ node: done }), /#profiles\s+\d\d:\d\d$/, `${st.id}: a finished topic ends with its time`);
-      for (const n of [shown, quiet]) assert.ok(!/\d\d:\d\d/.test(text({ node: n })), `${st.id}: no time on a working or asking topic`);
+      assert.equal(text({ node: done }).trim(), "#profiles", `${st.id}: a finished topic is its check and its name, no time`);
+      for (const n of [shown, quiet, done]) assert.ok(!/\d\d:\d\d/.test(text({ node: n })), `${st.id}: no time on a topic row`);
     }
     // " · #topic" on the row only when no tree shows under it (DeNon, 2026-11-08): with Trees on
     // the working pal's row says just its state; off, the looks that name the topic do; a resting
@@ -192,13 +199,14 @@ try {
       if (names) assert.ok(text(rows[1]).includes("· #general"), `${st.id}: a resting pal keeps its #topic`);
     }
     // No last-activity times on pal rows (DeNon, 2026-11-08): nothing clock-like ("21:48", "Fri",
-    // "Nov 2") is drawn; "Working · 4m" in the state line stays. The one exception is the Trees'
-    // finished topic, which says when it finished (DeNon's pick C, 2026-11-09, T75).
+    // "Nov 2") is drawn; "Working · 4m" in the state line stays. The Trees' finished topic said
+    // when it finished for a day (T75); DeNon took that out too (2026-11-10: "i dont want times to
+    // show here"), so the fixture's finished topic draws its check and no time.
     {
       const all = (p, out = []) => { const n = p.node; out.push(n); n.kids.forEach((k) => k?.node && all(k, out)); return out; };
       const strs = all(rows[0]).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
       const clock = strs.filter((x) => /^\d{1,2}:\d{2}$|^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$|^[A-Z][a-z]{2} \d{1,2}$/.test(x.trim()));
-      assert.equal(clock.length, trees ? 1 : 0, `${st.id} trees ${trees}: only a finished topic's time (${clock})`);
+      assert.equal(clock.length, 0, `${st.id} trees ${trees}: no time, a finished topic's included (${clock})`);
       assert.ok(!all(rows[0]).some((n) => n.args.text_right && n.args.w?.[0] === 38), `${st.id}: no time slot`);
     }
     // One live topic: no channel around it (DeNon, 2026-11-10: a single row in a box looks odd).
@@ -677,6 +685,8 @@ try {
     assert.ok(!one.includes("factory-chip"), "no chip with one factory");
     const before = text(roster.render());
     for (const n of ["Orca", "Softly", "Project Pals - Herdr Mod"]) assert.ok(before.includes(n), `one factory shows ${n}`);
+    // Hidden pals: the line says only that, no count on its right (2026-11-10).
+    assert.equal(text(ids(roster.render()).find((n) => n.args.id[0] === "asleep-toggle")).trim(), "Hidden pals", "no count on the Hidden pals line");
     // A second factory holding Softly; the default one is shown.
     const st = { current: "default", defaultName: "Mods", factories: [{ id: "f-app001", name: "Example app", template: "platform-lanes", foreman: "", foremanTopic: "ops", color: "#E2935A" }],
       pals: { "Softly - Dictation App with a very long name indeed": "f-app001" } };
