@@ -346,6 +346,16 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     brief is a return brief ("While you were away", the commits since); otherwise it starts fresh
     and says why. `data/crew-seats/<terminal>.json` lists the holders; `pal handoff log` prints
     them, `pal handoff brief` the brief a seat was handed with. Claimed tasks get a note.
+  - Found in the real pass (Claude Code and Codex, 2026-11-10), and now part of sleep too:
+    Codex's input box has no rules round it, so sleep's screen check reads it its own way
+    (`codex_box`: the last line starting "›", its footer below; an empty box shows one of the hints
+    Codex ships, and an unknown hint counts as a draft, which refuses). And Codex leaves mouse
+    reporting and its keyboard mode on when it is stopped, so after any stop the terminal is put
+    back to a plain shell's modes (`settle_terminal`, written to the shell's pty): the keyboard
+    stack is emptied on both the alternate and the main screen, since each keeps its own.
+  - Hand back resumes the session that brain last really had on the seat (`kept_link`): a holder
+    whose start never landed has none and is passed over. A resumed session is linked to the
+    terminal again (`source: "resume"`), so a later sleep and wake find it.
   - Not yet: the click (topic menu, pal page, header), the offer when a brain runs out, the old
     brain's own note, other brains as targets, other machines.
 - **Helper (crewd, optional):**

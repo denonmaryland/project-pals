@@ -123,12 +123,53 @@ def own_work(agent, proc_dir=None):
     return out
 
 
-def check_screen(lines):
+# Codex's input box (found live, T119: an idle Codex could be neither slept nor handed over, its box
+# was unreadable). No rules round it: the last line starting "›", its wrapped lines, a blank line,
+# then only its footer (model · folder, "? for shortcuts"). A sent message is echoed with "›" too,
+# further up, with output below it. hc read is plain text, so the greyed hints an empty box shows
+# are told from a draft by their words: the ones Codex ships. An unknown hint reads as a draft,
+# which refuses: the safe side.
+CODEX_PROMPT = re.compile(r"^›(?: (.*))?$")
+CODEX_EMPTY = re.compile(r"^(?:Ask Codex to do anything|Explain this codebase|Summarize recent commits|Implement \{feature\}"
+                         r"|Find and fix a bug in @filename|Write tests for @filename|Improve documentation in @filename"
+                         r"|Run /review on my current changes|Use /skills to list available skills)$")
+
+
+def codex_box(lines):
+    """(index of the box's first line, its unsent text or '' when empty), or None when the screen
+    doesn't end in Codex's input box (a dialog, a question, another program)."""
+    idx = next((i for i in range(len(lines) - 1, -1, -1) if CODEX_PROMPT.match(lines[i])), None)
+    if idx is None:
+        return None
+    text, j = [CODEX_PROMPT.match(lines[idx]).group(1) or ""], idx + 1
+    while j < len(lines) and lines[j].strip():
+        if not lines[j].startswith("  "):
+            return None
+        text.append(lines[j].strip())
+        j += 1
+    foot = [l for l in lines[j:] if l.strip()]
+    if len(foot) > 3 or any(not l.startswith(" ") for l in foot):
+        return None   # output below the last "›": that was a sent message, not the box
+    draft = " ".join(t for t in text if t).strip()
+    return idx, ("" if CODEX_EMPTY.match(draft) else draft)
+
+
+def check_screen(lines, comm=None):
     """Why the screen says not to stop it now, or None. A box we can't read counts as a no.
     Claude Code's spinner ("esc to interrupt") sits just above its input box and its footer ("1 shell
-    still running") just below, so only those lines are read: the same words further up are output."""
+    still running") just below, so only those lines are read: the same words further up are output.
+    comm: the agent's process name; "codex" has its own box (codex_box)."""
     if trust_prompt(lines):
         return "it's waiting on a question (Claude Code's folder-trust prompt)"
+    if comm == "codex" and input_draft(lines) is None:
+        box = codex_box(lines)
+        if box is None:
+            return "can't see an empty input box there (a dialog may be open), so can't tell whether someone's typing"
+        if WORKING.search("\n".join(lines[max(0, box[0] - 4):box[0]])):
+            return "it's mid-turn (its screen says esc to interrupt)"
+        if box[1]:
+            return f"there's unsent text in its box (\"{box[1][:40]}{'…' if len(box[1]) > 40 else ''}\")"
+        return None
     rules = [i for i, l in enumerate(lines) if RULE.match(l)]
     boxed = len(rules) >= 2 and rules[-1] - rules[-2] >= 2
     above = "\n".join(lines[max(0, rules[-2] - 3):rules[-2]]) if boxed else ""
@@ -179,7 +220,7 @@ def check_sleep(space, address, me, info, lines, proc_dir=None):
         raise Refused("it's mid-turn (working)")
     if st == "blocked":
         raise Refused("it's waiting on a prompt (blocked)")
-    why = check_screen(lines)
+    why = check_screen(lines, proc_comm(agents[0], proc_dir))
     if why:
         raise Refused(why)
     if queue_busy(address):

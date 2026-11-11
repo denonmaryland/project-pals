@@ -494,7 +494,9 @@ class SleepCli(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("put Navi #general to sleep", r.stdout)
         self.assertEqual(agent.wait(timeout=5), -signal.SIGTERM)
-        self.assertEqual((sb["proc"] / "7001" / "fd" / "1").read_bytes(), b"\x1b]7501;state=clear\x07")
+        wrote = (sb["proc"] / "7001" / "fd" / "1").read_bytes()
+        self.assertTrue(wrote.startswith(b"\x1b]7501;state=clear\x07"))
+        self.assertTrue(wrote.endswith(crewlib.MODES_OFF))   # and the terminal's modes back to a plain shell's (Codex leaves mouse reporting on)
         mark = json.loads((sb["data"] / "crew-slept" / "t1.json").read_text())
         self.assertEqual((mark["pal"], mark["topic"], mark["link"]["session"]), ("Navi", "general", "s-1234567890"))
 

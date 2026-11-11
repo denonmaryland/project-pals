@@ -147,6 +147,7 @@ class Seat(unittest.TestCase):
         self.assertIn("handed Navi #checkout to Codex (was Claude Code)", r.stdout)
         self.assertIn("2 approval(s) lapsed", r.stdout)
         self.assertEqual(self.agent.wait(timeout=5), -signal.SIGTERM)                     # only that agent, with TERM
+        self.assertTrue((self.sb["proc"] / "7001" / "fd" / "1").read_bytes().endswith(crewlib.MODES_OFF))   # its terminal is a plain shell's again
         data = self.sb["data"]
         typed = self.typed()
         self.assertEqual(len(typed), 1)                                                   # one short line, in its own shell
@@ -301,6 +302,8 @@ class Seat(unittest.TestCase):
         hid = self.typed()[-1].split()[-1]
         rec = json.loads((self.sb["data"] / "crew-handoffs" / "t1" / f"{hid}.json").read_text())
         self.assertEqual(rec["argv"], ["claude", "--model", "opus", "--resume", SID])
+        link = json.loads((self.sb["data"] / "crew-sessions" / "t1.json").read_text())                 # the seat's session is that one again
+        self.assertEqual((link["session"], link["source"], link["harness"]), (SID, "resume", "claude"))
         self.assertTrue(rec["resumed"] and rec["back"])
         self.assertIn("You're back on Navi #checkout. Codex held this seat", rec["message"])
         brief = (self.sb["data"] / "crew-handoffs" / "t1" / f"{hid}.md").read_text()
@@ -320,6 +323,23 @@ class Seat(unittest.TestCase):
         self.assertIn("## Picking up\nT41 Stop the double charge\n", r.stdout)          # the task alone: no screen text in the one-liner
         self.assertIn("The retry guard is in.", r.stdout)                                  # the screen is quoted under Where it stands
 
+    def test_an_idle_codex_can_hand_its_seat_to_claude_code(self):
+        (self.sb["data"] / "crew-sessions" / "t1.json").unlink()
+        row, info, _ = ts.agent_tab(self.sb, "t1", 7001, self.agent, comm="codex")
+        row["agent"], info["status"]["app"] = "codex", "codex"
+        self.tabs["t1"] = (row, info, CODEX_IDLE)
+        ts.make_fake_proc(self.sb["proc"], 7001, comm="bash", children=[self.agent.pid], address="t1", cwd=str(self.work))
+        ts.write_state(self.sb, self.spaces, self.tabs)
+        r = run(self.sb, "handoff", "Navi#checkout", "--to", "claude", "--why", "limit")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("handed Navi #checkout to Claude Code (was Codex)", r.stdout)
+        self.assertEqual(self.agent.wait(timeout=5), -signal.SIGTERM)
+        brief = (self.sb["data"] / "crew-handoffs" / "t1" / f"{self.typed()[0].split()[-1]}.md").read_text()
+        self.assertIn("story from Codex's screen", brief)
+        self.assertIn("The third line is next.", brief)
+        self.assertNotIn("Ask Codex to do anything", brief)                                # its box and footer aren't the story
+        self.assertNotIn("for shortcuts", brief)
+
     def test_hand_back_starts_fresh_when_the_session_cant_be_vouched_for(self):
         self.assertEqual(self.hand_over().returncode, 0)
         self.agent.wait(timeout=5)
@@ -331,6 +351,32 @@ class Seat(unittest.TestCase):
         rec = json.loads((self.sb["data"] / "crew-handoffs" / "t1" / f"{self.typed()[-1].split()[-1]}.json").read_text())
         self.assertEqual(rec["argv"], ["claude", "--model", "opus"])
         self.assertIn("You hold Navi #checkout now", rec["message"])
+
+
+CODEX_IDLE = ["• I'm picking up Sbx #pass. The third line is next.", "", "  Worked for 21s • 10:14 PM", "", "",
+              "› Ask Codex to do anything", "", "  GPT-6 high · ~/work/navi", "  ← for agents · ? for shortcuts"]
+
+
+class CodexBox(unittest.TestCase):
+    """Found in the real pass: an idle Codex was refused (its box has no rules round it)."""
+    def test_codexs_own_input_box_is_read(self):
+        import crewsleep
+        self.assertEqual(crewsleep.codex_box(CODEX_IDLE), (5, ""))
+        self.assertIsNone(crewsleep.check_screen(CODEX_IDLE, "codex"))
+        self.assertIsNotNone(crewsleep.check_screen(CODEX_IDLE, "claude"))                # Claude Code's rules still apply to Claude Code
+        draft = [*CODEX_IDLE[:5], "› tell atlas the test", "  is half written", "", "  GPT-6 high · ~/work/navi"]
+        self.assertEqual(crewsleep.codex_box(draft)[1], "tell atlas the test is half written")
+        self.assertIn("unsent text", crewsleep.check_screen(draft, "codex"))
+        self.assertIn("unsent text", crewsleep.check_screen([*CODEX_IDLE[:5], "› Some hint Codex adds later", "", "  GPT-6 high"], "codex"))   # unknown hint: the safe side
+        bare = [*CODEX_IDLE[:5], "›", "", "  GPT-6 high · ~/work/navi"]
+        self.assertIsNone(crewsleep.check_screen(bare, "codex"))
+        # a sent message echoed with "›" and output under it is not the box; nor is a question in its place
+        sent = ["› do the thing", "", "• Working on it", "• Ran npm test", "  └ ok"]
+        self.assertIsNone(crewsleep.codex_box(sent))
+        self.assertIn("can't see an empty input box", crewsleep.check_screen(sent, "codex"))
+        self.assertIn("can't see", crewsleep.check_screen(["Allow Codex to run rm -rf build?", "  1. Yes", "  2. No"], "codex"))
+        busy = ["• Working (12s • esc to interrupt)", "", "› Ask Codex to do anything", "", "  GPT-6 high"]
+        self.assertIn("mid-turn", crewsleep.check_screen(busy, "codex"))
 
 
 class Parts(unittest.TestCase):
@@ -367,6 +413,7 @@ class Parts(unittest.TestCase):
         crewlib.unclaim(claimed)
         ho.hold("t77", "h-abc123", seconds=-1)                                            # a handoff that died: the hold ends by itself
         self.assertFalse(crewlib.changing_hands("t77"))
+        self.assertFalse((crewlib.HANDOFFS / "t77" / "now.json").exists())
         self.assertEqual(len(crewlib.claim_queue("t77")), 1)
 
     def test_an_approval_never_crosses_with_the_seat(self):
@@ -390,6 +437,13 @@ class Parts(unittest.TestCase):
         self.assertEqual(ho.previous("t55")["brain"], "codex")
         self.assertEqual(ho.seat("t55")["holders"][0]["link"]["session"], "s-1")
         self.assertEqual(len(ho.log_lines("t55")), 3)
+        # a start that never landed leaves a holder with no session: hand back passes over it (found live)
+        ho.change_hands("t56", "Navi#y", "claude", "codex", {"session": "s-9", "transcript": "/y", "harness": "claude", "source": "hook"}, {"by": "x"})
+        ho.change_hands("t56", "Navi#y", "codex", "claude", None, {"by": "x"})      # Claude Code didn't start
+        ho.change_hands("t56", "Navi#y", "claude", "codex", None, {"by": "x"})      # Codex put back
+        ho.change_hands("t56", "Navi#y", "codex", "claude", None, {"by": "x"})      # and back again
+        self.assertEqual(ho.kept_link("t56", "claude")["session"], "s-9")
+        self.assertIsNone(ho.kept_link("t56", "codex"))
         self.assertEqual(ho.span(0), "")
         self.assertEqual(ho.span(1, 1 + 212 * 60000), "3 h 32 m")
 

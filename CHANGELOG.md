@@ -11,6 +11,11 @@
   command line, for Claude Code and Codex on this computer; the click and the offer when a brain
   runs out come next.
 
+- **Sleep works for Codex pals.** `pal sleep` used to refuse an idle Codex ("can't see an empty
+  input box"), because it only knew Claude Code's box. It reads Codex's now. After any agent is
+  stopped, its terminal is put back to a plain shell's modes: Codex left mouse reporting and its
+  keyboard mode on, which garbled whatever was typed there next (a wake, for one).
+
 ## 0.4.2 — 2026-11-10
 
 - **A pal's board.** Click a pal and, before any terminal, you see its topics as cards in four

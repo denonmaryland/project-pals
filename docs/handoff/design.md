@@ -601,8 +601,34 @@ as one argument; `hc` reporting the new agent; `pal sleep -n` seeing it like one
 hold ending. The command took 6.6 s end to end. Two fixes came out of it (the Picking up line no
 longer quotes screen text; the CLI doesn't wait on the first turn).
 
-Still unverified: **no handoff has been run with the real Claude Code or Codex.** That needs
-DeNon's go, because it spends both subscriptions' quota: one pass in a sandbox, Claude Code to
-Codex and back, to check that Codex takes a first message of this length, that it runs
-`pal handoff brief` on its own, that hand back resumes Claude Code's session, and how long the
-swap takes with real start-up times. The app side (`handoff-brain`) has only run in its node test.
+**Run with the real Claude Code and Codex on 2026-11-10** (DeNon's pick on Home h-55f2d4), in a
+hidden sandbox window on its own herdr-core, in a scratch folder, with the app answering
+`handoff-brain` itself. The last, clean round trip:
+
+| Step | The command took | What was seen |
+|---|---|---|
+| Claude Code → Codex | 9.5 s (4.9 s the first time) | Codex took the first message as its argument, ran `pal primer`, `pal memory` and `pal handoff brief` by itself (the brief was read 10 s after the handoff began) and gave its first line about 25 s in: what it was picking up, then it waited |
+| Codex → Claude Code (hand back) | 7.9 s | `claude … --resume <its session> "<message>"`: the old session came back with its memory (a code word given before the swap), read the return brief, said what Codex had done, and waited |
+
+The swap itself is seconds. What the new brain does before its first line is its own start-up:
+Codex's 25 s was mostly the primer, its memory and a start-up call of DeNon's own. That is the
+place to win time for the "magic" (slice 2): show "catching up" from the brief while it reads.
+
+Three bugs the tests could not have found, all fixed and now tested:
+
+1. **An idle Codex could not be handed away from** (or put to sleep): sleep's screen check only
+   knew Claude Code's input box. The main case for this feature, so it had to work.
+2. **Codex leaves the terminal's mouse and keyboard modes on when stopped.** The Ctrl+C typed
+   before the start line arrived as "9;5u" glued to the command, which then failed. The terminal
+   is now reset after any stop; the reset has to empty the keyboard stack on both screens.
+3. **Hand back lost the session after a failed start**, because the failed holder sat in the
+   history between. It now looks back for that brain's last real session.
+
+Also seen: Claude Code asks its folder-trust question for a new folder even with permissions
+bypassed. The handoff reports it and waits; it is DeNon's to answer (the pass moved to a trusted
+folder instead). And a session started from inside another Claude Code session doesn't save its
+transcript (a marker in the environment), which matters only to sandboxes.
+
+Still unverified: a topic with real desk cards arriving during the swap (the hold is unit-tested
+only); a handoff on a limit for real (Claude Code or Codex actually out); agy, Grok and the others
+as targets; another machine.

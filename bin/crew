@@ -164,7 +164,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
 from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, HOOKED, ME, SHELLS, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
-                     live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, agent_running, owns_terminal, screen, meaningful,
+                     live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, settle_terminal, agent_running, owns_terminal, screen, meaningful,
                      enqueue, send_now, from_bot, daemon_alive, remember,
                      memory_text, memory_report, memory_dir, slug, now_ms, new_id, append_jsonl, hc_terminals, is_agent, renamed,
                      trust_prompt, trust_notice, head_terminal, head_topic, head_inbox)
@@ -906,6 +906,7 @@ def _stop_tab(space, tab, terms, dry=False, quiet=False, out=None, head=False):
         loud(f"couldn't put {label} to sleep: {e}")
         return "refused"
     clear_osc_status(shell)
+    settle_terminal(shell)   # an agent that left mouse or keyboard modes on (Codex): a plain shell again
     (HOOKED / addr).unlink(missing_ok=True)
     loud(f"put {label} to sleep ({app}, {addr})" + (" (it needed KILL)" if how == "kill" else ""))
     return "slept"
@@ -1121,6 +1122,10 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
             say(f"couldn't hand {label} over: {e}")
             return False
         clear_osc_status(shell)
+        # Codex leaves mouse and keyboard modes on when it's stopped (found in the real pass): the
+        # line typed next was never read as typed. Back to a plain shell's modes first.
+        settle_terminal(shell)
+        time.sleep(0.4)
     (HOOKED / addr).unlink(missing_ok=True)
     crewsleep.unmark(addr)
     voided = ho.void_approvals(addr)
@@ -1131,11 +1136,15 @@ def _handoff_go(spaces, spec, to, why, dry=False, back=False, out=None):
     ho.change_hands(addr, seat_spec, frm, to, link, {"by": by, "via": via, "why": why, "brief": hid})
     base = crewsleep.base_argv(brain.get("argv"), brain.get("key"))
     extra, resume_why = [], ""
-    if back and (prev.get("link") or {}).get("session"):
+    old = ho.kept_link(addr, to) if back else None   # that brain's last real session on this seat
+    if old:
         live = {a for a, x in hc_terminals().items() if is_agent(x)}
-        extra, resume_why = crewsleep.resume_args(addr, brain.get("key"), base, cwd, {**{a: l for a, l in links.items() if a != addr}, addr: prev["link"]}, live)
+        extra, resume_why = crewsleep.resume_args(addr, brain.get("key"), base, cwd, {**{a: l for a, l in links.items() if a != addr}, addr: old}, live)
+        if extra:
+            # The seat's session is that one again: wake and sleep find it, hook or no hook.
+            crewchat.link(addr, old["transcript"], old["session"], source="resume", harness=old.get("harness") or "claude")
     hrec = {"id": hid, "terminal": addr, "seat": seat_spec, "from": frm, "to": to, "by": by, "via": via, "why": why or "", "at": now_ms(),
-            "back": bool(back), "resumed": bool(extra), "session": (prev or {}).get("link", {}).get("session") if extra else None,
+            "back": bool(back), "resumed": bool(extra), "session": old["session"] if extra else None,
             "kept_session": bool(link and link.get("session")), "voided": len(voided), "argv": [*base, *extra], "agy": bool(brain.get("agy")),
             "status": "started", **{k: meta[k] for k in ("picking", "story", "filtered", "carry", "lines", "tasks", "cards", "rooms", "branch")}}
     hrec["message"] = ho.first_message(hrec, "" if extra else (brain.get("hint") or ""))

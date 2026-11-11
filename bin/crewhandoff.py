@@ -104,6 +104,16 @@ def previous(terminal):
     return hs[-2] if len(hs) >= 2 else None
 
 
+def kept_link(terminal, brain):
+    """The session that brain last had on this seat (newest first), for hand back to resume. Holders
+    that never ran (a start that didn't land) have none and are passed over (found live)."""
+    key = brain_key(brain)
+    for h in reversed(seat(terminal)["holders"][:-1]):
+        if brain_key(h.get("brain")) == key and (h.get("link") or {}).get("session"):
+            return h["link"]
+    return None
+
+
 def change_hands(terminal, label, frm, to, link, left):
     """Record the swap: close the holder that leaves (with its session link, so hand back can resume
     it) and open the new one. `frm` may be unknown to the history yet (the first handoff of a seat)."""
@@ -322,7 +332,10 @@ def story_from_session(link):
 def story_from_screen(terminal):
     """The last readable lines of the terminal, for a brain whose sessions aren't parsed (Codex and
     the rest today). It includes whatever was on screen, so it gets the same filter."""
-    lines = meaningful(without_input_box(screen(terminal, 120)))
+    import crewsleep
+    raw = screen(terminal, 120)
+    box = crewsleep.codex_box(raw)
+    lines = meaningful(raw[:box[0]] if box else without_input_box(raw))
     return "\n".join(lines[-28:]) or None
 
 
