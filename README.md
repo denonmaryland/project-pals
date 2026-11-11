@@ -79,6 +79,56 @@ Code (Sonnet).
 
 Reports from other harnesses are welcome.
 
+## Try it in 10 minutes
+
+Project Pals is early software. Start with a disposable project folder and one pal.
+You need **Linux with a systemd user session**, **Herdr 0.1.8+ (below 0.2)** and
+**herdr-core 0.1.11+ (below 0.2)**, plus an installed, signed-in coding harness.
+Open Herdr once first. Agent usage uses your harness's account and may cost money.
+
+1. Follow [Install](#install), including the prerequisites. Read
+   [what it changes](#what-it-changes-on-your-computer) first, then select the **pals**
+   layout with **Ctrl+Shift+L** and complete any welcome prompts.
+2. In your own terminal, make a small test project and hire one pal:
+
+   ```sh
+   mkdir -p ~/pals-tryout
+   pal hire Tryout --harness claude --folder ~/pals-tryout
+   ```
+
+   Use `--harness codex` or `--harness agy` if that's what you have. If `pal` isn't found,
+   open a new terminal and check that `~/.local/bin` is on your PATH. Open Tryout's topic
+   and answer any sign-in or folder-trust question yourself.
+3. Send it a small request from your terminal:
+
+   ```sh
+   pal tell Tryout "Say hello and suggest one tiny project we could make here. Do not change files yet."
+   ```
+
+   Watch its topic and pet, then check the header's **Desk** for the card's delivery state.
+   If it waits, open the topic for a prompt and check the Desk for a held reason.
+4. Tell us what worked or where you got stuck. Run `pal report`, review the output, then
+   paste it into a [bug, install problem or harness report](https://github.com/denonmaryland/project-pals/issues/new/choose).
+   Include what you tried, what you expected, and what happened. A successful first run is
+   useful too: choose **Harness report**.
+
+`pal report` prints local diagnostics and uploads nothing: installed Project Pals/build,
+Herdr/hc versions, distro, known harness command names found on PATH, crewd's systemd state,
+up to five recognized error categories from the last 100 crewd journal lines, and the last
+update-run state. It omits raw error text, paths, names, prompts, transcripts, settings and
+credentials. Unknown/missing probes are marked as such; a harness being found does not mean
+it's signed in or tested. Review any extra text or screenshots yourself before sharing.
+
+If install failed before `pal` was available, run `python3 bin/crew report` from the downloaded
+source folder. If your older release has no `report` command, give the three version numbers
+manually (`pal version`, `herdr-app --version`, `hc --version`); don't paste paths or repo details
+from `pal version`. Reporting a failed install doesn't require installing again.
+
+When finished, **About → Uninstall** removes Project Pals while keeping your pals' data.
+See [Uninstall](#uninstall) for details. For a first week, try a second topic, a second harness
+if you use one, and a restart; report each separate problem with the step that triggered it.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting and contributing.
+
 ## The approval gate
 
 Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,
