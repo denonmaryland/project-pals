@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -141,6 +142,23 @@ class Report(unittest.TestCase):
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0 if arg == "--help" else 2)
         self.assertEqual(log.read_text().splitlines(), calls)
+
+        # The installed command and modules live in different directories; the legacy
+        # crew alias must resolve to the same reporting path without importing crewlib.
+        home = self.base / "installed-home"
+        bindir = home / ".local/bin"
+        libdir = home / ".local/lib/herdr-crew"
+        bindir.mkdir(parents=True)
+        libdir.mkdir(parents=True)
+        shutil.copyfile(ROOT / "bin/crew", bindir / "pal")
+        shutil.copyfile(ROOT / "bin/crewreport.py", libdir / "crewreport.py")
+        (bindir / "crew").symlink_to("pal")
+        for command in ("pal", "crew"):
+            result = subprocess.run([sys.executable, str(bindir / command), "report"],
+                                    env={**env, "HOME": str(home)}, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Herdr: 0.1.14", result.stdout)
+        self.assertFalse((libdir / "__pycache__").exists())
 
 
 if __name__ == "__main__":
