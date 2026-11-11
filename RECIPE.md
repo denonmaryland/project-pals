@@ -1184,7 +1184,9 @@ its job; a foreman moved out stops being foreman.
 
 **The switcher chip** sits above the hero once there are several: a colour square, the factory's
 name, its template (Crew / Lanes) and an amber count of what the OTHER factories need from you
-(topics asking you, approvals, stuck topics, Home's open asks and logins). Click it for the
+(everything their Homes list under Needs you: topics asking you, approvals, stuck topics,
+proposals, Desk cards waiting on you, Home's open asks and logins; each by its pal's factory: a
+proposal's pal, a card's sender). Click it for the
 switcher. Switching shows that floor: the pal list is its pals (foreman first, the hero is the pal
 on show, else the foreman, else the first), and if the pal on show isn't on it, its foreman (else
 its first open pal) is shown. Nothing stops or sleeps: other floors keep working. The sidebar's

@@ -107,9 +107,7 @@ export default class CrewRoster extends View {
       // when it changes, reasons included).
       const n = needsOf(withoutChief(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
       if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
-      // With several factories: what each one needs from you (the switcher's counts).
-      const fn = countFactoryNeeds(this.waitingNow(), this.ops, shared("crew.factory.asks") ?? []);
-      if (JSON.stringify(shared("crew.factory.needs") ?? {}) !== JSON.stringify(fn)) setShared("crew.factory.needs", fn);
+      this.publishFactoryNeeds();
       cx.notify();
     });
     ops(cx);
@@ -155,6 +153,13 @@ export default class CrewRoster extends View {
         cx.notify();
       }
     });
+  }
+
+  // With several factories: what each one needs from you (the switcher's counts, the chip's count
+  // of the others'). Everything Home's "Needs you" lists counts, Desk cards and proposals too.
+  publishFactoryNeeds() {
+    const fn = countFactoryNeeds(this.waitingNow(), this.ops, shared("crew.factory.asks") ?? [], shared("crew.desk")?.needs ?? []);
+    if (JSON.stringify(shared("crew.factory.needs") ?? {}) !== JSON.stringify(fn)) setShared("crew.factory.needs", fn);
   }
 
   // Topics that wait on you (a question for you), in every factory.

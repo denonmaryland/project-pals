@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.3 — unreleased
+
+- **A factory's count includes its proposals and Desk cards.** With several factories, the chip
+  and the switcher count what each factory needs from you. A proposal from a pal in a factory you
+  weren't looking at, or a Desk card it sent you, was on that factory's Home but not in its count,
+  so the chip could show nothing waiting there. Both count now, for the factory of the pal that
+  made the proposal or sent the card. (From Codex's review of 0.4.2.)
+
 ## 0.4.2 — 2026-11-10
 
 - **A pal's board.** Click a pal and, before any terminal, you see its topics as cards in four

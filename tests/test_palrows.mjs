@@ -660,8 +660,28 @@ try {
     assert.equal(crew.currentFactory().name, "Example app");
     assert.deepEqual(crew.countFactoryNeeds([{ space: fixtures.spaces[2] }, { space: fixtures.spaces[0] }], { approvals: [{ bot: "Orca" }], stalled: {} }, [{ factory: "f-app001" }]),
       { "f-app001": 2, default: 2 });
+    // T121 (Codex's 0.4.2 review, P2): a proposal or a Desk card waiting on you is on its pal's
+    // factory's Home, so it counts for that factory too, by the pal Home files it under (a proposal's
+    // `pal`, else who made it; a card's sender). The shown floor here is Example app; Softly is on it.
+    const softly = fixtures.spaces[2].name;
+    assert.deepEqual(crew.countFactoryNeeds([], { proposals: [{ id: "p1", pal: softly }] }, []), { "f-app001": 1 }, "a proposal counts for its pal's factory");
+    assert.deepEqual(crew.countFactoryNeeds([], { proposals: [{ id: "p2", by: "Orca#ops" }, { id: "p3", by: `${softly}#main` }] }, []), { default: 1, "f-app001": 1 },
+      "no `pal`: who made it, without the topic");
+    assert.deepEqual(crew.countFactoryNeeds([], {}, [], [{ id: "c1", from: `${softly}#main` }, { id: "c2", from: "Orca#ops" }, { id: "c3", from: "" }]),
+      { "f-app001": 1, default: 2 }, "a Desk card waiting on you counts for its sender's factory; an unknown sender is the default one's");
+    // On the chip: looking at the default floor, another factory's proposal and owner card show there.
+    fixtures.shared["crew.factories"] = st;
+    fixtures.shared["crew.desk"] = { needs: [{ id: "c1", title: "Pick a name", from: `${softly}#main`, tray: "_owner" }] };
+    const opsWas = roster.ops;
+    roster.ops = { ...opsWas, proposals: [{ id: "p1", kind: "mission", pal: softly }] };
+    delete fixtures.shared["crew.factory.needs"];
+    assert.ok(!ids(roster.render()).some((n) => n.args.id[0] === "factory-chip-n"), "nothing published yet: no count");
+    roster.publishFactoryNeeds();
+    assert.deepEqual(fixtures.shared["crew.factory.needs"], { default: 1, "f-app001": 2 }, "published: the shown pal's question here, the proposal and the card there");
+    assert.equal(text(ids(roster.render()).find((n) => n.args.id[0] === "factory-chip-n")), "2", "the chip counts the other factory's proposal and Desk card");
+    roster.ops = opsWas; delete fixtures.shared["crew.desk"];
     delete fixtures.shared["crew.factories"]; delete fixtures.shared["crew.factory.needs"];
-    assert.deepEqual(crew.countFactoryNeeds([{ space: fixtures.spaces[2] }], { approvals: [] }, []), {}, "one factory: nothing is counted");
+    assert.deepEqual(crew.countFactoryNeeds([{ space: fixtures.spaces[2] }], { approvals: [], proposals: [{ pal: softly }] }, [], [{ from: softly }]), {}, "one factory: nothing is counted");
     assert.ok(!idsOf().includes("factory-chip"));
   }
   // ── The working count beside "Pals" (T98, DeNon 2026-11-10): it moved here from the status strip
