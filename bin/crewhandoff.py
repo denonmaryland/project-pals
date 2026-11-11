@@ -10,6 +10,7 @@ handoff records, and voiding the terminal's approvals. Stopping and starting sta
 bin/crew's (cmd_handoff). The desk hold during a swap is crewlib.changing_hands, read by claim_queue.
 
 Slice 1: Claude Code and Codex, this machine, the command line."""
+import json
 import re
 import subprocess
 import time
@@ -300,6 +301,8 @@ def story_from_session(link):
     import crewchat
     if not link or not link.get("transcript"):
         return None, []
+    if brain_key(link.get("harness")) == "codex":
+        return story_from_codex(link["transcript"])
     raw = Path(link["transcript"])
     agy = crewchat.is_agy_link(link, raw)
     path = crewchat.agy_transcript_path(raw) if agy else raw
@@ -327,6 +330,142 @@ def story_from_session(link):
         if reply is not None and len(asked) >= ASKED_N:
             break
     return reply, list(reversed(asked))
+
+
+# ── Codex's own session files ──────────────────────────────────────────────────────────────────
+# Codex has no hook that links a terminal to its session, but it writes one rollout file per
+# session (~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl; read on codex-cli 0.167): a
+# session_meta line with its folder, each message, a task_complete line per turn with the turn's
+# last message, and token_count lines with its limits. So a seat held by Codex gets a brief from
+# what Codex said, not from its screen, and its limit is known without reading the screen.
+
+def _codex_root():
+    return Path.home() / ".codex" / "sessions"
+
+
+def codex_session(cwd, since_ms=None, root=None, recent_h=12):
+    """The session of the Codex running in folder `cwd`, as a link ({session, transcript, harness,
+    source}): the one rollout file written since that agent started (`since_ms`; unknown: in the
+    last `recent_h` hours) whose session began in that folder. None unless there is exactly one:
+    two Codex topics in one folder can't be told apart, and a wrong session in a brief is worse
+    than the screen."""
+    root = Path(root) if root else _codex_root()
+    if not cwd or not root.is_dir():
+        return None
+    floor = (since_ms / 1000 - 2) if since_ms else time.time() - recent_h * 3600
+    want = str(Path(cwd).resolve())
+    hits = []
+    try:
+        files = sorted((f for f in root.glob("*/*/*/rollout-*.jsonl") if f.stat().st_mtime >= floor), key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        return None
+    for f in files[:200]:
+        try:
+            with open(f, errors="replace") as fh:
+                meta = json.loads(fh.readline())
+        except (OSError, ValueError):
+            continue
+        p = meta.get("payload") or {}
+        if meta.get("type") == "session_meta" and p.get("cwd") and str(Path(p["cwd"]).resolve()) == want:
+            hits.append({"session": p.get("id") or p.get("session_id"), "transcript": str(f), "harness": "codex", "source": "cwd"})
+    return hits[0] if len(hits) == 1 and hits[0]["session"] else None
+
+
+def _codex_lines(path, tail=3 * 1024 * 1024):
+    """A rollout file's entries, newest first (its last 3 MB)."""
+    try:
+        size = Path(path).stat().st_size
+        with open(path, "rb") as f:
+            f.seek(max(0, size - tail))
+            lines = f.read().split(b"\n")
+    except OSError:
+        return
+    if size > tail:
+        lines = lines[1:]
+    for raw in reversed(lines):
+        if not raw.strip():
+            continue
+        try:
+            e = json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if isinstance(e.get("payload"), dict):
+            yield e["type"], e["payload"]
+
+
+# What Codex itself puts in the user's place: the project's instruction files and its environment note.
+_CODEX_NOT_ASKED = ("<", "# AGENTS.md instructions")
+
+
+def story_from_codex(path):
+    """(the last turn's last message, [what was last asked of it]) from a Codex rollout file. Text
+    only: no reasoning, no tool calls or their output."""
+    reply, fallback, asked = None, None, []
+    for kind, p in _codex_lines(path):
+        if p.get("type") == "task_complete" and reply is None and len(p.get("last_agent_message") or "") >= 20:
+            reply = p["last_agent_message"]
+        elif p.get("type") == "message" and p.get("role") == "assistant" and fallback is None:
+            text = "\n".join(x.get("text") or "" for x in p.get("content") or [] if x.get("type") == "output_text").strip()
+            if len(text) >= 40 and p.get("phase") in (None, "final_answer"):
+                fallback = text
+        elif p.get("type") == "message" and p.get("role") == "user" and len(asked) < ASKED_N:
+            for x in p.get("content") or []:
+                text = (x.get("text") or "").strip()
+                if x.get("type") == "input_text" and len(text) >= 12 and not text.startswith(_CODEX_NOT_ASKED) and len(asked) < ASKED_N:
+                    asked.append(text)
+        if (reply or fallback) and len(asked) >= ASKED_N:
+            break
+    return reply or fallback, list(reversed(asked))
+
+
+def codex_limit(path):
+    """Codex's own word on its limit, from its newest token_count line: {used (percent of the
+    window), window_minutes, resets_at (ms), reached} or None. For the offer when a brain runs out."""
+    for kind, p in _codex_lines(path, tail=512 * 1024):
+        rl = p.get("rate_limits") if p.get("type") == "token_count" else None
+        if rl and isinstance(rl.get("primary"), dict):
+            pr = rl["primary"]
+            used = float(pr.get("used_percent") or 0)
+            return {"used": used, "window_minutes": pr.get("window_minutes"), "resets_at": int(pr["resets_at"]) * 1000 if pr.get("resets_at") else None,
+                    "reached": bool(rl.get("rate_limit_reached_type")) or used >= 100}
+    return None
+
+
+def claude_limit(status):
+    """Claude Code's limit from what its status line reports (data/crew-status/<terminal>.json:
+    rate_limits.five_hour / seven_day), as codex_limit gives it: the window that is reached, else
+    the fullest one. None when it reports none."""
+    best = None
+    for name, minutes in (("five_hour", 300), ("seven_day", 10080)):
+        w = ((status or {}).get("rate_limits") or {}).get(name)
+        if not isinstance(w, dict) or w.get("used_percentage") is None:
+            continue
+        used = float(w["used_percentage"])
+        got = {"used": used, "window_minutes": minutes, "resets_at": int(w["resets_at"]) * 1000 if w.get("resets_at") else None, "reached": used >= 100}
+        if best is None or (got["reached"], got["used"]) > (best["reached"], best["used"]):
+            best = got
+    return best
+
+
+def limit_words(lim):
+    """'97% of its week, resets Thu 16:16' / 'out until Thu 16:16'."""
+    if not lim:
+        return "no limit reported"
+    m = lim.get("window_minutes") or 0
+    window = "week" if m >= 7 * 1440 else "day" if m >= 1440 else f"{round(m / 60)} hours" if m >= 120 else f"{m} minutes" if m else "window"
+    when = time.strftime("%a %H:%M", time.localtime(lim["resets_at"] / 1000)) if lim.get("resets_at") else ""
+    if lim.get("reached"):
+        return "out" + (f" until {when}" if when else "")
+    return f"{lim['used']:.0f}% of its {window}" + (f", resets {when}" if when else "")
+
+
+def suggest(terminal, holds, installed=TRIED):
+    """Which brain to offer a seat to when its holder is out: the one that held it before, else the
+    first other brain a seat can go to. None when there is no other."""
+    prev = previous(terminal)
+    if prev and brain_key(prev.get("brain")) != brain_key(holds) and brain_key(prev.get("brain")) in installed:
+        return brain_key(prev["brain"])
+    return next((k for k in installed if k != brain_key(holds)), None)
 
 
 def story_from_screen(terminal):
