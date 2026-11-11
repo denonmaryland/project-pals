@@ -157,7 +157,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     #topic, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
     state is a dot on the pet), 3 Name wraps (30px: the name may take two lines), 4 Rich detail
     (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N topics" or
-    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks),
+    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot and name; no count columns, DeNon 2026-11-10),
     6 Progress (28px: a 3px bar of the pal's tasks, done today of done + open), 7 Folder first
     (30px: the folder relative to ~/Projects as the mono headline, the name small above, state ·
     branch), 8 Grouped (24px tight rows under the group headers), 9 Mini card (34px: a bordered
@@ -165,8 +165,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     record or space, the branch of the row's lead topic's pane, topic counts from its tabs, task
     counts from the board (open, claimed, blocked; done in the last day). Every look keeps the
     row's behaviour: a click opens the lead topic, right-click its menu, pins (the pin mark),
-    groups and folding, drag to reorder, Hidden pals (a quieter 30px line in the compact looks)
-    and the status-first colours.
+    groups and folding, drag to reorder, Hidden pals (a quieter 30px line in the compact looks; no
+    count on it, the tooltip says how many) and the status-first colours.
     **Trees** (DeNon, 2026-11-08; `palTrees`, on unless false), an option for every look (it
     replaced the board's Tree look; a saved `palList: "tree"` shows as Two tight lines): a pal
     with a topic working or asking you unfolds its live topics under its row, asks you first,
@@ -178,8 +178,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     light line at the bottom (gpui-kit has no gradients or inner shadows, so these are 1 to 4px
     bands in a clipped box). Each topic row is 24px: the mark (the chosen working indicator, an
     amber dot when it asks you, a check when done) in a 16px slot on the left, the colour bar,
-    "#topic" in 11.5px mono, and for a finished topic when it finished (11px #56565A) on the
-    right. The shown topic is #18181A with #EDEDED text and a 2px blue edge. A click opens that
+    "#topic" in 11.5px mono; nothing on the right (a finished topic said when it finished until
+    DeNon took the time out, 2026-11-10). The shown topic is #18181A with #EDEDED text and a 2px blue edge. A click opens that
     topic, right-click is its menu. A pal with ONE live topic gets no channel (DeNon,
     2026-11-10: a single row in a box looks odd): the same row, same place, straight on the
     sidebar (`crew.js TREE_SINGLE`). Only the channel is added: nothing else moves. Resting,
@@ -188,8 +188,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
     (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
     **No times** on pal rows (any look; DeNon, 2026-11-08): the name and the state line have the
-    width; the state line keeps "Working · 4m". Trees rows show one only for a finished topic
-    (2026-11-09, above). The hero's topic list keeps its times.
+    width; the state line keeps "Working · 4m". None on Trees rows either, a finished topic's
+    included (DeNon, 2026-11-10: "i dont want times to show here"). The hero's topic list keeps
+    its times.
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list

@@ -676,16 +676,16 @@ export default class CrewRoster extends View {
       if (grouped && sec.group && !sec.rows.length) list.child(this.groupDrop(sec.group.id, d));
     }
     if (nHidden) {
-      // In the compact looks it's a quieter, shorter line (the board's "⊘ Hidden pals 5"), its
-      // icon centred over the pets' column.
+      // In the compact looks it's a quieter, shorter line, its icon centred over the pets' column.
+      // No count on the right (2026-11-10: DeNon's red line through the pal rows' numbers ran
+      // through it too, as Orca read it); the tooltip says how many.
       const big = look.id === "large";
       list.child(h_flex().id("asleep-toggle").h(big ? 40 : 30).flex_none().items_center().gap(big ? 12 : 10).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
         .when(!big, (el) => el.mt(4))
-        .hover((s) => s.bg(d.hover))
+        .hover((s) => s.bg(d.hover)).tooltip(`${nHidden} hidden pal${nHidden === 1 ? "" : "s"}: click to ${showHidden ? "fold" : "show"}`)
         .on_click((_e, cx) => { localStorage.setItem("asleep-open", showHidden ? "0" : "1"); cx.notify(); })
         .child(div().w(look.pet).flex_none().flex().justify_center().child(svg(`${ICON}/ds-eye-off.svg`).size(big ? 15 : 13).text_color(d.icon)))
-        .child(div().flex_1().text_size(big ? 13 : 12).text_color(d.fg2).child("Hidden pals"))
-        .child(div().text_size(big ? 12 : 11).text_color(d.fg2).child(String(nHidden))));
+        .child(div().flex_1().text_size(big ? 13 : 12).text_color(d.fg2).child("Hidden pals")));
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
     }
     this.extras(list, waiting, extra, d);
