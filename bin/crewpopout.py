@@ -9,6 +9,9 @@ terminal, not a copy; closing the window never stops the pal.
 - The app home is built fresh under $XDG_RUNTIME_DIR/pals-popout/<key> (short: Herdr's control socket
   path has to fit SUN_LEN) and removed when the window closes. Nothing of the owner's is written but
   data/crew-popout.json (size, position and pin per topic).
+- A pop-out's key is its topic's exact address: a readable start and a digest of "Pal#topic"
+  (key_of). An open window is brought up again only when it shows that topic AND that terminal
+  (shows); a window that shows anything else is never passed off as the one asked for.
 - A watcher (this file, `watch`) waits for the window, floats it at the remembered size and place,
   pins it if it was pinned, then saves size / position / pin every 2 s while they change, so a
   resize or a move by any means (edges, Omarchy's keys, Super+O) is remembered.
@@ -17,6 +20,7 @@ terminal, not a copy; closing the window never stops the pal.
 
 The pure parts (layout, home, dispatch lines, the geometry store) are tested in tests/test_popout.py.
 """
+import hashlib
 import json
 import os
 import re
@@ -36,10 +40,28 @@ BAR_PX = 30
 BAR_MOD = "crew-popout-bar"
 
 
+KEY_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
+
+
+class PopoutError(Exception):
+    pass
+
+
 def slug(text):
-    """A file-safe key for a topic ("Orca#ops" -> "orca-ops") or a terminal address."""
+    """A file-safe, readable name for a topic ("Orca#ops" -> "orca-ops"). NOT an identity: it folds
+    case and punctuation and cuts at 48, so "App#build-api" and "App#build_api" are the same slug.
+    It was the pop-out's key through 0.4.2; now it is key_of's readable start and the name old
+    geometry is found under (adopt)."""
     s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
     return s[:48] or "popout"
+
+
+def key_of(label):
+    """A topic's pop-out key: the slug's start, then a digest of the exact address, so two topics
+    never share one ("App#build-api" -> "app-build-api-e501317b1e", "App#build_api" -> "app-build-api-9a2922dab4").
+    Stable (the geometry store is keyed by it), file-safe, and 48 characters at most (SUN_LEN)."""
+    text = str(label or "")
+    return f"{slug(text)[:37].strip('-')}-{hashlib.sha256(text.encode()).hexdigest()[:10]}"
 
 
 def runtime_root():
@@ -116,6 +138,17 @@ def clean_geo(g):
 
 def remembered(key):
     return clean_geo(load_store().get(key))
+
+
+def adopt(key, label):
+    """A topic popped out before 0.4.3 has its size, place and pin under its slug: start from those,
+    once. The old entry stays (two topics could share it, and it isn't ours to delete)."""
+    store, old = load_store(), slug(label)
+    if key in store or old == key or not isinstance(store.get(old), dict):
+        return False
+    store[key] = clean_geo(store[old])
+    crewlib.save_json(STORE, store)
+    return True
 
 
 def remember(key, geo):
@@ -238,24 +271,74 @@ def running(key):
     return st if isinstance(st, dict) and alive(st.get("pid")) else None
 
 
+def shows(st, terminal, label):
+    """Is this open pop-out the one asked for: the same topic AND the same terminal? The key alone
+    is never proof (through 0.4.2 two topics could share one, and a topic's terminal can change)."""
+    return isinstance(st, dict) and st.get("terminal") == terminal and st.get("label") == label
+
+
+def _ended(pid):
+    """Has this process ended? One that ended but whose parent hasn't collected it yet (a zombie)
+    still answers a signal, and has no window."""
+    if not alive(pid):
+        return True
+    try:
+        return Path(f"/proc/{int(pid)}/stat").read_text().rpartition(")")[2].split()[0] == "Z"
+    except (OSError, IndexError, ValueError):
+        return False
+
+
+def _gone(pid, secs=4.0):
+    end = time.time() + secs
+    while not _ended(pid) and time.time() < end:
+        time.sleep(0.05)
+    return _ended(pid)
+
+
 def open_popout(terminal, label, props=None):
-    """Open (or bring up) the pop-out for a terminal. label: "Pal#topic", the memory's key.
+    """Open (or bring up) the pop-out for a terminal. label: "Pal#topic", its identity.
     Returns (key, "opened" | "focused")."""
-    key = slug(label or terminal)
-    st = running(key)
+    label = label or terminal
+    key = key_of(label)
     env = hypr_env()
-    if st:
-        c = client_of(st["pid"], env) if env else None
-        if c:
-            dispatch("focus", c["address"], env)
-        return key, "focused"
+    # Already out (under any key: one opened by 0.4.2 has its slug)? Bring that window up, but only
+    # when it shows this topic and this terminal.
+    for k in open_keys():
+        st = running(k)
+        if shows(st, terminal, label):
+            c = client_of(st["pid"], env) if env else None
+            if c:
+                dispatch("focus", c["address"], env)
+            return k, "focused"
     herdr = shutil.which("herdr-app")
     if not herdr:
         raise FileNotFoundError("herdr-app isn't on PATH")
-    home = build_home(runtime_root() / key, crewlib.HOME, terminal, {**(props or {}), "key": key, "terminal": terminal})
-    run_env = {**os.environ, "HERDR_APP_HOME": str(home), "HERDR_TELEMETRY": "0"}
-    with open(home / "popout.log", "ab") as log:
-        p = subprocess.Popen([herdr], env=run_env, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    st = running(key)
+    if st and st.get("label") == label:
+        # This topic's window, on a terminal the topic no longer has: it can't be the answer. It
+        # goes (its geometry kept) and a window on the topic's terminal takes its place.
+        close_popout(key)
+        if not _gone(st["pid"]):
+            raise PopoutError(f"{label}'s pop-out shows an older terminal ({st.get('terminal')}) and didn't close; close it and try again")
+    elif st:
+        # Somebody else's window under our key (a digest clash, or a damaged file): never reuse it,
+        # and never build over the home it runs on.
+        raise PopoutError(f"the pop-out {key} is open for {st.get('label') or 'something else'}, not {label}; close it first (pal popout close {key})")
+    adopt(key, label)
+    # Ours from here: this process holds the key while the window is built, so a watcher that is
+    # just ending (the window replaced above) leaves the new home alone.
+    crewlib.save_json(state_path(key), {"pid": os.getpid(), "home": "", "terminal": terminal, "label": label, "at": time.time(), "opening": True})
+    try:
+        home = build_home(runtime_root() / key, crewlib.HOME, terminal, {**(props or {}), "key": key, "terminal": terminal})
+        run_env = {**os.environ, "HERDR_APP_HOME": str(home), "HERDR_TELEMETRY": "0"}
+        with open(home / "popout.log", "ab") as log:
+            p = subprocess.Popen([herdr], env=run_env, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    except BaseException:
+        try:
+            state_path(key).unlink()
+        except OSError:
+            pass
+        raise
     crewlib.save_json(state_path(key), {"pid": p.pid, "home": str(home), "terminal": terminal, "label": label, "at": time.time()})
     subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "watch", key, str(p.pid)],
                      env=os.environ, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -334,6 +417,15 @@ def open_keys():
     except OSError:
         files = []
     return [f.stem for f in files if running(f.stem)]
+
+
+def open_key(name):
+    """The open pop-out meant by `pal popout pin|close NAME`: its key (what the bar passes and
+    `pal popout ls` prints), or its topic ("Pal#topic"). None when no open pop-out is that."""
+    keys = open_keys()
+    if name in keys:
+        return name
+    return next((k for k in keys if (running(k) or {}).get("label") == name), None)
 
 
 if __name__ == "__main__":

@@ -169,21 +169,22 @@ def mask_quotes(text):
     return "".join(out)
 
 
-def commands(cmd):
+def commands(cmd, lead=False):
     """The commands a shell line runs: each segment's start, including inside sh -c '...' and
     eval '...', but not heredoc bodies (text being written to a file isn't a command), nor text in
-    quotes (an argument, like a grep pattern)."""
+    quotes (an argument, like a grep pattern). `lead`: keep what stands before each command (its
+    VAR=value settings, env, sudo …) for a caller with rules about those; normal_words drops them."""
     text = heredoc_free(cmd)
     masked = mask_quotes(text)
     out = []
     for m in list(INNER.finditer(text)) + list(EVAL.finditer(text)):
         if masked[m.start()] != "_":        # a real sh -c / eval, not one quoted inside an argument
-            out += commands(m.group(2))
+            out += commands(m.group(2), lead)
     last = 0
     for m in list(SPLIT.finditer(masked)) + [None]:
         seg = text[last:m.start()] if m else text[last:]
         last = m.end() if m else last
-        seg = LEAD.sub("", seg).strip()
+        seg = seg.strip() if lead else LEAD.sub("", seg).strip()
         if seg:
             out.append(seg)
     return out
@@ -204,11 +205,13 @@ RUNNER_SUBS = {"pnpm": {"dlx", "exec"}, "yarn": {"dlx", "exec"}, "npm": {"exec",
 GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"}
 
 
-def normal_words(seg):
+def normal_words(seg, dropped=None):
     """A command as the gate matches it: env assignments, wrappers (env, command, exec, nice, sudo,
     timeout, xargs …), package runners (npx, bunx, pnpm dlx, npm exec, uv run …) and the path to the
     binary dropped, and git's global options (-C dir, -c k=v, --no-pager …) before its subcommand.
-    "env A=1 command /usr/bin/git -C r --no-pager push" → ["git", "push"]."""
+    "env A=1 command /usr/bin/git -C r --no-pager push" → ["git", "push"].
+    `dropped`, a dict, is given what was left out, for a caller that has rules about those too (the
+    Chief's git): {"env": ["A=1"], "git": ["-C", "r", "--no-pager"]}."""
     import shlex
     try:
         toks = shlex.split(seg)
@@ -217,6 +220,8 @@ def normal_words(seg):
     while toks:
         head = os.path.basename(toks[0])
         if re.fullmatch(r"[A-Za-z_]\w*=.*", toks[0], re.S):
+            if dropped is not None:
+                dropped.setdefault("env", []).append(toks[0])
             toks = toks[1:]
             continue
         if head in RUNNER_SUBS and len(toks) > 1 and toks[1] in RUNNER_SUBS[head]:
@@ -240,6 +245,8 @@ def normal_words(seg):
         i = 1
         while i < len(toks) and toks[i].startswith("-"):
             i += 2 if toks[i] in GIT_VALUE_OPTS else 1
+        if dropped is not None:
+            dropped.setdefault("git", []).extend(toks[1:i])
         toks = ["git"] + toks[i:]
     return toks
 

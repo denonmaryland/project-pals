@@ -157,7 +157,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     #topic, the folder in mono), 2 Two tight lines (26px: name · time, folder · branch; the
     state is a dot on the pet), 3 Name wraps (30px: the name may take two lines), 4 Rich detail
     (28px: name; folder · branch; the brain's logo from Herdr's icons, the state, "N topics" or
-    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot, name, topics, open tasks),
+    "N blocked", "N tasks"), 5 Table (22px, one 32px line: dot and name; no count columns, DeNon 2026-11-10),
     6 Progress (28px: a 3px bar of the pal's tasks, done today of done + open), 7 Folder first
     (30px: the folder relative to ~/Projects as the mono headline, the name small above, state ·
     branch), 8 Grouped (24px tight rows under the group headers), 9 Mini card (34px: a bordered
@@ -165,8 +165,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     record or space, the branch of the row's lead topic's pane, topic counts from its tabs, task
     counts from the board (open, claimed, blocked; done in the last day). Every look keeps the
     row's behaviour: a click opens the lead topic, right-click its menu, pins (the pin mark),
-    groups and folding, drag to reorder, Hidden pals (a quieter 30px line in the compact looks)
-    and the status-first colours.
+    groups and folding, drag to reorder, Hidden pals (a quieter 30px line in the compact looks; no
+    count on it, the tooltip says how many) and the status-first colours.
     **Trees** (DeNon, 2026-11-08; `palTrees`, on unless false), an option for every look (it
     replaced the board's Tree look; a saved `palList: "tree"` shows as Two tight lines): a pal
     with a topic working or asking you unfolds its live topics under its row, asks you first,
@@ -178,8 +178,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     light line at the bottom (gpui-kit has no gradients or inner shadows, so these are 1 to 4px
     bands in a clipped box). Each topic row is 24px: the mark (the chosen working indicator, an
     amber dot when it asks you, a check when done) in a 16px slot on the left, the colour bar,
-    "#topic" in 11.5px mono, and for a finished topic when it finished (11px #56565A) on the
-    right. The shown topic is #18181A with #EDEDED text and a 2px blue edge. A click opens that
+    "#topic" in 11.5px mono; nothing on the right (a finished topic said when it finished until
+    DeNon took the time out, 2026-11-10). The shown topic is #18181A with #EDEDED text and a 2px blue edge. A click opens that
     topic, right-click is its menu. A pal with ONE live topic gets no channel (DeNon,
     2026-11-10: a single row in a box looks odd): the same row, same place, straight on the
     sidebar (`crew.js TREE_SINGLE`). Only the channel is added: nothing else moves. Resting,
@@ -188,8 +188,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     ("Working · 3m"), in every look; the row names its topic only when no tree rows are under it
     (resting, asleep, Trees off or folded). `crew.js treeShows` decides both.
     **No times** on pal rows (any look; DeNon, 2026-11-08): the name and the state line have the
-    width; the state line keeps "Working · 4m". Trees rows show one only for a finished topic
-    (2026-11-09, above). The hero's topic list keeps its times.
+    width; the state line keeps "Working · 4m". None on Trees rows either, a finished topic's
+    included (DeNon, 2026-11-10: "i dont want times to show here"). The hero's topic list keeps
+    its times.
     **Fold all / unfold all** (DeNon, 2026-11-08): a 20px button in the Pals header, just before
     the search button, flips the same `palTrees` (so it's remembered and the Settings switch
     always agrees): unfolded it shows a tree icon ("Fold all topics"), folded a plain list
@@ -1097,6 +1098,16 @@ shows, the header hides the split buttons.
   one window by address, never the active window; the bar re-reads the store every 3 s so a pin made
   with Super+O shows. No Hyprland: the window still opens and Pin says to use the window manager.
   Opening a topic that's already out focuses its window. Closing never ends the terminal.
+  **Whose window it is:** the key is the topic's exact address, `key_of("Pal#topic")`: the slug's
+  first 37 characters, `-`, and 10 hex of the address's SHA-256 (`orca-ops-190e8ce702`; 48 at
+  most). The slug alone folds punctuation and cuts long names, so `App#build-api` and
+  `App#build_api` shared one through 0.4.2 and the second got the first's window. An open window
+  is reused only when its state names the same label AND terminal (`shows`), looked for under every
+  open key, so a window 0.4.2 left open under its slug is still found. The same topic on another
+  terminal (the topic was closed and reopened): that window is closed and a new one opens. Another
+  topic under our key: refused with its name, nothing reused, nothing built over. Geometry from
+  0.4.2 (under the slug) is copied to the new key the first time (`adopt`); the old entry stays.
+  `pal popout pin|close` takes an open pop-out's key or its `Pal#topic`.
   Watch-outs: nothing is written to the Hypr config (no window rule); `pal popout` open / pin /
   close refuse everyone but the owner's click (`ls` is anyone's).
 - **Chat about it** opens a window (key `home-chat`, 560×520) over Home: a 34 px bar
@@ -1215,6 +1226,32 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   refused. Its own tool calls (`crew-hook pre-tool-use`, checked only once a Chief is hired): no
   `hc send/keys/…`, no git subcommand that changes anything, no `pal` command it couldn't run, no
   `crew-room`/`crewd`/`herdr-app`, no file write outside `data/crew-chief`. Denied, with why.
+  Git is an allow-list: the reading subcommands (log, status, show, diff, rev-parse, blame, grep …),
+  and for the ones that read or write by their arguments only an explicit read form
+  (`GIT_MIXED`): `branch` alone or with `--list / -a / -r / -v / --show-current / --contains /
+  --merged`, `tag` alone or `-l / -n / --contains`, `config --get… / --list` (or `config get / list`),
+  `remote` alone, `-v / show / get-url`, `worktree list`, `reflog` alone, `show / list / exists`. A
+  name with nothing that makes it a listing is a write (`git branch x`, `git branch -v x`,
+  `git tag x`), and so is `git config name [value]`; config's reading option must come before the
+  name (`git config user.name --get` sets it to "--get"). The refusal names the read forms.
+  A reading subcommand still may not write a file or start a program: `--output[=FILE]` (a diff
+  option, so log, show, diff, blame, shortlog, rev-list and reflog show all take it, blame and
+  shortlog even after `--`) is refused anywhere in the command, and so is `git grep -O` /
+  `--open-files-in-pager`, cut short too (`--open=less`) or with -O anywhere in a cluster of short
+  options (`-nO`, `-1O`, `-10O`: read letter by letter as git does, stopping at one that takes a
+  value, `-e -f -A -B -C -m`); the refusal says to redirect into its
+  own folder instead. Nor may the command set git up to run one: before the subcommand only `-C`,
+  `--git-dir`, `--work-tree`, `--no-pager` / `-P`, a few pathspec switches and `-c` with
+  `color.*`, `core.quotepath`, `advice.*`, `log.date` or `log.decorate` pass (so no
+  `-c diff.external=…`, `-c core.fsmonitor=…`, `-c alias.…`, `--config-env`, `--exec-path`,
+  `--paginate`); in the environment (a `VAR=value` before the command, `env`, `export`,
+  `declare`) no `GIT_*` but a short harmless list, and `GIT_PAGER` / `PAGER` only empty or `cat`;
+  no `--ext-diff`; `git help` only as text (not `-w`, `-i`). What the owner's own git config makes
+  git run for everyone (an external diff on plain `git diff`, a file-system monitor, textconv,
+  gpg) is theirs and still runs. `tests/test_chief.py` runs these against the real git
+  (`TheGateAgainstRealGit`): every listed form really starts a stand-in program or writes a file
+  and is refused, and whatever a sweep of spellings gets past the gate starts nothing and changes
+  nothing.
 - **The pop-up** (`toggleChief`, `crew-roster.chief`, **Ctrl+Shift+J**, bound by install.sh when free
   and taken out by the uninstaller; also "Chief" in the gear menu and command bar): a Herdr window
   (`key: "chief"`, `keep: true`, so it comes back where it was dropped and after a restart). Split
@@ -1264,7 +1301,9 @@ its job; a foreman moved out stops being foreman.
 
 **The switcher chip** sits above the hero once there are several: a colour square, the factory's
 name, its template (Crew / Lanes) and an amber count of what the OTHER factories need from you
-(topics asking you, approvals, stuck topics, Home's open asks and logins). Click it for the
+(everything their Homes list under Needs you: topics asking you, approvals, stuck topics,
+proposals, Desk cards waiting on you, Home's open asks and logins; each by its pal's factory: a
+proposal's pal, a card's sender). Click it for the
 switcher. Switching shows that floor: the pal list is its pals (foreman first, the hero is the pal
 on show, else the foreman, else the first), and if the pal on show isn't on it, its foreman (else
 its first open pal) is shown. Nothing stops or sleeps: other floors keep working. The sidebar's
