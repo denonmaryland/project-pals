@@ -481,12 +481,19 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   token); a pal is refused, and `pal update follow` (no arguments: it only ever installs the
   followed branch's head, and only while the channel is on) refuses a pal's terminal. While the
   channel is Live, the gate's `live-branch` rule holds a pal moving that branch, because moving it
-  is installing, so it takes the click a landing takes: by name (`git update-ref refs/heads/main`
-  or `--stdin`, `branch -f` / `-M` / `-C main`, `switch -C main`, `checkout -B main`, `worktree add
-  -B main`, a fetch or pull refspec `x:main`), and `commit`, `merge`, `reset`, `pull`, `rebase`,
-  `cherry-pick`, `revert` and `am` run in a checkout of the followed repo that is on that branch
-  (the hook passes the folder; a `cd` before it and `git -C` count). On Stable the rule holds
-  nothing. Like the rest of the gate it catches the plain ways, not a pal set on getting round it.
+  is installing, so it takes the click a landing takes. By name, from anywhere: `git branch`
+  moving, making or removing it (`-f main x`; `-M` / `-C` / `-m` / `-c x main`, where the
+  destination is the last name; `-m main old`, `-D main`, and a plain `git branch main x` after
+  that), `update-ref refs/heads/main` or `--stdin`, `symbolic-ref refs/heads/main`, `switch -c` /
+  `-C main`, `checkout -b` / `-B main`, `worktree add -b` / `-B main`, a fetch, pull or push
+  refspec that writes it (`x:main`), `rebase <upstream> main`, and a file written to its ref. And
+  `commit`, `merge`, `reset`, `pull`, `rebase`, `cherry-pick`, `revert` and `am` run where it is
+  checked out in the followed repo (the hook passes the folder; a `cd` before it, `git -C`, and a
+  `git switch main` or `git worktree add <dir> main` earlier on the same line count). On Stable
+  the rule holds nothing. tests/test_guard.py `LiveBranchRefs` runs every spelling in a real
+  repository and requires that whatever really moves the ref is held (Codex T94: `git branch -M
+  feature main` had slipped past). Like the rest of the gate it catches the plain ways, not a pal
+  set on getting round it.
   `pal update run-tests` (the background suite) only runs for the build a swap just announced.
   `pal land` no longer needs the project folder to be on the base branch: where the base is checked
   out (the folder or a worktree) it merges there; where it's checked out nowhere it merges with

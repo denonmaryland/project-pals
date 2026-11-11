@@ -879,10 +879,14 @@ def run_strings(cmd):
     return [c for c in out if c and c.strip()]
 
 
-# ─── The branch the Live channel follows (T90) ──────────────────────────────────────────────────
+# ─── The branch the Live channel follows (T90; Codex T94) ──────────────────────────────────────
 HOOK_CWD = None   # the folder the command runs in, when the hook knows it (bin/crew-hook sets it)
 # git subcommands that move the branch that's checked out where they run.
 MOVES_HEAD = {"commit", "merge", "reset", "pull", "rebase", "cherry-pick", "revert", "am"}
+# git branch options that only read or describe (with one of these, nothing moves).
+BRANCH_READS = {"--list", "-l", "--show-current", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at",
+                "--format", "--sort", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--column",
+                "-u", "--set-upstream-to", "--unset-upstream", "--edit-description", "--track", "--no-track"}
 
 
 def _checked_out(folder):
@@ -899,60 +903,132 @@ def _checked_out(folder):
     return out[0].strip(), (os.path.dirname(common) if os.path.basename(common) == ".git" else common)
 
 
+def _git_words(seg):
+    """A git command's words with the folder it runs in kept apart: (subcommand, its arguments,
+    the -C folder or None). normal_words drops git's global options, -C among them."""
+    import shlex
+    w = normal_words(seg)
+    if len(w) < 2 or w[0] != "git":
+        return None, [], None
+    try:
+        raw = shlex.split(seg)
+    except ValueError:
+        raw = seg.split()
+    folder = None
+    try:
+        g = next(i for i, x in enumerate(raw) if os.path.basename(x) == "git")
+        i = g + 1
+        while i < len(raw) and raw[i] != w[1]:
+            if raw[i] == "-C" and i + 1 < len(raw):
+                d = os.path.expanduser(raw[i + 1])
+                folder = d if os.path.isabs(d) or folder is None else os.path.join(folder, d)
+                i += 1
+            i += 1
+    except StopIteration:
+        pass
+    return w[1], w[2:], folder
+
+
+def _branch_moves(args, branch):
+    """Does `git branch <args>` move, make or remove `branch`?
+      -m / -M / -c / -C [<old>] <new>: the destination is the LAST name (`-M feature main` moves main;
+        Codex T94); renaming it away removes it, and a later plain rename or create puts it somewhere new;
+      -d / -D: any name; -f <name> [<start>] and a plain `git branch <name> [<start>]`: the first."""
+    shorts = "".join(a[1:] for a in args if re.fullmatch(r"-[a-zA-Z]+", a))
+    longs = {a.split("=", 1)[0] for a in args if a.startswith("--")}
+    names = [a for a in args if not a.startswith("-")]
+    if longs & BRANCH_READS or {a for a in args if a.startswith("-")} & BRANCH_READS:
+        return False
+    if set(shorts) & set("dD") or "--delete" in longs:
+        return branch in names
+    if set(shorts) & set("mM") or "--move" in longs:
+        return branch in names          # as the new name it moves; as the old one it's gone
+    if set(shorts) & set("cC") or "--copy" in longs:
+        return names[-1:] == [branch]   # copied FROM, it stays where it is
+    return names[:1] == [branch]        # -f / --force, or a plain create of it
+
+
+def _refspec_writes(arg, branch):
+    """A fetch / pull / push refspec whose destination is the branch (wildcards included)."""
+    import fnmatch
+    if ":" not in arg:
+        return False
+    dst = arg.split(":", 1)[1]
+    return bool(dst) and any(fnmatch.fnmatchcase(x, dst) for x in (branch, f"refs/heads/{branch}"))
+
+
 def moves_live_branch(cmd):
-    """While the Live channel is on (crew-settings.json "channel": "live"), a git command that moves
-    the branch it follows:
-      by name, anywhere: update-ref refs/heads/<b> (or --stdin: what it moves can't be read),
-        branch -f / -M / -C <b>, switch -C <b>, checkout -B <b>, worktree add -B <b>, and a
-        fetch / pull / push refspec that writes it (x:<b>);
-      or by being run in a checkout of the followed repo that is on that branch: commit, merge, reset,
-        pull, rebase, cherry-pick, revert, am (the folder is the hook's, a `cd` before it or git -C).
+    """While the Live channel is on (crew-settings.json "channel": "live"), a command that moves,
+    makes or removes the branch it follows. Installing follows that branch, so this needs the click a
+    landing needs:
+      by name, from anywhere: git branch (see _branch_moves), update-ref on it (or --stdin: what that
+        moves can't be read), symbolic-ref on it, switch -c/-C, checkout -b/-B, worktree add -b/-B,
+        a fetch / pull / push refspec that writes it (x:<b>), rebase <upstream> <b>, and a file
+        written to its ref (…/refs/heads/<b>, packed-refs);
+      or by running where it is checked out, in the followed repo: commit, merge, reset, pull,
+        rebase, cherry-pick, revert, am. Where it runs: the hook's folder, a `cd` before it, git -C,
+        and a `git switch <b>` / `git checkout <b>` / `git worktree add <dir> <b>` earlier on the
+        same line counts as being on it there.
+    tests/test_guard.py LiveBranchRefs runs each spelling in a real repository and checks the ref.
     As with the rest of the gate, this catches the plain ways, not a pal set on getting around it."""
     s = load_json(DATA / "crew-settings.json", {})
     if s.get("channel") != "live":
         return False
-    import shlex
     branch = s.get("live_branch") or "main"
     repo = os.path.realpath(s["live_repo"]) if s.get("live_repo") else None
+    if any(re.search(rf"(^|/)refs/heads/{re.escape(branch)}$|(^|/)packed-refs$", t) for t in write_targets(cmd)):
+        return True
     cwd = HOOK_CWD
+    here = {}   # folder → the repo's main folder, where an earlier command on this line checks the branch out
+    join = lambda base, d: os.path.normpath(d if os.path.isabs(d) else os.path.join(base, d)) if (base or os.path.isabs(d)) else None
     for seg in commands(cmd):
         if _help(seg):
             continue
         w = normal_words(seg)
         if len(w) == 2 and w[0] == "cd" and not w[1].startswith("-"):
-            cwd = os.path.normpath(os.path.join(cwd or "", os.path.expanduser(w[1]))) if cwd or os.path.isabs(os.path.expanduser(w[1])) else None
+            cwd = join(cwd, os.path.expanduser(w[1]))
             continue
-        if len(w) < 2 or w[0] != "git":
+        sub, args, folder = _git_words(seg)
+        if not sub:
             continue
-        sub, args = w[1], w[2:]
+        at = join(cwd, folder) if folder else (os.path.normpath(cwd) if cwd else None)
         names = [a for a in args if not a.startswith("-")]
-        flag = lambda letters: any(re.fullmatch(rf"-[a-zA-Z]*[{letters}][a-zA-Z]*", a) for a in args)
+        if sub == "branch" and _branch_moves(args, branch):
+            return True
         if sub == "update-ref" and (f"refs/heads/{branch}" in args or "--stdin" in args):
             return True
-        # git branch -f <branch> [start]: the branch moved is the first name (the second is where to).
-        if sub == "branch" and names[:1] == [branch] and (flag("fMC") or "--force" in args):
+        if sub == "symbolic-ref" and names[:1] == [f"refs/heads/{branch}"]:
             return True
         if sub in ("switch", "checkout", "worktree") and any(
                 args[i + 1:i + 2] == [branch] for i, a in enumerate(args)
-                if a in ("--force-create", "-C", "-B") or (sub != "worktree" and re.fullmatch(r"-[a-zA-Z]*[CB]", a))):
+                if a in ("--create", "--force-create", "--orphan") or re.fullmatch(r"-[a-zA-Z]*[cCbB]", a)):
             return True
-        if sub in ("fetch", "pull", "push") and any(re.search(rf":(refs/heads/)?{re.escape(branch)}$", a) for a in names):
+        if sub in ("fetch", "pull", "push") and any(_refspec_writes(a.lstrip("+"), branch) for a in names):
             return True
-        if sub in MOVES_HEAD and repo:
-            # Where it runs: git -C <dir> (dropped by normal_words, so read from the segment), else the folder.
-            try:
-                raw = shlex.split(seg)
-            except ValueError:
-                raw = seg.split()
-            at = cwd
-            for i, a in enumerate(raw[:-1]):
-                if a == "-C" and "git" in [os.path.basename(x) for x in raw[:i]] and sub not in raw[:i]:
-                    d = os.path.expanduser(raw[i + 1])
-                    at = d if os.path.isabs(d) else (os.path.join(at, d) if at else None)
-            if at:
+        if sub == "rebase":
+            # git rebase [--onto <x>] <upstream> <branch>: checks <branch> out and moves it.
+            pos, skip = [], False
+            for a in args:
+                if skip:
+                    skip = False
+                elif a in ("--onto", "-s", "--strategy", "-X", "--strategy-option", "-x", "--exec", "-C"):
+                    skip = True
+                elif not a.startswith("-"):
+                    pos.append(a)
+            if pos[1:2] == [branch]:
+                return True
+        # Where the branch is (or is about to be) checked out.
+        if at and sub in ("switch", "checkout") and names[:1] == [branch]:
+            here[at] = _checked_out(at)[1]
+        if at and sub == "worktree" and names[:1] == ["add"] and len(names) >= 3 and names[-1] == branch:
+            here[join(at, os.path.expanduser(names[1]))] = _checked_out(at)[1]
+        if sub in MOVES_HEAD and repo and at:
+            if at in here:
+                on, root = branch, here[at]
+            else:
                 on, root = _checked_out(at)
-                if on == branch and root and os.path.realpath(root) == repo:
-                    return True
+            if on == branch and root and os.path.realpath(root) == repo:
+                return True
     return False
 
 

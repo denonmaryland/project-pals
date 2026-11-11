@@ -789,3 +789,150 @@ class LiveBranch(unittest.TestCase):
             self.assertIsNone(rule(cmd), cmd)
         crewguard.HOOK_CWD = None                    # no folder known: nothing to go on
         self.assertIsNone(rule("git commit -am x"))
+
+
+class LiveBranchRefs(unittest.TestCase):
+    """Codex T94, P1: `git branch -M feature main` moved the followed main past the gate (only the
+    first name of a `git branch` was looked at). Reading a command line isn't proof, so this runs
+    each one in a disposable repository and looks at the ref: with the Live channel on, a command
+    that really moves or removes the followed branch must be held, whatever its spelling. The repo
+    is the usual one: the project folder parked on another branch, a topic's worktree on crew/x;
+    layout "m" adds a worktree that has main checked out."""
+    SETTINGS = Path(TMP) / "crew-settings.json"
+    # (layout, where it runs, the command). {repo} {wt} {m} are folders, {feature} a commit.
+    MOVERS = [
+        # git branch: rename and copy move the DESTINATION (the last name), forced or not
+        ("", "wt", "git branch -M feature main"),
+        ("", "wt", "git branch -C feature main"),
+        ("", "wt", "git branch --move --force feature main"),
+        ("", "wt", "git branch --copy --force feature main"),
+        ("", "wt", "git branch -f main feature"),
+        ("", "wt", "git branch --force main crew/x"),
+        ("", "wt", "git -C {repo} branch -M feature main"),
+        # taking it away, and then making it again somewhere else (no force needed by then)
+        ("", "wt", "git branch -D main"),
+        ("", "wt", "git branch -d main"),
+        ("", "wt", "git branch --delete --force main"),
+        ("", "wt", "git branch -m main old"),
+        ("", "wt", "git branch -D main && git branch main feature"),
+        ("", "wt", "git branch -m main old && git branch -m feature main"),
+        ("", "wt", "git branch -m main old; git branch -c feature main"),
+        # the ref itself
+        ("", "wt", "git update-ref refs/heads/main {feature}"),
+        ("", "wt", "git update-ref -d refs/heads/main"),
+        ("", "wt", "echo 'update refs/heads/main {feature}' | git update-ref --stdin"),
+        ("", "wt", "git symbolic-ref refs/heads/main refs/heads/feature"),
+        ("", "wt", "echo {feature} > {repo}/.git/refs/heads/main"),
+        ("", "wt", "cp {repo}/.git/refs/heads/feature {repo}/.git/refs/heads/main"),
+        # fetch, pull and push into the local branch
+        ("", "wt", "git fetch . feature:main"),
+        ("", "wt", "git fetch . +refs/heads/feature:refs/heads/main"),
+        ("", "wt", "git fetch {repo} feature:main"),
+        ("", "wt", "git pull . feature:main"),
+        ("", "wt", "git push . feature:main"),
+        ("", "wt", "git push {repo} +crew/x:refs/heads/main"),
+        # checking it out here on the way, creating or resetting it
+        ("", "wt", "git switch -C main feature"),
+        ("", "wt", "git checkout -B main feature"),
+        ("", "wt", "git switch --force-create main feature"),
+        ("", "wt", "git worktree add -B main ../m2 feature"),
+        ("", "wt", "git rebase feature main"),
+        ("", "wt", "git checkout main && git reset --hard feature"),
+        ("", "wt", "git switch main && git merge feature"),
+        ("", "wt", "git switch main; git commit --allow-empty -m x"),
+        ("", "wt", "git checkout main && git pull . feature"),
+        ("", "wt", "git checkout main && git cherry-pick crew/x"),
+        ("", "wt", "git worktree add ../m2 main && git -C ../m2 reset --hard feature"),
+        ("", "wt", "git worktree add ../m2 main && cd ../m2 && git merge feature"),
+        # in a checkout that has it checked out
+        ("m", "m", "git commit --allow-empty -m x"),
+        ("m", "m", "git commit --amend --allow-empty -m y"),
+        ("m", "m", "git merge feature"),
+        ("m", "m", "git reset --hard feature"),
+        ("m", "m", "git pull . feature"),
+        ("m", "m", "git cherry-pick crew/x"),
+        ("m", "m", "git revert --no-edit HEAD"),
+        ("m", "m", "git rebase feature"),
+        ("m", "wt", "git -C ../m reset --hard feature"),
+        ("m", "wt", "cd ../m && git merge feature"),
+        ("m", "wt", "cd {m}; git commit --allow-empty -m x"),
+        ("m", "m", "git checkout --detach && git branch -f main feature"),
+    ]
+    # Everyday commands that name main without moving it: free, and they really don't move it.
+    FREE = [
+        ("", "wt", "git branch -m feature other"), ("", "wt", "git branch -f feature main"), ("", "wt", "git branch -C main copy"),
+        ("", "wt", "git branch copy main"), ("", "wt", "git branch --list main"), ("", "wt", "git branch --contains main"),
+        ("", "wt", "git branch -D feature"), ("", "wt", "git log --oneline main"), ("", "wt", "git merge main"),
+        ("", "wt", "git rebase main"), ("", "wt", "git rebase main crew/x"), ("", "wt", "git reset --hard main"),
+        ("", "wt", "git fetch . main:copy"), ("", "wt", "git switch -c copy main"), ("", "wt", "git checkout -b copy main"),
+        ("", "wt", "git worktree add -b copy ../m2 main"), ("", "wt", "git commit --allow-empty -m x"),
+        ("", "wt", "git update-ref refs/heads/copy {feature}"), ("", "wt", "git symbolic-ref HEAD"),
+        ("", "wt", "git switch main"), ("", "wt", "git checkout main"), ("", "wt", "git worktree add ../m2 main"),
+        ("m", "wt", "git commit --allow-empty -m x"), ("m", "wt", "git reset --hard main"), ("m", "m", "git status"),
+        ("m", "m", "git log -1"), ("m", "m", "git diff"), ("m", "m", "git stash list"), ("m", "m", "git branch copy"),
+    ]
+
+    def setUp(self):
+        import subprocess
+        self.sp = subprocess
+        self.t = Path(tempfile.mkdtemp(prefix="pals-liverefs-"))
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
+                    "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid",
+                    "GIT_EDITOR": "true", "GIT_TERMINAL_PROMPT": "0"}
+        self.n = 0
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.t, ignore_errors=True)
+        self.SETTINGS.unlink(missing_ok=True)
+        crewguard.HOOK_CWD = None
+
+    def repo(self, layout):
+        """A fresh one: main (A) checked out nowhere, feature (A-B), crew/x (A-C) in a worktree."""
+        self.n += 1
+        d = self.t / str(self.n)
+        r = d / "repo"
+        r.mkdir(parents=True)
+        g = lambda *a, at=r: self.sp.run(["git", "-C", str(at), *a], env=self.env, check=True, capture_output=True, text=True).stdout.strip()
+        g("init", "-q", "-b", "main")
+        (r / "f").write_text("a\n"); g("add", "f"); g("commit", "-q", "-m", "A")
+        g("checkout", "-q", "-b", "feature"); (r / "g").write_text("b\n"); g("add", "g"); g("commit", "-q", "-m", "B")
+        g("checkout", "-q", "-b", "parked", "main")
+        g("worktree", "add", "-q", "-b", "crew/x", str(d / "wt"), "main")
+        (d / "wt" / "h").write_text("c\n"); g("add", "h", at=d / "wt"); g("commit", "-q", "-m", "C", at=d / "wt")
+        if layout == "m":
+            g("worktree", "add", "-q", str(d / "m"), "main")
+        return {"repo": str(r), "wt": str(d / "wt"), "m": str(d / "m"), "feature": g("rev-parse", "feature")}
+
+    def main_ref(self, repo):
+        # The ref as it is, a symbolic one included: where does refs/heads/main point, if anywhere?
+        r = self.sp.run(["git", "-C", repo, "rev-parse", "-q", "--verify", "refs/heads/main^{commit}"], env=self.env, capture_output=True, text=True)
+        s = self.sp.run(["git", "-C", repo, "symbolic-ref", "-q", "refs/heads/main"], env=self.env, capture_output=True, text=True)
+        return (r.stdout.strip() or None, s.stdout.strip() or None)
+
+    def case(self, layout, where, template):
+        p = self.repo(layout)
+        cmd = template.format(**p)
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main", "live_repo": p["repo"]}))
+        crewguard.HOOK_CWD = p[where]
+        held = rule(cmd)
+        before = self.main_ref(p["repo"])
+        self.sp.run(["bash", "-c", cmd], cwd=p[where], env=self.env, capture_output=True, text=True)
+        return cmd, held, before != self.main_ref(p["repo"])
+
+    def test_every_command_that_moves_the_followed_branch_is_held(self):
+        slipped, duds = [], []
+        for layout, where, template in self.MOVERS:
+            cmd, held, moved = self.case(layout, where, template)
+            if not moved:
+                duds.append(cmd)       # the table must stay honest: each of these has to really move it
+            elif not held:
+                slipped.append(cmd)
+        self.assertEqual(duds, [], "these didn't move main here, so they prove nothing")
+        self.assertEqual(slipped, [], "moved the followed branch without being held")
+
+    def test_commands_that_only_name_it_stay_free(self):
+        for layout, where, template in self.FREE:
+            cmd, held, moved = self.case(layout, where, template)
+            self.assertFalse(moved, cmd)
+            self.assertIsNone(held, cmd)
