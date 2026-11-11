@@ -41,7 +41,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, agents, shared, run, notify, exec, appHome, home as homeDir, readTextFile, settings, openOverlay, closeOverlay, nextCommand } from "herdr";
 import {
-  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli,
+  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli, memoryLow, memoryLine,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
   openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
   severalFactories, currentFactory, inFactory, homeItemShown,
@@ -397,6 +397,21 @@ export default class CrewHome extends View {
     if (!this.ops.daemon) parts.push(div().flex_none().text_color(d.warnText).child("crewd isn't running: messages wait"));
     parts.forEach((p, i) => { if (i > 1 || (i === 1 && !working.length)) line.child(sep()); line.child(p); });
     return line;
+  }
+
+  // Low memory (T153): one quiet row under the status line while available memory is under the floor
+  // (crewd's crew-memory.json), with the one thing that frees some: sleeping the idle pals.
+  memoryRow(d) {
+    const busy = Boolean(this.busy.memsleep);
+    return h_flex().id("memory-row").h(24).flex_none().items_center().gap(8).min_w(0).text_size(12).line_height("16px").text_color(d.fg2)
+      .child(div().size(6).flex_none().rounded(3).bg(d.warnText))
+      .child(div().flex_none().font_weight(500).text_color(d.warnText).child("Memory is low"))
+      .child(div().min_w(0).truncate().child(memoryLine() ?? ""))
+      .child(div().flex_1())
+      .child(h_flex().id("memory-sleep-idle").h(22).px(6).flex_none().items_center().rounded(d.r.xs).cursor_pointer()
+        .hover((s) => s.bg(d.hover))
+        .on_click((_e, cx) => this.act("memsleep", ["sleep", "--idle", "--notify"], null, cx))
+        .child(div().text_size(12).text_color(d.infoText).child(busy ? "Sleeping idle pals…" : "Sleep idle pals ›")));
   }
 
   // The drawer: what happened today and the rest, 420 px on the right, over the page.
@@ -920,6 +935,7 @@ export default class CrewHome extends View {
         .child(link)
         .child(termBtn))
       .child(this.statusLine(d, prog))
+      .when(memoryLow(), (el) => el.child(this.memoryRow(d)))
       .child(needs.length ? this.needsList(d, t, needs) : this.caughtUp(d, t));
     if (!this.loaded) page.child(div().absolute().top(12).right(28).text_size(11).text_color(d.fg4).child("reading…"));
     return root.child(page).when(open, (el) => el.child(this.drawerEl(d, t, since, prog)));

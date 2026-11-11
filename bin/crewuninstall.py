@@ -31,6 +31,7 @@ What an install adds, and what uninstall does with it:
                                                                  removed (only Project Pals' own)
   ~/.local/lib/herdr-crew                                        removed
   systemd        herdr-crew.service (crewd)                      stopped, disabled, removed
+                 hc-hold-.service.d/50-project-pals-oomd.conf    removed (a drop-in of your own stays)
 
 The person's own config stays byte-identical: `record` keeps a copy of keys.json, ~/.claude/settings.json
 and ~/.gemini/config/hooks.json as they were before Project Pals first touched them
@@ -91,6 +92,9 @@ OUR_HOOK = re.compile(r"^%s/crew-hook(-fast)? [a-z][a-z-]*$" % re.escape(str(BIN
 STATUSLINE = str(BINDIR / "crew-statusline")
 SKILL_LINKS = (USER / ".claude" / "skills", USER / ".codex" / "skills", USER / ".gemini" / "config" / "skills")
 UNIT = USER / ".config" / "systemd" / "user" / "herdr-crew.service"
+# The drop-in that makes Herdr's terminal holder oomd's last pick (T153; crewmem.install_dropin). Only
+# ours goes: a person's own drop-in in the same folder (any other name) stays.
+OOMD_DROPIN = USER / ".config" / "systemd" / "user" / "hc-hold-.service.d" / "50-project-pals-oomd.conf"
 # Mods Project Pals shipped once and set aside since (install.sh's list), besides every crew-* mod
 # holding the shared crew.js.
 RETIRED_MODS = ("crew-rail", "crew-chat", "crew-prompt", "crew-palrail", "crew-tabs", "crew-side", "crew-tell")
@@ -103,6 +107,7 @@ WATCHED = [USER / ".claude", CLAUDE, USER / ".claude" / "skills", USER / ".codex
            USER / ".local", USER / ".local" / "bin", USER / ".local" / "lib",
            USER / ".config" / "systemd", USER / ".config" / "systemd" / "user",
            USER / ".config" / "systemd" / "user" / "default.target.wants",
+           OOMD_DROPIN.parent,
            USER / ".cache", USER / ".cache" / "project-pals",
            APP / "layouts", APP / "mods", DATA, APP / ".crew-backups"]
 
@@ -322,7 +327,7 @@ def candidates(src_mods=()):
     out = [mods / n for n in names] + [APP / "layouts" / "pals.json", APP / "layouts" / "pals.svg"]
     out += [BINDIR / n for n in (*BINS, *ALIASES)]
     out += [USER / ".local" / "lib" / "herdr-crew", UNIT, UNIT.parent / "default.target.wants" / "herdr-crew.service",
-            USER / ".claude" / "project-pals"]
+            USER / ".claude" / "project-pals", OOMD_DROPIN]
     return out
 
 
@@ -644,6 +649,13 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
             subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=60)
     elif exists(UNIT):
         run.remove_installed(UNIT, f"{UNIT} (crewd's service)", unit_ours)
+
+    # 1b. The hc-hold oomd drop-in (T153), when it's Project Pals' own.
+    dropin_ours = lambda p: p.is_file() and not p.is_symlink() and "Project Pals" in p.read_text(errors="replace")
+    if exists(OOMD_DROPIN):
+        run.remove_installed(OOMD_DROPIN, f"{OOMD_DROPIN} (marks Herdr's terminal holder oomd's last pick)", dropin_ours)
+        if not dry:
+            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=60)
 
     # 2. The person's config files: only Project Pals' entries come out.
     run.config("claude-settings.json", CLAUDE, clean_claude, lambda d: json.dumps(d, indent=2, ensure_ascii=False) + "\n")

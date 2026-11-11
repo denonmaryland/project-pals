@@ -6,6 +6,7 @@
 #   ./install.sh --no-claude-hooks  helpers + Antigravity CLI hooks, leaving ~/.claude/settings.json alone
 #   ./install.sh --no-agy-hooks     helpers + Claude Code hooks, leaving ~/.gemini/config/hooks.json alone
 #   ./install.sh --no-helpers       only the layout, mods and commands
+#   ./install.sh --no-oomd-dropin   helpers, without marking Herdr's terminal holder "kill last" (below)
 #   ./install.sh --uninstall [--purge] [--dry-run]
 #                                   take Project Pals out again (bin/crewuninstall.py): everything it
 #                                   added, nothing of yours; your pals' data stays unless --purge
@@ -15,6 +16,9 @@
 # and memory at session start, the approval gate, messages handed over between steps instead of
 # typed in, model/context/usage facts for the status bar). They change files outside Herdr:
 # ~/.config/systemd/user, ~/.claude/settings.json and ~/.gemini/config/hooks.json (backed up first).
+# With systemd, each pal's agent starts in its own scope, so systemd-oomd takes one hungry pal rather
+# than Herdr's terminal holder (hc-hold-<id>.service) with the whole crew; a drop-in marks that holder
+# ManagedOOMPreference=avoid, unless one there already sets it (--no-oomd-dropin skips it).
 #
 # Herdr hot-reloads mods and layouts, so a running window picks this up at once. Previous copies
 # are backed up to ~/.config/herdr-app/.crew-backups/. Your pals, rooms and memory are never touched.
@@ -27,6 +31,7 @@ backup="$home/.crew-backups/$stamp"
 helpers=1
 claude_hooks=1
 agy_hooks=1
+oomd_dropin=1
 from="local"
 uninstall=0
 un_flags=()
@@ -35,6 +40,7 @@ for arg in "$@"; do
     --no-helpers) helpers=0; claude_hooks=0; agy_hooks=0 ;;
     --no-claude-hooks) claude_hooks=0 ;;
     --no-agy-hooks) agy_hooks=0 ;;
+    --no-oomd-dropin) oomd_dropin=0 ;;
     --from-release) from="release" ;;
     --uninstall) uninstall=1 ;;
     --purge|--dry-run) un_flags+=("$arg") ;;
@@ -224,6 +230,20 @@ if [[ $helpers -eq 1 ]]; then
     systemctl --user daemon-reload
     systemctl --user enable herdr-crew.service >/dev/null 2>&1 || true
     systemctl --user restart herdr-crew.service || echo "crewd didn't start; see: journalctl --user -u herdr-crew"
+    # Memory (T153): pals start in their own scope (crewd checks systemd-run works here); Herdr's
+    # terminal holder becomes oomd's last pick. Undo: pal uninstall, or delete the file and daemon-reload.
+    if [[ $oomd_dropin -eq 1 ]]; then
+      got="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewmem; print(crewmem.install_dropin())' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo failed)"
+      case "$got" in
+        added) systemctl --user daemon-reload
+               echo "memory: Herdr's terminal holder is oomd's last pick now (~/.config/systemd/user/hc-hold-.service.d/50-project-pals-oomd.conf; skip with --no-oomd-dropin)" ;;
+        ours)  echo "memory: Herdr's terminal holder is oomd's last pick (Project Pals' drop-in, already there)" ;;
+        theirs) echo "memory: Herdr's terminal holder already has your own oomd drop-in (hc-hold-.service.d); left as it is" ;;
+        *)     echo "memory: couldn't add the hc-hold oomd drop-in (pals still get their own scopes)" ;;
+      esac
+    else
+      echo "memory: skipped the hc-hold oomd drop-in (--no-oomd-dropin); pals still get their own scopes"
+    fi
   else
     echo "skipped crewd: no systemd user session here (messages are typed in directly; no routines or callbacks)"
   fi

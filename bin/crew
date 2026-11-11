@@ -66,10 +66,12 @@ Hiring
                                      areas: a pal's topics filed under a few names, for listing only.
                                      Pal#topic stays the address; an area is never part of it.
                                      pal channel is the same command (topics were called channels before 0.4.0)
-  pal sleep [<Pal[#topic]>... | #topic | --idle] [-n]
+  pal sleep [<Pal[#topic]>... | #topic | --idle [--older HOURS]] [-n]
                                      Sleep (keep topics, free RAM): stop a pal's agent; its tabs and room seats
                                      stay. Refuses one that's working, asking, being typed to or running work.
-                                     (Close pal, in the app, ends its space instead.)
+                                     --older: only topics idle that many hours. (Close pal, in the app, ends
+                                     its space instead.)
+  pal ram [--json]                   what each awake pal holds in memory, and the machine's free memory
   pal wake <Pal[#topic]|#topic>... [-n]   Wake (resume topics): its brain again in the same tab, resuming
                                      that topic's session when it can vouch for it, else fresh (it says why)
   pal handoff <Pal#topic> --to <claude|codex> [--why "…"] [-n]
@@ -930,10 +932,18 @@ def cmd_sleep(spaces, rest):
     if "--force" in rest:
         die("pal sleep has no --force: a pal that's mid-turn, waiting on a prompt, typing, or running work "
             "isn't put to sleep. Let it finish (or stop that work), then sleep it.")
-    pos, o = opts([a for a in rest if a != "-n"], (), ("idle", "notify"))
+    pos, o = opts([a for a in rest if a != "-n"], ("older",), ("idle", "notify"))
     dry = "-n" in rest
     if not pos and not o.get("idle"):
-        die("pal sleep <Pal[#topic]|#topic>... | --idle [-n]")
+        die("pal sleep <Pal[#topic]|#topic>... | --idle [--older HOURS] [-n]")
+    older = None
+    if o.get("older") is not None:
+        try:
+            older = float(o["older"])
+        except ValueError:
+            die("--older takes hours, like --older 6")
+        if not o.get("idle") or older <= 0:
+            die("--older goes with --idle and takes a number of hours above 0")
     recs, terms, out = records(), hc_terminals(), []
     named = []
     for spec in pos:
@@ -943,6 +953,13 @@ def cmd_sleep(spaces, rest):
             print(f"{spec}: {e}"); out.append(f"{spec}: {e}")
     # --idle sweeps every topic but the head pal's, quietly: it says nothing about the ones it leaves.
     swept = [(s, t) for s in spaces if not record_of(s, recs).get("god") for t in s["tabs"]] if o.get("idle") else []
+    if older is not None:
+        # Only topics whose last activity (their session file, else their status line) is that old;
+        # one with nothing to say when it last worked is left awake.
+        import crewmem, crewchat
+        links, cut = crewchat.links(), time.time() - older * 3600
+        swept = [(s, t) for s, t in swept
+                 if (lambda at: at is not None and at < cut)(crewmem.last_active((lead(t) or {}).get("terminal"), links))]
     seen, n, refused = set(), 0, False
     for (s, t), loud in [(p, True) for p in named] + [(p, False) for p in swept]:
         addr = (lead(t) or {}).get("terminal")
@@ -971,7 +988,11 @@ def _wake_line(spaces, space, tab, addr, info):
     extra, why = crewsleep.resume_args(addr, brain.get("key"), base, crewsleep.shell_cwd(info["pid"], info), crewchat.links(), live)
     hint = [] if extra else ([brain["hint"]] if brain.get("hint") else [])
     said = f"{brain.get('name') or brain.get('key') or 'its brain'}" + (f" ({brain['why']})" if brain.get("why") else "")
-    return shlex.join([*base, *extra, *hint]), f"{said}; {why}"
+    # Its own systemd scope (T153), so memory trouble takes this pal and not the crew. systemd-run
+    # --scope execs in place: the agent is still the shell's child, with the same pid and environment.
+    import crewmem
+    scope = crewmem.scope_prefix(space["name"], chan(tab))
+    return shlex.join([*scope, *base, *extra, *hint]), f"{said}; {why}"
 
 
 def cmd_wake(spaces, rest):
@@ -1235,6 +1256,11 @@ def cmd_handoff(spaces, rest):
         ho.save({**rec, "status": "taken", "taken": now_ms()})
         print(ho.card(rec), flush=True)
         argv = [*rec["argv"], *(["-i", rec["message"]] if rec.get("agy") else [rec["message"]])]
+        # The new brain in its own systemd scope (T153), like every other launch. systemd-run --scope
+        # execs in place, so it's still this process: the shell's child with the seat's environment.
+        import crewmem
+        pal, _, topic = str(rec.get("seat") or "").partition("#")
+        argv = [*crewmem.scope_prefix(pal or "pal", topic or None), *argv]
         try:
             os.execvp(argv[0], argv)
         except OSError as e:
@@ -3116,6 +3142,51 @@ def cmd_factory(rest):
 
 # ── main ─────────────────────────────────────────────────────────────────────────────────────
 
+def warn_memory():
+    """pal hire/wake/topic: one line when available memory is under the floor (T153)."""
+    import crewmem
+    line = crewmem.low_line()
+    if line:
+        print(f"note: {line}")
+
+
+def cmd_ram(spaces, rest):
+    """pal ram [--json]: what each awake pal holds in memory (its agent and everything it started,
+    proportional set size), whether it has its own scope, and the machine's memory."""
+    import crewmem
+    m = crewmem.meminfo()
+    rows = []
+    for s in spaces:
+        if s.get("machine"):
+            continue
+        for t in s["tabs"]:
+            addr = (lead(t) or {}).get("terminal")
+            info = term_info(addr) if addr else {}
+            shell = info.get("pid")
+            if not shell:
+                continue
+            for agent in child_pids(shell):
+                comm = proc_comm(agent)
+                if comm in SHELLS:
+                    continue
+                cg = crewmem.cgroup_of(agent)
+                rows.append({"pal": s["name"], "topic": chan(t), "terminal": addr, "agent": comm, "pid": agent,
+                             "mb": round(crewmem.tree_mb(agent)), "scope": cg.rsplit("/", 1)[-1] if cg.endswith(".scope") else None})
+    if "--json" in rest:
+        print(json.dumps({"memory": m, "pals": rows}, indent=2)); return
+    for r in sorted(rows, key=lambda r: -r["mb"]):
+        print(f"{r['mb']:>6} MB  {r['pal']} #{r['topic']} ({r['agent']}, {r['terminal']})" + ("" if r["scope"] else "  · no scope of its own"))
+    if not rows:
+        print("no awake pals on this machine")
+    if m:
+        total = sum(r["mb"] for r in rows)
+        print(f"pals: {crewmem.gb(total)} · available: {crewmem.gb(m['available'])} of {crewmem.gb(m['total'])}"
+              f" · warns under {crewmem.gb(crewmem.floor_mb(m['total']))}")
+    line = crewmem.low_line(m) if m else None
+    if line:
+        print(line)
+
+
 def main(argv):
     global ARGV
     # `pal --as-helper tell …` (how build 7692987's helper sends): the same as PAL_HELPER=Pals for this
@@ -3257,6 +3328,7 @@ def main(argv):
             print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. It lives in its pop-up: Ctrl+Shift+J; nothing is sent to it but your words there.")
         else:
             print(f"hired {out['name']} ({out['harness']}) with {out['channel']}. Reach it with: pal tell \"{out['name']}\" \"...\"")
+        warn_memory()
         if "claude" in str(out.get("argv") or out["harness"]).lower():
             watch_for_trust(out["name"], out["channel"])
     elif cmd in ("topic", "channel") and rest and rest[0] in ("area", "areas"):
@@ -3281,6 +3353,7 @@ def main(argv):
             import crewareas
             a = crewareas.file(out["bot"], out["channel"], area)
             print(f"filed under {a['name']}" if a else "left unsorted")
+        warn_memory()
         watch_start(out["bot"], out["channel"], brain)
     elif cmd == "invite" and len(rest) >= 2:
         import crewchief
@@ -3297,8 +3370,12 @@ def main(argv):
         cmd_sleep(spaces, rest)
     elif cmd == "wake":
         cmd_wake(spaces, rest)
+        if "-n" not in rest:
+            warn_memory()
     elif cmd == "handoff":
         cmd_handoff(spaces, rest)
+    elif cmd == "ram":
+        cmd_ram(spaces, rest)
     elif cmd == "task":
         cmd_task(spaces, rest)
     elif cmd == "desk":
