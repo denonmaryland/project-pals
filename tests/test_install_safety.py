@@ -3,10 +3,11 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 BIN = Path(__file__).resolve().parent.parent / "bin"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 64
@@ -31,7 +32,7 @@ def attach(*args):
 
 class Attachments(unittest.TestCase):
     def setUp(self):
-        self.d = Path(tempfile.mkdtemp(prefix="pals-attach-"))
+        self.d = Path(pals_tmp.mkdtemp(prefix="pals-attach-"))
         self.store = self.d / "store"
 
     def test_symlink_to_a_big_file_is_refused(self):
@@ -67,7 +68,7 @@ class Attachments(unittest.TestCase):
 
 class RollbackConfig(unittest.TestCase):
     def test_restores_only_what_the_install_changed(self):
-        home = Path(tempfile.mkdtemp(prefix="pals-home-"))
+        home = Path(pals_tmp.mkdtemp(prefix="pals-home-"))
         app = home / ".config" / "herdr-app"
         (app / "data").mkdir(parents=True)
         (home / ".claude").mkdir()
@@ -111,7 +112,7 @@ class RollbackConfig(unittest.TestCase):
     def test_rollback_leaves_no_newer_library_files_or_empty_hook_lists(self):
         # B3: rolling crew/next back to 0.3.0 kept crewdesk.py & co in ~/.local/lib/herdr-crew and left
         # "PostToolUse": [] / "Stop": [] in settings.json.
-        home = Path(tempfile.mkdtemp(prefix="pals-home-"))
+        home = Path(pals_tmp.mkdtemp(prefix="pals-home-"))
         app = home / ".config" / "herdr-app"
         (app / "data").mkdir(parents=True)
         (home / ".claude").mkdir()
@@ -151,7 +152,7 @@ class RollbackConfig(unittest.TestCase):
 
     def test_rollback_never_prunes_through_a_linked_library(self):
         # A development install links ~/.local/lib/herdr-crew to a checkout: its files aren't ours to remove.
-        home = Path(tempfile.mkdtemp(prefix="pals-home-"))
+        home = Path(pals_tmp.mkdtemp(prefix="pals-home-"))
         app = home / ".config" / "herdr-app"
         (app / "data").mkdir(parents=True)
         checkout = home / "checkout"
@@ -177,7 +178,7 @@ class RollbackConfig(unittest.TestCase):
         # 0.3.0's updater snapshotted only ctrl-shift-i and ctrl-shift-m; rolling 0.4.0 back to it
         # takes out the command bar's key when it's still ours, and leaves a person's own binding.
         for current, kept in (("crew-header.search", False), ("my.own.thing", True)):
-            home = Path(tempfile.mkdtemp(prefix="pals-home-"))
+            home = Path(pals_tmp.mkdtemp(prefix="pals-home-"))
             app = home / ".config" / "herdr-app"
             (app / "data").mkdir(parents=True)
             (app / "keys.json").write_text(json.dumps({"global": {"ctrl-shift-i": "crew-roster.profile", "ctrl-shift-space": current}}))

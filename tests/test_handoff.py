@@ -17,6 +17,8 @@ import threading
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_sleep as ts   # noqa: E402  (sets the sandbox env before crewlib is imported)
@@ -467,7 +469,7 @@ class CodexBox(unittest.TestCase):
 class CodexSessions(unittest.TestCase):
     """Codex's own session files: the brief from a Codex seat quotes what Codex said, not its screen."""
     def setUp(self):
-        self.root = Path(ts.tempfile.mkdtemp(prefix="pals-codex-"))
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-codex-"))
         self.cwd = self.root / "work"
         self.cwd.mkdir()
 

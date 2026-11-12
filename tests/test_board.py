@@ -7,9 +7,10 @@ Run: python3 -m unittest tests.test_board"""
 import json
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
@@ -105,7 +106,7 @@ class Line(unittest.TestCase):
 
     def test_read_from_the_end_of_a_session_file(self):
         import crewboard
-        d = Path(tempfile.mkdtemp(prefix="pals-board-"))
+        d = Path(pals_tmp.mkdtemp(prefix="pals-board-"))
         f = d / "s.jsonl"
         pad = [bot("An early reply that is far from the end of the file. " + "pad " * 200, "2026-11-09T10:00:00.000Z") for _ in range(40)]
         f.write_text("\n".join(pad + [user("the double charge, fix it and prove it", "2026-11-09T15:28:00.000Z"),
@@ -123,7 +124,7 @@ class Line(unittest.TestCase):
 class Branch(unittest.TestCase):
     def test_ahead_changed_and_lines(self):
         import crewboard
-        d = Path(tempfile.mkdtemp(prefix="pals-board-git-"))
+        d = Path(pals_tmp.mkdtemp(prefix="pals-board-git-"))
         g = lambda *a: subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t", *a], check=True, capture_output=True)
         g("init", "-q", "-b", "main")
         (d / "a.txt").write_text("one\ntwo\nthree\n")

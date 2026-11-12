@@ -3,11 +3,12 @@ Run: python3 -m unittest discover -s tests   (uses a throwaway CREW_DATA; touche
 import json
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
-TMP = tempfile.mkdtemp(prefix="pals-test-")
+TMP = pals_tmp.mkdtemp(prefix="pals-test-")
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)
@@ -222,7 +223,7 @@ class InterpreterWrites(unittest.TestCase):
             self.assertEqual(rule(cmd), "agents-file-interpreter", cmd)
 
     def test_a_script_file_that_writes_one(self):
-        d = Path(tempfile.mkdtemp(prefix="pals-guard-"))
+        d = Path(pals_tmp.mkdtemp(prefix="pals-guard-"))
         (d / "fix.py").write_text("from pathlib import Path\nPath('AGENTS.md').write_text('new rules')\n")
         (d / "lint.py").write_text("print(open('AGENTS.md').read().count('#'))\n")
         self.assertEqual(rule(f"python3 {d}/fix.py"), "agents-file-interpreter")
@@ -238,7 +239,7 @@ class EditApprovals(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("crewhook", Path(__file__).resolve().parent.parent / "bin" / "crew-hook")
         from importlib.machinery import SourceFileLoader
         loader = SourceFileLoader("crewhook", str(Path(__file__).resolve().parent.parent / "bin" / "crew-hook")); self.hook = importlib.util.module_from_spec(importlib.util.spec_from_loader("crewhook", loader)); loader.exec_module(self.hook)
-        self.dir = Path(tempfile.mkdtemp(prefix="pals-edit-"))
+        self.dir = Path(pals_tmp.mkdtemp(prefix="pals-edit-"))
         self.path = self.dir / "AGENTS.md"
         self.path.write_text("# Rules\n- one\n")
 
@@ -545,7 +546,7 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         # crewguard's DATA is this test's CREW_DATA: a mods/ folder that is really a link to the cards.
         real = Path(TMP) / "crew-desk"
         (real / "helper" / "open").mkdir(parents=True, exist_ok=True)
-        wt = Path(tempfile.mkdtemp(prefix="pals-wt-"))
+        wt = Path(pals_tmp.mkdtemp(prefix="pals-wt-"))
         (wt / "mods").mkdir()
         (wt / "mods" / "crew-desk").symlink_to(real)
         (wt / "mods" / "notes").symlink_to(real)

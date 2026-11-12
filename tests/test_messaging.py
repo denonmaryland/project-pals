@@ -8,13 +8,14 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 REPO = Path(__file__).resolve().parent.parent
-T = Path(tempfile.mkdtemp(prefix="pals-test-"))
+T = Path(pals_tmp.mkdtemp(prefix="pals-test-"))
 SHIMS = T / "shims"
 SHIMS.mkdir()
 for name in ("hc", "herdr-app", "systemctl"):

@@ -12,10 +12,11 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_desk import sandbox, pal, owner, py, OWNER  # noqa: E402
@@ -129,7 +130,7 @@ class ReleaseScript(unittest.TestCase):
     """The real ./release in a small repo of its own: what it does before it has the owner's go."""
 
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="pals-release-"))
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-release-"))
         self.repo, self.shims, self.log = self.root / "repo", self.root / "shims", self.root / "pal.log"
         self.shims.mkdir()
         for name, text in STUBS.items():
@@ -137,6 +138,7 @@ class ReleaseScript(unittest.TestCase):
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(text)
         shutil.copy(REPO / "release", self.repo / "release")
+        shutil.copy(REPO / "tests" / "check_tmp.sh", self.repo / "tests" / "check_tmp.sh")   # its test step (T143)
         (self.shims / "gh").write_text("#!/bin/sh\nexit 0\n")
         (self.shims / "gh").chmod(0o755)
         self.env = {"HOME": str(self.root / "home"), "PATH": f"{self.shims}:/usr/bin:/bin", "LANG": "C.UTF-8",

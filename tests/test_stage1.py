@@ -9,10 +9,11 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 REPO = Path(__file__).resolve().parent.parent
 BIN = REPO / "bin"
@@ -22,7 +23,7 @@ OWNER = "Dee Tester"
 def sandbox():
     """A fresh home with a fake Herdr (one pal, Worker, with an idle Claude Code channel tW) and a
     running crewd's heartbeat, so `pal tell` queues instead of typing."""
-    root = Path(tempfile.mkdtemp(prefix="pals-stage1-"))
+    root = Path(pals_tmp.mkdtemp(prefix="pals-stage1-"))
     home, data, shims = root / "home", root / "data", root / "shims"
     for d in (home, data, shims):
         d.mkdir(parents=True)
@@ -232,7 +233,7 @@ class FastPath(unittest.TestCase):
 
     def run_fast(self, env, data, term="tF"):
         # A stand-in crew-hook beside the fast path records that it ran.
-        d = Path(tempfile.mkdtemp(prefix="pals-fast-"))
+        d = Path(pals_tmp.mkdtemp(prefix="pals-fast-"))
         (d / "crew-hook-fast").write_text((BIN / "crew-hook-fast").read_text())
         (d / "crew-hook").write_text(f"#!/bin/sh\ncat >/dev/null\necho ran \"$@\" >> {d}/ran\n")
         for f in ("crew-hook-fast", "crew-hook"):

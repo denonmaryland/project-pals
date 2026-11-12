@@ -9,9 +9,10 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_desk import sandbox, pal  # noqa: E402
@@ -31,7 +32,7 @@ def repo(path, at=None):
 
 class Folders(unittest.TestCase):
     def setUp(self):
-        self.home = Path(tempfile.mkdtemp(prefix="pals-welcome-"))
+        self.home = Path(pals_tmp.mkdtemp(prefix="pals-welcome-"))
 
     def tearDown(self):
         shutil.rmtree(self.home, ignore_errors=True)
@@ -119,7 +120,7 @@ class Cli(unittest.TestCase):
 
 class FirstInstall(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="pals-welcome-install-"))
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-welcome-install-"))
         self.home = self.root / "home"
         self.app = self.home / ".config" / "herdr-app"
         self.app.mkdir(parents=True)

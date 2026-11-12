@@ -15,7 +15,10 @@ const dts = readFileSync(join(root, "mods/crew-command/gpui-kit.d.ts"), "utf8");
 const METHODS = [...new Set([...dts.matchAll(/^\s+([a-z_][a-z0-9_]*)\s*(?:<[^>]*>)?\s*\(/gm)].map((m) => m[1]))];
 const dir = mkdtempSync(join(tmpdir(), "update-check-"));
 const realNow = Date.now;
-let now = realNow();
+// Today at noon, not the real now (T149): the clock moves 20 minutes ahead below, and the time format
+// compares with the real date (new Date()), so a run at 23:40 crossed midnight and showed a date.
+const noon = () => { const d = new Date(); d.setHours(12, 0, 0, 0); return d.getTime(); };
+let now = noon();
 Date.now = () => now;
 try {
   const mod = (name, src) => {
@@ -107,7 +110,7 @@ try {
   const install = JSON.stringify({ version: "0.4.0", repo: "denonmaryland/project-pals" });
 
   // About, opened right after the 0.4.0 update (checked a minute ago): no new check yet.
-  now = realNow();
+  now = noon();
   world.files = { "data/crew-install.json": install,
     "data/crew-update.json": JSON.stringify({ checked: now / 1000 - 60, latest: "0.4.0", repo: "denonmaryland/project-pals" }) };
   world.calls = [];
@@ -141,7 +144,7 @@ try {
   assert.match(shown, /Couldn't check at \d\d:\d\d \(couldn't reach GitHub\)\. Last answer: GitHub's newest: 0\.4\.0/);
 
   // The update dialog (status pill, gear): the same, on its 60 s timer.
-  now = realNow();
+  now = noon();
   world.files = { "data/crew-install.json": install,
     "data/crew-update.json": JSON.stringify({ checked: now / 1000 - 60, latest: "0.4.0", repo: "denonmaryland/project-pals" }) };
   world.calls = [];

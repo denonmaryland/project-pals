@@ -5,10 +5,11 @@ changes. Throwaway HOME, data and fake hc / herdr-app, like test_desk.
 Run: python3 -m unittest tests.test_head_inbox"""
 import json
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_desk import pal, py, owner, click, OWNER  # noqa: E402
@@ -16,7 +17,7 @@ from test_desk import pal, py, owner, click, OWNER  # noqa: E402
 
 def sandbox(ops_live=True, with_ops=True):
     """Orca (the head pal: #general tG, shown; #ops tO) and Worker (#general tW)."""
-    root = Path(tempfile.mkdtemp(prefix="pals-head-"))
+    root = Path(pals_tmp.mkdtemp(prefix="pals-head-"))
     home, data, shims, app = root / "home", root / "data", root / "shims", root / "app"
     for d in (home, data, shims, app):
         d.mkdir(parents=True)

@@ -14,10 +14,11 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 BIN = Path(__file__).resolve().parent.parent / "bin"
 
@@ -46,7 +47,7 @@ def release(v):
 
 class FreshCheck(unittest.TestCase):
     def setUp(self):
-        self.t = Path(tempfile.mkdtemp(prefix="pals-update-"))
+        self.t = Path(pals_tmp.mkdtemp(prefix="pals-update-"))
         self.home = self.t / "home"
         self.app = self.home / ".config" / "herdr-app"
         self.data = self.app / "data"

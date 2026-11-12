@@ -15,10 +15,11 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 REPO = Path(__file__).resolve().parent.parent
 BIN = REPO / "bin"
@@ -37,7 +38,7 @@ BOTS = [{"id": "b0", "name": "Boss", "space": "s0", "god": True}, {"id": "b1", "
 
 
 def sandbox(chief=True):
-    root = Path(tempfile.mkdtemp(prefix="pals-chief-"))
+    root = Path(pals_tmp.mkdtemp(prefix="pals-chief-"))
     home, data, shims, app = root / "home", root / "data", root / "shims", root / "app"
     for d in (home, data, shims, app):
         d.mkdir(parents=True)
