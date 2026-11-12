@@ -98,7 +98,9 @@ Work
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
   pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--topic C]
   pal diff <Pal#topic> [--stat|--json] what a worktree topic changed
-  pal land <Pal#topic> [--check "cmd"] merge a worktree topic's branch into its project (needs the owner)
+  pal land <Pal#topic> [--check "cmd"] [--onto branch]
+                                     merge a worktree topic's branch into its project's main branch (or the
+                                     base named when it was made; --onto: another, on purpose; needs the owner)
 
 Mission, brain and agent files (the profile panel shows them all)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
@@ -742,7 +744,11 @@ def make_worktree(space, name, base=None):
     if not folder:
         raise CrewError(f"{space['name']} has no project folder")
     repo = git(folder, "rev-parse", "--show-toplevel")
-    base = base or git(repo, "branch", "--show-current") or "HEAD"
+    # Cut from the project's main branch, never from whatever the project folder has checked out (T177:
+    # 10 topics were cut from crew/pet-facelift because the folder was parked on it, and one landed
+    # there). A base named with --base is kept, and recorded as named.
+    named = bool(base)
+    base = base or main_branch(repo)
     branch = f"crew/{slug(name)}"
     existing = git(repo, "branch", "--list", branch)
     n = 2
@@ -753,7 +759,31 @@ def make_worktree(space, name, base=None):
     path = WORKTREES / slug(space["name"]) / branch.split("/", 1)[1]
     path.parent.mkdir(parents=True, exist_ok=True)
     git(repo, "worktree", "add", "-b", branch, str(path), base)
-    return {"path": str(path), "branch": branch, "base": base, "repo": repo}
+    return {"path": str(path), "branch": branch, "base": base, "repo": repo, **({"base_named": True} if named else {})}
+
+
+def main_branch(repo):
+    """The project's main branch: what origin's HEAD points at, else main, else master, else the one
+    branch there is. Never just what the folder has checked out (T177)."""
+    head = git(repo, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD", check=False)
+    if head and "/" in head:
+        b = head.split("/", 1)[1]
+        if git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{b}", check=False):
+            return b
+    for b in ("main", "master"):
+        if git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{b}", check=False):
+            return b
+    heads = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads", check=False).split()
+    if len(heads) == 1:
+        return heads[0]
+    raise CrewError(f"{repo} has no main or master branch to land on; say which with --onto")
+
+
+def land_target(wt):
+    """Where a topic lands: the base it was made with when that was named (--base), else the project's
+    main branch. A base that's only on record because the project folder had it checked out when the
+    topic was made (before T177) isn't one: those topics land on main."""
+    return wt["base"] if wt.get("base_named") else main_branch(wt["repo"])
 
 
 def worktree_of(space, tab):
@@ -767,6 +797,12 @@ def worktree_of(space, tab):
 
 def diff_data(wt):
     p = wt["path"]
+    # What would land, where it would land (Review's "Land on …" names it).
+    try:
+        target = land_target(wt)
+    except CrewError:
+        target = wt["base"]
+    wt = {**wt, "base": target}
     mb = git(p, "merge-base", wt["base"], "HEAD")
     files = []
     for l in git(p, "diff", "--numstat", mb).splitlines():
@@ -807,7 +843,7 @@ def base_checkout(repo, base):
     return None
 
 
-def cmd_land(spaces, spec, check=None, at=None):
+def cmd_land(spaces, spec, check=None, at=None, onto=None):
     space, tab = find(spec, spaces)
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
@@ -824,6 +860,22 @@ def cmd_land(spaces, spec, check=None, at=None):
     if git(wt["path"], "status", "--porcelain"):
         die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
     repo = wt["repo"]
+    # Where it lands (T177): --onto when the owner says so, else the named base, else the project's
+    # main branch. Never the branch the project folder happens to have out.
+    target = onto or land_target(wt)
+    if not git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{target}", check=False):
+        die(f"{repo} has no branch {target}; nothing changed")
+    # Cut from another branch that isn't on the target yet (another topic's unlanded work, or what
+    # the folder had out when this topic was made): those commits would land too. Only on purpose.
+    cut = wt.get("base")
+    if not onto and cut and cut != target and git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{cut}", check=False):
+        mb = git(repo, "merge-base", f"refs/heads/{cut}", f"refs/heads/{wt['branch']}", check=False)
+        extra = git(repo, "rev-list", "--count", f"refs/heads/{target}..{mb}", check=False) if mb else "0"
+        if extra.isdigit() and int(extra) > 0:
+            die(f"{wt['branch']} was cut from {cut}, which has {extra} commit{'s' if extra != '1' else ''} not on {target}; "
+                f"landing it on {target} would bring those too. Land {cut} first, or on purpose: "
+                f"pal land {space['name']}#{chan(tab)} --onto {target} (or --onto {cut}). Nothing changed.")
+    wt = {**wt, "base": target}
     msg = f"Land {wt['branch']} ({space['name']} #{chan(tab)})"
     # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
     # since isn't what the owner looked at, so it doesn't land on that click.
@@ -2805,7 +2857,7 @@ def cmd_update(rest):
             space, tab = find(pos[2], herdr_spaces())
             wt = worktree_of(space, tab)
             with update_lock():
-                out = crewupdate.try_branch(crewupdate.repo_root(wt["path"]) or wt["repo"], wt["branch"], f"{space['name']}#{chan(tab)}", log=step, into=wt["base"])
+                out = crewupdate.try_branch(crewupdate.repo_root(wt["path"]) or wt["repo"], wt["branch"], f"{space['name']}#{chan(tab)}", log=step, into=land_target(wt))
             if git(wt["path"], "status", "--porcelain", check=False):
                 out["note"] = "the topic has uncommitted changes; they aren't in the trial"
         elif sub == "back":
@@ -3669,8 +3721,8 @@ def main(argv):
         pos, o = opts(rest, (), ("stat", "json"))
         cmd_diff(spaces, pos[0], "json" if o.get("json") else "stat" if o.get("stat") else "full")
     elif cmd == "land" and rest:
-        pos, o = opts(rest, ("check", "at"))
-        cmd_land(spaces, pos[0], o.get("check"), o.get("at"))
+        pos, o = opts(rest, ("check", "at", "onto"))
+        cmd_land(spaces, pos[0], o.get("check"), o.get("at"), o.get("onto"))
     else:
         die(__doc__)
 
