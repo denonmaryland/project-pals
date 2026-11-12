@@ -330,6 +330,10 @@ export default class CrewAbout extends View {
           .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
         () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-indicator", kind: "dialog", width: 520 }); }))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      .child(row("set-notify", "Phone alerts", "Pings to your own bot when Home needs you · off by default",
+        h_flex().items_center().gap(8).child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
+        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-notify", kind: "dialog", width: 560 }); }))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // Trusted helpers: your own assistants that may send normal work in your name (its own dialog, crew-helpers).
       .child(row("set-helpers", "Trusted helpers", "Assistants that may send normal work in your name; never approve",
         h_flex().items_center().gap(8)

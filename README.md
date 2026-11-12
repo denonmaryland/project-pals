@@ -164,6 +164,42 @@ See [Uninstall](#uninstall) for details. For a first week, try a second topic, a
 if you use one, and a restart; report each separate problem with the step that triggered it.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting and contributing.
 
+## Phone alerts
+
+**About → Settings → Phone alerts** can ping your own bot when Home needs you. It starts off.
+Set up the receiver yourself in a terminal outside Herdr and outside any coding agent:
+
+```sh
+pal notify setup
+```
+
+The webhook URL and sender key are entered in hidden prompts. Never paste them into a pal,
+chat, command argument or issue. Setup and replacement leave sending disabled. Open Phone
+alerts to enable it or choose **Send test alert** for one synthetic ping. The test can send
+while ordinary alerts are off. `pal notify status` shows safe status without the endpoint or key.
+
+The default is HTTPS POST with `Authorization: Bearer <key>` and JSON containing **kind and
+an opaque id only**. An optional mode adds title and topic: those names leave this computer
+and may identify private projects. For a receiver that uses a custom header, setup accepts
+`--header X-Your-Header`; custom `X-*` headers carry the raw key, without `Bearer `.
+There is no incoming approval, answer or command path. Decisions still happen in Project Pals.
+
+Credentials are kept outside Herdr's data folder with private file permissions and sealed for
+this Linux user where supported. Setup refuses an unsealed fallback unless you explicitly run
+`pal notify setup --allow-plain`. Same-user programs can still reach user credentials; this
+protects ordinary agent flows and does **not** provide OS isolation.
+
+While crewd runs, new asks/plans, approval requests, logins, owner-needed cards/proposals and
+trusted-helper off/removal events are queued promptly, including when no terminals are open.
+Enabling starts with new items, so existing Home items do not create a backlog of pings. An
+enabled daemon recovers retained new events after a restart. Network failure never waits in
+crewd's main loop. Delivery uses a bounded queue with retries;
+failed/expired deliveries show in the settings status. A retry after a lost response may
+produce a duplicate ping. Disabling clears queued work; a request already in flight may still
+arrive. Changing the receiver clears pending work and turns sending off.
+Uninstall preserves the receiver/settings; `--purge` explicitly removes them. A reinstall can
+resume a preserved enabled configuration, so disable alerts first if that is not wanted.
+
 ## The approval gate
 
 Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,

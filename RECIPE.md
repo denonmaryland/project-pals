@@ -538,6 +538,22 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   only if it's still where it was. No checkout is touched. A branch that's on the base already
   lands nothing ("is on main already") instead of making an empty merge.
   `pal version` and `pal update status` say the build, the channel, a trial and a held commit.
+- **Phone alerts** (T178): off by default; About → Settings → Phone alerts offers owner-click
+  enable/disable, privacy mode and a synthetic test send. The owner enters URL/key through hidden
+  `pal notify setup` prompts in an external interactive terminal, never in argv or shared UI state.
+  Normal pals/helpers are refused; getpass echo fallback fails closed. User-sealed 0600 credentials
+  live under `~/.config/project-pals/notify`, outside data; explicit `--allow-plain` permits a 0600
+  fallback. These gates do not isolate hostile code running as the same Linux user.
+  POST is HTTPS with Authorization: Bearer by default; optional custom X-* header uses the raw key.
+  Minimal payload is kind/id; detail mode explicitly allows title/topic off-machine. No bodies,
+  commands, diffs, prompts, files, logs or credentials in payload/status. No inbound path or approvals.
+  Existing crewd owns bounded asynchronous observation/delivery independently of terminal discovery;
+  each enable baselines existing items; an enabled restart recovers retained new events during downtime. Stable
+  event ids dedupe locally; retries may duplicate after ambiguous network failures. Disable cancels
+  queued work, not an already sent request; credential replacement disables/clears pending work.
+  `bin/crewnotify.py` owns state/transport; `crewnotifycli.py` controls owner input; `crew-notify`
+  renders safe status only. Tests use fake credentials/receivers. A real phone test is DeNon's setup
+  and explicit test click, never an agent's fabricated credential or an automatic setup side effect.
 - **Tester diagnostics** (T155): `pal report` prints a fenced Markdown diagnostic locally and
   uploads nothing. `bin/crewreport.py` runs before the CLI loads settings or discovers pals.
   Output is allowlisted: numeric installed/Herdr/hc versions, validated build hash, known distro

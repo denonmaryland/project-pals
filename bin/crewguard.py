@@ -22,7 +22,8 @@ POLICY = DATA / "crew-policy.json"
 # carries (two branches picking the same number can't strand a rule again).
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
 # 16: live-branch (T90) and base-branch (T136).
-DEFAULTS_VERSION = 16
+# 17: phone-alert credentials (T178), kept outside the Herdr data folder.
+DEFAULTS_VERSION = 17
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -86,6 +87,8 @@ DEFAULT = {
         # refuses a key from inside a Herdr terminal as well; this holds the attempt and tells the owner.
         {"name": "helper-key", "why": "reaches for a trusted helper's key or name (those are the owner's assistants', not a pal's)",
          "check": "helper-keys", "pattern": r"$^"},
+        {"name": "notify-key", "why": "reaches for phone-alert credentials or their private delivery controls (the owner's only)",
+         "check": "notify-keys", "pattern": r"$^"},
         # The Live channel (T90): while the owner has it on, whatever lands on the branch it follows is
         # installed into their running Project Pals at once. So moving that branch by hand (git
         # update-ref refs/heads/main …, git branch -f main …) needs the click a landing needs. Off
@@ -748,6 +751,19 @@ def touches_helpers(cmd):
     return _writes_into(cmd, HELPER_DATA, HELPERS_PLACE)
 
 
+NOTIFY_PRIVATE = re.compile(r"(?:^|[^\w-])project-pals/notify(?![\w-])")
+NOTIFY_SECRET_CALL = re.compile(r"\bcrewnotify\.(?:_unseal|_credentials|_post|_transport_main|configure|enable|disable|set_privacy|send_test)\b"
+                                r"|\bsystemd-creds\b[^\n]*\bpal-notify\b|\bpal-notify\b[^\n]*\bsystemd-creds\b")
+
+
+def touches_notify(cmd):
+    """Protect ordinary credential reads/calls, without claiming same-user OS isolation."""
+    edited = _edited(cmd)
+    if edited is not None:
+        return in_helper_keys(edited) or bool(NOTIFY_PRIVATE.search(edited))
+    return bool(NOTIFY_PRIVATE.search(cmd) or NOTIFY_SECRET_CALL.search(cmd))
+
+
 def _shell_texts(cmd, depth=0):
     """The line (heredoc bodies dropped) and every line it hands a shell with -c or eval, a few levels deep."""
     text = heredoc_free(cmd)
@@ -1384,7 +1400,7 @@ def _help(seg):
 
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers,
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers, "notify-keys": touches_notify,
           "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
 
 

@@ -53,6 +53,7 @@ try {
       fx.calls.push([cmd.split("/").pop(), ...args]);
       if (cmd.endsWith("/pal") && args[0] === "diff") return { stdout: JSON.stringify(fx.diff), stderr: "", code: 0 };
       if (cmd.endsWith("/pal") && fx.fail) return { stdout: "", stderr: fx.fail, code: 1 };
+      if (cmd.endsWith("/pal") && args[0] === "notify") return { stdout: JSON.stringify(fx.phone ?? {}), stderr: "", code: 0 };
       if (cmd.endsWith("/pal") && args[0] === "land") return { stdout: "landed crew/x on main in /p", stderr: "", code: 0 };
       return { stdout: cmd.endsWith("/pal") && args.includes("--json") ? "{}" : "", stderr: "", code: 0 };
     };
@@ -63,7 +64,7 @@ try {
     export const knownAgents = async () => [];
     export const hc = exec, readTextFile = async (p) => fx.files[p.replace("/h/.config/herdr-app/", "")] ?? null, writeTextFile = async (p, t) => { fx.written.push([p, t]); };`);
   for (const f of readdirSync(join(root, "lib")).filter((f) => f.endsWith(".js"))) copyFileSync(join(root, "lib", f), join(dir, f));   // every shared file, as install.sh does
-  for (const m of ["crew-live", "crew-status", "crew-about", "crew-review"]) copyFileSync(join(root, "mods", m, "main.js"), join(dir, `${m}.mjs`));
+  for (const m of ["crew-live", "crew-status", "crew-about", "crew-review", "crew-notify"]) copyFileSync(join(root, "mods", m, "main.js"), join(dir, `${m}.mjs`));
   const at = (p) => pathToFileURL(join(dir, p)).href;
   const { fx } = await import(at("node_modules/herdr/index.js"));
   const { clicks, drawn, used } = await import(at("node_modules/gpui-kit/index.js"));
@@ -292,6 +293,42 @@ try {
   fx.diff = { ...fx.diff, pals: false };
   const other = await open("crew-review.mjs", { overlay: "ov3", space: "s1", tab: "t1" });
   assert.ok(!/Try it live/.test(other.draw()), "another project's branch has no Try it live");
+
+  // Phone alerts: credentials never appear; test/detail both need the owner's explicit click.
+  fx.phone = { configured: false, enabled: false, privacy: "minimal", protocol_ready: true };
+  fx.fail = null;
+  const phone = await open("crew-notify.mjs", { overlay: "phone" });
+  assert.match(phone.draw(), /pal notify setup/);
+  fx.calls.length = 0;
+  clicks.get("notify-test")?.({}, phone.cx);
+  assert.equal(phone.v.confirm, null, "disabled test cannot open a send confirmation");
+  assert.equal(palCalls().length, 0, "no send without a configured receiver");
+  fx.phone = { ...fx.phone, configured: true, sealed: true };
+  await phone.again();
+  assert.match(phone.draw(), /kind and id only/);
+  fx.calls.length = 0; fx.written.length = 0;
+  clicks.get("notify-test")({}, phone.cx);
+  assert.equal(palCalls().length, 0, "first test click only shows the explicit send confirmation");
+  assert.match(phone.draw(), /even while ordinary alerts are off/);
+  clicks.get("notify-test-confirm")({}, phone.cx);
+  await tick();
+  assert.ok(token(["notify", "test", "--json"]), "the synthetic send is owner-gated");
+  phone.draw(); fx.calls.length = 0; fx.written.length = 0;
+  clicks.get("notify-privacy")({}, phone.cx);
+  assert.equal(palCalls().length, 0, "detail requires consent before sending titles off-machine");
+  assert.match(phone.draw(), /off this machine/);
+  clicks.get("notify-detail-confirm")({}, phone.cx);
+  await tick();
+  assert.ok(token(["notify", "privacy", "detail", "--json"]));
+  fx.phone = { ...fx.phone, enabled: true, configured: false, protocol_ready: false };
+  await phone.again(); phone.draw();
+  assert.ok(clicks.has("notify-toggle"), "disable stays available if credentials go missing");
+  fx.fail = "SECRET_CANARY https://private.invalid/key"; fx.toasts.length = 0;
+  clicks.get("notify-toggle")({}, phone.cx);
+  await tick();
+  assert.ok(!JSON.stringify(fx.toasts).includes("SECRET_CANARY"), "raw command errors never reach a toast");
+  assert.ok(!phone.draw().includes("SECRET_CANARY"));
+  fx.fail = null;
 
   // The fake elements accept any method, so a misspelt one would pass here and throw in the app:
   // where this machine has Herdr's own type file, every method these mods called must be in it.

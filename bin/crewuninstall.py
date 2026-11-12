@@ -272,8 +272,29 @@ def purge_list():
     data = sorted(d.name for d in DATA.glob("crew-*")) if DATA.is_dir() and not unsafe(DATA / "x") else []
     data = [n for n in data if n not in BOOKKEEPING and n != "crew-worktrees"]
     return (f"your pals' data in {DATA}: {', '.join(data) or 'nothing there'}; agy-models.json; "
-            f"{APP / '.crew-backups'} (install and update backups); {USER / '.cache' / 'project-pals'}. "
+            f"{APP / '.crew-backups'} (install and update backups); {USER / '.cache' / 'project-pals'}; "
+            f"phone-alert credentials and queue in {USER / '.config/project-pals/notify'}. "
             f"A crew-worktrees folder with worktrees in it stays.")
+
+
+def purge_notify(run):
+    """Only the alert store's named files; no credential contents read and no linked folders."""
+    folder = USER / ".config/project-pals/notify"
+    if not exists(folder):
+        return
+    if folder.is_symlink() or unsafe(folder / "state.json"):
+        run.refuse(folder, "phone-alert storage is a link or has a linked parent")
+        return
+    if not folder.is_dir():
+        run.notes.append("left phone-alert storage alone: it is not a directory")
+        return
+    names = {"credentials.json", "state.json", "lock", "send.lock"}
+    for p in folder.iterdir():
+        if p.name in names or re.fullmatch(r"\.(?:state|credentials)\.json\.[0-9a-f]{16}", p.name):
+            if p.is_symlink() or p.is_file():
+                run.remove(p, "a phone-alert credential, queue or lock file")
+    if not run.dry and not any(folder.iterdir()):
+        folder.rmdir()
 
 
 def typed_ok(purge):
@@ -751,6 +772,7 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
     # 6. Pals' data stays unless --purge; install's own bookkeeping goes either way (at the end:
     #    the originals were needed above).
     if purge:
+        purge_notify(run)
         for d in sorted(DATA.glob("crew-*")) if DATA.is_dir() else []:
             if d.name == "crew-worktrees" and d.is_dir() and any(d.iterdir()):
                 run.kept.append(str(d))
@@ -791,6 +813,8 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
     if not purge:
         run.notes.append(f"kept your pals' data in {DATA} (crew-*) and backups in {APP / '.crew-backups'}; "
                          "pal uninstall --purge removes those too")
+        if exists(USER / ".config/project-pals/notify"):
+            run.notes.append("kept your phone-alert receiver and settings; --purge removes them. Disable alerts before reinstalling if you do not want them resumed.")
     run.notes.append("agents already running in pal spaces keep the old hooks until they restart")
     return {"ok": True, "dry_run": dry, "purge": purge, "removed": run.removed, "restored": run.restored,
             "kept": sorted(set(run.kept)), "notes": run.notes}

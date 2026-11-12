@@ -137,6 +137,8 @@ Settings
 Updates
   pal version                       what's installed
   pal report                        paste-ready diagnostics for an issue; no raw logs or private text
+  pal notify [status|setup|enable|disable|privacy minimal|privacy detail|test]
+                                     phone alerts; setup is typed by you outside Herdr, controls need your click
   pal update [check|apply|rollback] [--json]
                                      check GitHub for a newer release, install it, or put the previous one back
   pal update status [--json]        the build that's running (branch, commit), the channel, a trial
@@ -3457,6 +3459,9 @@ def main(argv):
         return cmd_owner_step(rest)
     if cmd == "helpers":
         return cmd_helpers(rest)
+    if cmd == "notify":
+        import crewnotifycli
+        return crewnotifycli.run(rest, require_owner)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).

@@ -36,6 +36,7 @@ import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
 import crewchief  # the Chief: nothing is ever typed into it (crew-boards/chief/design.md)
 import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
 import crewsleep  # pals put to sleep in place (their markers)
+import crewnotify # outbound phone alerts: own bounded worker, independent of terminals
 import crewmem    # memory: the state Home and pal read, scopes, idle sleep (T153)
 
 TICK = 2.0
@@ -142,6 +143,9 @@ class Crewd:
     def run(self):
         log("crewd started")
         threading.Thread(target=crewchat.refresh_agy_models, daemon=True).start()
+        # Separate from tick: no terminals, a slow hc call or a blocked POST cannot
+        # prevent observation or make the daemon wait for the network. Off by default.
+        self.phone_alerts = crewnotify.Worker().start()
         while True:
             try:
                 self.tick()
