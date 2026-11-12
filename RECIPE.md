@@ -538,6 +538,18 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   only if it's still where it was. No checkout is touched. A branch that's on the base already
   lands nothing ("is on main already") instead of making an empty merge.
   `pal version` and `pal update status` say the build, the channel, a trial and a held commit.
+- **Tester diagnostics** (T155): `pal report` prints a fenced Markdown diagnostic locally and
+  uploads nothing. `bin/crewreport.py` runs before the CLI loads settings or discovers pals.
+  Output is allowlisted: numeric installed/Herdr/hc versions, validated build hash, known distro
+  ID and numeric release, fixed harness command names found on PATH (never executed), systemd
+  service states, up to five recognized error categories from the last 100 crewd journal lines
+  (newest first), and the last update-run state. No free-form log text, paths, pal/project names,
+  credentials, settings or transcripts. Probes time out after 3s each; missing/malformed inputs
+  become unknown/unavailable. No journal errors recognized does not mean no errors occurred.
+  `python3 bin/crew report` works from source after a failed install. Reports use the installed
+  version record, never pretend the checkout's VERSION is installed. The README quick start,
+  CONTRIBUTING and three GitHub issue templates point here; outreach copy stays in
+  `docs/early-testers-drafts.md` for the owner to post.
 - **Supported Herdr** (T48): `pals.json` `"herdr"` gives `{min, tested, below}` for `app` (herdr-app)
   and `core` (hc): 0.1.8 / 0.1.14 / 0.2 and 0.1.11 / 0.1.19 / 0.2. `install.sh` runs
   `bin/crewcompat.py` first: outside min..below (or a missing / unreadable version) it prints a
