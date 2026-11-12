@@ -6,6 +6,8 @@
 #   ./install.sh --no-claude-hooks  helpers + Antigravity CLI hooks, leaving ~/.claude/settings.json alone
 #   ./install.sh --no-agy-hooks     helpers + Claude Code hooks, leaving ~/.gemini/config/hooks.json alone
 #   ./install.sh --no-helpers       only the layout, mods and commands
+#   (--from-release, --from-live, --from-try and --keep-crewd are the updater's own: bin/crewupdate.py)
+#   ./install.sh --no-oomd-dropin   helpers, without marking Herdr's terminal holder "kill last" (below)
 #   ./install.sh --uninstall [--purge] [--dry-run]
 #                                   take Project Pals out again (bin/crewuninstall.py): everything it
 #                                   added, nothing of yours; your pals' data stays unless --purge
@@ -15,6 +17,9 @@
 # and memory at session start, the approval gate, messages handed over between steps instead of
 # typed in, model/context/usage facts for the status bar). They change files outside Herdr:
 # ~/.config/systemd/user, ~/.claude/settings.json and ~/.gemini/config/hooks.json (backed up first).
+# With systemd, each pal's agent starts in its own scope, so systemd-oomd takes one hungry pal rather
+# than Herdr's terminal holder (hc-hold-<id>.service) with the whole crew; a drop-in marks that holder
+# ManagedOOMPreference=avoid, unless one there already sets it (--no-oomd-dropin skips it).
 #
 # Herdr hot-reloads mods and layouts, so a running window picks this up at once. Previous copies
 # are backed up to ~/.config/herdr-app/.crew-backups/. Your pals, rooms and memory are never touched.
@@ -27,7 +32,9 @@ backup="$home/.crew-backups/$stamp"
 helpers=1
 claude_hooks=1
 agy_hooks=1
+oomd_dropin=1
 from="local"
+keep_crewd=0
 uninstall=0
 un_flags=()
 for arg in "$@"; do
@@ -35,7 +42,13 @@ for arg in "$@"; do
     --no-helpers) helpers=0; claude_hooks=0; agy_hooks=0 ;;
     --no-claude-hooks) claude_hooks=0 ;;
     --no-agy-hooks) agy_hooks=0 ;;
+    --no-oomd-dropin) oomd_dropin=0 ;;
     --from-release) from="release" ;;
+    # The Live channel and Try it live (bin/crewupdate.py): the updater has already snapshotted what's
+    # installed and restarts crewd itself, only when its code changed.
+    --from-live) from="live" ;;
+    --from-try) from="try" ;;
+    --keep-crewd) keep_crewd=1 ;;
     --uninstall) uninstall=1 ;;
     --purge|--dry-run) un_flags+=("$arg") ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -69,40 +82,53 @@ HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record || echo "could
 # to whatever release the updater last replaced (on 2026-11-08 that put 0.2.1 back over the new build).
 # Only over an existing install (a fresh one has nothing to go back to); the last 5 are kept.
 if [[ "$from" == "local" && -d "$home/mods/crew-roster" ]]; then
-  HERDR_APP_HOME="$home" python3 - "$src/bin" <<'PY' || echo "couldn't snapshot the current install for Roll back; continuing" >&2
+  snap_local="$(HERDR_APP_HOME="$home" python3 - "$src/bin" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])
 import crewupdate
-crewupdate._snapshot(f"from-{crewupdate.installed().get('version', 'unknown')}-local")
+print(crewupdate._snapshot(f"from-{crewupdate.installed().get('version', 'unknown')}-local"))
 local = [p for p in crewupdate.backups() if "-local-" in p.name]
 for p in local[:-5]:
-    p.unlink(missing_ok=True)
+    crewupdate.drop_snapshot(p)
 PY
+)" || { snap_local=""; echo "couldn't snapshot the current install for Roll back; continuing" >&2; }
 fi
 
+light=0; [[ "$from" == "live" || "$from" == "try" ]] && light=1   # the updater's snapshot is the backup
+# Only files whose content changed are written, so Herdr reloads only the mods that changed (it
+# reloads a mod when any of its files is saved): a landing that touches one mod doesn't close every
+# open dialog. An update's own per-file copies ($backup) are skipped for the Live channel and trials:
+# the updater's snapshot holds the same, and those installs come many times a day.
 for dir in "$src"/mods/crew-*; do
   name="$(basename "$dir")"
   dest="$home/mods/$name"
-  if [[ -d "$dest" ]]; then mkdir -p "$backup/mods/$name"; rsync -a --exclude mascots "$dest/" "$backup/mods/$name/"; fi
+  if [[ -d "$dest" && $light -eq 0 ]]; then mkdir -p "$backup/mods/$name"; rsync -a --exclude mascots "$dest/" "$backup/mods/$name/"; fi
   mkdir -p "$dest"
+  changed=0
   # main.js goes in LAST, after the shared JS and the mod's other files: Herdr reloads a mod when
   # its files change, and a reload that ran between main.js and crew.js kept the old crew.js (seen
   # live 2026-11-08: Trees didn't show; nothing errored, as the old crew.js had every name). So:
   # the shared JS (crew.js, pets.js, palstyles.js: the pal list's looks, pallook.js: the pets' colour presets, machines.js: which computer
   # a pal works on), then the mirror (keeping
   # the files Herdr writes itself: jsconfig.json, *.d.ts; the shared JS and main.js are excluded,
-  # which also keeps --delete off them), then main.js, copied fresh so the last change is its own.
-  cp "$src/lib/machines.js" "$dest/machines.js"
-  cp "$src/lib/pets.js" "$dest/pets.js"
-  cp "$src/lib/palstyles.js" "$dest/palstyles.js"
-  cp "$src/lib/pallook.js" "$dest/pallook.js"
-  cp "$src/lib/factories.js" "$dest/factories.js"
-  cp "$src/lib/helperlog.js" "$dest/helperlog.js"
-  cp "$src/lib/crew.js" "$dest/crew.js"
+  # which also keeps --delete off them), then main.js, written fresh whenever anything in the mod
+  # changed (even if main.js itself didn't), so the last change is its own.
+  cmp -s "$src/lib/machines.js" "$dest/machines.js" || { cp "$src/lib/machines.js" "$dest/machines.js"; changed=1; }
+  cmp -s "$src/lib/pets.js" "$dest/pets.js" || { cp "$src/lib/pets.js" "$dest/pets.js"; changed=1; }
+  cmp -s "$src/lib/palstyles.js" "$dest/palstyles.js" || { cp "$src/lib/palstyles.js" "$dest/palstyles.js"; changed=1; }
+  cmp -s "$src/lib/pallook.js" "$dest/pallook.js" || { cp "$src/lib/pallook.js" "$dest/pallook.js"; changed=1; }
+  cmp -s "$src/lib/factories.js" "$dest/factories.js" || { cp "$src/lib/factories.js" "$dest/factories.js"; changed=1; }
+  cmp -s "$src/lib/helperlog.js" "$dest/helperlog.js" || { cp "$src/lib/helperlog.js" "$dest/helperlog.js"; changed=1; }
+  cmp -s "$src/lib/crew.js" "$dest/crew.js" || { cp "$src/lib/crew.js" "$dest/crew.js"; changed=1; }
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
-  rsync -a --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/helperlog.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/"
-  cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
+  # By content (--checksum), not by time: an export's files are all new, and a file that's the same
+  # isn't touched at all (no -t), so Herdr sees nothing to reload. -i lists what was changed.
+  moved="$(rsync -rlpD --checksum -i --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/helperlog.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/")"
+  [[ -n "$(grep -v '^\.' <<<"$moved" || true)" ]] && changed=1
+  if [[ $changed -eq 1 ]] || ! cmp -s "$dir/main.js" "$dest/main.js"; then
+    cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
+  fi
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
@@ -113,13 +139,17 @@ for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side cre
 done
 
 mkdir -p "$home/layouts"
-if [[ -f "$home/layouts/pals.json" ]]; then mkdir -p "$backup/layouts"; cp -a "$home/layouts/pals.json" "$backup/layouts/"; fi
-cp "$src/layouts/pals.json" "$home/layouts/pals.json"
-# Its interface font is Adwaita Sans; without it, Geist (which ships with Herdr).
+if [[ -f "$home/layouts/pals.json" && $light -eq 0 ]]; then mkdir -p "$backup/layouts"; cp -a "$home/layouts/pals.json" "$backup/layouts/"; fi
+# Its interface font is Adwaita Sans; without it, Geist (which ships with Herdr). Written only when
+# it differs from what's there: saving the layout makes Herdr redraw the whole window.
+layout_new="$(mktemp)"
+cp "$src/layouts/pals.json" "$layout_new"
 if ! fc-list 2>/dev/null | grep -qi "Adwaita Sans"; then
-  sed -i 's/"ui_font": "Adwaita Sans"/"ui_font": "Geist"/' "$home/layouts/pals.json"
+  sed -i 's/"ui_font": "Adwaita Sans"/"ui_font": "Geist"/' "$layout_new"
 fi
-[[ -f "$src/layouts/pals.svg" ]] && cp "$src/layouts/pals.svg" "$home/layouts/pals.svg"
+cmp -s "$layout_new" "$home/layouts/pals.json" || cp "$layout_new" "$home/layouts/pals.json"
+rm -f "$layout_new"
+[[ -f "$src/layouts/pals.svg" ]] && { cmp -s "$src/layouts/pals.svg" "$home/layouts/pals.svg" || cp "$src/layouts/pals.svg" "$home/layouts/pals.svg"; }
 # Pro was removed (2026-11-08), and with it the Focus ⇄ Pro switch. Older installs bound
 # ctrl-shift-m to crew-roster.mode in keys.json's global map: take that one binding out, and only
 # when it's exactly ours (that key, that action, in "global"). keys.json is backed up first; any
@@ -227,7 +257,25 @@ if [[ $helpers -eq 1 ]]; then
     install -m 644 "$src/systemd/herdr-crew.service" "$HOME/.config/systemd/user/herdr-crew.service"
     systemctl --user daemon-reload
     systemctl --user enable herdr-crew.service >/dev/null 2>&1 || true
-    systemctl --user restart herdr-crew.service || echo "crewd didn't start; see: journalctl --user -u herdr-crew"
+    if [[ $keep_crewd -eq 1 ]] && systemctl --user is-active --quiet herdr-crew.service; then
+      :   # the updater restarts it, and only when its code changed (bin/crewupdate.py)
+    else
+      systemctl --user restart herdr-crew.service || echo "crewd didn't start; see: journalctl --user -u herdr-crew"
+    fi
+    # Memory (T153): pals start in their own scope (crewd checks systemd-run works here); Herdr's
+    # terminal holder becomes oomd's last pick. Undo: pal uninstall, or delete the file and daemon-reload.
+    if [[ $oomd_dropin -eq 1 ]]; then
+      got="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewmem; print(crewmem.install_dropin())' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo failed)"
+      case "$got" in
+        added) systemctl --user daemon-reload
+               echo "memory: Herdr's terminal holder is oomd's last pick now (~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf; skip with --no-oomd-dropin)" ;;
+        ours)  echo "memory: Herdr's terminal holder is oomd's last pick (Project Pals' drop-in, already there)" ;;
+        theirs) echo "memory: Herdr's terminal holder already has your own oomd drop-in (hc-hold-.service.d); left as it is" ;;
+        *)     echo "memory: couldn't add the hc-hold oomd drop-in (pals still get their own scopes)" ;;
+      esac
+    else
+      echo "memory: skipped the hc-hold oomd drop-in (--no-oomd-dropin); pals still get their own scopes"
+    fi
   else
     echo "skipped crewd: no systemd user session here (messages are typed in directly; no routines or callbacks)"
   fi
@@ -242,7 +290,7 @@ if [[ $helpers -eq 1 ]]; then
   # "claude_mod"), so your other Claude Code sessions never do. Skipped with --no-claude-hooks.
   if [[ $claude_hooks -eq 1 && -d "$src/claude-mod/pals" ]]; then
     cmod="$HOME/.claude/project-pals/pals"
-    if [[ -d "$cmod" ]]; then mkdir -p "$backup/claude-mod"; cp -a "$cmod" "$backup/claude-mod/"; fi
+    if [[ -d "$cmod" && $light -eq 0 ]]; then mkdir -p "$backup/claude-mod"; cp -a "$cmod" "$backup/claude-mod/"; fi
     rm -rf "$cmod.new"; mkdir -p "$cmod.new"
     (cd "$src/claude-mod/pals" && find . -type f ! -name '*.test.*' ! -path './.claude-plugin/types/*' -exec install -D -m 644 {} "$cmod.new/{}" \;)
     rm -rf "$cmod"; mv "$cmod.new" "$cmod"
@@ -332,7 +380,7 @@ PY
 
 # The head pal's home: its standing brief (with the owner's name), read by whatever harness runs it.
 god="$home/data/crew-god"
-if [[ -f "$god/AGENTS.md" ]]; then mkdir -p "$backup/crew-god"; cp -a "$god/AGENTS.md" "$backup/crew-god/"; fi
+if [[ -f "$god/AGENTS.md" && $light -eq 0 ]]; then mkdir -p "$backup/crew-god"; cp -a "$god/AGENTS.md" "$backup/crew-god/"; fi
 install -m 644 "$src/god/AGENTS.md" "$HOME/.local/lib/herdr-crew/god-AGENTS.md"
 python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; crewlib.render_god()' "$HOME/.local/lib/herdr-crew"
 # The idea partner's (MUSE's) brief, the same way: its home is data/crew-partner (pal hire --partner).
@@ -345,7 +393,7 @@ fi
 if [[ -f "$src/chief/AGENTS.md" ]]; then
   install -m 644 "$src/chief/AGENTS.md" "$HOME/.local/lib/herdr-crew/chief-AGENTS.md"
   if [[ -d "$home/data/crew-chief" ]]; then
-    [[ -f "$home/data/crew-chief/AGENTS.md" ]] && { mkdir -p "$backup/crew-chief"; cp -a "$home/data/crew-chief/AGENTS.md" "$backup/crew-chief/"; }
+    [[ -f "$home/data/crew-chief/AGENTS.md" && $light -eq 0 ]] && { mkdir -p "$backup/crew-chief"; cp -a "$home/data/crew-chief/AGENTS.md" "$backup/crew-chief/"; }
     python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewchief; crewchief.render()' "$HOME/.local/lib/herdr-crew"
   fi
 fi
@@ -379,6 +427,10 @@ if os.path.exists(os.path.join(src, ".git")) and git("rev-parse", "--short", "HE
     build = {"hash": git("rev-parse", "--short", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
              "subject": (git("log", "-1", "--format=%s") or "")[:160], "dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
              "tag": git("describe", "--tags", "--abbrev=0"), "ahead": None}
+    # The checkout it came from (the main one, for a worktree): what the Live channel can follow.
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common:
+        build["repo"] = os.path.dirname(common) if os.path.basename(common) == ".git" else common
     if build["tag"]:
         n = git("rev-list", "--count", f"{build['tag']}..HEAD")
         build["ahead"] = int(n) if n and n.isdigit() else None
@@ -404,6 +456,8 @@ else:
                  "subject": (str(g["subject"])[:160] if g.get("subject") else None), "dirty": False,
                  "tag": (str(g["tag"])[:40] if g.get("tag") else None), "ahead": ahead if isinstance(ahead, int) else None,
                  "export": True}
+        if isinstance(g.get("repo"), str) and os.path.isdir(g["repo"]):
+            build["repo"] = g["repo"]
     elif given is not None:
         print(f"ignored the build id {h[:40]!r} (CREW_BUILD or BUILD): it isn't a commit hash", file=sys.stderr)
 now = int(time.time())
@@ -431,6 +485,13 @@ tmp = log + ".tmp"
 open(tmp, "w").write("\n".join(lines) + "\n")
 os.replace(tmp, log)
 PY
+
+# Beside this install's snapshot: what it wrote under data/ (the briefs, the shipped skill). Roll back
+# puts those back only while they still are that, so an edit made after this install is never lost.
+if [[ -n "${snap_local:-}" && -f "$snap_local" ]]; then
+  HERDR_APP_HOME="$home" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewupdate; crewupdate.note_wrote(sys.argv[2])' \
+    "$HOME/.local/lib/herdr-crew" "$snap_local" || true
+fi
 
 # The manifest: what this install placed, so an uninstall removes only that (bin/crewuninstall.py).
 HERDR_APP_HOME="$home" python3 "$src/bin/crewuninstall.py" record-installed "$src" || echo "couldn't record what was installed; an uninstall will check each file's content instead" >&2

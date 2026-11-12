@@ -60,6 +60,8 @@ OLD = DATA / "crew-helper"   # the build that went live unreviewed on 2026-11-10
 MARK = OLD / ".carried-over"   # adopt_old ran here: never again, whatever happens to the list later
 BACKUP = DIR / "helpers.json.bak"   # the list as last saved: a damaged or deleted list comes back from it
 ATTENTION = DIR / "attention.json"  # helpers that aren't working and why (check): Home's "Needs you" reads it
+SEND = "helpers-send"   # held while a helper's send is checked and written, and while the owner changes a helper:
+#                         a switch-off can't land in the middle of a send, nor a send in the middle of a switch-off
 STRICT = "PAL_HELPER_STRICT"        # =1: a send that isn't accepted is refused, not sent as a shell's
 PER_HOUR_MAX = 500
 
@@ -132,21 +134,67 @@ def _load():
     """The list. T170: only the owner's click changes a helper's switch, so a list that's been
     damaged or deleted (a crash mid-write elsewhere, a clean-up tool) isn't read as "no helpers": it
     comes back from the copy kept beside it, and the record says so."""
-    h = load_json(FILE, None)
-    hs = h.get("helpers") if isinstance(h, dict) else None
-    if not isinstance(hs, dict):
-        b = load_json(BACKUP, None)
-        bs = b.get("helpers") if isinstance(b, dict) else None
-        if isinstance(bs, dict) and bs:
-            hs = bs
-            try:
-                _private(FILE, json.dumps({"version": 1, "helpers": bs}, indent=2))
-                log("notice", "The list of helpers", reason="restored", text="was unreadable and was put back from its backup copy")
-                from crewlib import feed
-                feed("helper", helper="", status="restored", text="the list of trusted helpers was unreadable and was put back from its backup")
-            except (OSError, CrewError):
-                pass
+    hs = _helpers_in(FILE)
+    if hs is None:
+        # Read from the copy, in memory only. Writing the list back is restore_list's, under the
+        # writers' lock: a reader that wrote here could put an older copy over the owner's Off, saved
+        # in between (Codex T174, P1).
+        hs = _helpers_in(BACKUP)
     return {"version": 1, "helpers": {k: v for k, v in (hs or {}).items() if isinstance(v, dict)}}
+
+
+def _helpers_in(path):
+    """The helpers in a list file, or None when it isn't one (missing, damaged, not a list)."""
+    h = load_json(path, None)
+    hs = h.get("helpers") if isinstance(h, dict) else None
+    return hs if isinstance(hs, dict) else None
+
+
+def restore_list():
+    """Put a damaged or deleted list back from its copy. Under the lock every writer holds, and only
+    after looking again inside it: if the owner's click saved a list meanwhile, theirs stands. The
+    copy is never older than the list (_save writes it first), so this can't bring back a switch the
+    owner has since changed. True when it restored."""
+    if _helpers_in(FILE) is not None or not BACKUP.exists():
+        return False
+    with locked("helpers"):
+        if _helpers_in(FILE) is not None:
+            return False
+        bs = _helpers_in(BACKUP)
+        if not bs:
+            return False
+        _private(FILE, json.dumps({"version": 1, "helpers": bs}, indent=2))
+    try:
+        log("notice", "The list of helpers", reason="restored", text="was unreadable and was put back from its backup copy")
+        from crewlib import feed
+        feed("helper", helper="", status="restored", text="the list of trusted helpers was unreadable and was put back from its backup")
+    except (OSError, CrewError):
+        pass
+    return True
+
+
+def seed_backup():
+    """A list saved by a version from before the copy existed (89b31fa and earlier) gets one now, on
+    the first run of this version, not at the next switch or send (Codex T174): until then a damaged
+    list would have had nothing to come back from. True when it wrote one."""
+    if BACKUP.exists() or _helpers_in(FILE) is None:
+        return False
+    with locked("helpers"):
+        hs = _helpers_in(FILE)
+        if BACKUP.exists() or hs is None:
+            return False
+        _private(BACKUP, json.dumps({"version": 1, "helpers": hs}, indent=2))
+    return True
+
+
+def _ready():
+    """Before anything reads or changes the list: a damaged one is put back, and an older build's
+    helper is carried over (once). Never called with the helpers lock held (both take it)."""
+    try:
+        restore_list() or seed_backup()
+    except (OSError, CrewError):
+        pass
+    adopt_old()
 
 
 def _private(path, data):
@@ -172,8 +220,10 @@ def _save(h):
         os.chmod(DIR, 0o700)
     except OSError:
         pass
-    _private(FILE, json.dumps(h, indent=2))
+    # The copy first, then the list: the copy is then never older than the list, so restoring from it
+    # can't undo a switch (an interrupted save leaves the old list, still valid, and a newer copy).
     _private(BACKUP, json.dumps(h, indent=2))
+    _private(FILE, json.dumps(h, indent=2))
 
 
 def slug(name):
@@ -276,8 +326,8 @@ def _new_key(name):
 def switch(name, on, pals=()):
     """The owner's switch (the caller has checked the click). On, the first time: the helper and its
     key are made. Off: the key stops being accepted at once (it's kept, so On again resumes it)."""
-    adopt_old()
-    with locked("helpers"):
+    _ready()
+    with locked(SEND), locked("helpers"):
         h = _load()
         known = canonical(name, h)
         if not known:
@@ -301,8 +351,8 @@ def switch(name, on, pals=()):
 
 def rotate(name):
     """A new key in the same file; every copy of the old one is dead from now."""
-    adopt_old()
-    with locked("helpers"):
+    _ready()
+    with locked(SEND), locked("helpers"):
         h = _load()
         known = canonical(name, h)
         if not known:
@@ -323,8 +373,8 @@ def set_limit(name, per_hour):
         raise HelperError("the limit is a number of messages an hour")
     if not 1 <= n <= PER_HOUR_MAX:
         raise HelperError(f"the limit is 1 to {PER_HOUR_MAX} messages an hour")
-    adopt_old()
-    with locked("helpers"):
+    _ready()
+    with locked(SEND), locked("helpers"):
         h = _load()
         known = canonical(name, h)
         if not known:
@@ -337,8 +387,8 @@ def set_limit(name, per_hour):
 
 
 def remove(name):
-    adopt_old()
-    with locked("helpers"):
+    _ready()
+    with locked(SEND), locked("helpers"):
         h = _load()
         known = canonical(name, h)
         if not known:
@@ -431,7 +481,7 @@ def sent_since(name, since_ms):
 def verify(name, key_file=None):
     """(the helper's name, its key's short fingerprint) when `name` may speak in the owner's name right
     now; else raise HelperError saying why. No side effects (but for carrying an older build's helper over, once)."""
-    adopt_old()
+    _ready()
     h = _load()
     known = canonical(name, h)
     if not known:
@@ -636,8 +686,16 @@ def check(bump=None):
             log("notice", n, reason=out[n]["reason"], text=out[n]["text"])
             feed("helper", helper=n, status=out[n]["reason"], text=out[n]["text"])
         for n in cleared:
-            log("notice", n, reason="ok", text="is working again")
-            feed("helper", helper=n, status="ok", text=f"{n} is working again")
+            e = h["helpers"].get(n)
+            if e is None:      # the owner removed it: nothing is "working again"
+                log("notice", n, reason="removed", text="was removed; its notice is closed")
+                feed("helper", helper=n, status="removed", text=f"{n} was removed")
+            elif not e.get("on"):   # the owner switched it off (or chose to leave it off)
+                log("notice", n, reason="off", text="is off, by your click; its notice is closed")
+                feed("helper", helper=n, status="off", text=f"{n} is off, by {OWNER}'s click")
+            else:
+                log("notice", n, reason="ok", text="is working again")
+                feed("helper", helper=n, status="ok", text=f"{n} is working again")
         return out
     except (OSError, CrewError):
         return attention()   # the notice must never be why a send or a switch fails
@@ -654,7 +712,7 @@ def _is_sealed(p):
 
 
 def listing(log_limit=200):
-    adopt_old()
+    _ready()
     h, now = _load(), now_ms()
     day = now - 24 * 3600 * 1000
     log_ = entries()

@@ -526,20 +526,49 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", **kw):
     the record. One that no longer passes goes as a shell's, like any helper message not accepted."""
     if from_kind != "helper":
         return _create(kind, to, title, body, frm=frm, from_kind=from_kind, proof=proof, **kw)
-    import crewhelpers
     from crewlib import SHELL_NAME
-    with locked("helpers-send"):
-        why = crewhelpers.recheck(frm)
-        if why and crewhelpers.strict():
-            # A strict helper sends in the owner's name or not at all (T170); bin/crew checks first, this
-            # is for a switch-off or a limit reached between that check and now.
-            crewhelpers.note_unverified(why, "strict: " + str(kw.get("via") or "send"))
-            e = DeskError(f"not sent: {why}. Nothing went out (strict).")
-            e.code = 4
-            raise e
+    with helper_sending():
+        why = helper_gate(frm, str(kw.get("via") or "send"))
         if why:
             return _create(kind, to, title, body, frm=SHELL_NAME, from_kind="shell", proof="none", **{**kw, "relaying": None})
         return _create(kind, to, title, body, frm=frm, from_kind=from_kind, proof=proof, **kw)
+
+
+_sending = False   # this process holds the helpers' send lock (helper_sending): don't take it twice
+
+
+@contextlib.contextmanager
+def helper_sending():
+    """Hold the helpers' send lock across everything one helper send writes. A card alone takes it in
+    create(); a send that also writes something first (a task on the board: pal task add --for, pal
+    desk send --task) takes it around both, so the check and every write are one step: no other send
+    and no owner's switch can land in between (the owner's changes take the same lock). Re-entrant
+    within the process."""
+    global _sending
+    if _sending:
+        yield
+        return
+    import crewhelpers
+    with locked(crewhelpers.SEND):
+        _sending = True
+        try:
+            yield
+        finally:
+            _sending = False
+
+
+def helper_gate(frm, via):
+    """With the send lock held: may `frm` still send in the owner's name? None: yes. Else why not: a
+    strict helper is refused here (DeskError, exit code 4: it sends in the owner's name or not at
+    all, T170), and for any other the caller sends as a shell's."""
+    import crewhelpers
+    why = crewhelpers.recheck(frm)
+    if why and crewhelpers.strict():
+        crewhelpers.note_unverified(why, "strict: " + via)
+        e = DeskError(f"not sent: {why}. Nothing went out (strict).")
+        e.code = 4
+        raise e
+    return why
 
 
 def _create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None, urgency="normal", status="queued",

@@ -60,6 +60,39 @@ context, what each option does and the asker's recommendation. Pick with a click
 takes the recommendation). **T** opens your head pal's terminal, and "What happened today" opens
 a drawer with what finished, got installed or was linked.
 
+## Memory
+
+Every awake topic is an agent holding memory, and Herdr keeps all of its terminals in one systemd
+unit. When memory ran out, systemd-oomd killed that unit, and with it every pal. So:
+
+- **One pal, one scope.** With a systemd user session, each pal's agent starts in its own scope
+  (`systemd-run --user --scope`, unit `pal-<pal>-<topic>-….scope`), so oomd takes the one hungry pal,
+  not the crew. The agent keeps its pid and shell, so sleep and wake work as before. Only on this
+  machine; without systemd, pals start as before. Off: `"pal_scopes": false` in
+  `data/crew-settings.json`.
+- **Herdr's holder goes last.** The installer adds `ManagedOOMPreference=avoid` for
+  `hc-hold-<id>.service` (`~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf`),
+  unless a drop-in of yours there already sets it (yours wins either way: ours sorts first). Skip it
+  with `--no-oomd-dropin`; uninstall takes it out.
+- **Warned before it runs out.** Under the floor (1.5 GB available or 10% of RAM, whichever is larger;
+  `"memory_floor_mb"` to change it), `pal hire`, `pal topic` and `pal wake` say so, the app's hire
+  and topic paths show a toast, and Home shows a quiet "Memory is low" row with **Sleep idle pals**.
+- **Idle topics can sleep by themselves.** `"sleep_idle_hours": 6` (off by default) has crewd put
+  topics idle that long to sleep, with `pal sleep`'s usual checks (never the head pal, never one
+  that's mid-turn or waiting). `pal sleep --idle --older 6` does the same once.
+- **`pal ram`** lists what each awake topic holds and the machine's free memory.
+
+Roughly what one awake topic holds (its agent and what it started, resident plus swapped, measured
+with `pal ram` on Linux, 2026-11-11):
+
+| Harness | Per awake topic |
+|---|---|
+| Claude Code | 0.2–0.45 GB (more in a long session) |
+| Codex | about 0.4 GB, most of it its helper processes |
+| Antigravity CLI, others | not measured yet |
+
+Before waking many topics at once, check `pal ram`'s available figure against that.
+
 ## MUSE, the idea partner
 
 An optional pal to think out loud with. Hire it from the hire dialog (Idea partner) or with
@@ -82,7 +115,8 @@ Reports from other harnesses are welcome.
 ## The approval gate
 
 Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,
-merge or post on GitHub, deploy, send mail or webhooks, land a branch, run a repo's release script,
+merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
+moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
 tokens or the Desk's cards. The command waits in your Inbox until you click Approve.
 
@@ -159,6 +193,9 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
   - The Desk's Claude Code mod in `~/.claude/project-pals/pals`, loaded only by pals (with
     `--plugin-dir`), never by your other Claude Code sessions.
   - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
+  - With systemd: a drop-in making Herdr's terminal holder oomd's last pick
+    (`~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf`; skip with
+    `--no-oomd-dropin`), and each pal's agent in its own `pal-*.scope` (see Memory).
 - **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; choose in About → Background model).
 - **The Desk's Auto routing:** a card you drop with Auto is sent to Claude Haiku (else Antigravity
   CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk.
@@ -234,6 +271,21 @@ at most, and every 10 minutes while About or the update dialog is open.
 
 From a terminal: `pal version` and `pal update check`. Installing and rolling back are buttons in
 Project Pals: they need your click, so a pal can't start one.
+
+### Working on Project Pals itself: the Live channel
+
+If you have a checkout of this repo and change Project Pals with your own pals, **About › Update
+channel › Live** makes your install follow your checkout's `main`: what you land is checked,
+installed and reloaded in place within seconds, and a toast says what reloaded. Only the mods that
+changed reload; the helper restarts only when its own code changed. A build that doesn't come up is
+put back by itself and held until `main` moves.
+
+Before landing, Review has **Try it live**: it runs a topic's branch in your real install, with an
+amber strip across the top saying so, and **Back** (what was running returns) and **Land on main**
+on it. **Back to stable** in About puts the newest release back.
+
+All of these are your click. A pal can't switch the channel, start a trial or install, and while
+Live is on, a pal moving `main` by hand is held for your approval like any landing.
 A first install has nothing to roll back to; to take it out again, use Uninstall (above).
 
 ## Releasing (maintainers)

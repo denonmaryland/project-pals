@@ -57,6 +57,10 @@ assert.ok(logRow({ ...refused, command: "pal " + "y".repeat(400) }).bold.length 
 assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "no-key", text: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key." }),
   { bold: "Pals is not working", rest: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key.", tone: "warn", card: null });
 assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "ok", text: "is working again" }), { bold: "Pals is working again", rest: "what it sends is in your name again", tone: "quiet", card: null });
+// A notice closed by your own Off or Remove says that, not "working again" (Codex T174).
+assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "off", text: "is off, by your click; its notice is closed" }),
+  { bold: "Pals is off", rest: "your click · its notice is closed", tone: "quiet", card: null });
+assert.equal(logRow({ kind: "notice", helper: "Wabi", reason: "removed", text: "was removed; its notice is closed" }).bold, "Wabi was removed");
 assert.equal(logRow({ kind: "notice", helper: "The list of helpers", reason: "restored", text: "was unreadable and was put back from its backup copy" }).bold, "The list of helpers");
 const carriedOver = { name: "Pals", reason: "carried-over", fix: "on", since: NOW - 19 * H, unverified: 3,
   text: "Pals is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name." };

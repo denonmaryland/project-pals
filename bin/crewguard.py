@@ -10,6 +10,7 @@ harnesses without a pre-command hook aren't gated."""
 import hashlib
 import os
 import re
+import subprocess
 import time
 
 from crewlib import DATA, APPROVALS, OWNER, load_json, save_json, locked, now_ms, new_id, feed, enqueue, CrewError
@@ -20,7 +21,8 @@ POLICY = DATA / "crew-policy.json"
 # also brings any saved policy up to date when a built-in rule is missing from it, whatever number it
 # carries (two branches picking the same number can't strand a rule again).
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
-DEFAULTS_VERSION = 15
+# 16: live-branch (T90) and base-branch (T136).
+DEFAULTS_VERSION = 16
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -84,6 +86,18 @@ DEFAULT = {
         # refuses a key from inside a Herdr terminal as well; this holds the attempt and tells the owner.
         {"name": "helper-key", "why": "reaches for a trusted helper's key or name (those are the owner's assistants', not a pal's)",
          "check": "helper-keys", "pattern": r"$^"},
+        # The Live channel (T90): while the owner has it on, whatever lands on the branch it follows is
+        # installed into their running Project Pals at once. So moving that branch by hand (git
+        # update-ref refs/heads/main …, git branch -f main …) needs the click a landing needs. Off
+        # (Stable, the default), this rule holds nothing. pal land is the way, held by "land".
+        {"name": "live-branch", "why": "moves the branch the Live channel installs from (land it instead: pal land)",
+         "check": "moves-live-branch", "pattern": r"$^"},
+        # T136: landing by hand. `pal land` needs the owner's click, and `git update-ref refs/heads/main
+        # <commit>` or `git branch -f main crew/x` does the same thing without it (pals landed that
+        # way while the project folder was parked on another branch). Always on, every project: a
+        # base branch (main, master, a topic's base) moved by name is held. `pal land` is the way.
+        {"name": "base-branch", "why": "moves a project's base branch by hand (land it instead: pal land)",
+         "check": "moves-base-branch", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -872,14 +886,506 @@ def run_strings(cmd):
     return [c for c in out if c and c.strip()]
 
 
-CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
-          "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers}
+# ─── The branch the Live channel follows (T90; Codex T94) ──────────────────────────────────────
+HOOK_CWD = None   # the folder the command runs in, when the hook knows it (bin/crew-hook sets it)
+# git subcommands that move the branch that's checked out where they run.
+MOVES_HEAD = {"commit", "merge", "reset", "pull", "rebase", "cherry-pick", "revert", "am"}
+# Each command's options as git 2.56.0 has them: its listing (`git <command> -h`), corrected by what it
+# does (an option it refuses without a value takes one, whatever the listing says: `git pull --jobs`).
+# tests/githelp.py builds this from the installed git; tests/test_guard.py checks these against it and
+# fails with the line to add when a newer git has a new option.
+# V: long options whose value may be the next word; O: a value only after "="; P: plain; sv / so / sp:
+# the same for short letters; alias: the long name a letter stands for.
+GIT_OPTS = {
+    "fetch": {
+        "V": "deepen depth filter jobs negotiation-include negotiation-restrict negotiation-tip refmap "
+             "server-option shallow-exclude shallow-since upload-pack",
+        "O": "recurse-submodules",
+        "P": "all append atomic auto-gc auto-maintenance dry-run force ipv4 ipv6 keep multiple negotiate-only "
+             "no-all no-append no-atomic no-auto-gc no-auto-maintenance no-deepen no-depth no-dry-run no-filter "
+             "no-force no-jobs no-keep no-multiple no-negotiate-only no-negotiation-include "
+             "no-negotiation-restrict no-negotiation-tip no-porcelain no-prefetch no-progress no-prune "
+             "no-prune-tags no-quiet no-recurse-submodules no-server-option no-set-upstream no-shallow-exclude "
+             "no-shallow-since no-show-forced-updates no-stdin no-tags no-update-head-ok no-update-shallow "
+             "no-upload-pack no-verbose no-write-commit-graph no-write-fetch-head porcelain prefetch progress "
+             "prune prune-tags quiet refetch set-upstream show-forced-updates stdin tags unshallow update-head-ok "
+             "update-shallow verbose write-commit-graph write-fetch-head",
+        "sv": "jo", "so": "", "sp": "46Pafkmnpqtuv",
+        "alias": "4=ipv4 6=ipv6 P=prune-tags a=append f=force j=jobs k=keep m=multiple o=server-option p=prune q=quiet "
+             "t=tags u=update-head-ok v=verbose"},
+    "pull": {
+        "V": "cleanup deepen depth jobs negotiation-include negotiation-restrict negotiation-tip refmap "
+             "server-option shallow-exclude shallow-since strategy strategy-option upload-pack",
+        "O": "gpg-sign log rebase recurse-submodules signoff",
+        "P": "all allow-unrelated-histories append autostash commit compact-summary dry-run edit ff ff-only force "
+             "ipv4 ipv6 keep no-all no-allow-unrelated-histories no-append no-autostash no-cleanup no-commit "
+             "no-compact-summary no-deepen no-depth no-dry-run no-edit no-ff no-force no-gpg-sign no-ipv4 no-ipv6 "
+             "no-jobs no-keep no-log no-negotiation-include no-negotiation-restrict no-negotiation-tip no-progress "
+             "no-prune no-quiet no-rebase no-recurse-submodules no-server-option no-set-upstream "
+             "no-shallow-exclude no-shallow-since no-show-forced-updates no-signoff no-squash no-stat no-strategy "
+             "no-strategy-option no-tags no-update-shallow no-upload-pack no-verbose no-verify "
+             "no-verify-signatures progress prune quiet set-upstream show-forced-updates squash stat tags "
+             "unshallow update-shallow verbose verify verify-signatures",
+        "sv": "Xjos", "so": "Sr", "sp": "46afknpqtv",
+        "alias": "4=ipv4 6=ipv6 S=gpg-sign X=strategy-option a=append f=force j=jobs k=keep o=server-option p=prune "
+             "q=quiet r=rebase s=strategy t=tags v=verbose"},
+    "push": {
+        "V": "exec push-option receive-pack recurse-submodules repo",
+        "O": "force-with-lease signed",
+        "P": "all atomic branches delete dry-run follow-tags force force-if-includes ipv4 ipv6 mirror no-all "
+             "no-atomic no-branches no-delete no-dry-run no-exec no-follow-tags no-force no-force-if-includes "
+             "no-force-with-lease no-mirror no-porcelain no-progress no-prune no-push-option no-quiet "
+             "no-receive-pack no-recurse-submodules no-repo no-set-upstream no-signed no-tags no-thin no-verbose "
+             "no-verify porcelain progress prune quiet set-upstream tags thin verbose verify",
+        "sv": "o", "so": "", "sp": "46dfnquv",
+        "alias": "4=ipv4 6=ipv6 d=delete f=force n=dry-run o=push-option q=quiet u=set-upstream v=verbose"},
+    "rebase": {
+        "V": "empty exec onto strategy strategy-option trailer whitespace",
+        "O": "gpg-sign rebase-merges",
+        "P": "abort apply autosquash autostash committer-date-is-author-date continue edit-todo ff force-rebase "
+             "fork-point ignore-whitespace interactive keep-base merge no-autosquash no-autostash "
+             "no-committer-date-is-author-date no-exec no-ff no-force-rebase no-fork-point no-gpg-sign "
+             "no-ignore-whitespace no-keep-base no-onto no-quiet no-reapply-cherry-picks no-rebase-merges "
+             "no-rerere-autoupdate no-reschedule-failed-exec no-reset-author-date no-root no-signoff no-stat "
+             "no-strategy no-strategy-option no-trailer no-update-refs no-verbose no-verify no-whitespace quiet "
+             "quit reapply-cherry-picks rerere-autoupdate reschedule-failed-exec reset-author-date root "
+             "show-current-patch signoff skip stat update-refs verbose verify",
+        "sv": "CXsx", "so": "Sr", "sp": "fimnqv",
+        "alias": "S=gpg-sign X=strategy-option f=force-rebase i=interactive m=merge n=no-stat q=quiet r=rebase-merges "
+             "s=strategy v=verbose x=exec"},
+    "switch": {
+        "V": "conflict create force-create orphan",
+        "O": "recurse-submodules track",
+        "P": "detach discard-changes force guess ignore-other-worktrees merge no-conflict no-create no-detach "
+             "no-discard-changes no-force no-force-create no-guess no-ignore-other-worktrees no-merge no-orphan "
+             "no-overwrite-ignore no-progress no-quiet no-recurse-submodules no-track overwrite-ignore progress "
+             "quiet",
+        "sv": "Cc", "so": "t", "sp": "dfmq",
+        "alias": "C=force-create c=create d=detach f=force m=merge q=quiet t=track"},
+    "checkout": {
+        "V": "conflict inter-hunk-context orphan pathspec-from-file unified",
+        "O": "recurse-submodules track",
+        "P": "auto-advance detach force guess ignore-other-worktrees ignore-skip-worktree-bits merge "
+             "no-auto-advance no-conflict no-detach no-force no-guess no-ignore-other-worktrees "
+             "no-ignore-skip-worktree-bits no-merge no-orphan no-overlay no-overwrite-ignore no-patch "
+             "no-pathspec-file-nul no-pathspec-from-file no-progress no-quiet no-recurse-submodules no-track ours "
+             "overlay overwrite-ignore patch pathspec-file-nul progress quiet theirs",
+        "sv": "BUb", "so": "t", "sp": "23dflmpq",
+        "alias": "2=ours 3=theirs U=unified d=detach f=force m=merge p=patch q=quiet t=track"},
+    "worktree add": {
+        "V": "reason",
+        "O": "",
+        "P": "checkout detach force guess-remote lock no-checkout no-detach no-force no-guess-remote no-lock "
+             "no-orphan no-quiet no-reason no-relative-paths no-track orphan quiet relative-paths track",
+        "sv": "Bb", "so": "", "sp": "dfq",
+        "alias": "d=detach f=force q=quiet"},
+    "branch": {
+        "V": "contains delete-merged forked format merged no-contains no-merged points-at set-upstream-to sort",
+        "O": "abbrev color column track",
+        "P": "all copy create-reflog delete dry-run edit-description force ignore-case list move no-abbrev "
+             "no-color no-column no-copy no-create-reflog no-delete no-dry-run no-edit-description no-force "
+             "no-format no-ignore-case no-list no-move no-omit-empty no-points-at no-quiet no-recurse-submodules "
+             "no-set-upstream-to no-show-current no-sort no-track no-unset-upstream no-verbose omit-empty quiet "
+             "recurse-submodules remotes show-current unset-upstream verbose",
+        "sv": "u", "so": "t", "sp": "CDMacdfilmqrv",
+        "alias": "a=all c=copy d=delete f=force i=ignore-case l=list m=move q=quiet r=remotes t=track "
+             "u=set-upstream-to v=verbose"},
+}
+# Options that take the next word when there is one, and stand alone as the last word (git branch
+# --contains): git doesn't "require a value" for these, but the word after them is still theirs.
+GIT_LASTARG = {"contains", "no-contains", "merged", "no-merged", "points-at"}
+# Short letters with no long name in git's listing, as the long option they mean.
+GIT_LETTERS = {"branch": {"D": "delete", "M": "move", "C": "copy"}}
+# With one of these, `git branch` lists, describes or sets an upstream: no branch is made, moved or
+# removed (and git refuses to mix two kinds in one command). What kind of command a `git branch` is
+# comes only from its mode options; -v, --track, --no-track, --sort, --format, --color … change nothing
+# about that (Codex T130: they had been taken for "only lists").
+BRANCH_QUIET_MODES = {"list", "show-current", "edit-description", "set-upstream-to", "unset-upstream",
+                      "contains", "no-contains", "merged", "no-merged", "points-at", "forked"}
+_git_opts = {}
+
+
+def git_opts(sub):
+    """GIT_OPTS[sub] as sets (and alias as a dict), or None for a command without a table."""
+    if sub not in _git_opts:
+        t = GIT_OPTS.get(sub)
+        _git_opts[sub] = t and {"V": set(t["V"].split()), "O": set(t["O"].split()), "P": set(t["P"].split()),
+                                "sv": set(t["sv"]), "so": set(t["so"]), "sp": set(t["sp"]),
+                                "alias": {**dict(x.split("=", 1) for x in t["alias"].split()), **GIT_LETTERS.get(sub, {})}}
+    return _git_opts[sub]
+
+
+def git_parse(sub, args):
+    """A git command's arguments, read as git's own parser reads them → (opts, pos, odd).
+    opts: what git ends up with once every option has been applied IN ORDER (Codex T164): {option's
+    long name (a short letter's long name, else the letter): [every value it was given, True for a
+    switch]}. `--no-X` turns X off again (a later `--X` turns it back on); a value option given twice
+    keeps both values (git keeps every --refmap, --exec …; where git keeps only the last, holding on
+    either is the safe side). An option whose own name starts with no- and takes a value
+    (--no-contains <commit>) is that option, not a negation.
+    pos: what's left, in order (the repository and refspecs, the upstream and branch, the names);
+    odd: something wasn't understood (an option that isn't in the table, an ambiguous abbreviation,
+    a value that's missing). Callers treat odd as "can't tell" and hold what they'd otherwise let go.
+    Handled: --opt value and --opt=value, values only after = for the optional kind, unique
+    abbreviations (--dep 1), short letters alone, clustered (-vf) and with a value next or stuck
+    (-j 1, -j1), and -- (Codex T159: `git fetch --jobs 1 . x:main` read 1 as the repository)."""
+    t = git_opts(sub)
+    opts, pos, odd, i = {}, [], t is None, 0
+    if t is None:
+        return opts, [a for a in args if not a.startswith("-")], True
+    every = t["V"] | t["O"] | t["P"]
+
+    def set_(key, val):
+        opts.setdefault(key, []).append(val)
+
+    def unset(name):
+        # --no-X, its abbreviation included: X (and its letters, which are X too) is off again.
+        base = name[3:]
+        if name not in t["V"] and base in every:
+            opts.pop(base, None)
+            return True
+        return False
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if a == "--":
+            pos += args[i:]
+            break
+        if a.startswith("--"):
+            name, eq, val = a[2:].partition("=")
+            full = name if name in every else None
+            if not full:
+                hits = [o for o in every if o.startswith(name)] if name else []
+                full = hits[0] if len(hits) == 1 else None
+            if not full:
+                odd = True
+                continue
+            if full.startswith("no-") and not eq and unset(full):
+                continue
+            if full in t["V"]:
+                if eq:
+                    set_(full, val)
+                elif i < len(args) and (full not in GIT_LASTARG or not args[i].startswith("-")):
+                    set_(full, args[i])
+                    i += 1
+                else:
+                    set_(full, True)
+                    odd = odd or full not in GIT_LASTARG
+            else:
+                set_(full, val if eq else True)
+        elif a.startswith("-") and len(a) > 1:
+            for k, ch in enumerate(a[1:]):
+                key = t["alias"].get(ch, ch)
+                rest = a[k + 2:]
+                if ch in t["sv"]:
+                    if rest:
+                        set_(key, rest)
+                    elif i < len(args):
+                        set_(key, args[i])
+                        i += 1
+                    else:
+                        set_(key, True)
+                        odd = True
+                    break
+                if ch in t["so"]:
+                    set_(key, rest or True)
+                    break
+                if ch in t["sp"]:
+                    set_(key, True)
+                    continue
+                odd = True
+                break
+        else:
+            pos.append(a)
+    return opts, pos, odd
+
+
+def _branch_parse(args):
+    return git_parse("branch", args)
+
+
+def _checked_out(folder):
+    """(branch, the checkout's main folder) for a folder inside a git checkout, else (None, None)."""
+    try:
+        r = subprocess.run(["git", "-C", folder, "rev-parse", "--abbrev-ref", "HEAD", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None, None
+    out = r.stdout.split("\n") if r.returncode == 0 else []
+    if len(out) < 2:
+        return None, None
+    common = out[1].strip()
+    return out[0].strip(), (os.path.dirname(common) if os.path.basename(common) == ".git" else common)
+
+
+def _git_words(seg):
+    """A git command's words with the folder it runs in kept apart: (subcommand, its arguments,
+    the -C folder or None). normal_words drops git's global options, -C among them."""
+    import shlex
+    w = normal_words(seg)
+    if len(w) < 2 or w[0] != "git":
+        return None, [], None
+    try:
+        raw = shlex.split(seg)
+    except ValueError:
+        raw = seg.split()
+    folder = None
+    try:
+        g = next(i for i, x in enumerate(raw) if os.path.basename(x) == "git")
+        i = g + 1
+        while i < len(raw) and raw[i] != w[1]:
+            if raw[i] == "-C" and i + 1 < len(raw):
+                d = os.path.expanduser(raw[i + 1])
+                folder = d if os.path.isabs(d) or folder is None else os.path.join(folder, d)
+                i += 1
+            i += 1
+    except StopIteration:
+        pass
+    return w[1], w[2:], folder
+
+
+def _branch_moves(args, branch):
+    """Does `git branch <args>` move, make or remove `branch`?
+      --delete: any name given; --move: any name (as the new name it moves, as the old one it's gone,
+        and then a plain create puts it somewhere new); --copy: the destination, the LAST name
+        (`-C feature main` moves main; Codex T94; a copy FROM it leaves it where it is);
+      otherwise a create or -f: the FIRST name (the second is where it starts).
+    An option this doesn't know (a newer git's, or --no-<something>) with the branch named: held."""
+    opts, names, odd = _branch_parse(args)
+    if odd:
+        return branch in args or branch in names
+    if "delete-merged" in opts:
+        return True    # deletes whatever matches a pattern: which branches can't be read from here
+    if "delete" in opts or "move" in opts:
+        return branch in names
+    if "copy" in opts:
+        return names[-1:] == [branch]
+    if set(opts) & BRANCH_QUIET_MODES:
+        return False
+    return names[:1] == [branch]
+
+
+CREATES = {"switch": ("create", "force-create", "orphan"), "checkout": ("b", "B", "orphan"), "worktree add": ("b", "B")}
+
+
+def _creates(sub, args, branch):
+    """switch -c/-C, checkout -b/-B, worktree add -b/-B, --orphan: does it make (or make over) the
+    branch? Read with the command's own options (so --conflict merge -C main, -Cmain, --force-c main
+    and --create=main are all seen); when something isn't understood, by the look of the words."""
+    table = "worktree add" if sub == "worktree" and args[:1] == ["add"] else sub
+    opts, _pos, odd = git_parse(table, args[1:] if table == "worktree add" else args)
+    if any(branch in opts.get(k, []) for k in CREATES.get(table, ())):
+        return True
+    if not odd:
+        return False
+    for i, a in enumerate(args):
+        nxt = args[i + 1:i + 2] == [branch]
+        if a.startswith("--"):
+            name, eq, val = a[2:].partition("=")
+            if name != "force" and len(name) >= 2 and any(o.startswith(name) for o in ("create", "force-create", "orphan")):
+                if (eq and val == branch) or (not eq and nxt):
+                    return True
+        elif re.fullmatch(r"-[a-zA-Z]*[cCbB]", a):
+            if nxt:
+                return True
+        elif re.fullmatch(r"-[a-zA-Z]*?[cCbB](.+)", a) and re.fullmatch(r"-[a-zA-Z]*?[cCbB](.+)", a).group(1) == branch:
+            return True
+    return False
+
+
+def _refspec_writes(arg, branch):
+    """A fetch / pull / push refspec whose destination is the branch (wildcards included)."""
+    import fnmatch
+    if ":" not in arg:
+        return False
+    dst = arg.split(":", 1)[1]
+    return bool(dst) and any(fnmatch.fnmatchcase(x, dst) for x in (branch, f"refs/heads/{branch}"))
+
+
+def _local_source(src):
+    """Is a fetch / pull's repository this checkout or a folder (git fetch . x:main, git fetch ../r …)?"""
+    src = src or ""
+    return src == "." or src.startswith(("/", "./", "../", "~", "file:")) or os.path.isdir(os.path.expanduser(src))
+
+
+def _has_branch(folder, branch):
+    """Does that branch exist in the checkout the folder belongs to? None: can't tell."""
+    try:
+        r = subprocess.run(["git", "-C", folder, "rev-parse", "-q", "--verify", f"refs/heads/{branch}"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode == 0:
+        return True
+    inside = subprocess.run(["git", "-C", folder, "rev-parse", "--git-dir"], capture_output=True, text=True).returncode == 0
+    return False if inside else None
+
+
+def moved_branch(cmd, branches, live=None, strict=True):
+    """The first of `branches` that the command line moves, makes over or removes, else None.
+      by name, from anywhere: git branch (see _branch_moves), update-ref on it (or --stdin: what that
+        moves can't be read), symbolic-ref on it, switch -c/-C, checkout -b/-B, worktree add -b/-B,
+        a fetch / pull / push refspec that writes it (x:<b>), rebase <upstream> <b>, and a file
+        written to its ref (…/refs/heads/<b>, packed-refs);
+      and, for live = (branch, repo) only, by running where that branch is checked out in that repo:
+        commit, merge, reset, pull, rebase, cherry-pick, revert, am, update-ref HEAD. Where it runs:
+        the hook's folder, a `cd` before it, git -C; a `git switch <b>` / `git checkout <b>` /
+        `git worktree add <dir> <b>` earlier on the same line counts as being on it there.
+    strict=False (the always-on rule, T136) leaves two everyday things free: a fetch or pull of the
+    branch from a real remote (git fetch origin main:main), and naming a branch that doesn't exist
+    yet where the command runs (git branch -M main in a new repository). The second is only given
+    when where it runs is known and nothing points git elsewhere (GIT_DIR, --git-dir).
+    tests/test_guard.py LiveBranchRefs / BaseBranch run each spelling in a real repository and check
+    the ref. As with the rest of the gate, this catches the plain ways, not a pal set on getting
+    around it."""
+    branches = [b for b in branches if b]
+    if not branches or ("git" not in cmd and "refs/heads" not in cmd and "packed-refs" not in cmd):
+        return None
+    for t in write_targets(cmd):
+        for b in branches:
+            if re.search(rf"(^|/)refs/heads/{re.escape(b)}$", t):
+                return b
+        if re.search(r"(^|/)packed-refs$", t):
+            return branches[0]
+    # Anywhere on the line (a segment comes without its leading VAR=…): git pointed at another repository.
+    elsewhere = bool(re.search(r"\bGIT_(DIR|WORK_TREE|COMMON_DIR)\b|--git-dir\b|--work-tree\b", cmd))
+    cwd = HOOK_CWD
+    here = {}      # folder → the repo's main folder, where an earlier command on this line checks the live branch out
+    removed = set()   # branches an earlier command on this line removed or renamed away
+    join = lambda base, d: os.path.normpath(d if os.path.isabs(d) else os.path.join(base, d)) if (base or os.path.isabs(d)) else None
+    for seg in commands(cmd):
+        if _help(seg):
+            continue
+        w = normal_words(seg)
+        if len(w) == 2 and w[0] == "cd" and not w[1].startswith("-"):
+            cwd = join(cwd, os.path.expanduser(w[1]))
+            continue
+        sub, args, folder = _git_words(seg)
+        if not sub:
+            continue
+        at = join(cwd, folder) if folder else (os.path.normpath(cwd) if cwd else None)
+        names = [a for a in args if not a.startswith("-")]
+
+        def hit(b, remote_ok=False):
+            # The always-on rule lets a branch that isn't there yet be made (a new repository's main).
+            if strict:
+                return True
+            if remote_ok:
+                return False
+            return not (at and not elsewhere and b not in removed and _has_branch(at, b) is False)
+        for b in branches:
+            if sub == "branch" and _branch_moves(args, b):
+                if hit(b):
+                    return b
+                continue
+            if sub == "update-ref" and (f"refs/heads/{b}" in args or "--stdin" in args) and hit(b):
+                return b
+            # symbolic-ref <ref> <target> or -d <ref> writes it (-m <reason> may come first); <ref> alone reads.
+            if sub == "symbolic-ref" and f"refs/heads/{b}" in args and (
+                    len(names) >= 2 or any(a in ("-d", "--delete") or "--delete".startswith(a) and len(a) > 3 for a in args)) and hit(b):
+                return b
+            if sub in ("switch", "checkout", "worktree") and _creates(sub, args, b) and hit(b):
+                return b
+            if sub in ("fetch", "pull", "push"):
+                # [<repository> [<refspec>...]], after the options and their values. A refspec that
+                # writes the branch, a --refmap that maps onto it, or refspecs from stdin (unread).
+                opts, pos, odd = git_parse(sub, args)
+                # (every --refmap counts: git applies them all, Codex T164)
+                specs = names if odd else pos + [v for v in opts.get("refmap", []) if isinstance(v, str)]
+                writes = any(_refspec_writes(a.lstrip("+"), b) for a in specs) or (sub != "push" and "stdin" in opts and bool(pos))
+                # The always-on rule lets the branch come from a real remote: only when the repository
+                # word is known for what it is (nothing odd before it) and isn't this checkout or a folder.
+                remote = sub != "push" and not odd and bool(pos) and not _local_source(pos[0])
+                if writes and hit(b, remote_ok=remote):
+                    return b
+            if sub == "rebase":
+                # git rebase [--onto <x>] <upstream> <branch>, or --root [<branch>]: checks <branch>
+                # out and moves it. Not understood: the branch named at all is enough.
+                opts, pos, odd = git_parse("rebase", args)
+                target = names if odd else pos[:1] if "root" in opts else pos[1:2]
+                if b in target and hit(b):
+                    return b
+        if sub == "branch":   # (for the lines above: a branch deleted or renamed away earlier on this line)
+            o, n, _odd = _branch_parse(args)
+            if "delete" in o or "move" in o:
+                removed.update(n)
+        if not live:
+            continue
+        branch, repo = live
+        # Where the live branch is (or is about to be) checked out: git switch <b>, git checkout <b>,
+        # git worktree add <dir> <b> (the words left once the options and their values are read).
+        if at and sub in ("switch", "checkout"):
+            _o, pos, odd = git_parse(sub, args)
+            if (names if odd else pos[:1]).count(branch):
+                here[at] = _checked_out(at)[1]
+        if at and sub == "worktree" and args[:1] == ["add"]:
+            _o, pos, odd = git_parse("worktree add", args[1:])
+            if odd:
+                pos = names[1:]
+            if len(pos) >= 2 and pos[-1] == branch:
+                here[join(at, os.path.expanduser(pos[0]))] = _checked_out(at)[1]
+        # (git update-ref HEAD … moves whatever is checked out where it runs.)
+        if (sub in MOVES_HEAD or (sub == "update-ref" and "HEAD" in args)) and repo and at:
+            if at in here:
+                on, root = branch, here[at]
+            else:
+                on, root = _checked_out(at)
+            if on == branch and root and os.path.realpath(root) == repo:
+                return branch
+    return None
+
+
+def moves_live_branch(cmd):
+    """While the Live channel is on (crew-settings.json "channel": "live"): a command that moves the
+    branch it follows, by name or by running where it's checked out in the followed repo (see
+    moved_branch). Installing follows that branch, so this needs the click a landing needs."""
+    s = load_json(DATA / "crew-settings.json", {})
+    if s.get("channel") != "live":
+        return False
+    branch = s.get("live_branch") or "main"
+    repo = os.path.realpath(s["live_repo"]) if s.get("live_repo") else None
+    return bool(moved_branch(cmd, [branch], live=(branch, repo)))
+
+
+def base_branches():
+    """The branches topics land on: main and master, the one the Live channel follows, and every
+    base a worktree topic was cut from (shared.json crew.bots[].worktrees[].base)."""
+    out = ["main", "master"]
+    s = load_json(DATA / "crew-settings.json", {})
+    out.append(s.get("live_branch"))
+    try:
+        from crewlib import HOME as APP_HOME
+        for b in (load_json(APP_HOME / "shared.json", {}).get("crew") or {}).get("bots") or []:
+            for wt in (b.get("worktrees") or {}).values():
+                out.append((wt or {}).get("base"))
+    except Exception:
+        pass
+    seen = []
+    for b in out:
+        if isinstance(b, str) and b and b not in seen:
+            seen.append(b)
+    return seen
+
+
+def moves_base_branch(cmd):
+    """Always on, in every project (T136): moving a base branch by its name is landing by hand
+    (`git update-ref refs/heads/main <commit>`, `git branch -f main crew/x`, `git fetch . crew/x:main`),
+    so it's held like `pal land`. Committing or merging in a checkout that is ON such a branch is
+    not this rule's business: pals without a worktree work there all day (only the Live channel's
+    repo holds that, moves_live_branch)."""
+    if "git" not in cmd and "refs/heads" not in cmd:
+        return False
+    return bool(moved_branch(cmd, base_branches(), strict=False))
 
 
 def _help(seg):
     """`pal land --help`, `git push --help`: asking how it works runs nothing."""
     return "--help" in normal_words(seg)[1:]
+
+
+CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
+          "click-writes": writes_click, "queue-writes": writes_queue,
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers,
+          "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
 
 
 def matches(cmd, _depth=0):

@@ -88,7 +88,9 @@ assert.match(read("install.sh"), /cp "\$src\/lib\/palstyles\.js" "\$dest\/palsty
   const at = (x) => { const i = loop.indexOf(x); assert.ok(i >= 0, `install loop has ${x}`); return i; };
   const main = at('cp "$dir/main.js"');
   for (const lib of ["crew.js", "pets.js", "palstyles.js"]) assert.ok(at(`cp "$src/lib/${lib}"`) < main, `${lib} is copied before main.js`);
-  assert.ok(at("rsync -a --delete") < main, "the mod's other files before main.js");
+  // By content since T90 (the Live channel): a file that's the same isn't rewritten, so only the mods
+  // that changed reload. The order is the same.
+  assert.ok(at("rsync -rlpD --checksum -i --delete") < main, "the mod's other files before main.js");
   assert.match(loop, /--exclude '\/main\.js'/);
   assert.match(loop, /--exclude '\/crew\.js'/);
 }

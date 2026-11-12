@@ -36,6 +36,7 @@ import crewchat   # pals' replies from session files (pal ask, callbacks; PR #2)
 import crewchief  # the Chief: nothing is ever typed into it (crew-boards/chief/design.md)
 import crewdesk   # the Desk's cards: receipts, holds, hand edits, archive
 import crewsleep  # pals put to sleep in place (their markers)
+import crewmem    # memory: the state Home and pal read, scopes, idle sleep (T153)
 
 TICK = 2.0
 STALL_MIN = 15          # working with an unchanged screen this long: looks stuck
@@ -134,6 +135,8 @@ class Crewd:
         self.triaging = threading.Lock()   # the Desk's triage: its own lane, so a long review doesn't hold a drop up
         self.last_minute = None
         self.last_stall_check = 0
+        self.last_mem = 0         # crew-memory.json, each minute
+        self.last_idle_sweep = time.time()   # sleep_idle_hours: first sweep half an hour after start
 
     # ── main loop ──
     def run(self):
@@ -148,6 +151,9 @@ class Crewd:
 
     def tick(self):
         save_json(DATA / "crew-daemon.json", {"at": time.time(), "pid": os.getpid()})
+        if time.time() - self.last_mem > 60:
+            self.last_mem = time.time()
+            self.memory()
         terms = hc_terminals()
         if not terms:
             return
@@ -186,12 +192,73 @@ class Crewd:
             if time.strftime("%H:%M") == DREAM_AT:
                 threading.Thread(target=self.dream, daemon=True).start()
         crewroutines.watch(terms, log)
+        try:
+            self.live_follow()
+        except Exception:
+            log("live follow failed:\n" + traceback.format_exc())
         # Updates: look for a newer release every 6 hours at most (the status bar's "Update available"
         # pill and the update dialog show it; crew-status checks too where crewd doesn't run).
         last = load_json(crewupdate.STATE, {}).get("checked", 0)
         if time.time() - last > crewupdate.CHECK_EVERY and time.time() - getattr(self, "last_update_try", 0) > 3600:
             self.last_update_try = time.time()
             threading.Thread(target=self.check_updates, daemon=True).start()
+
+    def live_follow(self):
+        """The Live channel (T90, crewupdate.py): when the followed branch has a commit that isn't
+        what's running, start `pal update follow` on its own (a swap may restart this very process).
+        Asked every few seconds (one git rev-parse); the same commit isn't started twice in ten minutes."""
+        if time.time() - getattr(self, "last_live_check", 0) < 3:
+            return
+        self.last_live_check = time.time()
+        head = crewupdate.follow_due()
+        started = getattr(self, "live_started", (None, 0))
+        if not head or (started[0] == head and time.time() - started[1] < 600):
+            return
+        run = load_json(crewupdate.RUN, {})
+        if run.get("state") == "running" and time.time() - run.get("at", 0) < 300:
+            return   # an install, a trial or a roll back is under way
+        self.live_started = (head, time.time())
+        log(f"live: {crewupdate.channel()['branch']} is at {head[:7]}; installing it")
+        crewupdate.detach([str(Path.home() / ".local" / "bin" / "pal"), "update", "follow", "--json"], "project-pals-live")
+
+    # ── memory (T153) ──
+    def memory(self):
+        """crew-memory.json for Home, the app and pal (available memory, the floor, whether pals get their
+        own scope); a line in the log when memory goes low or recovers; the idle sweep when it's on."""
+        try:
+            probe = None
+            if crewmem.needs_probe():
+                got = crewmem.probe_scope()
+                probe = False if got is None else got
+            before = load_json(crewmem.STATE, {})
+            st = crewmem.write_state(probe)
+            if probe is not None and st["scope"] != before.get("scope"):
+                log("pals start in their own systemd scope" if st["scope"] else "no systemd user scopes here: pals start as plain commands")
+            if st.get("low") and not before.get("low"):
+                log(f"memory low: {crewmem.gb(st['available'])} available (floor {crewmem.gb(st['floor'])})")
+            elif before.get("low") and st.get("available") is not None and not st.get("low"):
+                log(f"memory back above the floor: {crewmem.gb(st['available'])} available")
+        except Exception:
+            log("memory state failed:\n" + traceback.format_exc())
+        hours = crewmem.idle_hours_setting()
+        if hours and time.time() - self.last_idle_sweep > 30 * 60:
+            self.last_idle_sweep = time.time()
+            threading.Thread(target=self.idle_sweep, args=(hours,), daemon=True).start()
+
+    def idle_sweep(self, hours):
+        """sleep_idle_hours: put topics idle that long to sleep, through pal sleep's own checks (never the
+        head pal, never one mid-turn, waiting on a prompt, typing or running work)."""
+        env = {k: v for k, v in os.environ.items() if k not in ("HC_TERMINAL_ID", "HC_SCOPE")}
+        try:
+            # Installed as pal (crew may be another program's name there); crew in a checkout.
+            cmd = HERE / "pal" if (HERE / "pal").exists() else HERE / "crew"
+            r = subprocess.run([sys.executable, str(cmd), "sleep", "--idle", "--older", f"{hours:g}", "--notify"],
+                               capture_output=True, text=True, timeout=300, env=env)
+            said = (r.stdout or r.stderr or "").strip()
+            if said and "no idle pals" not in said:
+                log(f"idle sweep ({hours:g}h): {said[:400]}")
+        except Exception as e:
+            log(f"idle sweep failed: {e}")
 
     def check_updates(self):
         try:

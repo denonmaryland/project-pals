@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
@@ -305,6 +306,25 @@ class Seat(unittest.TestCase):
         self.assertIn("# Handoff", run(self.sb, "handoff", "brief", me="t1").stdout)
         self.assertTrue(json.loads((self.sb["data"] / "crew-handoffs" / "t1" / f"{hid}.json").read_text()).get("read"))
 
+    def test_take_starts_the_brain_in_its_own_scope(self):
+        # T153: with scopes on, the new brain starts behind systemd-run --user --scope (which execs in
+        # place); a fake systemd-run records its words and runs what follows --.
+        out, seen = self.sb["root"] / "brain-args.json", self.sb["root"] / "systemd-run.txt"
+        self.app.h_brains["codex"] = {"argv": [sys.executable, "-c", f"import sys, json; json.dump(sys.argv[1:], open({str(out)!r}, 'w'))"],
+                                      "key": "codex", "name": "Codex", "hint": ""}
+        shims = self.sb["root"] / "scope-shims"
+        shims.mkdir()
+        (shims / "systemd-run").write_text(f'#!/bin/sh\necho "$@" > {seen}\nwhile [ "$1" != -- ]; do shift; done\nshift\nexec "$@"\n')
+        (shims / "systemd-run").chmod(0o755)
+        (self.sb["data"] / "crew-memory.json").write_text(json.dumps({"scope": True, "scope_flags": ["--expand-environment=no"]}))
+        self.assertEqual(self.hand_over().returncode, 0)
+        hid = self.typed()[0].split()[-1]
+        self.sb["env"] = {**self.sb["env"], "PATH": f"{shims}:{self.sb['env']['PATH']}"}
+        r = run(self.sb, "handoff", "take", hid, me="t1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(seen.read_text(), r"^--user --scope --quiet --collect --expand-environment=no --unit=pal-navi-checkout-[0-9a-z]+ -- ")
+        self.assertIn("You hold Navi #checkout now", json.loads(out.read_text())[0])
+
     # ── hand back ──
     def test_hand_back_resumes_the_previous_holders_own_session(self):
         self.assertEqual(self.hand_over().returncode, 0)
@@ -523,15 +543,19 @@ class CodexSessions(unittest.TestCase):
 
 class Parts(unittest.TestCase):
     def test_the_filter_removes_secrets_and_counts_them(self):
-        counts = {}
-        text = ("key sk-ant-abcdefghij1234567890 and ghp_abcdefghijklmnopqrstuvwxyz0123\nAuthorization: Bearer abc.def.ghi\n"
-                "DB_PASSWORD=hunter2hunter2\nmail sam@example.com\nsha 0123456789abcdef0123456789abcdef01234567\n"
-                f"in {Path.home()}/work/x.py, at src/pay/retry.ts line 40")
-        out = ho.redact(text, counts)
-        for gone in ("sk-ant-", "ghp_", "Bearer", "hunter2", "sam@example.com", "0123456789abcdef0123456789abcdef01234567", str(Path.home())):
-            self.assertNotIn(gone, out)
-        self.assertIn("~/work/x.py, at src/pay/retry.ts line 40", out)                    # ordinary paths and prose stay
-        self.assertEqual(counts, {"token": 2, "credential": 2, "email address": 1, "long string": 1})
+        # HOME pinned, short and long: the real one depends on TMPDIR here (T171: a long one used to be
+        # eaten as a "long string" before it became ~).
+        for home in ("/home/sam", "/tmp/pals-sleep-boot-" + "x" * 60 + "/home"):
+            with self.subTest(home=home), mock.patch.object(Path, "home", return_value=Path(home)):
+                counts = {}
+                text = ("key sk-ant-abcdefghij1234567890 and ghp_abcdefghijklmnopqrstuvwxyz0123\nAuthorization: Bearer abc.def.ghi\n"
+                        "DB_PASSWORD=hunter2hunter2\nmail sam@example.com\nsha 0123456789abcdef0123456789abcdef01234567\n"
+                        f"in {home}/work/x.py, at src/pay/retry.ts line 40")
+                out = ho.redact(text, counts)
+                for gone in ("sk-ant-", "ghp_", "Bearer", "hunter2", "sam@example.com", "0123456789abcdef0123456789abcdef01234567", home):
+                    self.assertNotIn(gone, out)
+                self.assertIn("~/work/x.py, at src/pay/retry.ts line 40", out)            # ordinary paths and prose stay
+                self.assertEqual(counts, {"token": 2, "credential": 2, "email address": 1, "long string": 1})
         self.assertEqual(ho.filtered_line({}), "")
         self.assertEqual(ho.filtered_line({"token": 1, "email address": 2}), "3 things filtered: 2 email addresses, 1 token")
 

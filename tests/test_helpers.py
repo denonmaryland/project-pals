@@ -26,12 +26,12 @@ TRUSTED = f"[from {OWNER} via Pals, a trusted helper: normal work only]"
 SHELL = f"[from a shell on this computer, not verified as {OWNER}]"
 
 
-def helper(env, *args, name="Pals", key_file=None, outside=True, term=None, strict=False):
+def helper(env, *args, name="Pals", key_file=None, outside=True, term=None, strict=False, pre=""):
     """`PAL_HELPER=<name> pal …` from a plain shell (outside=True: not in a Herdr terminal)."""
     e = {**env, **({"PAL_HELPER": name} if name else {}), **({"PAL_HELPER_KEY_FILE": str(key_file)} if key_file else {}), **({"HC_TERMINAL_ID": term} if term else {}),
          **({"PAL_HELPER_STRICT": "1"} if strict else {})}
     code = (f"import sys, runpy; sys.path.insert(0, {str(BIN)!r}); import crewhelpers\n"
-            + ("crewhelpers.inside_herdr = lambda *a, **k: None\n" if outside else "")
+            + ("crewhelpers.inside_herdr = lambda *a, **k: None\n" if outside else "") + (pre + "\n" if pre else "")
             + f"sys.argv = ['pal', *{list(args)!r}]\nrunpy.run_path({str(BIN / 'crew')!r}, run_name='__main__')")
     return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=e, timeout=60)
 
@@ -718,6 +718,129 @@ class StaysOn(Base):
         said, exit_code = py(self.env, code)
         self.assertIn("Nothing went out (strict)", said)
         self.assertEqual(exit_code, 4)
+
+    # ── Codex's T174 read of this change ──
+
+    LIST = "helpers.json"
+
+    def files(self):
+        d = self.data / "crew-helpers"
+        return d / self.LIST, d / (self.LIST + ".bak")
+
+    def test_a_reader_never_writes_the_list_so_it_cant_undo_the_owners_off(self):
+        """T174 P1: a reader that found the list damaged used to write the copy back with no lock. A
+        reader holding the old copy (on) could finish after the owner's Off was saved and put "on" back."""
+        self.on()
+        f, bak = self.files()
+        f.write_text("{ damaged")
+        # The reader's view, in memory, from the copy; the list itself is left for restore_list (locked).
+        got = py(self.env, "import crewhelpers; print(json.dumps(crewhelpers._load()['helpers']['Pals']['on']))")
+        self.assertTrue(got)
+        self.assertEqual(f.read_text(), "{ damaged", "a read is a read")
+        # The owner's Off lands; whatever a slow reader does next, the list says off.
+        self.assertEqual(owner(self.env, self.data, "settings", "trust-helper", "Pals", "off").returncode, 0)
+        py(self.env, "import crewhelpers; crewhelpers._load(); crewhelpers.restore_list(); print(json.dumps(1))")
+        self.assertFalse(json.loads(f.read_text())["helpers"]["Pals"]["on"])
+        self.assertFalse(json.loads(bak.read_text())["helpers"]["Pals"]["on"])
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "after off"))[1].startswith(SHELL))
+        # restore_list leaves a valid list alone even when the copy differs (it looks again inside the lock).
+        stale = json.loads(bak.read_text())
+        stale["helpers"]["Pals"]["on"] = True
+        bak.write_text(json.dumps(stale))
+        self.assertFalse(py(self.env, "import crewhelpers; print(json.dumps(crewhelpers.restore_list()))"))
+        self.assertFalse(json.loads(f.read_text())["helpers"]["Pals"]["on"])
+
+    def test_the_copy_is_never_older_than_the_list(self):
+        """Saved copy first, then the list: a save cut short leaves the old list (valid) and a newer copy,
+        so a later restore can only bring back the newer state, never a switch the owner has changed."""
+        self.on()
+        f, bak = self.files()
+        code = ("import crewhelpers\nreal = crewhelpers._private\ncalls = []\n"
+                "def cut(path, data):\n    calls.append(str(path))\n    if len(calls) == 2:\n        raise OSError('power cut')\n    return real(path, data)\n"
+                "crewhelpers._private = cut\n"
+                "try:\n    crewhelpers.switch('Pals', False)\nexcept OSError:\n    pass\n"
+                "print(json.dumps([c.rsplit('/', 1)[1] for c in calls]))")
+        self.assertEqual(py(self.env, code), [self.LIST + ".bak", self.LIST])
+        self.assertTrue(json.loads(f.read_text())["helpers"]["Pals"]["on"], "the cut-short save left the old list")
+        self.assertFalse(json.loads(bak.read_text())["helpers"]["Pals"]["on"])
+        f.unlink()   # … and if that list is then lost, what comes back is the owner's Off
+        self.assertFalse(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["on"])
+
+    def test_a_list_from_before_the_copy_existed_gets_one_on_the_first_run(self):
+        """T174: an install at 89b31fa has a valid list and no copy. The first run of this version makes
+        one (asking after health is enough; install.sh does that), not the next switch or send."""
+        self.on()
+        f, bak = self.files()
+        bak.unlink()
+        self.assertEqual(pal(self.env, "helpers", "health").returncode, 0)
+        self.assertEqual(json.loads(bak.read_text())["helpers"], json.loads(f.read_text())["helpers"])
+        self.assertEqual(stat.S_IMODE(bak.stat().st_mode), 0o600)
+        f.write_text("")
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "no sends in between"))[1].startswith(TRUSTED))
+
+    def test_the_owners_switch_and_a_send_never_interleave(self):
+        self.on()
+        code = ("import threading, time, crewhelpers, crewdesk\ndone = []\n"
+                "with crewdesk.helper_sending():\n"
+                "    t = threading.Thread(target=lambda: (crewhelpers.switch('Pals', False), done.append(1)))\n"
+                "    t.start()\n    time.sleep(0.5)\n    during = (list(done), crewhelpers._load()['helpers']['Pals']['on'])\n"
+                "t.join(10)\nprint(json.dumps([during, list(done), crewhelpers._load()['helpers']['Pals']['on']]))")
+        during, after, on = py(self.env, code)
+        self.assertEqual(during, [[], True], "the Off waits while a send is being checked and written")
+        self.assertEqual((after, on), ([1], False))
+
+    def board(self):
+        f = self.data / "crew-tasks.json"
+        return [t["title"] for t in json.loads(f.read_text())["tasks"]] if f.exists() else []
+
+    def task_feed(self):
+        f = self.data / "crew-feed.jsonl"
+        return [(e.get("status"), e.get("title")) for e in (json.loads(l) for l in f.read_text().splitlines()) if e.get("kind") == "task"] if f.exists() else []
+
+    def test_a_strict_helpers_task_refused_at_the_last_moment_leaves_no_task(self):
+        """T174 P2: switched off after the command's own first check, a strict `pal task add --for` was
+        refused at the card (exit 4, "Nothing went out") with the task already on the board."""
+        self.on()
+        # The owner's Off lands after this run was accepted and before the task is added.
+        code = ("import os, crewhelpers, crewdesk, crewtasks\nfrom crewlib import herdr_spaces\n"
+                "crewhelpers.inside_herdr = lambda *a, **k: None\nos.environ['PAL_HELPER'] = 'Pals'\nos.environ['PAL_HELPER_STRICT'] = '1'\n"
+                "spaces = herdr_spaces()\nassert crewdesk.sender(spaces)['from_kind'] == 'helper'\ncrewhelpers.switch('Pals', False)\n"
+                "try:\n    crewtasks.add('Late task', spaces, None, 'x', None, 'Helper#build')\n    print(json.dumps('added'))\n"
+                "except crewdesk.DeskError as e:\n    print(json.dumps([str(e), getattr(e, 'code', None)]))")
+        said, exit_code = py(self.env, code)
+        self.assertEqual(exit_code, 4)
+        self.assertIn("Nothing went out (strict)", said)
+        self.assertEqual(self.board(), [], "stopped before the task was written")
+        self.assertEqual(self.task_feed(), [])
+        # Belt and braces: if the card is refused even after the gate passed, the task is taken back and the feed says so.
+        self.on()
+        boom = ("import crewdesk\ndef boom(*a, **k):\n    e = crewdesk.DeskError('not sent: test. Nothing went out (strict).')\n    e.code = 4\n    raise e\ncrewdesk._create = boom")
+        for args in (["task", "add", "Taken back", "--for", "Helper#build"], ["desk", "send", "Helper#build", "Taken back too", "--task"]):
+            r = helper(self.env, *args, strict=True, pre=boom)
+            self.assertEqual(r.returncode, 4, (args, r.stderr))
+            self.assertEqual(self.board(), [], args)
+        self.assertEqual(self.task_feed(), [("open", "Taken back"), ("withdrawn", "Taken back"), ("open", "Taken back too"), ("withdrawn", "Taken back too")])
+        # And the ordinary case still works: a strict helper that is trusted adds its task, with its card.
+        r = helper(self.env, "task", "add", "A real one", "--for", "Helper#build", strict=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.board(), ["A real one"])
+        r = helper(self.env, "desk", "send", "Helper#build", "And a card with a task", "--task", strict=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.board(), ["A real one", "And a card with a task"])
+
+    def test_a_notice_closed_by_the_owners_off_or_remove_doesnt_say_working_again(self):
+        self.on()
+        (self.keys / "pals.key").unlink()
+        pal(self.env, "helpers", "health")
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "off")
+        self.on("Wabi")
+        (self.keys / "wabi.key").unlink()
+        pal(self.env, "helpers", "health")
+        owner(self.env, self.data, "settings", "trust-helper", "Wabi", "off")
+        owner(self.env, self.data, "settings", "trust-helper", "Wabi", "remove")
+        self.assertEqual([(e["helper"], e["status"]) for e in self.feed()], [("Pals", "no-key"), ("Pals", "off"), ("Wabi", "no-key"), ("Wabi", "off")])
+        self.assertNotIn("working again", " ".join(e.get("text", "") for e in self.feed()))
+        self.assertEqual(self.attention(), {})
 
     def test_asking_after_a_helpers_health_is_anyones_and_changes_no_switch(self):
         self.on()
