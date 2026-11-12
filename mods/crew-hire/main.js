@@ -8,7 +8,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, closeOverlay, knownAgents, machines, notify, pickFolder, exec, home } from "herdr";
-import { crew, saveCrew, newId, brainLogo, ROLES, PARTNER_ROLE, PARTNER_NAME, partnerOf, companyOf, a, withBypass, modelsFor, withModel, launchSpec, primerHint, isClaude, tone, ds, pebble,
+import { crew, saveCrew, newId, brainLogo, ROLES, PARTNER_ROLE, PARTNER_NAME, partnerOf, companyOf, a, withBypass, modelsFor, withModel, launchSpec, primerHint, scoped, warnIfLow, isClaude, tone, ds, pebble,
   sheet, sheetHeader, sheetBody, sheetField, sheetArea, sheetRow, sheetSelect, sheetPanel, sheetPanelBox, sheetOption, sheetFooter } from "./crew.js";
 import { spaces } from "herdr";
 
@@ -81,8 +81,9 @@ export default class CrewHire extends View {
     const prompt = [brief && `You are ${name}, my ${this.role.toLowerCase()}. ${brief}`, hint].filter(Boolean).join("\n\n");
     const spec = launchSpec(this.harness.key, bot.argv, prompt);
     closeOverlay(props().overlay);
+    warnIfLow(`hiring ${name}`);
     run("space.new", {
-      name, tab: channel, argv: spec.argv, machine: this.machine ?? "",
+      name, tab: channel, argv: scoped(spec.argv, { pal: name, topic: channel, machine: this.machine }), machine: this.machine ?? "",
       folder: folder || undefined,
       task: spec.task,
     });

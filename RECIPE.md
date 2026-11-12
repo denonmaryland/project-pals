@@ -1591,6 +1591,34 @@ An install that ran the unreviewed build of 2026-11-10 (one helper kept in `data
 its "Pals" carried over once: by name, switched off, its old key deleted, its sends kept in the
 record; the owner turns it on again in the sheet.
 
+### Memory (T153)
+
+- **Each pal's agent runs in its own systemd scope**, so systemd-oomd takes one hungry pal instead of
+  Herdr's terminal holder (`hc-hold-<id>.service`) with every pal in it (2026-11-10: the crew died
+  twice). Every launch (hire, topic, waking a pal from Hidden pals, a room's wake, `pal wake`, the new
+  brain of `pal handoff take`) puts
+  `systemd-run --user --scope --quiet --collect [--expand-environment=no] --unit=pal-<pal>-<topic>-<base36>
+  --` in front of the agent's command, at the moment it's run; the command on record never has it.
+  Only on this machine, only when crewd's probe (every 6 h) found it works, and not with
+  `"pal_scopes": false`. Without systemd it's the plain command, as before.
+- **The installer** adds `hc-hold-.service.d/00-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
+  unless a drop-in there already sets that (DeNon's own `10-oomd-avoid.conf` is left alone), and says
+  which in its output; `--no-oomd-dropin` skips it, uninstall removes only Project Pals' file.
+- **Low memory:** crewd writes `data/crew-memory.json` each minute (`available`, `total`, `floor`,
+  `low`, `low_since`, `scope`, `scope_flags`). The floor is `"memory_floor_mb"`, else the larger of
+  1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line
+  pointing at `pal sleep --idle`; the app's hire, topic and wake paths toast "Memory is low (…)" at
+  most once per 10 minutes for the whole app (the clock is shared state `crew.memory.toldAt`: every
+  mod has its own copy of crew.js); Home shows a 24 px row under the status line (warning dot, "Memory is
+  low", the figures, **Sleep idle pals ›** running `pal sleep --idle` as the owner). A state older
+  than 5 minutes says nothing about low.
+- **Idle sleep:** `"sleep_idle_hours": N` (off by default: sleeping drops a pal's warm context and
+  would surprise) makes crewd run `pal sleep --idle --older N --notify` every 30 minutes. A topic's
+  last activity is its session file's last write, else its status-line file's; one with neither stays
+  awake.
+- **`pal ram [--json]`:** each awake topic's agent tree (PSS plus SwapPss), whether it has its own
+  scope, and the machine's memory.
+
 ## Built from
 
 - **Layout:** `layouts/pals.json`, the tree above.
@@ -2002,6 +2030,13 @@ record; the owner turns it on again in the sheet.
 - **The feed's `working` events** (a turn starting) only bound calendar blocks: `pal feed` hides
   them and Home tails 1600 lines to cover the same day.
 
+- **`systemd-run --scope` must exec in place** (it does: same pid, same parent shell, same
+  environment), or sleep's "agent is the shell's direct child" check and session linking break.
+  **systemd 254+ expands `$VARS`** in the command unless `--expand-environment=no` (an agent argument
+  with a `$` in it would change); older systemd neither expands nor knows the flag, so the probe
+  tries with it, then without. Scoped agents leave `hc-hold`, so they're no longer covered by the
+  holder's `ManagedOOMPreference=avoid`: that's the point.
+
 ## Done when
 
 - With no helper switched on, `PAL_HELPER=Pals pal tell <Pal> "x"` arrives "not verified as
@@ -2136,3 +2171,7 @@ record; the owner turns it on again in the sheet.
   (`tests/test_desk.py` BoardAndCards). The pals MCP server answers initialize / tools/list and
   `desk_check` marks cards `seen · mcp:desk_check` (McpServer); `codex mcp list -c
   mcp_servers.pals.command=…` shows it enabled.
+- With systemd, a new topic's agent is in `app.slice/pal-<pal>-<topic>-….scope` (`pal ram` shows no
+  "no scope of its own"), `pal sleep` and `pal wake` still work on it, and the stored argv has no
+  `systemd-run` (`tests/test_scope.mjs`, `tests/test_memory.py` Scopes). Under the floor, `pal hire`
+  prints the `note:` line and Home shows the Memory is low row.
