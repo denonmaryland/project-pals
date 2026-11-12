@@ -16,10 +16,12 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -57,7 +59,7 @@ urllib.request.urlopen = _urlopen
 class Live(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.t = Path(tempfile.mkdtemp(prefix="pals-live-"))
+        cls.t = Path(pals_tmp.mkdtemp(prefix="pals-live-"))
         cls.home = cls.t / "home"
         cls.app = cls.home / ".config" / "herdr-app"
         cls.data = cls.app / "data"
@@ -583,7 +585,7 @@ class Restore(unittest.TestCase):
     meanwhile is theirs: it stays. The install record (crew-install.json) always goes back."""
 
     def test_only_what_the_install_wrote_goes_back(self):
-        t = Path(tempfile.mkdtemp(prefix="pals-restore-"))
+        t = Path(pals_tmp.mkdtemp(prefix="pals-restore-"))
         try:
             home = t / "home"
             (home / ".config" / "herdr-app").mkdir(parents=True)

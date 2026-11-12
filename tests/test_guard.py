@@ -766,7 +766,7 @@ class LiveBranch(unittest.TestCase):
         """commit / merge / reset … move whatever branch is checked out where they run: held when
         that's the followed branch of the followed checkout, free on a topic's branch or elsewhere."""
         import subprocess
-        t = Path(tempfile.mkdtemp(prefix="pals-livebranch-"))
+        t = Path(pals_tmp.mkdtemp(prefix="pals-livebranch-"))
         env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
                "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
         git = lambda *a, at=None: subprocess.run(["git", "-C", str(at or t / "repo"), *a], env=env, check=True, capture_output=True)
@@ -946,7 +946,7 @@ class LiveBranchRefs(unittest.TestCase):
     def setUp(self):
         import subprocess
         self.sp = subprocess
-        self.t = Path(tempfile.mkdtemp(prefix="pals-liverefs-"))
+        self.t = Path(pals_tmp.mkdtemp(prefix="pals-liverefs-"))
         self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
                     "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid",
                     "GIT_EDITOR": "true", "GIT_TERMINAL_PROMPT": "0"}
@@ -1186,7 +1186,7 @@ class BaseBranch(unittest.TestCase):
     def setUp(self):
         import subprocess
         self.sp = subprocess
-        self.t = Path(tempfile.mkdtemp(prefix="pals-base-"))
+        self.t = Path(pals_tmp.mkdtemp(prefix="pals-base-"))
         self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
                     "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
         self.SETTINGS.unlink(missing_ok=True)
