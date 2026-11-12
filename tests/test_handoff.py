@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
@@ -523,15 +524,19 @@ class CodexSessions(unittest.TestCase):
 
 class Parts(unittest.TestCase):
     def test_the_filter_removes_secrets_and_counts_them(self):
-        counts = {}
-        text = ("key sk-ant-abcdefghij1234567890 and ghp_abcdefghijklmnopqrstuvwxyz0123\nAuthorization: Bearer abc.def.ghi\n"
-                "DB_PASSWORD=hunter2hunter2\nmail sam@example.com\nsha 0123456789abcdef0123456789abcdef01234567\n"
-                f"in {Path.home()}/work/x.py, at src/pay/retry.ts line 40")
-        out = ho.redact(text, counts)
-        for gone in ("sk-ant-", "ghp_", "Bearer", "hunter2", "sam@example.com", "0123456789abcdef0123456789abcdef01234567", str(Path.home())):
-            self.assertNotIn(gone, out)
-        self.assertIn("~/work/x.py, at src/pay/retry.ts line 40", out)                    # ordinary paths and prose stay
-        self.assertEqual(counts, {"token": 2, "credential": 2, "email address": 1, "long string": 1})
+        # HOME pinned, short and long: the real one depends on TMPDIR here (T171: a long one used to be
+        # eaten as a "long string" before it became ~).
+        for home in ("/home/sam", "/tmp/pals-sleep-boot-" + "x" * 60 + "/home"):
+            with self.subTest(home=home), mock.patch.object(Path, "home", return_value=Path(home)):
+                counts = {}
+                text = ("key sk-ant-abcdefghij1234567890 and ghp_abcdefghijklmnopqrstuvwxyz0123\nAuthorization: Bearer abc.def.ghi\n"
+                        "DB_PASSWORD=hunter2hunter2\nmail sam@example.com\nsha 0123456789abcdef0123456789abcdef01234567\n"
+                        f"in {home}/work/x.py, at src/pay/retry.ts line 40")
+                out = ho.redact(text, counts)
+                for gone in ("sk-ant-", "ghp_", "Bearer", "hunter2", "sam@example.com", "0123456789abcdef0123456789abcdef01234567", home):
+                    self.assertNotIn(gone, out)
+                self.assertIn("~/work/x.py, at src/pay/retry.ts line 40", out)            # ordinary paths and prose stay
+                self.assertEqual(counts, {"token": 2, "credential": 2, "email address": 1, "long string": 1})
         self.assertEqual(ho.filtered_line({}), "")
         self.assertEqual(ho.filtered_line({"token": 1, "email address": 2}), "3 things filtered: 2 email addresses, 1 token")
 
