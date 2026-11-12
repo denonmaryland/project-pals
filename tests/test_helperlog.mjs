@@ -78,6 +78,12 @@ const limit = helperNeed({ name: "Pals", reason: "limit", fix: null, since: NOW,
 assert.equal(limit.fix, null);
 assert.equal(limit.off, null, "at its limit there's nothing to switch: the sheet has the setting");
 assert.equal(helperNeed({ name: "X" }, NOW).title, "X isn't working.");
+// Restored switched off because its copy couldn't be vouched for: Turn on, or leave it (Codex T174).
+const restored = helperNeed({ name: "Pals", reason: "restored-off", fix: "on", since: NOW, unverified: 0,
+  text: "Pals is off. The list of helpers was damaged and came back from a copy that another build may have made out of date, so Pals was switched off, not guessed on, and not by you. What it sends is not in your name." }, NOW);
+assert.equal(restored.title, "Pals is off.");
+assert.equal(restored.fix.label, "Turn Pals on");
+assert.equal(restored.off.label, "Leave it off");
 
 // ── for Home ──
 const old = { ...sent, at: NOW - 30 * H, card: "c-000001" };

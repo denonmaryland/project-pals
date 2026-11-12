@@ -2011,8 +2011,18 @@ record; the owner turns it on again in the sheet.
   copy back over a damaged list, with no lock: a reader holding an old copy ("on") could finish
   after the owner's Off was saved and switch the helper back on. Readers now only read (from the
   copy, in memory, when the list is unreadable); `restore_list` writes, under the writers' lock,
-  after looking again. The copy is written before the list, so it is never the older of the two,
-  and a list from before the copy existed gets one on the first run (`seed_backup`).
+  after looking again. The copy is written before the list, so it is never the older of the two.
+- **Another build can make the copy stale.** A build from before the copy existed (after a roll
+  back or a build swap) saves the owner's Off to the list alone. So on every run a valid list is
+  the truth and the copy is brought level with it (`sync_backup`: also how a list from before the
+  copy gets one), and install.sh's last step asks after the helpers' health, which is such a run.
+  The copy carries when it was written. If the list is lost and an install happened after that
+  with no run of this version in between, the copy can't be vouched for: helpers then come back
+  by name with their keys, switched **off**, with a Helper card ("came back from a copy that
+  another build may have made out of date", Turn on). A helper wrongly off costs a click; one
+  wrongly on speaks in the owner's name.
+- **Bring the list into shape before judging it.** `check()` starts with the restore and the
+  carry-over; run before them, the first health check after a carry-over said "off (your choice)".
 - **A helper's send and the owner's switch never interleave.** The owner's changes (on, off,
   rotate, remove, limit) take the same lock a send holds while it is checked and written
   (`helpers-send`). A send that writes a task before its card (`pal task add --for`, `pal desk send

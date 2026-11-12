@@ -152,20 +152,35 @@ def _helpers_in(path):
 
 def restore_list():
     """Put a damaged or deleted list back from its copy. Under the lock every writer holds, and only
-    after looking again inside it: if the owner's click saved a list meanwhile, theirs stands. The
-    copy is never older than the list (_save writes it first), so this can't bring back a switch the
-    owner has since changed. True when it restored."""
+    after looking again inside it: if the owner's click saved a list meanwhile, theirs stands.
+
+    Is the copy current? Every save by this version writes the copy first, and sync_backup brings
+    it level with the list on every run, so normally yes. Not when another build wrote the list in
+    between: a build from before the copy existed (after a roll back, a build swap) saves the owner's
+    Off to the list only (Codex T174). Its runs leave no trace here, but an install does: if one
+    happened after the copy was last written and no run of this version has brought the copy level
+    since, the copy can't be vouched for. Then helpers come back by name with their keys, switched
+    OFF, and the owner is told (health: "restored-off"): a helper wrongly off costs a click, a helper
+    wrongly on speaks in the owner's name. True when it restored."""
     if _helpers_in(FILE) is not None or not BACKUP.exists():
         return False
+    turned_off = []
     with locked("helpers"):
         if _helpers_in(FILE) is not None:
             return False
         bs = _helpers_in(BACKUP)
         if not bs:
             return False
+        if not _copy_current():
+            for name, e in bs.items():
+                if isinstance(e, dict) and e.get("on"):
+                    e["on"], e["restored_off"] = False, now_ms()
+                    turned_off.append(name)
+        _private(BACKUP, json.dumps(_copy_doc(bs), indent=2))
         _private(FILE, json.dumps({"version": 1, "helpers": bs}, indent=2))
     try:
-        log("notice", "The list of helpers", reason="restored", text="was unreadable and was put back from its backup copy")
+        log("notice", "The list of helpers", reason="restored", text="was unreadable and was put back from its backup copy"
+            + (f"; {', '.join(turned_off)} came back switched off, because another build ran since that copy was made" if turned_off else ""))
         from crewlib import feed
         feed("helper", helper="", status="restored", text="the list of trusted helpers was unreadable and was put back from its backup")
     except (OSError, CrewError):
@@ -173,17 +188,35 @@ def restore_list():
     return True
 
 
-def seed_backup():
-    """A list saved by a version from before the copy existed (89b31fa and earlier) gets one now, on
-    the first run of this version, not at the next switch or send (Codex T174): until then a damaged
-    list would have had nothing to come back from. True when it wrote one."""
-    if BACKUP.exists() or _helpers_in(FILE) is None:
+def _copy_doc(hs):
+    return {"version": 1, "helpers": hs, "at": now_ms()}
+
+
+def _copy_current():
+    """Was the copy written (or brought level) after the last install? No install on record: yes."""
+    b = load_json(BACKUP, None)
+    at = b.get("at") if isinstance(b, dict) else None
+    ins = load_json(DATA / "crew-install.json", None)
+    installed = ins.get("installed") if isinstance(ins, dict) else None
+    if not isinstance(installed, (int, float)):
+        return True
+    return isinstance(at, (int, float)) and at >= installed * 1000
+
+
+def sync_backup():
+    """Bring the copy level with a valid list: when there's no copy yet (a list saved by a version
+    from before the copy existed, 89b31fa and earlier), and when the two differ (another build wrote
+    the list: the owner's Off made after a roll back to such a build must not be undone by an older
+    copy; Codex T174). On the first run of this version after any install (install.sh asks after the
+    helpers' health), not at the next switch or send. True when it wrote one."""
+    hs = _helpers_in(FILE)
+    if hs is None or (_helpers_in(BACKUP) == hs and _copy_current()):
         return False
     with locked("helpers"):
         hs = _helpers_in(FILE)
-        if BACKUP.exists() or hs is None:
+        if hs is None or (_helpers_in(BACKUP) == hs and _copy_current()):
             return False
-        _private(BACKUP, json.dumps({"version": 1, "helpers": hs}, indent=2))
+        _private(BACKUP, json.dumps(_copy_doc(hs), indent=2))
     return True
 
 
@@ -191,7 +224,7 @@ def _ready():
     """Before anything reads or changes the list: a damaged one is put back, and an older build's
     helper is carried over (once). Never called with the helpers lock held (both take it)."""
     try:
-        restore_list() or seed_backup()
+        restore_list() or sync_backup()
     except (OSError, CrewError):
         pass
     adopt_old()
@@ -222,7 +255,7 @@ def _save(h):
         pass
     # The copy first, then the list: the copy is then never older than the list, so restoring from it
     # can't undo a switch (an interrupted save leaves the old list, still valid, and a newer copy).
-    _private(BACKUP, json.dumps(h, indent=2))
+    _private(BACKUP, json.dumps(_copy_doc(h["helpers"]), indent=2))
     _private(FILE, json.dumps(h, indent=2))
 
 
@@ -343,6 +376,7 @@ def switch(name, on, pals=()):
             e["sha256"], e["made"], made = _new_key(known), now_ms(), True
             e.pop("rotated", None)
         e["on"], e["switched"] = bool(on), now_ms()   # `switched`: the owner has decided this helper's state
+        e.pop("restored_off", None)
         _save(h)
     log("switch", known, action="on" if on else "off", **({"key": "made"} if made else {}))
     check()
@@ -637,6 +671,10 @@ def health(name, e, now=None):
         if e.get("carried_over") and not e.get("switched"):
             return {"reason": "carried-over", "fix": "on",
                     "text": f"{name} is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name."}
+        if e.get("restored_off"):
+            return {"reason": "restored-off", "fix": "on",
+                    "text": f"{name} is off. The list of helpers was damaged and came back from a copy that another build may have made out of date, "
+                            f"so {name} was switched off, not guessed on, and not by you. What it sends is not in your name."}
         return None   # the owner switched it off
     try:
         key = _read_key(key_path(name))
@@ -653,6 +691,9 @@ def health(name, e, now=None):
     return None
 
 
+_checking = False   # check() is bringing the list into shape (which may itself call check)
+
+
 def attention():
     a = load_json(ATTENTION, None)
     return {k: v for k, v in a.items() if isinstance(v, dict)} if isinstance(a, dict) else {}
@@ -661,6 +702,16 @@ def attention():
 def check(bump=None):
     """Look at every helper, bring attention.json up to date, and say what changed. `bump`: a send in
     that helper's name just went unverified. Returns the attention entries."""
+    global _checking
+    if not _checking:
+        # First bring the list into shape (a damaged one restored, an older build's helper carried
+        # over): a check that ran before that reported "nothing wrong" on the very run that had just
+        # switched a helper off (Codex T174: the first `pal helpers health` after a carry-over).
+        _checking = True
+        try:
+            _ready()
+        finally:
+            _checking = False
     try:
         with locked("helpers-attention"):
             h, was, now = _load(), attention(), now_ms()

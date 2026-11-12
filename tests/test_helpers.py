@@ -778,6 +778,65 @@ class StaysOn(Base):
         f.write_text("")
         self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "no sends in between"))[1].startswith(TRUSTED))
 
+    def install_record(self, seconds_from_now):
+        import time
+        (self.data / "crew-install.json").write_text(json.dumps({"version": "0.4.2", "installed": int(time.time()) + seconds_from_now}))
+
+    def test_an_off_made_under_an_older_build_isnt_undone_by_the_copy(self):
+        """T174 (second read): this version saves a copy (on); a roll back to a build from before the
+        copy; the owner's Off there writes the list only; this version is installed again. The stale
+        copy (on) must not come back when the list is later lost."""
+        self.on()
+        f, bak = self.files()
+        self.install_record(-3600)   # this version was installed an hour ago; the copy is newer: current
+        old = json.loads(f.read_text())
+        old["helpers"]["Pals"]["on"] = False
+        f.write_text(json.dumps(old))   # the older build's save: the list alone
+        self.assertTrue(json.loads(bak.read_text())["helpers"]["Pals"]["on"], "the copy still says on")
+        self.install_record(0)       # this version installed again …
+        self.assertEqual(pal(self.env, "helpers", "health").stdout.strip(), "Pals: off (your choice)")   # … whose last step asks after health
+        self.assertFalse(json.loads(bak.read_text())["helpers"]["Pals"]["on"], "the first run brought the copy level with the list")
+        f.unlink()
+        self.assertFalse(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["on"])
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "still off"))[1].startswith(SHELL))
+        self.assertEqual(self.attention(), {}, "off by the owner's click, as it was")
+
+    def test_a_copy_that_cant_be_vouched_for_restores_switched_off_and_says_so(self):
+        """The same swap, but the list is lost before this version runs again: nothing can say whether
+        the copy (on) is current. Helpers come back by name with their keys, OFF, with a notice and the fix."""
+        self.on()
+        f, bak = self.files()
+        f.unlink()
+        self.install_record(60)      # an install after the copy was last written, and no run of this version since
+        out = pal(self.env, "helpers", "health").stdout
+        self.assertIn("Pals is off. The list of helpers was damaged and came back from a copy", out)
+        info = json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]
+        self.assertEqual((info["on"], info["key_there"]), (False, True))
+        att = self.attention()["Pals"]
+        self.assertEqual((att["reason"], att["fix"]), ("restored-off", "on"))
+        self.assertEqual([(e["helper"], e["status"]) for e in self.feed()], [("", "restored"), ("Pals", "restored-off")])
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "not yet"))[1].startswith(SHELL))
+        # One click, and it's as before, with the same key.
+        self.on()
+        self.assertEqual(self.attention(), {})
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "back"))[1].startswith(TRUSTED))
+        # With no install since the copy was written, a lost list comes back as it was: on.
+        self.install_record(-3600)
+        pal(self.env, "helpers", "health")
+        f.unlink()
+        self.assertTrue(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["on"])
+
+    def test_the_first_health_check_after_a_carry_over_says_what_just_happened(self):
+        """T174 (second read): the check ran before the carry-over, so the very run that switched Pals
+        off printed "off (your choice)" with nothing in attention."""
+        self.old_build()
+        r = pal(self.env, "helpers", "health")
+        self.assertIn("Pals is off. An earlier build's helper was carried over switched off, not by you.", r.stdout)
+        self.assertNotIn("your choice", r.stdout)
+        self.assertEqual(self.attention()["Pals"]["reason"], "carried-over")
+        self.assertEqual(json.loads(pal(self.env, "helpers", "health", "--json").stdout)["attention"]["Pals"]["fix"], "on")
+        self.assertEqual(len(self.feed()), 1)
+
     def test_the_owners_switch_and_a_send_never_interleave(self):
         self.on()
         code = ("import threading, time, crewhelpers, crewdesk\ndone = []\n"
