@@ -60,13 +60,15 @@ def redact(text, counts=None):
     """`text` with secrets, credentials, long opaque strings and email addresses removed and the home
     folder written as ~. `counts` (a dict) gets what was removed, by kind."""
     out = str(text or "")
+    # The home folder first: a long one (a deep sandbox or test HOME) is 60+ path characters, which
+    # the long-string filter would take for a secret and eat with the path around it (T171).
+    home = str(Path.home())
+    if len(home) > 1:
+        out = out.replace(home, "~")
     for kind, pat in _FILTERS:
         out, n = pat.subn(f"[{kind} removed]", out)
         if n and counts is not None:
             counts[kind] = counts.get(kind, 0) + n
-    home = str(Path.home())
-    if len(home) > 1:
-        out = out.replace(home, "~")
     return out
 
 
