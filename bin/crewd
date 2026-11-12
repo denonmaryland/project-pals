@@ -177,12 +177,34 @@ class Crewd:
             if time.strftime("%H:%M") == DREAM_AT:
                 threading.Thread(target=self.dream, daemon=True).start()
         crewroutines.watch(terms, log)
+        try:
+            self.live_follow()
+        except Exception:
+            log("live follow failed:\n" + traceback.format_exc())
         # Updates: look for a newer release every 6 hours at most (the status bar's "Update available"
         # pill and the update dialog show it; crew-status checks too where crewd doesn't run).
         last = load_json(crewupdate.STATE, {}).get("checked", 0)
         if time.time() - last > crewupdate.CHECK_EVERY and time.time() - getattr(self, "last_update_try", 0) > 3600:
             self.last_update_try = time.time()
             threading.Thread(target=self.check_updates, daemon=True).start()
+
+    def live_follow(self):
+        """The Live channel (T90, crewupdate.py): when the followed branch has a commit that isn't
+        what's running, start `pal update follow` on its own (a swap may restart this very process).
+        Asked every few seconds (one git rev-parse); the same commit isn't started twice in ten minutes."""
+        if time.time() - getattr(self, "last_live_check", 0) < 3:
+            return
+        self.last_live_check = time.time()
+        head = crewupdate.follow_due()
+        started = getattr(self, "live_started", (None, 0))
+        if not head or (started[0] == head and time.time() - started[1] < 600):
+            return
+        run = load_json(crewupdate.RUN, {})
+        if run.get("state") == "running" and time.time() - run.get("at", 0) < 300:
+            return   # an install, a trial or a roll back is under way
+        self.live_started = (head, time.time())
+        log(f"live: {crewupdate.channel()['branch']} is at {head[:7]}; installing it")
+        crewupdate.detach([str(Path.home() / ".local" / "bin" / "pal"), "update", "follow", "--json"], "project-pals-live")
 
     def check_updates(self):
         try:

@@ -15,9 +15,11 @@ const root = new URL("..", import.meta.url).pathname;
 // ── The layout: body is the whole window; the sidebar is a column of the roster and the strip ──
 const lay = JSON.parse(readFileSync(join(root, "layouts/pals.json"), "utf8"));
 const find = (n, id) => n.id === id ? n : (n.children ?? []).map((c) => find(c, id)).find(Boolean) ?? null;
-assert.deepEqual(lay.children.map((c) => c.id), ["body"], "nothing spans under the whole window");
+// (Above body there is only the trial strip, hidden unless a branch is being tried: T90, DeNon's pick on h-0a897a.)
+assert.deepEqual(lay.children.filter((c) => !c.hidden).map((c) => c.id), ["body"], "nothing spans under the whole window");
+assert.deepEqual(lay.children.map((c) => [c.id, Boolean(c.hidden)]), [["crew-live", true], ["body", false]], "body is last: nothing is under it");
 const side = find(lay, "sidebar");
-assert.equal(lay.children[0].children[0], side, "the sidebar is the body's first column");
+assert.equal(find(lay, "body").children[0], side, "the sidebar is the body's first column");
 assert.ok(side.type === "column" && side.size.px === 304 && side.min === 56 && side.max === 440, "the sidebar keeps its id, width and limits (resize, fold and the saved width go by them)");
 assert.deepEqual(side.children.map((c) => [c.id, c.content.mod]), [["side-main", "crew-roster"], ["status", "crew-status"]]);
 assert.equal(side.divider.width, 0, "no divider between the pals and the strip");

@@ -1,6 +1,7 @@
 """The approval gate's AGENTS.md / CLAUDE.md rules (Codex review H2, H3) and the owner gate (H1).
 Run: python3 -m unittest discover -s tests   (uses a throwaway CREW_DATA; touches nothing real)."""
 import json
+import re
 import os
 import sys
 import unittest
@@ -20,6 +21,7 @@ SHIMS.mkdir()
 (SHIMS / "hc").chmod(0o755)
 os.environ["PATH"] = f"{SHIMS}:{os.environ.get('PATH', '/usr/bin:/bin')}"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # githelp.py, beside this file
 
 import crewguard  # noqa: E402
 
@@ -702,3 +704,576 @@ class UninstallRule(unittest.TestCase):
             self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
         finally:
             crewguard.POLICY.unlink(missing_ok=True)
+
+
+class LiveBranch(unittest.TestCase):
+    """T90: while the owner's Live channel is on, what lands on the followed branch is installed into
+    their running Project Pals at once, so moving that branch by hand needs the click a landing needs.
+    With the channel off (Stable, the default) nothing here is held."""
+    SETTINGS = Path(TMP) / "crew-settings.json"
+    MOVES = [
+        "git update-ref refs/heads/main abc1234",
+        "git -C ~/Projects/project-pals update-ref -m 'land x' refs/heads/main abc1234 def5678",
+        "cd /repo && git update-ref refs/heads/main $(git rev-parse HEAD)",
+        "git branch -f main crew/x",
+        "git branch --force main HEAD",
+        "git -C /repo branch -M main",
+        "env GIT_DIR=/r/.git git update-ref refs/heads/main abc1234",
+        "bash -c 'git update-ref refs/heads/main abc1234'",
+        # The other plain ways (the independent review's list).
+        "git fetch . crew/x:main", "git fetch . crew/x:refs/heads/main", "git pull . crew/x:main",   # (git push . x:main is "push" already)
+        "git switch -C main crew/x", "git checkout -B main crew/x", "git switch --force-create main",
+        "git worktree add -B main ../m crew/x",
+        "echo 'update refs/heads/main abc1234' | git update-ref --stdin",
+    ]
+    FREE = [
+        "git update-ref refs/heads/crew/x abc1234", "git branch -f crew/x main", "git branch main-backup main",
+        "git branch --list main", "git log main..HEAD", "git rev-parse refs/heads/main", "git merge-base main HEAD",
+        "git update-ref --help", "grep -n 'update-ref refs/heads/main' bin/crew", "git commit -m 'update-ref refs/heads/main'",
+        "git worktree add -b crew/y ../y main", "git fetch origin main", "git fetch . main:crew/x", "git switch main",
+        "git checkout main", "git switch -c crew/z main", "git checkout -b crew/z main", "git pull . main:crew/x",
+    ]
+
+    def tearDown(self):
+        self.SETTINGS.unlink(missing_ok=True)
+        crewguard.HOOK_CWD = None
+
+    def test_held_while_the_channel_is_live(self):
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main"}))
+        for cmd in self.MOVES:
+            self.assertEqual(rule(cmd), "live-branch", cmd)
+        for cmd in self.FREE:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_the_followed_branch_is_the_one_held(self):
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "release"}))
+        self.assertEqual(rule("git update-ref refs/heads/release abc1234"), "live-branch")
+        self.assertEqual(rule("git update-ref refs/heads/main abc1234"), "base-branch", "main is a base branch whatever Live follows (T136)")
+
+    def test_on_stable_a_base_branch_moved_by_name_is_still_held(self):
+        # T136: these are landings by hand. Before it, nothing here was held with the channel off.
+        for settings in (None, {"channel": "stable"}, {"owner": "Sam"}):
+            if settings is None:
+                self.SETTINGS.unlink(missing_ok=True)
+            else:
+                self.SETTINGS.write_text(json.dumps(settings))
+            for cmd in self.MOVES:
+                self.assertEqual(rule(cmd), "base-branch", cmd)
+            for cmd in self.FREE:
+                self.assertIsNone(rule(cmd), cmd)
+
+    def test_a_commit_in_a_checkout_of_the_followed_branch(self):
+        """commit / merge / reset … move whatever branch is checked out where they run: held when
+        that's the followed branch of the followed checkout, free on a topic's branch or elsewhere."""
+        import subprocess
+        t = Path(pals_tmp.mkdtemp(prefix="pals-livebranch-"))
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
+               "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
+        git = lambda *a, at=None: subprocess.run(["git", "-C", str(at or t / "repo"), *a], env=env, check=True, capture_output=True)
+        (t / "repo" / "sub").mkdir(parents=True)
+        git("init", "-q", "-b", "main")
+        git("commit", "-q", "--allow-empty", "-m", "one")
+        git("worktree", "add", "-q", "-b", "crew/x", str(t / "wt"), "main")
+        (t / "other").mkdir()
+        git("init", "-q", "-b", "main", at=t / "other")
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main", "live_repo": str(t / "repo")}))
+        moves = ("git commit -am x", "git merge crew/x", "git reset --hard HEAD~1", "git cherry-pick abc1234", "git pull . crew/x", "git rebase crew/x")
+        crewguard.HOOK_CWD = str(t / "repo" / "sub")
+        for cmd in moves:
+            self.assertEqual(rule(cmd), "live-branch", cmd)
+        for cmd in ("git status", "git log -3", "git diff", "git add -A", "git stash list"):
+            self.assertIsNone(rule(cmd), cmd)
+        crewguard.HOOK_CWD = str(t / "wt")           # a topic's worktree: its own branch
+        for cmd in moves:
+            self.assertIsNone(rule(cmd), cmd)
+        self.assertEqual(rule(f"git -C {t / 'repo'} commit -am x"), "live-branch", "git -C names the folder")
+        self.assertEqual(rule(f"cd {t / 'repo'} && git merge crew/x"), "live-branch", "and so does a cd before it")
+        self.assertEqual(rule("cd ../repo && git commit -m x"), "live-branch", "a relative cd, from the hook's folder")
+        crewguard.HOOK_CWD = str(t / "other")        # another project that happens to be on main
+        for cmd in moves:
+            self.assertIsNone(rule(cmd), cmd)
+        crewguard.HOOK_CWD = None                    # no folder known: nothing to go on
+        self.assertIsNone(rule("git commit -am x"))
+        # With the channel off, working on main where it's checked out is nobody's business (T136:
+        # pals without a worktree commit there all day).
+        self.SETTINGS.write_text(json.dumps({"channel": "stable", "live_repo": str(t / "repo")}))
+        crewguard.HOOK_CWD = str(t / "repo" / "sub")
+        for cmd in moves:
+            self.assertIsNone(rule(cmd), cmd)
+
+
+class LiveBranchRefs(unittest.TestCase):
+    """Codex T94, P1: `git branch -M feature main` moved the followed main past the gate (only the
+    first name of a `git branch` was looked at). Reading a command line isn't proof, so this runs
+    each one in a disposable repository and looks at the ref: with the Live channel on, a command
+    that really moves or removes the followed branch must be held, whatever its spelling. The repo
+    is the usual one: the project folder parked on another branch, a topic's worktree on crew/x;
+    layout "m" adds a worktree that has main checked out."""
+    SETTINGS = Path(TMP) / "crew-settings.json"
+    # (layout, where it runs, the command). {repo} {wt} {m} are folders, {feature} a commit.
+    MOVERS = [
+        # git branch: rename and copy move the DESTINATION (the last name), forced or not
+        ("", "wt", "git branch -M feature main"),
+        ("", "wt", "git branch -C feature main"),
+        ("", "wt", "git branch --move --force feature main"),
+        ("", "wt", "git branch --copy --force feature main"),
+        ("", "wt", "git branch -f main feature"),
+        ("", "wt", "git branch --force main crew/x"),
+        ("", "wt", "git -C {repo} branch -M feature main"),
+        # options that don't change what kind of command it is (Codex T130: --no-track, -v and --track
+        # were taken for "only lists"), clustered, abbreviated, with values, after --, after the names
+        ("", "wt", "git branch --no-track -f main feature"),
+        ("", "wt", "git branch -v -f main feature"),
+        ("", "wt", "git branch --track -f main feature"),
+        ("", "wt", "git branch -vf main feature"),
+        ("", "wt", "git branch -fq main feature"),
+        ("", "wt", "git branch --sort refname -f main feature"),
+        ("", "wt", "git branch --sort=refname --format x -f main feature"),
+        ("", "wt", "git branch --color=never --column -f main feature"),
+        ("", "wt", "git branch --forc main feature"),
+        ("", "wt", "git branch --mov --forc feature main"),
+        ("", "wt", "git branch --cop --force feature main"),
+        ("", "wt", "git branch -f -- main feature"),
+        ("", "wt", "git branch main feature -f"),
+        ("", "wt", "git branch feature main -M"),
+        ("", "wt", "git branch -C feature main --sort refname"),
+        ("", "wt", "git branch --no-list -f main feature"),
+        ("", "wt", "git branch -Dq main"),
+        # taking it away, and then making it again somewhere else (no force needed by then)
+        ("", "wt", "git branch -D main"),
+        ("", "wt", "git branch -d main"),
+        ("", "wt", "git branch --delete --force main"),
+        ("", "wt", "git branch -m main old"),
+        ("", "wt", "git branch -D main && git branch main feature"),
+        ("", "wt", "git branch -m main old && git branch -m feature main"),
+        ("", "wt", "git branch -m main old; git branch -c feature main"),
+        # the ref itself
+        ("", "wt", "git update-ref refs/heads/main {feature}"),
+        ("", "wt", "git update-ref -d refs/heads/main"),
+        ("", "wt", "echo 'update refs/heads/main {feature}' | git update-ref --stdin"),
+        ("", "wt", "git symbolic-ref refs/heads/main refs/heads/feature"),
+        ("", "wt", "git symbolic-ref -m why refs/heads/main refs/heads/feature"),
+        ("", "wt", "git update-ref --no-deref -m why refs/heads/main {feature}"),
+        ("m", "m", "git update-ref HEAD {feature}"),
+        ("", "wt", "echo {feature} > {repo}/.git/refs/heads/main"),
+        ("", "wt", "cp {repo}/.git/refs/heads/feature {repo}/.git/refs/heads/main"),
+        # fetch, pull and push into the local branch
+        ("", "wt", "git fetch . feature:main"),
+        ("", "wt", "git fetch . +refs/heads/feature:refs/heads/main"),
+        ("", "wt", "git fetch {repo} feature:main"),
+        ("", "wt", "git pull . feature:main"),
+        # an option's value is not the repository, nor the branch being rebased (Codex T159)
+        ("", "wt", "git fetch --jobs 1 . feature:main"),
+        ("", "wt", "git fetch --depth 1 . +feature:main"),
+        ("", "wt", "git fetch -j 1 . feature:main"),
+        ("", "wt", "git fetch --upload-pack git-upload-pack . feature:main"),
+        ("", "wt", "git pull -s ort . feature:main"),
+        ("", "wt", "git pull --jobs 1 . feature:main"),     # (git's listing says --jobs[=<n>]; it takes the 1)
+        ("", "wt", "git pull -j 1 . feature:main"),
+        ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/main . refs/heads/feature"),
+        ("", "wt", "echo feature:main | git fetch --stdin ."),
+        # an option turned off again, or given twice: what counts is what git ends up with (Codex T164)
+        ("", "wt", "git branch --list --no-list -f main feature"),
+        ("", "wt", "git branch --copy --no-copy -f main feature"),
+        ("", "wt", "git branch -l --no-list -f main feature"),
+        ("", "wt", "git branch --delete --no-delete -f main feature"),
+        ("", "wt", "git rebase --root --no-root feature main"),
+        ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/main --refmap=+refs/heads/feature:refs/heads/other . refs/heads/feature"),
+        ("", "wt", "git fetch --refmap=+refs/heads/feature:refs/heads/other --refmap=+refs/heads/feature:refs/heads/main . refs/heads/feature"),
+        ("", "wt", "git fetch --stdin --no-stdin . feature:main"),
+        ("", "wt", "git rebase --empty keep feature main"),
+        ("", "wt", "git rebase --whitespace nowarn feature main"),
+        ("", "wt", "git rebase -C 1 feature main"),
+        ("", "wt", "git rebase --root --onto feature main"),
+        ("", "wt", "git checkout --conflict merge -B main feature"),
+        ("", "wt", "git switch --conflict merge -C main feature"),
+        ("", "wt", "git switch --conflict merge main && git reset --hard feature"),
+        ("", "wt", "git checkout --conflict merge main && git merge feature"),
+        ("", "wt", "git push . feature:main"),
+        ("", "wt", "git push {repo} +crew/x:refs/heads/main"),
+        # checking it out here on the way, creating or resetting it
+        ("", "wt", "git switch -C main feature"),
+        ("", "wt", "git checkout -B main feature"),
+        ("", "wt", "git switch --force-create main feature"),
+        ("", "wt", "git switch -Cmain feature"),
+        ("", "wt", "git checkout -Bmain feature"),
+        ("", "wt", "git switch --force-create=main feature"),
+        ("", "wt", "git switch --force-c main feature"),
+        ("", "wt", "git worktree add -Bmain ../m2 feature"),
+        ("", "wt", "git worktree add -B main ../m2 feature"),
+        ("", "wt", "git rebase feature main"),
+        ("", "wt", "git checkout main && git reset --hard feature"),
+        ("", "wt", "git switch main && git merge feature"),
+        ("", "wt", "git switch main; git commit --allow-empty -m x"),
+        ("", "wt", "git checkout main && git pull . feature"),
+        ("", "wt", "git checkout main && git cherry-pick crew/x"),
+        ("", "wt", "git worktree add ../m2 main && git -C ../m2 reset --hard feature"),
+        ("", "wt", "git worktree add ../m2 main && cd ../m2 && git merge feature"),
+        # in a checkout that has it checked out
+        ("m", "m", "git commit --allow-empty -m x"),
+        ("m", "m", "git commit --amend --allow-empty -m y"),
+        ("m", "m", "git merge feature"),
+        ("m", "m", "git reset --hard feature"),
+        ("m", "m", "git pull . feature"),
+        ("m", "m", "git cherry-pick crew/x"),
+        ("m", "m", "git revert --no-edit HEAD"),
+        ("m", "m", "git rebase feature"),
+        ("m", "wt", "git -C ../m reset --hard feature"),
+        ("m", "wt", "cd ../m && git merge feature"),
+        ("m", "wt", "cd {m}; git commit --allow-empty -m x"),
+        ("m", "m", "git checkout --detach && git branch -f main feature"),
+    ]
+    # Everyday commands that name main without moving it: free, and they really don't move it.
+    FREE = [
+        ("", "wt", "git branch -m feature other"), ("", "wt", "git branch -f feature main"), ("", "wt", "git branch -C main copy"),
+        ("", "wt", "git branch copy main"), ("", "wt", "git branch --list main"), ("", "wt", "git branch --contains main"),
+        ("", "wt", "git branch -D feature"), ("", "wt", "git log --oneline main"), ("", "wt", "git merge main"),
+        ("", "wt", "git rebase main"), ("", "wt", "git rebase main crew/x"), ("", "wt", "git reset --hard main"),
+        ("", "wt", "git fetch . main:copy"), ("", "wt", "git switch -c copy main"), ("", "wt", "git checkout -b copy main"),
+        ("", "wt", "git worktree add -b copy ../m2 main"), ("", "wt", "git commit --allow-empty -m x"),
+        ("", "wt", "git update-ref refs/heads/copy {feature}"), ("", "wt", "git symbolic-ref HEAD"),
+        ("", "wt", "git switch main"), ("", "wt", "git checkout main"), ("", "wt", "git worktree add ../m2 main"),
+        ("m", "wt", "git commit --allow-empty -m x"), ("m", "wt", "git reset --hard main"), ("m", "m", "git status"),
+        ("m", "m", "git log -1"), ("m", "m", "git diff"), ("m", "m", "git stash list"), ("m", "m", "git branch copy"),
+        ("", "wt", "git branch -v"), ("", "wt", "git branch -vv --all"), ("", "wt", "git branch --list -v main"),
+        ("", "wt", "git branch --sort refname"), ("", "wt", "git branch --merged main"), ("", "wt", "git branch --contains main"),
+        ("", "wt", "git branch --show-current"), ("", "wt", "git branch -u main feature"), ("", "wt", "git branch --no-track -f feature main"),
+        ("", "wt", "git branch -v -f feature main"), ("", "wt", "git branch --sort main"), ("", "wt", "git switch --force main"),
+        ("", "wt", "git symbolic-ref -q --short HEAD"), ("", "wt", "git update-ref refs/heads/copy main"),
+        ("m", "wt", "git update-ref HEAD {feature}"),
+    ]
+
+    def setUp(self):
+        import subprocess
+        self.sp = subprocess
+        self.t = Path(pals_tmp.mkdtemp(prefix="pals-liverefs-"))
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
+                    "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid",
+                    "GIT_EDITOR": "true", "GIT_TERMINAL_PROMPT": "0"}
+        self.n = 0
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.t, ignore_errors=True)
+        self.SETTINGS.unlink(missing_ok=True)
+        crewguard.HOOK_CWD = None
+
+    def repo(self, layout):
+        """A fresh one: main (A) checked out nowhere, feature (A-B), crew/x (A-C) in a worktree."""
+        self.n += 1
+        d = self.t / str(self.n)
+        r = d / "repo"
+        r.mkdir(parents=True)
+        g = lambda *a, at=r: self.sp.run(["git", "-C", str(at), *a], env=self.env, check=True, capture_output=True, text=True).stdout.strip()
+        g("init", "-q", "-b", "main")
+        (r / "f").write_text("a\n"); g("add", "f"); g("commit", "-q", "-m", "A")
+        g("checkout", "-q", "-b", "feature"); (r / "g").write_text("b\n"); g("add", "g"); g("commit", "-q", "-m", "B")
+        g("checkout", "-q", "-b", "parked", "main")
+        g("worktree", "add", "-q", "-b", "crew/x", str(d / "wt"), "main")
+        (d / "wt" / "h").write_text("c\n"); g("add", "h", at=d / "wt"); g("commit", "-q", "-m", "C", at=d / "wt")
+        if layout == "m":
+            g("worktree", "add", "-q", str(d / "m"), "main")
+        return {"repo": str(r), "wt": str(d / "wt"), "m": str(d / "m"), "feature": g("rev-parse", "feature")}
+
+    def main_ref(self, repo):
+        # The ref as it is, a symbolic one included: where does refs/heads/main point, if anywhere?
+        r = self.sp.run(["git", "-C", repo, "rev-parse", "-q", "--verify", "refs/heads/main^{commit}"], env=self.env, capture_output=True, text=True)
+        s = self.sp.run(["git", "-C", repo, "symbolic-ref", "-q", "refs/heads/main"], env=self.env, capture_output=True, text=True)
+        return (r.stdout.strip() or None, s.stdout.strip() or None)
+
+    @staticmethod
+    def where_checked_out(layout, template):
+        """Rows that move main by working where it's checked out (held on Live only); the rest name it."""
+        return (layout == "m" and "branch -f main" not in template) or bool(re.match(
+            r"git (checkout|switch) (--conflict merge )?main( &&|;)|git worktree add \.\./m2 main &&", template))
+
+    def case(self, layout, where, template, channel="live"):
+        p = self.repo(layout)
+        cmd = template.format(**p)
+        self.SETTINGS.write_text(json.dumps({"channel": channel, "live_branch": "main", "live_repo": p["repo"]}))
+        crewguard.HOOK_CWD = p[where]
+        held = rule(cmd)
+        before = self.main_ref(p["repo"])
+        self.sp.run(["bash", "-c", cmd], cwd=p[where], env=self.env, capture_output=True, text=True,
+                    stdin=self.sp.DEVNULL, timeout=60)
+        return cmd, held, before != self.main_ref(p["repo"])
+
+    def test_every_command_that_moves_the_followed_branch_is_held(self):
+        slipped, duds = [], []
+        for layout, where, template in self.MOVERS:
+            cmd, held, moved = self.case(layout, where, template)
+            if not moved:
+                duds.append(cmd)       # the table must stay honest: each of these has to really move it
+            elif not held:
+                slipped.append(cmd)
+        self.assertEqual(duds, [], "these didn't move main here, so they prove nothing")
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+
+    def test_commands_that_only_name_it_stay_free(self):
+        for layout, where, template in self.FREE:
+            for channel in ("live", "stable"):
+                cmd, held, moved = self.case(layout, where, template, channel)
+                self.assertFalse(moved, cmd)
+                self.assertIsNone(held, f"{cmd} ({channel})")
+
+    def test_on_stable_landing_by_hand_is_held_and_working_on_main_is_not(self):
+        """T136: with the Live channel off, every row that moves main by NAME is still held (it is a
+        landing without the click `pal land` needs); rows that work where main is checked out are free."""
+        slipped, held_work = [], []
+        for layout, where, template in self.MOVERS:
+            cmd, held, moved = self.case(layout, where, template, "stable")
+            if self.where_checked_out(layout, template):
+                if held:
+                    held_work.append(f"{cmd} -> {held}")
+            elif moved and held not in ("base-branch", "push"):   # (git push . x:main is the push rule's)
+                slipped.append(f"{cmd} -> {held}")
+        self.assertEqual(slipped, [], "landed by hand without being held:\n  " + "\n  ".join(slipped))
+        self.assertEqual(held_work, [], "ordinary work on a checked-out main was held:\n  " + "\n  ".join(held_work))
+
+    # A value that lets git carry on, for the options that take one (the sweeps below).
+    VALUES = {"jobs": "1", "depth": "1", "deepen": "1", "shallow-since": "2000-01-01", "upload-pack": "git-upload-pack",
+              "strategy": "ort", "strategy-option": "ours", "empty": "keep", "whitespace": "nowarn", "exec": "true",
+              "onto": "feature", "cleanup": "strip", "conflict": "merge", "trailer": "x:y", "negotiation-tip": "feature",
+              "negotiation-restrict": "feature", "negotiation-include": "feature", "filter": "blob:none", "log": "1",
+              "rebase": "false", "rebase-merges": "rebase-cousins", "recurse-submodules": "no", "track": "direct",
+              "server-option": "x", "shallow-exclude": "crew/x", "refmap": "", "reason": "x", "unified": "3",
+              "inter-hunk-context": "1", "C": "1", "gpg-sign": "", "signoff": "", "U": "3"}
+    # What each command does to main once its options are out of the way.
+    CORES = {"fetch": [". feature:main", ". +feature:refs/heads/main"], "pull": [". feature:main"],
+             "rebase": ["feature main"], "switch": ["-C main feature"], "checkout": ["-B main feature"],
+             "worktree add": ["-B main ../m2 feature"]}
+
+    def test_git_option_tables_match_the_installed_git(self):
+        """The gate's tables (crewguard.GIT_OPTS) say which options take a value. Checked against this
+        machine's git: every option git lists as taking one is in the table as such, and git itself
+        (run with the option and nothing after it) agrees. A newer git with a new value-taking option
+        fails here, with the line to add."""
+        import githelp
+        p = self.repo("")
+        wrong = []
+        for sub in githelp.SUBS:
+            want = githelp.table(sub, p["wt"], self.env)    # git's listing, corrected by what git does
+            have = crewguard.git_opts(sub)
+            self.assertGreater(len(want["V"]) + len(want["P"]), 5, f"couldn't read `git {sub} -h`")
+            for k in ("V", "O", "sv", "so"):
+                missing = sorted(want[k] - have[k])
+                if missing:
+                    wrong.append(f"git {sub}: {k} lacks {' '.join(missing)}")
+            for k in ("P", "sp"):
+                unknown = sorted(want[k] - have[k] - have["V" if k == "P" else "sv"] - have["O" if k == "P" else "so"])
+                if unknown:
+                    wrong.append(f"git {sub}: {k} lacks {' '.join(unknown)}")
+            # And the other way: nothing the table calls value-taking that git runs without one.
+            for name in sorted(have["V"] & (want["V"] | want["O"] | want["P"])):
+                if name not in want["V"]:
+                    wrong.append(f"git {sub}: --{name} takes no separate value, the table says it does")
+            for name in sorted(have["V"] & want["V"]):
+                if githelp.needs_value(sub, f"--{name}", p["wt"], self.env) is False and name not in crewguard.GIT_LASTARG:
+                    wrong.append(f"git {sub}: --{name} runs without a value, the table says it needs one")
+        self.assertEqual(wrong, [], "\n  " + "\n  ".join(wrong))
+
+    def test_no_option_value_hides_a_move(self):
+        """Codex T159: `git fetch --jobs 1 . topic:main` and `git rebase --empty keep topic main` moved
+        main unheld, the option's value read as the repository or as the upstream. Every option the
+        installed git lists for fetch, pull, rebase, switch, checkout and worktree add, in every
+        spelling (value as the next word, after =, abbreviated, short, stuck to the short letter),
+        put before what the command acts on, each run in a real repository with the channel on and off."""
+        import githelp
+        slipped, moved_n, ran = [], 0, 0
+        scratch = self.repo("")
+        for sub, cores in self.CORES.items():
+            t = githelp.table(sub, scratch["wt"], self.env)
+            every = t["V"] | t["O"] | t["P"]
+            def abbrev(name):
+                for n in range(3, len(name)):
+                    if sum(1 for o in every if o.startswith(name[:n])) == 1:
+                        return name[:n]
+                return None
+            forms = []
+            for name in sorted(t["V"]):
+                v = self.VALUES.get(name, "1")
+                forms += [f"--{name} {v}", f"--{name}={v}"] + ([f"--{abbrev(name)} {v}"] if abbrev(name) else [])
+            for c in sorted(t["sv"]):
+                v = self.VALUES.get(t["alias"].get(c, c), "1")
+                forms += [f"-{c} {v}", f"-{c}{v}"]
+            # The "value only after =" kind, with a word after it too: whether git takes that word
+            # is exactly what went wrong (git pull --jobs 1), so git decides here, by what moves.
+            for name in sorted(t["O"]):
+                v = self.VALUES.get(name, "1")
+                forms += [f"--{name}"] + ([f"--{name}={v}", f"--{name} {v}"] if v else []) + [f"--{name} 1"]
+            for c in sorted(t["so"]):
+                forms += [f"-{c}", f"-{c} 1", f"-{c}1"]
+            forms += [f"--{name}" for name in sorted(t["P"]) if name in ("verbose", "quiet", "force", "no-verify", "no-tags", "prune", "no-stat", "detach")]
+            for f in forms:
+                if "'" in f or '"' in f or re.search(r"(^|\s)-[cCbB](\s|$)|create|orphan|-[bB] ", f) and sub in ("switch", "checkout", "worktree add"):
+                    continue   # (these name the branch themselves: the core does that here)
+                for core in cores:
+                    for channel in ("live", "stable"):
+                        cmd, held, moved = self.case("", "wt", f"git {sub} {f} {core}", channel)
+                        ran += 1
+                        moved_n += moved and channel == "live"
+                        if moved and not held:
+                            slipped.append(f"{cmd} ({channel})")
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+        self.assertGreater(moved_n, 120, f"of {ran} commands, most must really move it (else the sweep proves little)")
+
+    def test_option_state_is_what_git_ends_up_with(self):
+        """Codex T164: `git branch --list --no-list -f main x` and `git rebase --root --no-root x main`
+        moved main unheld (the turned-off option still counted), and so did a first --refmap onto main
+        followed by a harmless second one (only the last was kept). Swept from git's own tables: every
+        option of these commands that git can turn off, turned on then off and off then on, and every
+        option that takes a value, given twice; in front of what the command acts on, each run in a
+        real repository (Stable: the always-on rule, which the Live rule only adds to)."""
+        import githelp
+        cores = {**self.CORES, "branch": ["-f main feature", "-M feature main", "-C feature main", "-D main"]}
+        scratch = self.repo("")
+        slipped, moved_n, ran = [], 0, 0
+        for sub, subcores in cores.items():
+            t = githelp.table(sub, scratch["wt"], self.env)
+            every = t["V"] | t["O"] | t["P"]
+            forms = []
+            for name in sorted(every):
+                if name.startswith("no-") or f"no-{name}" not in every or name in t["V"] and name.startswith("no-"):
+                    continue
+                on = f"--{name}" + (f" {self.VALUES.get(name, '1')}" if name in t["V"] else "")
+                forms += [f"{on} --no-{name}", f"--no-{name} {on}"]
+            for name in sorted(t["V"]):
+                v = self.VALUES.get(name, "1")
+                forms.append(f"--{name} {v} --{name} {v}")
+            for f in forms:
+                if sub in ("switch", "checkout", "worktree add") and re.search(r"--(create|force-create|orphan)\b", f):
+                    continue   # (these name the branch themselves: the core does that here)
+                for core in subcores:
+                    cmd, held, moved = self.case("", "wt", f"git {sub} {f} {core}", "stable")
+                    ran += 1
+                    moved_n += moved
+                    if moved and not held:
+                        slipped.append(cmd)
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+        self.assertGreater(moved_n, ran // 3, f"of {ran} commands, many must really move it (else the sweep proves little)")
+
+    def test_no_harmless_option_hides_a_move(self):
+        """Every way of writing the core commands with an option that changes nothing about what they
+        do, before or after the names: whatever really moves the branch is held (Codex T130)."""
+        noise = ["-v", "-q", "-vq", "--verbose", "--quiet", "--track", "--no-track", "-t", "--sort refname", "--sort=refname",
+                 "--format x", "--format=x", "--color", "--color=never", "--no-color", "--column", "--no-column", "-i",
+                 "--ignore-case", "--abbrev=7", "--no-abbrev", "--create-reflog", "--omit-empty", "--recurse-submodules",
+                 "--no-verbose", "--no-quiet", "--no-force", "--no-list", "-a", "-r", "--", "--trac", "--verb"]
+        cores = ["-f main feature", "--force main feature", "-M feature main", "-C feature main", "-D main", "-m main old",
+                 "-c -f feature main", "--move --force feature main"]
+        slipped, moved_n = [], 0
+        for n in noise:
+            for core in cores:
+                for template in (f"git branch {n} {core}", f"git branch {core} {n}" if n != "--" else None):
+                    if not template:
+                        continue
+                    for channel in ("live", "stable"):   # by name: held with the channel on or off (T136)
+                        cmd, held, moved = self.case("", "wt", template, channel)
+                        moved_n += moved and channel == "live"
+                        if moved and not held:
+                            slipped.append(f"{cmd} ({channel})")
+        self.assertEqual(slipped, [], "moved the followed branch without being held:\n  " + "\n  ".join(slipped))
+        self.assertGreater(moved_n, 250, "most of these really move it (else the table proves little)")
+
+
+class BaseBranch(unittest.TestCase):
+    """T136: `git update-ref refs/heads/main <commit>` landed on main with no click, while `pal land`
+    needed one. Always on, in every project: a base branch moved by name is held. What stays free:
+    making a branch that isn't there yet (a new repository's main), fetching it from a real remote,
+    and everything about other branches."""
+    SETTINGS = Path(TMP) / "crew-settings.json"
+
+    def setUp(self):
+        import subprocess
+        self.sp = subprocess
+        self.t = Path(pals_tmp.mkdtemp(prefix="pals-base-"))
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
+                    "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
+        self.SETTINGS.unlink(missing_ok=True)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.t, ignore_errors=True)
+        self.SETTINGS.unlink(missing_ok=True)
+        crewguard.HOOK_CWD = None
+
+    def git(self, at, *a):
+        return self.sp.run(["git", "-C", str(at), *a], env=self.env, check=True, capture_output=True, text=True).stdout.strip()
+
+    def new_repo(self, name, first="trunk"):
+        r = self.t / name
+        r.mkdir()
+        self.git(r, "init", "-q", "-b", first)
+        (r / "f").write_text("a\n"); self.git(r, "add", "f"); self.git(r, "commit", "-q", "-m", "A")
+        return r
+
+    def test_the_reported_command(self):
+        for cmd in ("git update-ref refs/heads/main abc1234", "git -C ~/Projects/x update-ref refs/heads/main abc1234 def5678",
+                    "git branch -f main crew/x", "git fetch . crew/x:main", "git update-ref refs/heads/master abc1234"):
+            self.assertEqual(rule(cmd), "base-branch", cmd)
+        for cmd in ("git update-ref refs/heads/crew/x abc1234", "git branch -f crew/x main", "git merge main", "git log main",
+                    "pal task note T1 'git update-ref refs/heads/main'", "grep -rn 'refs/heads/main' bin"):
+            self.assertIsNone(rule(cmd), cmd)
+        self.assertEqual(rule("pal land Builder#x"), "land", "the way to land is still its own rule")
+
+    def test_a_new_repository_may_make_its_main(self):
+        r = self.new_repo("fresh")
+        crewguard.HOOK_CWD = str(r)
+        for cmd in ("git branch -M main", "git checkout -b main", "git switch -c main", "git branch main"):
+            self.assertIsNone(rule(cmd), f"{cmd}: there is no main here yet")
+        self.assertEqual(rule("git branch -M main && git branch -f main HEAD~0"), "base-branch",
+                         "a line that makes it and then moves it gets no benefit of the doubt")
+        self.git(r, "branch", "main")
+        for cmd in ("git branch -M main", "git branch -f main trunk", "git switch -C main", "git update-ref refs/heads/main HEAD"):
+            self.assertEqual(rule(cmd), "base-branch", f"{cmd}: now there is one")
+        self.assertEqual(rule("git branch -D main && git branch main trunk"), "base-branch", "taking it away first doesn't make it new")
+        # Not known where it runs, or git pointed somewhere else: no benefit of the doubt.
+        other = self.new_repo("other")
+        crewguard.HOOK_CWD = str(other)
+        self.assertIsNone(rule("git branch -M main"))
+        self.assertEqual(rule(f"GIT_DIR={r}/.git git branch -f main trunk"), "base-branch")
+        self.assertEqual(rule(f"git --git-dir={r}/.git branch -f main trunk"), "base-branch")
+        self.assertEqual(rule(f"git -C {r} branch -f main trunk"), "base-branch", "git -C says where")
+        self.assertIsNone(rule(f"git -C {other} branch -f main trunk"))
+        crewguard.HOOK_CWD = None
+        self.assertEqual(rule("git branch -M main"), "base-branch")
+
+    def test_fetching_main_from_a_real_remote(self):
+        r = self.new_repo("r", "main")
+        crewguard.HOOK_CWD = str(r)
+        for cmd in ("git fetch origin main:main", "git pull origin main:main", "git fetch upstream +main:main"):
+            self.assertIsNone(rule(cmd), f"{cmd}: the remote's main, not a landing")
+        for cmd in ("git fetch . trunk:main", "git fetch ../other x:main", f"git fetch {self.t} x:main", "git pull . x:main"):
+            self.assertEqual(rule(cmd), "base-branch", cmd)
+        # On the Live channel the remote's main would be installed too: held there.
+        self.SETTINGS.write_text(json.dumps({"channel": "live", "live_branch": "main", "live_repo": str(r)}))
+        self.assertEqual(rule("git fetch origin main:main"), "live-branch")
+
+    def test_a_topics_recorded_base_counts(self):
+        shared = crewguard_home() / "shared.json"
+        had = shared.read_text() if shared.exists() else None
+        try:
+            shared.parent.mkdir(parents=True, exist_ok=True)
+            shared.write_text(json.dumps({"crew": {"bots": [{"name": "B", "worktrees": {"#x": {"branch": "crew/x", "base": "develop"}}}]}}))
+            self.assertEqual(rule("git update-ref refs/heads/develop abc1234"), "base-branch")
+            self.assertIsNone(rule("git update-ref refs/heads/staging abc1234"))
+        finally:
+            if had is None:
+                shared.unlink(missing_ok=True)
+            else:
+                shared.write_text(had)
+
+    def test_an_older_policy_gets_the_rule(self):
+        old = {**crewguard.DEFAULT, "defaults_version": 14,
+               "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] not in ("base-branch", "live-branch")]}
+        crewguard.save_json(crewguard.POLICY, old)
+        try:
+            self.assertEqual(rule("git update-ref refs/heads/main abc1234"), "base-branch")
+            self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+
+def crewguard_home():
+    import crewlib
+    return crewlib.HOME

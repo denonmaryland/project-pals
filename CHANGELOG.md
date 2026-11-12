@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **See your own changes live: the Live channel and Try it live.** For people who work on
+  Project Pals itself. About has an **Update channel** switch: on Live, your install follows `main`
+  in your own checkout. What you land is checked, installed and reloaded in place within seconds,
+  and a toast says what reloaded and whether the helper had to restart. Only the mods that changed
+  reload, so an open dialog elsewhere stays open. A build that doesn't come up is put back by
+  itself and held until `main` moves. Review has **Try it live**: a topic's branch runs in your
+  real install with an amber strip across the top, with **Back** and **Land on main** (only the
+  commit you looked at lands on that click). About and
+  `pal version` say which build is running (branch and commit), and **Back to stable** puts the
+  newest release back. All of it is your click; a pal can't switch the channel, start a trial or
+  install, and while Live is on a pal moving `main` by hand is held like a landing.
+- **Landing by hand needs your click too.** A pal moving `main` (or `master`, or a topic's base
+  branch) with `git update-ref`, `git branch -f` and the like is now held in your Inbox, the same
+  as `pal land`. Before, only `pal land` was. Ordinary work in a checkout that is on `main`, a new
+  repository's first `main`, and fetching `main` from a remote are not held.
+- **Land works wherever the project folder is.** Landing a topic's branch no longer needs the
+  project folder to be on `main`: when `main` isn't checked out anywhere, the merge is made without
+  touching a checkout.
+- **Installs reload only what changed.** The installer writes a file only when its content
+  differs, so an update or reinstall no longer reloads every mod.
 - **Handoff: hand a topic to another brain, and back.** `pal handoff "Pal#topic" --to codex` changes
   the brain in a topic and keeps everything else: the same tab, the same name, branch, desk cards,
   claimed tasks and room seats. The new brain starts with a short brief built from the board, git

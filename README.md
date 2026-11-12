@@ -82,7 +82,8 @@ Reports from other harnesses are welcome.
 ## The approval gate
 
 Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,
-merge or post on GitHub, deploy, send mail or webhooks, land a branch, run a repo's release script,
+merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
+moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
 tokens or the Desk's cards. The command waits in your Inbox until you click Approve.
 
@@ -234,6 +235,21 @@ at most, and every 10 minutes while About or the update dialog is open.
 
 From a terminal: `pal version` and `pal update check`. Installing and rolling back are buttons in
 Project Pals: they need your click, so a pal can't start one.
+
+### Working on Project Pals itself: the Live channel
+
+If you have a checkout of this repo and change Project Pals with your own pals, **About › Update
+channel › Live** makes your install follow your checkout's `main`: what you land is checked,
+installed and reloaded in place within seconds, and a toast says what reloaded. Only the mods that
+changed reload; the helper restarts only when its own code changed. A build that doesn't come up is
+put back by itself and held until `main` moves.
+
+Before landing, Review has **Try it live**: it runs a topic's branch in your real install, with an
+amber strip across the top saying so, and **Back** (what was running returns) and **Land on main**
+on it. **Back to stable** in About puts the newest release back.
+
+All of these are your click. A pal can't switch the channel, start a trial or install, and while
+Live is on, a pal moving `main` by hand is held for your approval like any landing.
 A first install has nothing to roll back to; to take it out again, use Uninstall (above).
 
 ## Releasing (maintainers)
