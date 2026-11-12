@@ -529,7 +529,15 @@ def create(kind, to, title, body="", *, frm, from_kind, proof="", **kw):
     import crewhelpers
     from crewlib import SHELL_NAME
     with locked("helpers-send"):
-        if crewhelpers.recheck(frm):
+        why = crewhelpers.recheck(frm)
+        if why and crewhelpers.strict():
+            # A strict helper sends in the owner's name or not at all (T170); bin/crew checks first, this
+            # is for a switch-off or a limit reached between that check and now.
+            crewhelpers.note_unverified(why, "strict: " + str(kw.get("via") or "send"))
+            e = DeskError(f"not sent: {why}. Nothing went out (strict).")
+            e.code = 4
+            raise e
+        if why:
             return _create(kind, to, title, body, frm=SHELL_NAME, from_kind="shell", proof="none", **{**kw, "relaying": None})
         return _create(kind, to, title, body, frm=frm, from_kind=from_kind, proof=proof, **kw)
 

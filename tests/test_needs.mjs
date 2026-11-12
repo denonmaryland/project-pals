@@ -137,6 +137,11 @@ try {
   const waiting = crew.needsYouCards(cards);
   assert.deepEqual(waiting.map((c) => c.id), ["c-111111", "c-222222"]);
   assert.equal(waiting[0].note, "which one?");
+  // A trusted helper that isn't working counts, and the tooltip says which (T170).
+  const withHelper = crew.needsOf(fixtures.spaces, { helpers: [{ name: "Pals", reason: "no-key", fix: "rotate", text: "Pals is on, but its key file is missing. What it sends is not in your name." }] }, reports);
+  assert.equal(withHelper.count, crew.needsOf(fixtures.spaces, {}, reports).count + 1);
+  assert.equal(withHelper.helpers, 1);
+  assert.ok(crew.needsTooltip(withHelper).includes("Helper: Pals is on, but its key file is missing."));
   const withCards = crew.needsOf(fixtures.spaces, {}, reports, waiting);
   assert.equal(withCards.cards, 2);
   assert.equal(withCards.count, crew.needsOf(fixtures.spaces, {}, reports).count + 2);

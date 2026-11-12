@@ -26,9 +26,10 @@ TRUSTED = f"[from {OWNER} via Pals, a trusted helper: normal work only]"
 SHELL = f"[from a shell on this computer, not verified as {OWNER}]"
 
 
-def helper(env, *args, name="Pals", key_file=None, outside=True, term=None):
+def helper(env, *args, name="Pals", key_file=None, outside=True, term=None, strict=False):
     """`PAL_HELPER=<name> pal …` from a plain shell (outside=True: not in a Herdr terminal)."""
-    e = {**env, **({"PAL_HELPER": name} if name else {}), **({"PAL_HELPER_KEY_FILE": str(key_file)} if key_file else {}), **({"HC_TERMINAL_ID": term} if term else {})}
+    e = {**env, **({"PAL_HELPER": name} if name else {}), **({"PAL_HELPER_KEY_FILE": str(key_file)} if key_file else {}), **({"HC_TERMINAL_ID": term} if term else {}),
+         **({"PAL_HELPER_STRICT": "1"} if strict else {})}
     code = (f"import sys, runpy; sys.path.insert(0, {str(BIN)!r}); import crewhelpers\n"
             + ("crewhelpers.inside_herdr = lambda *a, **k: None\n" if outside else "")
             + f"sys.argv = ['pal', *{list(args)!r}]\nrunpy.run_path({str(BIN / 'crew')!r}, run_name='__main__')")
@@ -151,7 +152,8 @@ class Sending(Base):
         self.assertTrue(text.startswith(SHELL), text)
         self.assertIn("key file is missing", r.stderr)
         self.assertEqual(card(self.env, cid)["from_kind"], "shell")
-        self.assertEqual([e["kind"] for e in log(self.data)], ["unverified", "switch", "unverified"])
+        # (… and, since T170, the notice that Pals is on but its key is gone: the owner hears it once.)
+        self.assertEqual([e["kind"] for e in log(self.data)], ["unverified", "switch", "unverified", "notice"])
 
     def test_switch_off_is_not_verified(self):
         self.on()
@@ -258,7 +260,7 @@ class Sending(Base):
         r = helper(self.env, "tell", "Helper#build", "n2")
         self.assertTrue(self.told(r)[1].startswith(SHELL), "past the limit it still arrives, as not verified")
         self.assertIn("which is the limit", r.stderr)
-        self.assertEqual(log(self.data)[-1]["kind"], "unverified")
+        self.assertEqual([e["kind"] for e in log(self.data)][-2:], ["unverified", "notice"], "sent as a shell's, and the owner is told once")
 
     def test_two_sends_at_the_same_instant_cant_both_pass_the_limit(self):
         """T122: the limit was counted, then the send recorded, with nothing holding the two together,
@@ -533,6 +535,208 @@ class KeysAtRest(Base):
             self.assertNotIn(key, out, what)
         self.assertGreater(tried, 0)
         self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "plain"))[1].startswith(TRUSTED))
+
+
+class StaysOn(Base):
+    """T170 (DeNon, 2026-11-11): only the owner's click turns a helper on or off, whatever is installed,
+    updated or cleaned up; and when a helper the owner left on stops working, or is off without the
+    owner's click, the owner is told once, with the fix: Home's notice (attention.json), the feed, the
+    record. The day before, the one-time carry-over left Pals off and nothing said so for 19 hours."""
+
+    def attention(self):
+        f = self.data / "crew-helpers" / "attention.json"
+        return json.loads(f.read_text()) if f.exists() else {}
+
+    def feed(self):
+        f = self.data / "crew-feed.jsonl"
+        return [e for e in (json.loads(l) for l in f.read_text().splitlines()) if e.get("kind") == "helper"] if f.exists() else []
+
+    def notices(self):
+        return [(e["helper"], e.get("reason")) for e in log(self.data) if e["kind"] == "notice"]
+
+    def old_build(self, enabled=True):
+        old = self.data / "crew-helper"
+        old.mkdir()
+        (old / "pals.key").write_text("ab" * 32 + "\n")
+        (old / "recent.json").write_text("[]")
+        st = json.loads((self.data / "crew-settings.json").read_text())
+        (self.data / "crew-settings.json").write_text(json.dumps({**st, "helper": {"name": "Pals", "enabled": enabled}}))
+        return old
+
+    def test_the_carry_over_runs_once_ever_and_says_so(self):
+        old = self.old_build()
+        info = json.loads(pal(self.env, "helpers", "--json").stdout)
+        self.assertEqual([(h["name"], h["on"]) for h in info["helpers"]], [("Pals", False)])
+        self.assertTrue((old / ".carried-over").exists())
+        # It's off and the owner didn't do that: one notice, with the fix.
+        att = self.attention()
+        self.assertEqual((att["Pals"]["reason"], att["Pals"]["fix"]), ("carried-over", "on"))
+        self.assertIn("not by you", att["Pals"]["text"])
+        self.assertEqual([(e["helper"], e["status"]) for e in self.feed()], [("Pals", "carried-over")])
+        self.assertEqual(self.notices(), [("Pals", "carried-over")])
+        for _ in range(3):   # asked again and again: still one notice
+            pal(self.env, "helpers", "health")
+        self.assertEqual(len(self.feed()), 1)
+        # The list goes missing later (a clean-up, a crash): the old build's helper is NOT carried over a second time.
+        for f in ("helpers.json", "helpers.json.bak"):
+            (self.data / "crew-helpers" / f).unlink()
+        self.assertEqual(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"], [])
+
+    def test_a_list_from_before_the_mark_is_marked_not_carried_over_again(self):
+        self.on()   # a list exists (as on a machine that carried over with the first version)
+        old = self.old_build()
+        pal(self.env, "helpers", "--json")
+        self.assertTrue((old / ".carried-over").exists())
+        self.assertTrue((old / "pals.key").exists(), "nothing was adopted: nothing was deleted")
+        self.assertTrue(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["on"], "Pals stays as the owner left it")
+
+    def test_the_owners_choice_either_way_ends_the_carry_over_notice(self):
+        self.old_build()
+        pal(self.env, "helpers", "--json")
+        self.assertIn("Pals", self.attention())
+        self.assertEqual(owner(self.env, self.data, "settings", "trust-helper", "Pals", "off").returncode, 0)   # "Leave it off"
+        self.assertEqual(self.attention(), {})
+        self.assertFalse(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["carried_over"])
+        pal(self.env, "helpers", "health")
+        self.assertEqual(self.attention(), {}, "off by the owner's click is the owner's business")
+        self.on()
+        self.assertEqual(self.attention(), {})
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "on again"))[1].startswith(TRUSTED))
+
+    def test_a_damaged_or_deleted_list_comes_back_and_the_helper_stays_on(self):
+        self.on()
+        f = self.data / "crew-helpers" / "helpers.json"
+        for wreck in (lambda: f.write_text("{ not json"), lambda: f.write_text("[]"), lambda: f.unlink()):
+            wreck()
+            self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "still me"))[1].startswith(TRUSTED))
+            self.assertTrue(json.loads(f.read_text())["helpers"]["Pals"]["on"])
+        self.assertEqual([n for n in self.notices() if n[1] == "restored"], [("The list of helpers", "restored")] * 3)
+        self.assertEqual(self.attention(), {})
+        # A list the owner emptied on purpose (Remove) stays empty: the backup is emptied with it.
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "off")
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "remove")
+        f.unlink()
+        self.assertEqual(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"], [])
+
+    def test_a_key_that_stops_working_is_said_once_with_its_fix_and_clears(self):
+        self.on()
+        self.assertEqual(self.attention(), {})
+        (self.keys / "pals.key").unlink()
+        out = pal(self.env, "helpers", "health").stdout
+        self.assertIn("Pals is on, but its key file is missing", out)
+        att = self.attention()["Pals"]
+        self.assertEqual((att["reason"], att["fix"], att["unverified"]), ("no-key", "rotate", 0))
+        # Each send that doesn't verify is counted on the same notice; the feed isn't told again.
+        for i in (1, 2):
+            self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", f"lost {i}"))[1].startswith(SHELL))
+            self.assertEqual(self.attention()["Pals"]["unverified"], i)
+        self.assertEqual([(e["helper"], e["status"]) for e in self.feed()], [("Pals", "no-key")])
+        self.assertIn("attention", json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0])
+        # A key the owner's user can't trust (readable by others) is another reason, said as such.
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "rotate")
+        self.assertEqual(self.attention(), {})
+        (self.keys / "pals.key").chmod(0o644)
+        pal(self.env, "helpers", "health")
+        self.assertEqual(self.attention()["Pals"]["reason"], "key-unreadable")
+        (self.keys / "pals.key").chmod(0o600)
+        pal(self.env, "helpers", "health")
+        self.assertEqual(self.attention(), {})
+        self.assertEqual([e["status"] for e in self.feed()], ["no-key", "ok", "key-unreadable", "ok"])
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "back"))[1].startswith(TRUSTED))
+
+    def test_off_by_the_owner_is_quiet_however_much_the_helper_sends(self):
+        self.on()
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "off")
+        for i in range(3):
+            self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", f"anyway {i}"))[1].startswith(SHELL))
+        self.assertEqual(self.attention(), {})
+        self.assertEqual(self.feed(), [])
+        self.assertEqual([e["kind"] for e in log(self.data)][-3:], ["unverified"] * 3, "the record still has each one")
+        # Nor is a pal presenting the name, or someone presenting a key that isn't Pals's, the helper's fault.
+        self.on()
+        helper(self.env, "tell", "Helper#build", "a pal", term="tW", outside=False)
+        bad = self.root / "bad.key"
+        bad.write_text("palkey_" + "Z" * 43)
+        bad.chmod(0o600)
+        helper(self.env, "tell", "Helper#build", "wrong key", key_file=bad)
+        self.assertEqual(self.attention(), {})
+
+    def test_the_hourly_limit_is_said_and_is_the_owners_to_change(self):
+        self.on()
+        for r in (pal(self.env, "settings", "trust-helper", "Pals", "limit", "500"), pal(self.env, "settings", "trust-helper", "Pals", "limit", "500", term="tW"),
+                  helper(self.env, "settings", "trust-helper", "Pals", "limit", "500")):
+            self.assertNotEqual(r.returncode, 0)
+        for bad in ("0", "501", "many", "-3"):
+            self.assertNotEqual(owner(self.env, self.data, "settings", "trust-helper", "Pals", "limit", bad).returncode, 0, bad)
+        r = owner(self.env, self.data, "settings", "trust-helper", "Pals", "limit", "2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"][0]["per_hour"], 2)
+        for i in range(2):
+            self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", f"n{i}"))[1].startswith(TRUSTED))
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "n2"))[1].startswith(SHELL))
+        att = self.attention()["Pals"]
+        self.assertEqual((att["reason"], att["fix"]), ("limit", None))
+        self.assertIn("limit of 2 messages an hour", att["text"])
+        self.assertEqual(owner(self.env, self.data, "settings", "trust-helper", "Pals", "limit", "10").returncode, 0)
+        self.assertEqual(self.attention(), {})
+        self.assertTrue(self.told(helper(self.env, "tell", "Helper#build", "n3"))[1].startswith(TRUSTED))
+
+    def test_a_strict_helper_sends_in_the_owners_name_or_not_at_all(self):
+        cards = lambda: py(self.env, "import crewdesk; print(json.dumps(len(list(crewdesk.cards(where=('open', 'done'))))))")
+        tasks = lambda: len(json.loads((self.data / "crew-tasks.json").read_text())["tasks"]) if (self.data / "crew-tasks.json").exists() else 0
+        # Not accepted (no such helper yet; then switched off): exit 4, a line that says why, nothing sent.
+        for prepare, why in ((lambda: None, "no helper called Pals"), (lambda: (self.on(), owner(self.env, self.data, "settings", "trust-helper", "Pals", "off")), "trusted link is off")):
+            prepare()
+            for args in (["tell", "Helper#build", "x"], ["desk", "send", "Helper#build", "x"], ["task", "add", "x", "--for", "Helper#build"], ["ask", "Helper#build", "x", "--timeout", "1"]):
+                before = (cards(), tasks())
+                r = helper(self.env, *args, strict=True)
+                self.assertEqual(r.returncode, 4, (args, r.stderr))
+                self.assertIn("not sent:", r.stderr)
+                self.assertIn(why, r.stderr)
+                self.assertEqual((cards(), tasks()), before, args)
+        self.assertTrue(log(self.data)[-1]["via"].startswith("strict: "))
+        # Accepted: strict changes nothing.
+        self.on()
+        r = helper(self.env, "tell", "Helper#build", "fine", strict=True)
+        self.assertTrue(self.told(r)[1].startswith(TRUSTED))
+        # Without strict, as before: it goes as a shell's, exit 0, with the note.
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "off")
+        r = helper(self.env, "tell", "Helper#build", "loose")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("not sent in Dee Tester's name", r.stderr)
+        # Strict means nothing to someone who isn't presenting as a helper.
+        e = {**self.env, "PAL_HELPER_STRICT": "1"}
+        self.assertEqual(pal(e, "tell", "Helper#build", "just a shell").returncode, 0)
+
+    def test_a_strict_helper_switched_off_between_the_check_and_the_send_sends_nothing(self):
+        self.on()
+        code = ("import os, crewhelpers, crewdesk\ncrewhelpers.inside_herdr = lambda *a, **k: None\n"
+                "os.environ['PAL_HELPER'] = 'Pals'\nos.environ['PAL_HELPER_STRICT'] = '1'\n"
+                "who = crewdesk.sender([])\nassert who['from_kind'] == 'helper', who\ncrewhelpers.switch('Pals', False)\n"
+                "try:\n    crewdesk.create('tell', 'Helper#build', 'late', frm=who['from'], from_kind=who['from_kind'], proof=who['proof'], via='pal tell')\n"
+                "    print(json.dumps('sent'))\nexcept crewdesk.DeskError as e:\n    print(json.dumps([str(e), getattr(e, 'code', None)]))")
+        said, exit_code = py(self.env, code)
+        self.assertIn("Nothing went out (strict)", said)
+        self.assertEqual(exit_code, 4)
+
+    def test_asking_after_a_helpers_health_is_anyones_and_changes_no_switch(self):
+        self.on()
+        before = (self.data / "crew-helpers" / "helpers.json").read_text()
+        for term in (None, "tW"):
+            r = pal(self.env, "helpers", "health", term=term)
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, "Pals: on, its key works"))
+        self.assertEqual(json.loads(pal(self.env, "helpers", "health", "--json").stdout)["attention"], {})
+        self.assertEqual((self.data / "crew-helpers" / "helpers.json").read_text(), before)
+        # crewd looks when it starts (an update restarts it) and each hour; the installer after each install.
+        self.assertIn("crewhelpers.check()", (BIN / "crewd").read_text())
+        self.assertIn('"$bin/pal" helpers health', (BIN.parent / "install.sh").read_text())
+        # … and neither the installer nor the updater writes the list or the keys.
+        updater, installer = (BIN / "crewupdate.py").read_text(), (BIN.parent / "install.sh").read_text()
+        self.assertNotIn("crew-helpers", updater, "an update or a roll back doesn't know the helpers' list")
+        self.assertNotIn("helpers/", updater, "… nor their keys")
+        mentions = [l for l in installer.splitlines() if "crew-helpers" in l or ".config/project-pals" in l]
+        self.assertEqual(len(mentions), 1, mentions)   # only the "is there a list?" test before asking after its health
+        self.assertIn('[[ -f "$home/data/crew-helpers/helpers.json"', mentions[0])
 
 
 class Forgery(Base):

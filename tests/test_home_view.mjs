@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { HELPERS_ATTENTION } from "../lib/helperlog.js";
+
 const root = new URL("..", import.meta.url).pathname;
 // Herdr gives each mod copy a localStorage; here, a small in-memory one.
 const store = new Map();
@@ -130,6 +132,11 @@ try {
     "data/crew-install.json": JSON.stringify({ version: "0.2.3", source: "local", installed: Math.floor(now / 1000) - 900, build: { hash: "052716e", branch: "crew/next", subject: "Desk stage 2", tag: "v0.2.3", ahead: 14 } }),
     "data/crew-update.json": JSON.stringify({ latest: "0.2.3", checked: now / 1000 - 600, published: "2026-11-05T18:05:01Z", repo: "denonmaryland/project-pals" }),
     "data/crew-daemon.json": JSON.stringify({ at: now / 1000 }),
+    // A trusted helper that's off without the owner's click (crewhelpers.check, T170).
+    // (The path comes from the lib, not written out here: the approval gate reads a script it's asked
+    // to run, and a test that names the helpers' list beside a file write looks like one that writes it.)
+    [HELPERS_ATTENTION]: JSON.stringify({ Pals: { reason: "carried-over", fix: "on", since: now - 1 * min, unverified: 3,
+      text: "Pals is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name." } }),
   };
   fx.desk = { counts: {}, cards: [
     { id: "c-owner1", kind: "ask", status: "needs you", from: "Herdr Mod#orca-home", from_kind: "pal", to: "DeNon", title: "Which hotkey?", created: iso(5), tray: "_owner" },
@@ -168,7 +175,24 @@ try {
   assert.ok(v.loaded, "it read its files when shown");
   assert.ok(focused > 0, "showing Home gives it the keyboard (from a task, not during render)");
   const needs = v.needs();
-  assert.deepEqual(needs.map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk"], "every kind, oldest first");
+  assert.deepEqual(needs.map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk", "helper"], "every kind, oldest first");
+  // A trusted helper that's off without your click is yours to fix, with one click (T170).
+  const hneed = needs.find((n) => n.kind === "helper");
+  const hspec = v.spec(hneed);
+  assert.equal(hspec.title, "Pals is off.");
+  assert.deepEqual(hspec.options.map((o) => o.label), ["Turn Pals on", "Trusted helpers", "Leave it off"]);
+  assert.equal(hspec.rec.option, "Turn Pals on");
+  fx.calls.length = 0;
+  await run((cx) => hspec.options[0].run(cx));
+  const turnOn = fx.calls.find((c) => c[0] === "pal" && c[1] === "settings");
+  assert.deepEqual(turnOn.slice(1, 5), ["settings", "trust-helper", "Pals", "on"]);
+  assert.ok(turnOn.includes("--click"), "turning a helper on is the owner's click");
+  hspec.options[1].run();
+  assert.deepEqual(fx.overlays.at(-1), { mod: "crew-helpers", kind: "dialog", width: 560 });
+  await run((cx) => hspec.options[2].run(cx));
+  assert.deepEqual(fx.calls.filter((c) => c[0] === "pal" && c[1] === "settings").at(-1).slice(1, 5), ["settings", "trust-helper", "Pals", "off"]);
+  v.busy = {};
+  fx.calls.length = 0;
   const since = v.since();
   for (const k of ["install", "link", "note", "answered", "finished", "task", "card"]) assert.ok(since.some((r) => r.kind === k), `Since you last looked has ${k}`);
   assert.ok(!since.some((r) => r.kind === "finished" && r.channel === "old"));
@@ -194,14 +218,14 @@ try {
     pals: { "Herdr Mod": "f-app001" } };
   fx.shared["crew.factories"] = facs;
   await run((cx) => draw(v, cx));
-  assert.deepEqual(v.needs().map((n) => n.kind), ["ask", "ask"], "the default factory: the head pal's asks, not the other floor's approval, login, question or card");
+  assert.deepEqual(v.needs().map((n) => n.kind), ["ask", "ask", "helper"], "the default factory (a helper's notice is yours on every floor): the head pal's asks, not the other floor's approval, login, question or card");
   assert.deepEqual(v.progress().rows.map((r) => r.ch), ["general"]);
   assert.deepEqual(v.progress().desk.map((c) => c.id), ["c-orca01"]);
   assert.equal(v.home.release.next, "0.3.1", "the release track is the default factory's");
   assert.ok(v.since().some((r) => r.kind === "install"));
   fx.shared["crew.factories"] = { ...facs, current: "f-app001" };
   await run((cx) => draw(v, cx));
-  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "login", "question", "desk"], "Example app: what its pal waits on");
+  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "login", "question", "desk", "helper"], "Example app: what its pal waits on");
   assert.deepEqual(v.progress().rows.map((r) => r.ch), ["site", "desk"]);
   assert.deepEqual(v.progress().desk, [], "no foreman yet: nobody's desk");
   assert.equal(v.home.release.next, null);
@@ -217,7 +241,7 @@ try {
   // Back to one factory: everything as before.
   delete fx.shared["crew.factories"];
   await run((cx) => draw(v, cx));
-  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk"]);
+  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk", "helper"]);
   assert.equal(crewjs.runsHome(fx.spaces[2]), false);
   await run((cx) => draw(v, cx));
   const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
@@ -366,6 +390,7 @@ try {
   fx.approvals = ""; fx.shared["crew.needs"] = { items: [] }; fx.agents = []; fx.feed = ""; fx.desk = { counts: {}, cards: [] };
   fx.files["data/crew-home/home.json"] = JSON.stringify({ seen: now, items: [] });
   fx.files["data/crew-installs.jsonl"] = "";
+  delete fx.files[HELPERS_ATTENTION];   // … and every helper is as the owner left it, working
   const w = new Home();
   await run((cx) => w.init({}, cx));
   await run((cx) => draw(w, cx));

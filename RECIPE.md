@@ -1457,6 +1457,25 @@ switches a helper on by name. It is never the owner's click.
   appears once there's anything; the sheet's list): every send in the owner's name (who, to whom,
   the title, the card), every send that went as "not verified" and why, every refused try (amber),
   and every switch change. Never a key.
+- **Only the owner's click turns a helper on or off.** No install, update, roll back or clean-up
+  changes a switch or a key (the installer and updater never write the list or the keys; the list
+  keeps a backup beside it and comes back from it if it's damaged or deleted). The installer's last
+  lines say where each helper stands ("trusted helper: Pals: on, its key works").
+- **A helper that isn't working is said out loud, once.** When a helper the owner left on can't be
+  used (its key is missing, unreadable or not its own; it has reached its hourly limit), or one is
+  off without the owner's click (the one-time carry-over), Home shows a **Helper** card under Needs
+  you: what's wrong, since when, how many messages have arrived "not verified" since, and the fix
+  as a button (**Turn Pals on** or **Rotate key**), **Trusted helpers**, and **Leave it off** /
+  **Switch Pals off**. One card per helper, not one per message; it counts in the sidebar's "need
+  you"; `pal feed` gets a line when it starts and when it clears; the sheet's row shows the same
+  sentence. Looked at after every switch change and install, when crewd starts (so after every
+  update) and each hour, and whenever a send in a helper's name doesn't verify. A helper the owner
+  switched off is quiet however much it sends (the record keeps each try).
+- **The hourly limit is a setting** (20 by default, 5 to 500): −/+ beside Rotate key in the sheet,
+  `pal settings trust-helper <name> limit N` with the click.
+- **A strict helper** (`PAL_HELPER_STRICT=1`) sends in the owner's name or not at all: a send that
+  isn't accepted exits 4 with "not sent: <why>" and nothing goes out, no card and no task. Without
+  it, as before: the message goes as a shell's, exit 0, with the reason on stderr.
 - **A card edited after sending**, or one that claims a helper by hand, reads `[claims to be from
   <owner> via <name>, unverified …]`; a body line that copies any header is quoted and barred.
 - **Pals are told** (the primer, the pal-desk skill, the head pal's brief): a helper's card is the
@@ -1464,8 +1483,9 @@ switches a helper on by name. It is never the owner's click.
   owner, never changes a mission, settings or AGENTS.md.
 
 Data: `data/crew-helpers/helpers.json` (`{helpers: {name: {on, sha256, made, rotated, switched,
-last_used, per_hour}}}`: the key's fingerprint, never the key) and `log.jsonl`, both 0600, written
-only by `pal` (bin/crewhelpers.py). The key itself is `~/.config/project-pals/helpers/<slug>.key`
+last_used, per_hour}}}`: the key's fingerprint, never the key), its copy `helpers.json.bak`,
+`log.jsonl` and `attention.json` (`{name: {reason, text, fix, since, unverified}}`: the helpers that
+aren't working, which Home reads), all 0600, written only by `pal` (bin/crewhelpers.py). The key itself is `~/.config/project-pals/helpers/<slug>.key`
 (0600 in a 0700 folder; a NUL byte, then `palsealed1:<slug>` and the key, `palkey_` + 43 characters,
 encrypted with `systemd-creds --user`; plain after the NUL byte where that isn't available): outside
 the data folder, so a search of data never meets one, and sealed, so a read from higher up shows
@@ -1824,6 +1844,19 @@ record; the owner turns it on again in the sheet.
   started together both passed a limit of one. `crewdesk.create` takes the `helpers-send` lock,
   checks the key and the count again (`crewhelpers.recheck`), writes the card and the record, and
   only then lets go; a send that no longer passes goes as a shell's.
+- **A carry-over that switched a helper off told nobody** (2026-11-11: Pals was off for 19 hours
+  after the reinstall, and only the record knew). Two rules came out of it. A migration never
+  changes a switch: if keys must be remade it remakes them in place. And anything that leaves a
+  helper unusable raises the Helper card. The carry-over itself is marked done in the old folder
+  (`data/crew-helper/.carried-over`), so a list that later goes missing can't trigger it again.
+- **Turning a helper back on needs the app, on purpose.** A helper that could switch itself on
+  wouldn't be a switch, so there is no command for it without the click, and relayed taps don't
+  reach it either. A helper can find out where it stands (`pal helpers check`, strict mode's exit
+  4) and tell the owner; the owner still opens Herdr once.
+- **Running a test file directly is held by the gate** (`node tests/test_home_view.mjs`, like
+  `node tests/test_desk_view.mjs` before it): the gate reads a script it's asked to run, and a test
+  that names a guarded folder beside a file write looks like one that writes there. Run them the
+  way the preflight does (`for t in tests/*.mjs; do node "$t"; done`, `python3 -m unittest`).
 - **The helpers' mod and its data folder share a name** (`crew-helpers`), like the Desk's: the gate
   treats `mods/crew-helpers/…` as code and `data/crew-helpers/…` as the list.
 - **Turning a helper on needs the app.** `pal settings trust-helper <name> on` wants a click
@@ -1882,6 +1915,11 @@ record; the owner turns it on again in the sheet.
   accepted, `pal approve`, `pal settings …`, `pal home answer|done|drop|park` and the rest of the
   owner's commands are refused and each try is in the record (`tests/test_helpers.py`,
   `tests/test_guard.py` HelperKeys, `tests/test_helperlog.mjs`, the mod's `keys.test.ts`).
+- With Pals on, `./install.sh` again leaves `helpers.json` and the key byte for byte and ends with
+  "trusted helper: Pals: on, its key works". Delete the key file: `pal helpers health` says "Pals
+  is on, but its key file is missing", Home shows one Helper card with Rotate key, `pal feed` has
+  one line, and Rotate key clears all three. With `PAL_HELPER_STRICT=1` and Pals switched off, `pal
+  tell` exits 4 and no card is made (`tests/test_helpers.py` StaysOn, `tests/test_uninstall.py`).
 - `./release X.Y.Z "notes"` from a plain shell exits 3 with a request in the Inbox and changes
   nothing; after Approve the same line goes on to the checks; `--dry-run` asks nobody. A plain
   shell's `pal home done <a pal's ask>` is refused; the asker's is shown as Withdrawn

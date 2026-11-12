@@ -4,7 +4,7 @@
 // Run: node tests/test_helperlog.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk } from "../lib/helperlog.js";
+import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperNeed } from "../lib/helperlog.js";
 
 const root = new URL("..", import.meta.url).pathname;
 const read = (p) => readFileSync(root + p, "utf8");
@@ -52,6 +52,28 @@ assert.equal(logRow({ kind: "switch", helper: "Pals", action: "on" }).tone, "qui
 // A long title or command is cut, never the whole row lost.
 assert.ok(logRow({ ...sent, title: "x".repeat(400) }).rest.length <= 120);
 assert.ok(logRow({ ...refused, command: "pal " + "y".repeat(400) }).bold.length < 80);
+
+// ── a helper that isn't working (T170): the record's line, and Home's card ──
+assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "no-key", text: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key." }),
+  { bold: "Pals is not working", rest: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key.", tone: "warn", card: null });
+assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "ok", text: "is working again" }), { bold: "Pals is working again", rest: "what it sends is in your name again", tone: "quiet", card: null });
+assert.equal(logRow({ kind: "notice", helper: "The list of helpers", reason: "restored", text: "was unreadable and was put back from its backup copy" }).bold, "The list of helpers");
+const carriedOver = { name: "Pals", reason: "carried-over", fix: "on", since: NOW - 19 * H, unverified: 3,
+  text: "Pals is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name." };
+const need = helperNeed(carriedOver, NOW);
+assert.equal(need.title, "Pals is off.");
+assert.equal(need.sub, "An earlier build's helper was carried over switched off, not by you. What it sends is not in your name. · since 19h ago · 3 messages since then arrived not verified");
+assert.deepEqual(need.fix, { label: "Turn Pals on", action: "on", does: "Makes its key; what it sends is in your name again" });
+assert.equal(need.off.label, "Leave it off");
+const noKey = helperNeed({ name: "Wabi", reason: "no-key", fix: "rotate", since: NOW - MIN, unverified: 1, text: "Wabi is on, but its key file is missing, or is a link. What it sends is not in your name until it has a new key." }, NOW);
+assert.equal(noKey.title, "Wabi is on, but its key file is missing, or is a link.");
+assert.match(noKey.sub, /1 message since then arrived not verified$/);
+assert.equal(noKey.fix.action, "rotate");
+assert.equal(noKey.off.label, "Switch Wabi off");
+const limit = helperNeed({ name: "Pals", reason: "limit", fix: null, since: NOW, unverified: 0, text: "Pals reached its limit of 20 messages an hour. The rest arrive not verified until the hour passes." }, NOW);
+assert.equal(limit.fix, null);
+assert.equal(limit.off, null, "at its limit there's nothing to switch: the sheet has the setting");
+assert.equal(helperNeed({ name: "X" }, NOW).title, "X isn't working.");
 
 // ── for Home ──
 const old = { ...sent, at: NOW - 30 * H, card: "c-000001" };
@@ -171,6 +193,20 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
     assert.ok(texts.includes('PAL_HELPER=Pals pal tell "<Pal>" "…"'));
     assert.ok(texts.includes("Pals tried: home answer h-e8c822 Release today") && texts.includes("Pals told Orca#ops"));
     assert.ok(!texts.some((t) => /palkey_/.test(t)));
+    // The hourly limit, 5 at a time, your click; a helper that isn't working says why in its row.
+    await run((cx) => clicks.get("th-lim-up-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 6), ["settings", "trust-helper", "Pals", "limit", "25"]);
+    assert.ok(palCalls().at(-1).includes("--click"));
+    fx.info = { ...fx.info, helpers: [{ ...pals, per_hour: 5, attention: { reason: "limit", text: "Pals reached its limit of 5 messages an hour." } }, fx.info.helpers[1]] };
+    await run((cx) => v.load(cx));
+    await draw(v);
+    assert.ok(texts.includes("Pals reached its limit of 5 messages an hour.") && texts.includes("5/h"));
+    const n0 = palCalls().length;
+    await run((cx) => clicks.get("th-lim-dn-0")(null, cx));
+    assert.equal(palCalls().length, n0, "5 an hour is the floor: the button does nothing");
+    fx.info = { helpers: [pals, { name: "Wabi", on: false, key: null, key_there: false, sent: 0, refused: 0 }], log: [refused, sent], max: 8 };
+    await run((cx) => v.load(cx));
+    await draw(v);
     // Off, rotate: one click each.
     await run((cx) => clicks.get("th-sw-0")(null, cx));
     assert.deepEqual(palCalls().at(-1).slice(1, 5), ["settings", "trust-helper", "Pals", "off"]);

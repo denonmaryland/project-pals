@@ -56,6 +56,13 @@
   over switched **off**, and its old key is deleted. That build accepted a request without any key
   and could be used by a pal, so turn Pals on again in Trusted helpers when you want it; your
   assistant's `pal --as-helper …` line keeps working after that.
+- **A trusted helper stays as you left it, and you're told if it stops working.** Only your click
+  turns a helper on or off: installs, updates and Roll back never touch its switch or its key. If
+  a helper you left on can't be used (its key is missing or unreadable, it has reached its hourly
+  limit), or one is off without your click, Home shows it under Needs you with the fix as a button,
+  and `pal feed` says so. The hourly limit is now a setting in Trusted helpers. A helper can ask to
+  be strict (`PAL_HELPER_STRICT=1`): then a message that wouldn't go in your name isn't sent at
+  all, and the helper gets a clear error to pass on to you.
 - **Releases need your click from any terminal.** `./release` used to be held only when a pal ran
   it. Now the script itself asks: a request in your Inbox, then the same command once more after
   you approve. `./release X.Y.Z --dry-run` runs every check and changes nothing.

@@ -181,6 +181,30 @@ class Uninstall(unittest.TestCase):
         for gone in ("crew-install.json", "crew-footprint.json", "crew-originals"):
             self.assertFalse((data / gone).exists(), gone)
 
+    def test_an_install_over_an_install_keeps_a_helpers_switch_and_key_and_says_where_it_stands(self):
+        """T170: only the owner's click turns a helper on or off. A reinstall (how every local update
+        lands) leaves the list and the key byte for byte, and its last lines say the helper works; after
+        an uninstall the key is gone (on purpose), and the next install says that too, out loud."""
+        self.sb.install()
+        pal = str(self.sb.home / ".local" / "bin" / "pal")
+        args = ["settings", "trust-helper", "Pals", "on"]
+        self.sb.run(pal, *args, "--click", self.sb.click(args))
+        data = self.sb.app / "data" / "crew-helpers"
+        key = self.sb.home / ".config" / "project-pals" / "helpers" / "pals.key"
+        before = ((data / "helpers.json").read_bytes(), key.read_bytes())
+        out = self.sb.install().stdout
+        self.assertIn("trusted helper: Pals: on, its key works", out)
+        self.assertEqual(((data / "helpers.json").read_bytes(), key.read_bytes()), before)
+        self.assertEqual(json.loads((data / "attention.json").read_text()) if (data / "attention.json").exists() else {}, {})
+        # Uninstalled (the owner's click) and installed again: the switch still says on, the key is gone, and it's said.
+        self.sb.uninstall()
+        self.assertFalse(key.exists())
+        out = self.sb.install().stdout
+        self.assertIn("trusted helper: Pals is on, but its key file is missing", out)
+        att = json.loads((data / "attention.json").read_text())
+        self.assertEqual((att["Pals"]["reason"], att["Pals"]["fix"]), ("no-key", "rotate"))
+        self.assertTrue(json.loads((data / "helpers.json").read_text())["helpers"]["Pals"]["on"], "no install switches a helper off")
+
     def test_an_install_takes_out_the_unreviewed_builds_helper_module(self):
         """Build 7692987 left crewhelper.py (its weak check) in the library folder; the installer only
         copies files in, so it has to name what it retires (as it does crewprompt.py)."""

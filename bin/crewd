@@ -168,6 +168,15 @@ class Crewd:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
             except Exception:
                 log("approval tidy failed:\n" + traceback.format_exc())
+            # Trusted helpers: is each one as the owner left it, and working? At start (an update restarts
+            # crewd, so this is "right after every update") and hourly; Home shows what isn't (T170).
+            if time.time() - getattr(self, "last_helper_check", 0) > 3600:
+                self.last_helper_check = time.time()
+                try:
+                    import crewhelpers
+                    crewhelpers.check()
+                except Exception:
+                    log("helper check failed:\n" + traceback.format_exc())
         minute = time.strftime("%Y-%m-%d %H:%M")
         if minute != self.last_minute:
             self.last_minute = minute

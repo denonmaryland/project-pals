@@ -47,7 +47,7 @@ import {
   severalFactories, currentFactory, inFactory, homeItemShown,
   withoutChief, welcomePending,
 } from "./crew.js";
-import { logRow, helperRows, helperToday } from "./helperlog.js";
+import { logRow, helperRows, helperToday, helperNeed } from "./helperlog.js";
 import { welcomeView, welcomeKey } from "./welcome.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -183,8 +183,10 @@ export default class CrewHome extends View {
     }
     for (const p of this.ops.proposals ?? []) out.push({ key: `p-${p.id}`, kind: "proposal", at: p.at, pal: p.pal ?? p.by, p });
     for (const [term, st] of Object.entries(this.ops.stalled ?? {})) out.push({ key: `s-${term}`, kind: "stuck", at: st.since, pal: st.bot, st });
+    // A trusted helper that isn't working, or is off without your click (T170): yours whichever factory shows.
+    for (const h of this.ops.helpers ?? []) out.push({ key: `th-${h.name}`, kind: "helper", at: h.since, pal: h.name, h });
     // Home items were filtered on load; everything else goes by its pal.
-    return out.filter((n) => n.kind === "ask" || n.kind === "login" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
+    return out.filter((n) => n.kind === "ask" || n.kind === "login" || n.kind === "helper" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
   }
 
   since() {
@@ -323,6 +325,16 @@ export default class CrewHome extends View {
       sub = `${p.id}${p.note ? ` · ${clip(p.note, 120)}` : ""}`;
       acts = [B("no", "Decline", (cx) => this.act(n.key, ["proposal", "decline", p.id], "Declined", cx)), div().w(10).flex_none(),
         B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { primary: true })];
+    } else if (n.kind === "helper") {
+      const h = n.h, hn = helperNeed(h);
+      const sheet = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
+      const set = (what, said) => (cx) => this.act(n.key, ["settings", "trust-helper", h.name, what], said, cx);
+      tag = this.tag(d, "Helper", d.warnText);
+      title = hn.title;
+      sub = hn.sub;
+      acts = [hn.fix ? B("fix", hn.fix.label, set(hn.fix.action, hn.fix.action === "on" ? `${h.name} is trusted` : `${h.name} has a new key`), { primary: true }) : null,
+        B("sheet", "Trusted helpers", sheet, { primary: !hn.fix }),
+        hn.off ? B("off", hn.off.label, set("off", `${h.name} is off`)) : null].filter(Boolean);
     } else {
       const st = n.st;
       tag = this.tag(d, "Stuck", d.warnText);
@@ -661,6 +673,15 @@ export default class CrewHome extends View {
         title: `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`, body: p.note,
         options: [o("Decline", "The pal is told", owner(["proposal", "decline", p.id], "Declined")),
           o("View", "Opens the change in the profile panel", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { gapBefore: true })] };
+    }
+    if (n.kind === "helper") {
+      const h = n.h, hn = helperNeed(h);
+      const opts = [];
+      if (hn.fix) opts.push(o(hn.fix.label, hn.fix.does, owner(["settings", "trust-helper", h.name, hn.fix.action], hn.fix.action === "on" ? `${h.name} is trusted` : `${h.name} has a new key`)));
+      opts.push(o("Trusted helpers", "Opens the sheet: the switch, the key, the record", () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 })));
+      if (hn.off) opts.push(o(hn.off.label, hn.off.does, owner(["settings", "trust-helper", h.name, "off"], `${h.name} is off`), { gapBefore: true }));
+      return { tag: ["Helper", this.d.warnText], who: null, topic: null, sub: `a trusted helper · ${homeAge(n.at)} ago`, title: hn.title, body: hn.sub,
+        rec: hn.fix ? { option: hn.fix.label, why: "Only your click turns a helper on or gives it a key", by: "Project Pals" } : null, options: opts };
     }
     const st = n.st;
     return { tag: ["Stuck", this.d.warnText], who: st.bot, topic: `${st.bot}#${st.channel}`, sub: `no progress for ${homeAge(st.since)}`,

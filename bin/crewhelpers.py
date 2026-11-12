@@ -57,6 +57,11 @@ RESERVED = ("owner", "you", "pal", "pals plugin", "project pals", "crew", "crewd
 
 
 OLD = DATA / "crew-helper"   # the build that went live unreviewed on 2026-11-10 (7692987): see adopt_old
+MARK = OLD / ".carried-over"   # adopt_old ran here: never again, whatever happens to the list later
+BACKUP = DIR / "helpers.json.bak"   # the list as last saved: a damaged or deleted list comes back from it
+ATTENTION = DIR / "attention.json"  # helpers that aren't working and why (check): Home's "Needs you" reads it
+STRICT = "PAL_HELPER_STRICT"        # =1: a send that isn't accepted is refused, not sent as a shell's
+PER_HOUR_MAX = 500
 
 
 class HelperError(CrewError):
@@ -83,10 +88,13 @@ def adopt_old():
     it on again knowingly, and that makes a key in the keys folder. The old key is deleted (it's
     dead, and it has been lying where any pal's search could print it). What Pals sent stays on the
     record. Returns True when it did anything."""
-    if FILE.exists() or OLD.is_symlink() or not OLD.is_dir():
+    if OLD.is_symlink() or not OLD.is_dir() or MARK.exists():
+        return False
+    if FILE.exists() or BACKUP.exists():
+        _mark_adopted()   # carried over by a version from before the mark: once is once (T170)
         return False
     with locked("helpers"):
-        if FILE.exists():
+        if FILE.exists() or MARK.exists():
             return False
         st = load_json(DATA / "crew-settings.json", {})
         old = st.get("helper") if isinstance(st, dict) else None
@@ -105,15 +113,39 @@ def adopt_old():
             os.chmod(LOG, 0o600)
         except OSError:
             pass
+        _mark_adopted()
     log("switch", "Pals", action="carried over, off", was="on" if was_on else "off")
+    check()   # it's off and the owner didn't do that: say so on Home (T170)
     return True
+
+
+def _mark_adopted():
+    try:
+        MARK.write_text("carried over into data/crew-helpers; never again\n")
+    except OSError:
+        pass
 
 
 # ─── the list ────────────────────────────────────────────────────────────────────────────────
 
 def _load():
+    """The list. T170: only the owner's click changes a helper's switch, so a list that's been
+    damaged or deleted (a crash mid-write elsewhere, a clean-up tool) isn't read as "no helpers": it
+    comes back from the copy kept beside it, and the record says so."""
     h = load_json(FILE, None)
     hs = h.get("helpers") if isinstance(h, dict) else None
+    if not isinstance(hs, dict):
+        b = load_json(BACKUP, None)
+        bs = b.get("helpers") if isinstance(b, dict) else None
+        if isinstance(bs, dict) and bs:
+            hs = bs
+            try:
+                _private(FILE, json.dumps({"version": 1, "helpers": bs}, indent=2))
+                log("notice", "The list of helpers", reason="restored", text="was unreadable and was put back from its backup copy")
+                from crewlib import feed
+                feed("helper", helper="", status="restored", text="the list of trusted helpers was unreadable and was put back from its backup")
+            except (OSError, CrewError):
+                pass
     return {"version": 1, "helpers": {k: v for k, v in (hs or {}).items() if isinstance(v, dict)}}
 
 
@@ -141,6 +173,7 @@ def _save(h):
     except OSError:
         pass
     _private(FILE, json.dumps(h, indent=2))
+    _private(BACKUP, json.dumps(h, indent=2))
 
 
 def slug(name):
@@ -259,9 +292,10 @@ def switch(name, on, pals=()):
         if on and (not e.get("sha256") or not key_path(known).is_file()):
             e["sha256"], e["made"], made = _new_key(known), now_ms(), True
             e.pop("rotated", None)
-        e["on"], e["switched"] = bool(on), now_ms()
+        e["on"], e["switched"] = bool(on), now_ms()   # `switched`: the owner has decided this helper's state
         _save(h)
     log("switch", known, action="on" if on else "off", **({"key": "made"} if made else {}))
+    check()
     return known, e
 
 
@@ -277,7 +311,29 @@ def rotate(name):
         e["sha256"], e["rotated"] = _new_key(known), now_ms()
         _save(h)
     log("switch", known, action="rotate")
+    check()
     return known, e
+
+
+def set_limit(name, per_hour):
+    """How many messages an hour this helper may send in the owner's name (the owner's click)."""
+    try:
+        n = int(per_hour)
+    except (TypeError, ValueError):
+        raise HelperError("the limit is a number of messages an hour")
+    if not 1 <= n <= PER_HOUR_MAX:
+        raise HelperError(f"the limit is 1 to {PER_HOUR_MAX} messages an hour")
+    adopt_old()
+    with locked("helpers"):
+        h = _load()
+        known = canonical(name, h)
+        if not known:
+            raise HelperError(f"no helper called {name}")
+        h["helpers"][known]["per_hour"] = n
+        _save(h)
+    log("switch", known, action=f"limit {n} an hour")
+    check()
+    return known, n
 
 
 def remove(name):
@@ -293,6 +349,7 @@ def remove(name):
         if not KEYS.is_symlink() and not p.is_symlink():
             p.unlink(missing_ok=True)
     log("switch", known, action="remove")
+    check()
     return known
 
 
@@ -503,7 +560,87 @@ def note_refused(argv, what):
 
 def note_unverified(why, via):
     claim = " ".join((os.environ.get(ENV) or "").split()) or ((_presented or {}).get("claim") or "")
-    return log("unverified", canonical(claim) or claim, why=why, via=via) if claim else None
+    if not claim:
+        return None
+    known = canonical(claim)
+    entry = log("unverified", known or claim, why=why, via=via)
+    if known:
+        check(bump=known)   # if that helper isn't working, the owner hears now, not when they next look (T170)
+    return entry
+
+
+def strict():
+    return os.environ.get(STRICT) == "1"
+
+
+# ─── is each helper working? (T170) ──────────────────────────────────────────────────────────
+# Only the owner's click turns a helper on or off. So "a helper the owner left on isn't working" and
+# "a helper is off and the owner didn't do that" are things to say out loud: one entry each in
+# attention.json (Home shows it under Needs you, with the fix), a line in the feed and in the record
+# when it starts and when it clears. Looked at after every switch change, after an install, when
+# crewd starts and each hour, and when a send in a helper's name doesn't verify.
+
+def health(name, e, now=None):
+    """None when `name` is as the owner left it and working; else {"reason", "text", "fix"}."""
+    now = now or now_ms()
+    if not e.get("on"):
+        if e.get("carried_over") and not e.get("switched"):
+            return {"reason": "carried-over", "fix": "on",
+                    "text": f"{name} is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name."}
+        return None   # the owner switched it off
+    try:
+        key = _read_key(key_path(name))
+    except HelperError as ex:
+        return {"reason": "no-key" if not key_path(name).exists() else "key-unreadable", "fix": "rotate",
+                "text": f"{name} is on, but {ex}. What it sends is not in your name until it has a new key."}
+    if not key.startswith(PREFIX) or not hmac.compare_digest(fingerprint(key), e.get("sha256") or ""):
+        return {"reason": "key-mismatch", "fix": "rotate",
+                "text": f"{name} is on, but the key in its file isn't the one you gave it. What it sends is not in your name until it has a new key."}
+    per_hour = int(e.get("per_hour") or PER_HOUR)
+    if sent_since(name, now - 3600 * 1000) >= per_hour:
+        return {"reason": "limit", "fix": None,
+                "text": f"{name} reached its limit of {per_hour} messages an hour. The rest arrive not verified until the hour passes."}
+    return None
+
+
+def attention():
+    a = load_json(ATTENTION, None)
+    return {k: v for k, v in a.items() if isinstance(v, dict)} if isinstance(a, dict) else {}
+
+
+def check(bump=None):
+    """Look at every helper, bring attention.json up to date, and say what changed. `bump`: a send in
+    that helper's name just went unverified. Returns the attention entries."""
+    try:
+        with locked("helpers-attention"):
+            h, was, now = _load(), attention(), now_ms()
+            out = {}
+            for name, e in h["helpers"].items():
+                bad = health(name, e, now)
+                if not bad:
+                    continue
+                old = was.get(name) if (was.get(name) or {}).get("reason") == bad["reason"] else None
+                out[name] = {**bad, "since": (old or {}).get("since") or now, "unverified": (old or {}).get("unverified") or 0}
+                if old and old.get("last"):
+                    out[name]["last"] = old["last"]
+                if bump == name:
+                    out[name]["unverified"] += 1
+                    out[name]["last"] = now
+            started = [n for n in out if (was.get(n) or {}).get("reason") != out[n]["reason"]]
+            cleared = [n for n in was if n not in out]
+            if out != was:
+                DIR.mkdir(parents=True, exist_ok=True)
+                _private(ATTENTION, json.dumps(out, indent=2))
+        from crewlib import feed
+        for n in started:
+            log("notice", n, reason=out[n]["reason"], text=out[n]["text"])
+            feed("helper", helper=n, status=out[n]["reason"], text=out[n]["text"])
+        for n in cleared:
+            log("notice", n, reason="ok", text="is working again")
+            feed("helper", helper=n, status="ok", text=f"{n} is working again")
+        return out
+    except (OSError, CrewError):
+        return attention()   # the notice must never be why a send or a switch fails
 
 
 # ─── what the app and `pal helpers` show ─────────────────────────────────────────────────────
@@ -521,6 +658,7 @@ def listing(log_limit=200):
     h, now = _load(), now_ms()
     day = now - 24 * 3600 * 1000
     log_ = entries()
+    att = attention()
     out = []
     for name, e in sorted(h["helpers"].items(), key=lambda kv: kv[0].lower()):
         mine = [x for x in log_ if x.get("helper") == name]
@@ -533,5 +671,5 @@ def listing(log_limit=200):
                     "sent_today": sum(1 for x in mine if x.get("kind") == "sent" and (x.get("at") or 0) >= day),
                     "refused_today": sum(1 for x in mine if x.get("kind") == "refused" and (x.get("at") or 0) >= day),
                     "sent_hour": sum(1 for x in mine if x.get("kind") == "sent" and (x.get("at") or 0) >= now - 3600 * 1000),
-                    "per_hour": int(e.get("per_hour") or PER_HOUR), "carried_over": bool(e.get("carried_over") and not e.get("sha256"))})
+                    "per_hour": int(e.get("per_hour") or PER_HOUR), "carried_over": bool(e.get("carried_over") and not e.get("switched")), "attention": att.get(name)})
     return {"helpers": out, "log": log_[-log_limit:][::-1], "max": MAX, "env": ENV}

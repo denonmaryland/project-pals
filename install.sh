@@ -443,6 +443,12 @@ if [[ -n "$first_install" ]]; then
   echo "Open Herdr (the pals layout: Ctrl+Shift+L): $head is waiting on Home to show you around."
 fi
 
+# Trusted helpers (T170): an install never changes a helper's switch or key. Say where each one stands,
+# and bring Home's notice up to date, so a helper that isn't working is known now and not at its next send.
+if [[ -f "$home/data/crew-helpers/helpers.json" || -d "$home/data/crew-helper" ]]; then
+  HERDR_APP_HOME="$home" "$bin/pal" helpers health 2>/dev/null | sed 's/^/trusted helper: /' || true
+fi
+
 if command -v herdr-app >/dev/null; then
   fail=0
   for dir in "$home"/mods/crew-*; do

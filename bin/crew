@@ -486,6 +486,7 @@ def cmd_feed(spaces, show_all, n):
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
                 "approval-refused": f"approval {e.get('id')}: a {e.get('wanted')} came after it was already {e.get('status')}; nothing changed",
                 "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}",
+                "helper": f"trusted helper: {e.get('text') or e.get('status')}",
                 "proposal": f"proposal {e.get('id')} ({e.get('what')}, {e.get('bot')}): {e.get('status')}"}.get(k, k)
         print(f"{time.strftime('%H:%M', time.localtime(e['at'] / 1000))} {what}")
     if not events:
@@ -2466,8 +2467,28 @@ def cmd_helpers(rest):
                   f"\"from {OWNER} via {p['name']}, a trusted helper: normal work only\".")
             return
         die(f"{p['claim']}: not accepted: {p['why']}. Messages go as \"a shell on this computer, not verified as {OWNER}\".")
+    if rest == ["health"]:
+        # Is every helper as the owner left it, and working? (T170.) Free to ask; install.sh asks after
+        # every install, crewd when it starts and each hour. Brings Home's notice up to date.
+        att = crewhelpers.check()
+        info = crewhelpers.listing()
+        if as_json:
+            print(json.dumps({"attention": att, "helpers": [{"name": x["name"], "on": x["on"], "sealed": x["sealed"]} for x in info["helpers"]]}, ensure_ascii=False))
+            return
+        for x in info["helpers"]:
+            bad = att.get(x["name"])
+            print(bad["text"] if bad else f"{x['name']}: " + ("on, its key works" if x["on"] else "off (your choice)"))
+        return
+    if len(rest) == 3 and rest[1] == "limit":
+        require_owner("changing settings")
+        try:
+            known, n = crewhelpers.set_limit(rest[0], rest[2])
+        except crewhelpers.HelperError as e:
+            die(str(e))
+        print(f"{known}: up to {n} messages an hour in {OWNER}'s name")
+        return
     if len(rest) != 2 or rest[1] not in ("on", "off", "rotate", "remove"):
-        die("pal settings trust-helper | check | <name> on|off|rotate|remove")
+        die("pal settings trust-helper | check | health | <name> on|off|rotate|remove | <name> limit N")
     require_owner("changing settings")
     name, what = rest
     try:
@@ -3128,6 +3149,17 @@ def main(argv):
         ok = argv[:1] in (["tell"], ["ask"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
         if not ok or "--click" in argv:
             die(f"--as-helper is only for tell, ask, task add and desk send; anything that's {OWNER}'s still needs their click in Project Pals")
+    # Strict helpers (T170): a helper that asked for it sends in the owner's name or not at all. Checked
+    # here, before a task or a card exists, so nothing half-happens; exit 4 tells the helper apart from
+    # any other failure, and the line says why, for it to pass on to the owner.
+    if argv[:1] in (["tell"], ["ask"]) or argv[:2] in (["task", "add"], ["desk", "send"]):
+        import crewhelpers
+        if crewhelpers.claimed() and crewhelpers.strict():
+            p = crewhelpers.presented() or {}
+            if not p.get("name"):
+                crewhelpers.note_unverified(p.get("why") or "not accepted", "strict: " + " ".join(argv[:2]))
+                die(f"not sent: {p.get('why') or 'this helper was not accepted'}. Nothing went out (strict). "
+                    f"{OWNER} fixes this in Project Pals: About, Trusted helpers.", code=4)
     if not argv:
         argv = ["bots"]
     # -F is --file (pal mission propose -F draft.md).
@@ -3356,4 +3388,4 @@ if __name__ == "__main__":
     try:
         main(sys.argv[1:])
     except CrewError as e:
-        die(str(e))
+        die(str(e), getattr(e, "code", 1))

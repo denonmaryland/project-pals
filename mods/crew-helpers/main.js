@@ -61,6 +61,20 @@ export default class CrewHelpers extends View {
     });
   }
 
+  // The hourly limit, your click: 5 at a time, 5 to 500.
+  limit(h, by, cx) {
+    if (this.busy) return;
+    const n = Math.max(5, Math.min(500, (h.per_hour ?? 20) + by));
+    this.busy = h.name;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try { await ownerCli(["settings", "trust-helper", h.name, "limit", String(n)]); }
+      catch (e) { notify({ title: "That didn't work", body: String(e.message ?? e).slice(0, 220), level: "warning", timeout: 6000 }); }
+      this.busy = null;
+      this.load(cx);
+    });
+  }
+
   add(cx) {
     const name = this.name.value().trim();
     if (!helperNameOk(name) || this.busy) return;
@@ -89,9 +103,15 @@ export default class CrewHelpers extends View {
         .child(div().flex().items_center().gap(8)
           .child(div().min_w(0).truncate().text_size(13).line_height("16px").font_weight(500).text_color(d.fg1).child(h.name))
           .child(tag(h.on ? "ON" : "OFF", h.on ? d.infoText : d.fg2)))
-        .child(div().text_size(11).line_height("14px").text_color(h.key && !h.key_there ? d.warnText : d.fg3).child(helperSub(h))))
+        .child(div().text_size(11).line_height("14px").text_color(h.attention || (h.key && !h.key_there) ? d.warnText : d.fg3)
+          .child(h.attention ? h.attention.text : helperSub(h))))
       .child(div().flex().flex_none().items_center().gap(6)
         // On: Rotate key. Off: Remove (asked once more in place, as it deletes the key).
+        // How many messages an hour it may send in your name (past it they arrive not verified).
+        .when(h.on && Boolean(h.key), (el) => el
+          .child(pebble(d, { id: `th-lim-dn-${i}`, icon: "minus", disabled: busy || (h.per_hour ?? 20) <= 5, tooltip: "5 fewer an hour", onClick: (cx) => this.limit(h, -5, cx) }))
+          .child(div().w(38).flex_none().flex().justify_center().text_size(11).font_family(d.mono).text_color(d.fg2).child(`${h.per_hour ?? 20}/h`))
+          .child(pebble(d, { id: `th-lim-up-${i}`, icon: "plus", disabled: busy || (h.per_hour ?? 20) >= 500, tooltip: "5 more an hour", onClick: (cx) => this.limit(h, 5, cx) })))
         .when(h.on && Boolean(h.key), (el) => el.child(pebble(d, { id: `th-rot-${i}`, label: "Rotate key", disabled: busy, tooltip: "A new key; every copy of the old one stops working", onClick: (cx) => this.change(h.name, "rotate", cx) })))
         .when(!h.on && !asking, (el) => el.child(pebble(d, { id: `th-rm-${i}`, label: "Remove", disabled: busy, onClick: (cx) => { this.confirm = h.name; cx.notify(); } })))
         .when(!h.on && asking, (el) => el.child(pebble(d, { id: `th-rm-no-${i}`, label: "Keep", onClick: (cx) => { this.confirm = null; cx.notify(); } }))
