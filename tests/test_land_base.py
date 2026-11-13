@@ -322,8 +322,11 @@ class LandBase(unittest.TestCase):
         approvals = self.data / "crew-approvals"
         approvals.mkdir(parents=True, exist_ok=True)
         now = int(time.time() * 1000)
+        # As the hook records it since T205 / T212: the folder it ran in, its rules, the commit it's for.
         (approvals / "a-hook01.json").write_text(json.dumps({"id": "a-hook01", "terminal": "test-bot", "rule": "land", "status": "used",
-                                                             "used": now, "at": now, "command": "cd /x && pal land Builder#x"}))
+                                                             "used": now, "at": now, "command": f"cd {wt['path']} && pal land Builder#x",
+                                                             "guard_context": {"cwd": str(self.repo), "rules": ["land"]},
+                                                             "land_tip": self.git("rev-parse", "HEAD", at=wt["path"])}))
         r = self.pal("land", "Builder#x", "--onto", "crew/parked")
         self.assertNotEqual(r.returncode, 0, "used for 'pal land Builder#x', not for --onto crew/parked")
         self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
@@ -409,7 +412,9 @@ class LandBase(unittest.TestCase):
         def used(rid, ago_s):
             now = int(time.time() * 1000)
             (approvals / f"{rid}.json").write_text(json.dumps({"id": rid, "terminal": "test-bot", "rule": "land", "status": "used",
-                                                              "used": now - ago_s * 1000, "at": now - ago_s * 1000, "command": "pal land Builder#x"}))
+                                                              "used": now - ago_s * 1000, "at": now - ago_s * 1000, "command": "pal land Builder#x",
+                                                              "guard_context": {"cwd": wt["path"], "rules": ["land"]},
+                                                              "land_tip": self.git("rev-parse", "HEAD", at=wt["path"])}))
 
         def handoff():
             code = f"import sys; sys.path.insert(0, {str(BIN)!r}); import crewhandoff; print(crewhandoff.void_approvals('test-bot'))"
@@ -435,6 +440,55 @@ class LandBase(unittest.TestCase):
         self.assertNotEqual(self.git("rev-parse", "main"), self.main0)
         self.commit_in(wt, "second")
         self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0, "and only once")
+
+
+    # ── T212 (#codex-sol): the hook's hand-over carries the commit that was approved ──────────────
+    def hook_check(self, wt, command="pal land Builder#x"):
+        code = (f"import sys, json; sys.path.insert(0, {str(BIN)!r}); import crewguard; crewguard.HOOK_CWD = {wt['path']!r}; "
+                f"print(json.dumps(crewguard.check('test-bot', 'Builder', 'x', {command!r})))")
+        r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_t212_a_hook_approval_lands_only_the_commit_it_was_given_for(self):
+        wt = self.topic("x")
+        tip_a = self.commit_in(wt, "approved-tip")
+        self.as_pal()
+        req = self.hook_check(wt)
+        self.assertEqual(req["status"], "pending")
+        self.assertTrue(tip_a.startswith(req.get("land_tip", "-")), "the hook's request names the commit")
+        self.approve_all_pending()
+        tip_b = self.commit_in(wt, "unreviewed-new-tip")
+        held = self.hook_check(wt)
+        self.assertIsNotNone(held, "the hook asks again for the new commit")
+        self.assertNotEqual(held["id"], req["id"])
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.assertNotEqual(subprocess.run(["git", "-C", str(self.repo), "merge-base", "--is-ancestor", tip_b, "main"]).returncode, 0)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t212_a_claimed_hand_over_merges_the_approved_commit_not_a_later_one(self):
+        """The hook let `pal land` through at A; before land reads the branch it moves to B: refused."""
+        wt = self.topic("x")
+        tip_a = self.commit_in(wt, "approved-tip")
+        self.as_pal()
+        self.hook_check(wt)
+        self.approve_all_pending()
+        self.assertIsNone(self.hook_check(wt), "approved: the hook lets it through")
+        self.commit_in(wt, "slipped-in")
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t212_the_approved_commit_is_what_lands(self):
+        wt = self.topic("x")
+        tip_a = self.commit_in(wt, "approved-tip")
+        self.as_pal()
+        self.hook_check(wt)
+        self.approve_all_pending()
+        self.assertIsNone(self.hook_check(wt))
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git("log", "-1", "--format=%P", "main").split(), [self.main0, tip_a])
 
 
 if __name__ == "__main__":

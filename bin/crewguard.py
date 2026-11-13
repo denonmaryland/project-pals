@@ -1608,7 +1608,10 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
     if not rule:
         return None
     context = command_context(cmd, HOOK_CWD)
-    k = key(terminal, cmd, context)
+    # A land is approved for the commit its topic is at now (T212): the hook's request names it too,
+    # so a commit made after the owner's yes asks again, and the program's hand-over carries it.
+    tip = land_tip(cmd)
+    k = key(terminal, cmd + (f"\n@{tip}" if tip else ""), context)
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
@@ -1624,7 +1627,7 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
              "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {}),
-             "guard_context": context}
+             "guard_context": context, **({"land_tip": tip} if tip else {})}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r
@@ -1646,7 +1649,7 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     # A pal whose run the hook held and the owner approved isn't asked twice: only when what the hook
     # let through was this very line, and only once (T206: any release from that terminal went through
     # for two minutes on one approval, other versions and notes included).
-    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule, words=normal_words(cmd))):
+    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule, words=normal_words(cmd), cwd=os.getcwd())):
         return None
     context = command_context(cmd, os.getcwd(), rule)
     k = key(terminal, f"{rule}\n{cmd}", context)
@@ -1673,37 +1676,103 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
 HANDOVER_S = 120   # how long after the hook let a command through its program may claim that approval
 
 
-def recently_used(terminal, rule, seconds=HANDOVER_S, words=None):
+def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=None):
     """The hand-over from the gate to the program it let through (T206): the hook held a pal's command,
     the owner approved it, the hook let it run (status used); the program then asks again itself (pal
-    land's own check, ./release's owner-step) and may count that approval, ONCE, and only when the
-    command the hook let through runs exactly `words`. Claiming it marks it, so a second run (another
-    commit, another version) asks the owner again. A program's own approvals and claimed ones never
-    count here, nor ones a handoff voided (crewhandoff.void_approvals).
-    words: ["land", "P#t", "--onto", "x"] (a pal subcommand: matched after pal / crew / botz / buddy),
-    or a whole command line's normal_words (["release", "9.9.9", "notes"]), compared word for word with
-    the line's segments (spaces inside a quoted argument count as separators: ./release passes $*)."""
+    land's own check, ./release's owner-step) and may count that approval ONCE, and only for exactly
+    what was approved (T212, T215):
+      - the same command: `words` (a pal subcommand after pal / crew / botz / buddy, or a whole line's
+        normal_words) matches one of the approved line's segments;
+      - the same context: the record carries T205's guard_context, the rules the line meets now in that
+        cwd add none to it, and with `cwd` the program runs in the folder the approved line ran that
+        segment in (its cwd followed through plain `cd` before it; a line whose cd can't be followed,
+        a subshell, a pipe, ||, a nested shell, means no hand-over: the owner is asked again);
+      - the same commit, with `tip`: the land_tip the hook recorded.
+    The program's own approvals, claimed ones and ones a handoff voided never count. Returns the
+    claimed record (its land_tip is what may land), else None."""
     if words is None:
         raise CrewError("recently_used needs the exact command it may stand for")
     want = " ".join(" ".join(words).split())
 
-    def same(cmd):
-        for seg in commands(cmd or ""):
+    def hit(seg):
+        w = normal_words(seg)
+        return " ".join(" ".join(w).split()) == want or (
+            len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words))
+
+    def ran_in(r):
+        """The folder the approved line runs the matching segment in, or None if it can't be told."""
+        ctx = r.get("guard_context")
+        if not isinstance(ctx, dict) or not isinstance(ctx.get("cwd"), str) or not os.path.isabs(ctx["cwd"]):
+            return None
+        cmd = r.get("command") or ""
+        if _nested_commands(cmd, []) or any(m.group(0) in CWD_UNCERTAIN_BOUNDARIES - {"&&"}
+                                            for m in SPLIT.finditer(mask_quotes(heredoc_free(cmd)))):
+            return None
+        here = ctx["cwd"]
+        for seg in commands(cmd):
+            if hit(seg):
+                return here
             w = normal_words(seg)
-            if " ".join(" ".join(w).split()) == want:
-                return True
-            if len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words):
-                return True
-        return False
+            if w[:1] == ["cd"]:
+                if len(w) != 2 or w[1].startswith("-") or "$" in w[1]:
+                    return None
+                here = os.path.normpath(os.path.join(here, os.path.expanduser(w[1])))
+        return None
+
+    def same_place(a, b):
+        try:
+            return os.path.realpath(a) == os.path.realpath(b)
+        except OSError:
+            return False
     with locked("approvals"):
         for r in all_requests():
-            if (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
+            if not (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
                     and not r.get("claimed") and r.get("asked_by") != "the program itself"
-                    and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command"))):
-                r["claimed"] = now_ms()
-                save_json(APPROVALS / f"{r['id']}.json", r)
-                return True
-    return False
+                    and now_ms() - r.get("used", 0) < seconds * 1000
+                    and any(hit(seg) for seg in commands(r.get("command") or ""))):
+                continue
+            ctx = r.get("guard_context")
+            allowed = approval_rules(r)
+            if not isinstance(ctx, dict) or allowed is None or not allowed <= set(ctx.get("rules") or []):
+                continue
+            where = ran_in(r)
+            if where is None or (cwd is not None and not same_place(where, cwd)):
+                continue
+            if tip is not None and not (r.get("land_tip") and (tip.startswith(r["land_tip"]) or r["land_tip"].startswith(tip))):
+                continue
+            r["claimed"] = now_ms()
+            save_json(APPROVALS / f"{r['id']}.json", r)
+            return r
+    return None
+
+
+def land_tip(cmd):
+    """The commit a `pal land <Pal#topic>` in this line would land: its topic's branch head, from
+    Project Pals' own records (shared.json). None when it isn't a land or the topic can't be found."""
+    for seg in commands(cmd):
+        w = normal_words(seg)
+        if len(w) < 3 or os.path.basename(w[0]) not in ("pal", "crew", "botz", "buddy") or w[1] != "land":
+            continue
+        pal, _, topic = w[2].lstrip("@").partition("#")
+        if not topic:
+            return None
+        try:
+            from crewlib import records, norm
+            recs = [b for k, b in records().items() if k.startswith("name:")]
+        except Exception:
+            return None
+        bot = next((b for b in recs if norm(b.get("name", "")) == norm(pal)), None) \
+            or next((b for b in recs if norm(b.get("name", "")).startswith(norm(pal))), None)
+        wts = (bot or {}).get("worktrees") or {}
+        wt = wts.get("#" + topic) or wts.get(topic)
+        if not wt or not wt.get("path"):
+            return None
+        try:
+            r = subprocess.run(["git", "-C", wt["path"], "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return r.stdout.strip() if r.returncode == 0 else None
+    return None
 
 
 def decide(rid, approve, note=None, via=None, tap=None):

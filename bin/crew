@@ -884,18 +884,24 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
         # an approved `pal land P#t` went through again with --onto another branch).
         words = ["land", spec] + [x for k, v in (("--check", check), ("--at", at), ("--onto", onto)) if v for x in (k, v)]
         line = "pal " + " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
-        if not crewguard.recently_used(ME, "land", words=words):
+        try:
+            tip = git(worktree_of(space, tab)["path"], "rev-parse", "HEAD")
+        except CrewError:
+            tip = ""
+        # What the hook let through is claimed only for the commit it was approved at (T212), and that
+        # commit is what lands: --at pins it, so a commit made in between is refused below.
+        handed = crewguard.recently_used(ME, "land", words=words, tip=tip or None) if tip else None
+        if handed:
+            at = at or handed["land_tip"]
+        else:
             s, t = where_of(ME, spaces)
             # The approval is for the commit the topic is at now (T206): one made after the owner said
             # yes asks again. Shown in the Inbox after the command.
-            try:
-                tip = git(worktree_of(space, tab)["path"], "rev-parse", "--short=12", "HEAD")
-            except CrewError:
-                tip = ""
             held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?",
-                                   line + (f"  # at {tip}" if tip else ""), claim=True)
+                                   line + (f"  # at {tip[:12]}" if tip else ""), claim=True)
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+            at = at or tip or None
     else:
         require_owner("landing a branch")
     wt = worktree_of(space, tab)

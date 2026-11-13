@@ -97,21 +97,25 @@ class OwnerStep(unittest.TestCase):
         self.assertEqual((a["terminal"], a["bot"], a["channel"]), ("tW", "Worker", "general"))
         # The hook held the pal's command, the owner approved, and it just went through there.
         d = self.data / "crew-approvals"
+        # As the hook records it since T205: the folder it ran in and its rules. The pal command here
+        # runs where this test runs, so the approved line runs ./release there too (via cd).
+        here = os.getcwd()
         def gate(rid, command, used_ago=0):
             (d / f"{rid}.json").write_text(json.dumps({"id": rid, "key": rid, "at": int(time.time() * 1000), "terminal": "tH", "bot": "Helper",
                                                        "channel": "build", "command": command, "rule": "release-script",
-                                                       "status": "used", "used": int(time.time() * 1000) - used_ago}))
-        gate("a-gate01", 'cd x && ./release 9.9.9 "what changed"')
+                                                       "status": "used", "used": int(time.time() * 1000) - used_ago,
+                                                       "guard_context": {"cwd": os.path.dirname(here), "rules": ["release-script"]}}))
+        gate("a-gate01", f'cd {os.path.basename(here)} && ./release 9.9.9 "what changed"')
         self.assertEqual(self.step(term="tD").returncode, 3, "another terminal's approval isn't this one's")
         self.assertEqual(self.step(term="tH").returncode, 0)
         # Once (T206: it was good for any release from that terminal for two minutes).
         self.assertEqual(self.step(term="tH").returncode, 3, "the gate's approval is used up by the run it let through")
         # Only for the line the owner approved there, not another version or other notes.
-        gate("a-gate02", "./release 9.9.9 notes")
+        gate("a-gate02", f"cd {os.path.basename(here)} && ./release 9.9.9 notes")
         self.assertEqual(self.step(term="tH").returncode, 3)
         self.assertEqual(self.step("./release", "9.9.10", "what", "changed", term="tH").returncode, 3)
         # … and not long after.
-        gate("a-gate03", "./release 9.9.9 what changed", used_ago=10 * 60 * 1000)
+        gate("a-gate03", f'cd {os.path.basename(here)} && ./release 9.9.9 "what changed"', used_ago=10 * 60 * 1000)
         self.assertEqual(self.step(term="tH").returncode, 3)
 
     def test_the_owners_approval_is_one_run_of_one_line(self):
@@ -125,6 +129,39 @@ class OwnerStep(unittest.TestCase):
             self.assertEqual(self.step("./release", version, "different", "notes", term="tW").returncode, 3, version)
         self.assertEqual(self.step(term="tW").returncode, 3, "nor the same line again")
         self.assertEqual([r["status"] for r in requests(self.data)], ["used", "pending", "pending", "pending"])
+
+    def test_t215_a_hand_over_is_claimed_only_where_it_was_approved(self):
+        """T215 / T212: the hook approved `./release 9.9.9 notes` run in repo A; the same words asked
+        from repo B claimed it (cwd wasn't part of the hand-over). And the program has to be where
+        the approved line ran it, cd included."""
+        a, b = self.root / "repo-a", self.root / "repo-b"
+        (a / "sub").mkdir(parents=True)
+        b.mkdir()
+        bin_ = str(REPO / "bin")
+        def run(code):
+            r = subprocess.run([sys.executable, "-c", "import sys, json, os\nsys.path.insert(0, %r)\nimport crewguard\n" % bin_ + code],
+                               env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return json.loads(r.stdout.strip().splitlines()[-1])
+        def approve(line, hook_cwd):
+            return run(f"""crewguard.HOOK_CWD = {hook_cwd!r}
+r = crewguard.check('tW', 'Worker', 'general', {line!r})
+crewguard.decide(r['id'], True, via='test')
+print(json.dumps(crewguard.check('tW', 'Worker', 'general', {line!r}) is None))""")
+        def step(where):
+            return run(f"""os.chdir({where!r})
+print(json.dumps(crewguard.owner_step('tW', 'Worker', 'general', './release 9.9.9 notes', 'release-script') is None))""")
+        self.assertTrue(approve("./release 9.9.9 notes", str(a)))
+        self.assertFalse(step(str(b)), "another folder's release isn't the approved one")
+        self.assertTrue(step(str(a)), "the folder it was approved in claims it, once")
+        self.assertFalse(step(str(a)))
+        # cd before it: the program runs in the folder the line moved to.
+        self.assertTrue(approve("cd sub && ./release 9.9.9 notes", str(a)))
+        self.assertFalse(step(str(a)), "the line ran it in sub, not here")
+        self.assertTrue(step(str(a / "sub")))
+        # Where the hook didn't know the folder, nothing can be claimed.
+        self.assertTrue(approve("./release 9.9.9 notes", None))
+        self.assertFalse(step(str(a)))
 
     def test_refusals(self):
         self.assertEqual(self.step(rule="no-such-rule").returncode, 1)
