@@ -16,8 +16,10 @@ about a topic's state. On top of that it adds, per topic:
 and for the pal: `needs` (all of them, oldest first, so the longest wait is on top) and `up_next`
 (its open tasks no topic has claimed). The builders take what they read as arguments, so tests
 drive them with plain data."""
+import json
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from crewlib import norm
@@ -252,3 +254,173 @@ def board_view(today, *, tasks=(), cards=(), feed=(), approvals=(), asks=(), lin
     unclaimed = [r for r in td["next"] if not r["topic"]]
     return {**today, "topics": topics, "needs": needs, "up_next": unclaimed[:UP_NEXT], "up_next_total": len(unclaimed),
             "tasks_open": len(td["doing"]) + len(td["next"]) + len(td["blocked"]), "at": now_ms}
+
+
+
+# ── Read: a topic's conversation as rows (T183, DeNon's pick A on h-4c9e54) ──────────────────────
+# The pal board's Read mode shows one topic's recent conversation: your messages, its replies as
+# Markdown, each stretch of tool calls as one chip that opens to the calls (done, failed, running),
+# notes from pals and rooms with who sent them, and a footer under each turn. Read-only: the
+# session file is only read, from its end.
+
+READ_TAIL = 1536 * 1024   # how much of a session file's end Read looks at
+READ_ROWS = 160           # the newest rows shown; the count of earlier ones is said
+GAP_MS = 10 * 60000       # a time line before a message after a gap this long
+OUT_MAX = 300             # characters of a call's output kept for its opened chip
+
+VERB = {"read": ("Read", "file", "files"), "edit": ("Edited", "file", "files"), "write": ("Wrote", "file", "files"),
+        "command": ("Ran", "command", "commands"), "search": ("Searched", "time", "times"), "web": ("Looked up", "page", "pages"),
+        "agent": ("Asked", "helper", "helpers"), "tool": ("Used", "tool", "tools")}
+
+
+def _results(data):
+    """Claude Code tool results in raw session lines: {tool_use_id: (is_error, first output)}."""
+    out = {}
+    for raw in data.split(b"\n"):
+        if b'"tool_result"' not in raw:
+            continue
+        try:
+            e = json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        for b in (e.get("message") or {}).get("content") or []:
+            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id"):
+                c = b.get("content")
+                text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
+                out[b["tool_use_id"]] = (bool(b.get("is_error")), " ".join(str(text).split())[:OUT_MAX])
+    return out
+
+
+def chip_label(calls):
+    """ "Read 2 files · Edited retry.ts · Ran 3 commands": one part per kind, in first-seen order."""
+    order, by = [], {}
+    for c in calls:
+        if c["verb"] not in by:
+            order.append(c["verb"])
+            by[c["verb"]] = []
+        by[c["verb"]].append(c)
+    parts = []
+    for v in order:
+        word, one, many = VERB.get(v, VERB["tool"])
+        cs = by[v]
+        if len(cs) == 1 and cs[0].get("what") and v in ("read", "edit", "write"):
+            parts.append(f"{word} {cs[0]['what']}")
+        elif len(cs) == 1 and cs[0].get("what") and v == "search":
+            parts.append(f"Searched “{cs[0]['what']}”")
+        else:
+            parts.append(f"{word} {len(cs)} {one if len(cs) == 1 else many}")
+    return " · ".join(parts)
+
+
+def _hm(ms_):
+    return time.strftime("%H:%M", time.localtime(ms_ / 1000)) if ms_ else ""
+
+
+def _sep(ms_, now_ms):
+    t, n = time.localtime(ms_ / 1000), time.localtime(now_ms / 1000)
+    if (t.tm_year, t.tm_yday) == (n.tm_year, n.tm_yday):
+        return f"Today {_hm(ms_)}"
+    if n.tm_yday - t.tm_yday == 1 and t.tm_year == n.tm_year:
+        return f"Yesterday {_hm(ms_)}"
+    return time.strftime("%a %b %-d %H:%M", t)
+
+
+def _took(ms_):
+    m = max(0, int(ms_ / 60000))
+    return f"{m} min" if m < 60 else f"{m // 60} h {m % 60} m" if m % 60 else f"{m // 60} h"
+
+
+def read_rows(bubbles, results=None, working=False, now_ms=None, limit=READ_ROWS):
+    """crewchat bubbles → the rows Read shows: sep, you, note, event, reply, chip, footer.
+    A chip's calls are done (a result came), failed (an error result), or running (no result, in
+    the turn still going while the topic works); a call with no result in an older turn is done."""
+    now_ms = now_ms or int(time.time() * 1000)
+    results = results or {}
+    rows, chip, turn = [], None, None
+    last_at = 0
+
+    def close_turn(ended_at, still=False):
+        nonlocal turn
+        if turn and (turn["tools"] or turn["replies"]):
+            took = (ended_at or turn["start"]) - turn["start"]
+            n = turn["tools"]
+            text = f"{_hm(ended_at)} · {'working' if still else 'worked'} {_took(took)}" + (f" · {n} tool{'s' if n != 1 else ''}" + (" so far" if still else "") if n else "")
+            rows.append({"k": "footer", "text": text})
+        turn = None
+
+    for b in bubbles:
+        k, at = b.get("kind"), b.get("at") or 0
+        if k in ("you", "note", "event") and (b.get("text") or b.get("images")):
+            close_turn(last_at)
+            chip = None
+            if at and (not last_at or at - last_at >= GAP_MS):
+                rows.append({"k": "sep", "text": _sep(at, now_ms)})
+            if k == "you":
+                rows.append({"k": "you", "text": b.get("text") or "", "at": at, "images": b.get("images") or 0})
+            elif k == "note":
+                rows.append({"k": "note", "from": b.get("from") or "", "text": b.get("text") or "", "at": at})
+            else:
+                rows.append({"k": "event", "text": b.get("text") or "", "at": at})
+            if k != "event":
+                turn = {"start": at, "tools": 0, "replies": 0}
+        elif k == "bot" and (b.get("text") or "").strip():
+            chip = None
+            rows.append({"k": "reply", "text": b["text"], "at": at})
+            if turn is None:
+                turn = {"start": at, "tools": 0, "replies": 0}
+            turn["replies"] += 1
+        elif k == "tool":
+            if chip is None:
+                chip = {"k": "chip", "calls": [], "at": at}
+                rows.append(chip)
+            r = results.get(b.get("id")) if b.get("id") else None
+            chip["calls"].append({"verb": b.get("verb") or "tool", "what": b.get("what") or "",
+                                  "state": ("failed" if r[0] else "done") if r else "open", "out": r[1] if r else ""})
+            if turn is None:
+                turn = {"start": at, "tools": 0, "replies": 0}
+            turn["tools"] += 1
+        else:
+            continue
+        last_at = at or last_at
+    close_turn(now_ms if working else last_at, still=working)
+    # Calls without a result: running while the topic works and it's the last stretch, else done.
+    chips = [r for r in rows if r["k"] == "chip"]
+    for i, c in enumerate(chips):
+        for call in c["calls"]:
+            if call["state"] == "open":
+                call["state"] = "running" if working and i == len(chips) - 1 else "done"
+        c["text"] = chip_label(c["calls"])
+        c["state"] = "failed" if any(x["state"] == "failed" for x in c["calls"]) else "running" if any(x["state"] == "running" for x in c["calls"]) else "done"
+    earlier = max(0, len(rows) - limit)
+    return rows[earlier:], earlier
+
+
+def read_view(terminal, state, links, now_ms=None, tail=READ_TAIL):
+    """A topic's conversation for Read: {rows, earlier, path, size, harness}. No linked session (a
+    Codex pal, a shell): rows empty and `path` None, and the view says to read it in the terminal."""
+    import crewchat
+    lk = (links or {}).get(terminal)
+    if not lk or not lk.get("transcript"):
+        return {"rows": [], "earlier": 0, "path": None, "size": 0, "harness": None}
+    raw = Path(lk["transcript"])
+    agy = crewchat.is_agy_link(lk, raw)
+    p = crewchat.agy_transcript_path(raw) if agy else raw
+    try:
+        size = p.stat().st_size
+        with open(p, "rb") as f:
+            f.seek(max(0, size - tail))
+            if size > tail:
+                f.readline()
+            data = f.read()
+    except OSError:
+        return {"rows": [], "earlier": 0, "path": None, "size": 0, "harness": None}
+    bubbles, st = [], {}
+    for line in data.split(b"\n"):
+        try:
+            s = line.decode("utf-8", "replace")
+            bubbles += crewchat.parse_agy(s, st) if agy else crewchat.parse_claude(s)
+        except Exception:      # each harness's own format: skip what we can't read
+            continue
+    rows, earlier = read_rows(bubbles, {} if agy else _results(data), state == "working", now_ms)
+    return {"rows": rows, "earlier": earlier, "path": str(p), "size": size, "harness": "agy" if agy else "claude",
+            "cut": size > tail}

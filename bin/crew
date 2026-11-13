@@ -3001,7 +3001,8 @@ def board_data(today, space, rec, name, tasks, cards):
 
 
 def cmd_computer(spaces, rest):
-    """pal computer [Pal] [today|board|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
+    """pal computer [Pal] [today|board|read|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
+    [--topic T] (read: one topic's recent conversation as rows, from its session file, read-only)
     What a pal's Computer shows (crew-boards/pal-computer/design.md), and its board (`board`: Today
     grown with what each topic waits for, its line, branch and what it needs from the owner;
     crew-boards/pal-page/design.md). Read-only: it's a view."""
@@ -3012,14 +3013,27 @@ def cmd_computer(spaces, rest):
     import crewroutines
     import crewsleep
     import crewtasks
-    views = ("today", "board", "todo", "calendar", "journal", "pages")
-    pos, o = opts(rest, ("start", "days"), ("json",))
+    views = ("today", "board", "read", "todo", "calendar", "journal", "pages")
+    pos, o = opts(rest, ("start", "days", "topic"), ("json",))
     view = next((p for p in pos if p in views), "today")
     who = [p for p in pos if p not in views]
     space, rec, name = pal_of(spaces, " ".join(who) if who else None)
     tasks = crewtasks.load()["tasks"]
     cards = [c for _, c in crewdesk.mine(name)]
-    if view in ("today", "todo", "board"):
+    if view == "read":
+        import crewboard
+        import crewchat
+        want = (o.get("topic") or "").lstrip("#")
+        if not want:
+            die("pal computer <Pal> read --topic <topic>")
+        live = hc_terminals()
+        tops = crewcomputer.topics_now(space, live, tasks)
+        t = next((x for x in tops if x["topic"].lower() == want.lower()), None)
+        if not t:
+            die(f"{name} has no topic #{want}")
+        out = {"pal": name, "topic": t["topic"], "state": t["state"], "task": t["task"],
+               **crewboard.read_view(t.get("terminal"), t["state"], crewchat.links())}
+    elif view in ("today", "todo", "board"):
         if view == "todo":
             out = crewcomputer.todo(name, tasks, cards)
         else:
@@ -3054,6 +3068,13 @@ def cmd_computer(spaces, rest):
         print(json.dumps(out, ensure_ascii=False))
         return
     # A short human read; the desktop and the Chief use --json.
+    if view == "read":
+        for r in out["rows"]:
+            text = r.get("text") or ""
+            print(f"{r['k']:<7} " + (f"{r['from']}: " if r.get("from") else "") + " ".join(text.split())[:160])
+        if not out["path"]:
+            print("(no session file to read: read it in its terminal)")
+        return
     if view == "board":
         for n in out["needs"]:
             print(f"needs you  {n['kind']:<9} {('#' + n['topic']) if n['topic'] else name:<16} {n['title']}")

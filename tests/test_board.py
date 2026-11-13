@@ -241,6 +241,97 @@ class Board(unittest.TestCase):
         self.assertEqual(v["focus"], "checkout ships Friday")                # Today's fields are still there
 
 
+def tool_use(name, inp, tid, at):
+    return json.dumps({"type": "assistant", "timestamp": at, "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "id": tid, "name": name, "input": inp}]}}, separators=(",", ":"))
+
+
+def tool_result(tid, text, at, error=False):
+    return json.dumps({"type": "user", "timestamp": at, "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": tid, "content": text, "is_error": error}]}}, separators=(",", ":"))
+
+
+class Read(unittest.TestCase):
+    """T183: Read, a topic's conversation as rows."""
+    NOW = 1794000000000
+
+    def rows(self, bubbles, results=None, working=False, **kw):
+        from crewboard import read_rows
+        return read_rows(bubbles, results, working, now_ms=self.NOW, **kw)
+
+    def test_a_turn(self):
+        m = 60000
+        b = [{"kind": "you", "text": "fix the double charge", "at": self.NOW - 20 * m},
+             {"kind": "tool", "verb": "read", "what": "retry.ts", "at": self.NOW - 19 * m, "id": "a"},
+             {"kind": "tool", "verb": "read", "what": "charge.ts", "at": self.NOW - 19 * m, "id": "b"},
+             {"kind": "bot", "text": "Found it: the retry fires too early.", "at": self.NOW - 18 * m},
+             {"kind": "tool", "verb": "edit", "what": "retry.ts", "at": self.NOW - 17 * m, "id": "c"},
+             {"kind": "tool", "verb": "command", "what": "npm test", "at": self.NOW - 16 * m, "id": "d"},
+             {"kind": "bot", "text": "Fixed, and the tests pass.", "at": self.NOW - 15 * m}]
+        rows, earlier = self.rows(b, {"a": (False, "84 lines"), "c": (False, ""), "d": (True, "1 failed")})
+        self.assertEqual(earlier, 0)
+        self.assertEqual([r["k"] for r in rows], ["sep", "you", "chip", "reply", "chip", "reply", "footer"])
+        self.assertTrue(rows[0]["text"].startswith(("Today", "Yesterday")) or rows[0]["text"])
+        self.assertEqual(rows[2]["text"], "Read 2 files")
+        self.assertEqual(rows[2]["state"], "done", "a call without a result in a finished turn counts as done")
+        self.assertEqual(rows[4]["text"], "Edited retry.ts · Ran 1 command")
+        self.assertEqual(rows[4]["state"], "failed")
+        self.assertEqual(rows[4]["calls"][1], {"verb": "command", "what": "npm test", "state": "failed", "out": "1 failed"})
+        self.assertRegex(rows[-1]["text"], r"^\d\d:\d\d · worked 5 min · 4 tools$")
+
+    def test_still_working(self):
+        b = [{"kind": "you", "text": "run it", "at": self.NOW - 120000},
+             {"kind": "tool", "verb": "command", "what": "npm test", "at": self.NOW - 60000, "id": "x"}]
+        rows, _ = self.rows(b, {}, working=True)
+        self.assertEqual(rows[-2]["state"], "running")
+        self.assertRegex(rows[-1]["text"], r"working 2 min · 1 tool so far$")
+
+    def test_notes_events_gaps_and_the_limit(self):
+        h = 3600000
+        b = [{"kind": "note", "from": "Atlas", "text": "rerun the contract tests", "at": self.NOW - 3 * h},
+             {"kind": "bot", "text": "On it.", "at": self.NOW - 3 * h + 1000},
+             {"kind": "event", "text": "Earlier conversation was summarized", "at": self.NOW - 3 * h + 2000},
+             {"kind": "you", "text": "and now?", "at": self.NOW - h}]
+        rows, _ = self.rows(b)
+        self.assertEqual([r["k"] for r in rows], ["sep", "note", "reply", "footer", "event", "sep", "you"])
+        self.assertEqual(rows[1]["from"], "Atlas")
+        many = [{"kind": "bot", "text": f"line {i}.", "at": self.NOW - (300 - i) * 1000} for i in range(300)]
+        rows, earlier = self.rows(many, limit=50)
+        self.assertEqual((len(rows), earlier), (50, 251))   # 300 replies and a footer
+
+    def test_chip_labels(self):
+        from crewboard import chip_label
+        self.assertEqual(chip_label([{"verb": "search", "what": "retry"}]), "Searched “retry”")
+        self.assertEqual(chip_label([{"verb": "command", "what": "a"}, {"verb": "command", "what": "b"}, {"verb": "web", "what": "x"}]),
+                         "Ran 2 commands · Looked up 1 page")
+        self.assertEqual(chip_label([{"verb": "mystery", "what": ""}]), "Used 1 tool")
+
+    def test_from_a_session_file_read_only(self):
+        import crewboard
+        d = Path(pals_tmp.mkdtemp(prefix="pals-read-"))
+        f = d / "s.jsonl"
+        f.write_text("\n".join([
+            user("The pals plugin sent a message:\n[from Orca, a pal, not DeNon] please check the docs\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn.", "2026-11-09T15:00:00.000Z"),
+            tool_use("Bash", {"command": "npm test", "description": "Run the tests"}, "t1", "2026-11-09T15:01:00.000Z"),
+            tool_result("t1", "12 passed", "2026-11-09T15:02:00.000Z"),
+            bot("## Done\n\nThe docs are fine.", "2026-11-09T15:03:00.000Z")]) + "\n")
+        before = f.read_bytes()
+        v = crewboard.read_view("t1", "idle", {"t1": {"transcript": str(f), "harness": "claude"}})
+        self.assertEqual(f.read_bytes(), before, "the session file is only read")
+        self.assertEqual([r["k"] for r in v["rows"]], ["sep", "note", "chip", "reply", "footer"])
+        self.assertEqual((v["rows"][1]["from"], v["rows"][1]["text"]), ("Orca", "please check the docs"))
+        self.assertEqual(v["rows"][2]["calls"][0], {"verb": "command", "what": "Run the tests", "state": "done", "out": "12 passed"})
+        self.assertEqual(v["rows"][3]["text"], "## Done\n\nThe docs are fine.", "replies stay Markdown")
+        self.assertEqual((v["path"], v["size"], v["harness"]), (str(f), len(before), "claude"))
+        none = crewboard.read_view("t9", "idle", {})
+        self.assertEqual((none["rows"], none["path"]), ([], None))
+
+    def test_plugin_messages_from_the_owner_are_yours(self):
+        from crewchat import classify_user_text
+        r = classify_user_text("The pals plugin sent a message:\n[from DeNon] 📥 Re h-1: Build it\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.", 0, 1)
+        self.assertEqual((r[0]["kind"], r[0]["text"]), ("you", "📥 Re h-1: Build it"))
+
+
 class TheCommand(unittest.TestCase):
     def setUp(self):
         self.env, self.data = sandbox()
@@ -272,6 +363,12 @@ class TheCommand(unittest.TestCase):
         today_ = json.loads(pal(self.env, "computer", "Worker", "today", "--json").stdout)
         self.assertNotIn("needs", today_)                                   # Today stays the small, cheap read
         self.assertEqual([x["topic"] for x in today_["topics"]], [x["topic"] for x in v["topics"]])
+        r = pal(self.env, "computer", "Worker", "read", "--topic", "#general", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rd = json.loads(r.stdout)
+        self.assertEqual((rd["topic"], [x["k"] for x in rd["rows"]][-3:]), ("general", ["you", "reply", "footer"]))
+        self.assertNotEqual(pal(self.env, "computer", "Worker", "read", "--topic", "nope").returncode, 0)
+        self.assertNotEqual(pal(self.env, "computer", "Worker", "read").returncode, 0)
         text = pal(self.env, "computer", "Worker", "board").stdout
         self.assertIn("needs you  approval", text)
         self.assertIn("waits for you", text)
