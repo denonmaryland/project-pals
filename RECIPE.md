@@ -1700,8 +1700,9 @@ as a tap, never as the owner's click. Off for every helper until the owner switc
 - **Never tappable**, whatever is switched on: the trust switch and these switches; settings,
   missions, brains, renaming, updates, roll back, uninstall, marking Home seen, the Desk's other
   owner actions; held commands that reach for a helper's key, a click token, the message queue,
-  the Desk's cards or the taps' own files, or that uninstall; a question without listed choices; a
-  question a helper put on Home; and a question marked **your click only** (`pal home ask …
+  the Desk's cards or the taps' own files, or that uninstall; a question without listed choices;
+  mission and brain proposals (including dream context and brain files), unknown proposal kinds;
+  a question a helper put on Home; and a question marked **your click only** (`pal home ask …
   --owner-only`, or `pal home owner-only <id>` by its asker or the head pal).
 - **The record** (In your name, `pal helpers log`, `pal feed`): every tap with its hold time and the
   relayed words, and how it ended: went through, stopped, taken back, dropped (and why), failed,
@@ -1712,7 +1713,8 @@ kind home|approval|proposal|draft, item, cls home|local|outward, choice, relayed
 run_at, status holding|running|done|stopped|cancelled|dropped|failed|undone, result}`),
 `holds.json` (the recent ones, for the app), `run/<nonce>.json` (the tap token of a hold being
 carried out). A helper's switches are `taps: {home, local, outward, hold}` on its entry in
-`helpers.json`. Holds are kept 14 days.
+`helpers.json`. Holds are kept 14 days. Permanent `used/<item-hash>.json` markers keep the
+one-tap-per-item restriction after history expires; older holds get markers before cleanup.
 
 ## Built from
 
@@ -2103,6 +2105,13 @@ carried out). A helper's switches are `taps: {home, local, outward, hold}` on it
 - **Fingerprint what would be written, not what is listed.** `crewproposals.all_()` leaves a
   proposal's text out; a fingerprint made from that would not have noticed the text being swapped
   after the owner was shown it.
+- **Validate the record being changed.** Home answers, approval decisions and draft sends compare
+  the hold's fingerprint under their store's mutation lock. Proposal execution validates the
+  in-memory payload it writes, including the proposal subtype. A changed item is refused even
+  after a hold was dispatched. A draft's task is created only after this validation.
+- **The first matching rule isn't the whole command.** Tap classification checks every matching
+  rule, including nested commands: any never-tappable rule wins, then outward, then local. The
+  approval decision repeats this check under its lock. The normal gate keeps its first-match label.
 - **A hold shows a clock time, not a countdown.** A countdown needs a timer redrawing the window.
 - **Refusals that are nobody's fault don't count** toward the three that switch tapping off (a
   limit reached, an item already tapped, a switch that's off): only ones that look like guessing.

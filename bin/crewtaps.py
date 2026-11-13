@@ -54,6 +54,7 @@ from crewlib import DATA, OWNER, CrewError, load_json, save_json, locked, now_ms
 
 DIR = DATA / "crew-taps"
 TICKETS, HOLDS, RUN, SUMMARY = DIR / "tickets", DIR / "holds", DIR / "run", DIR / "holds.json"
+USED = DIR / "used"   # permanent item tombstones, independent of display-history retention
 
 CLASSES = ("home", "local", "outward")
 CLASS_WORDS = {"home": "questions on Home", "local": "approvals that stay on this computer", "outward": "outward actions and landing"}
@@ -136,6 +137,53 @@ def _may(helper, cls):
 
 # ─── what waits, as Project Pals shows it ────────────────────────────────────────────────────
 
+def item_hash(kind, x):
+    """Hash the same record snapshot the action will use, without rereading its store."""
+    if kind == "home":
+        opts = [o for o in x.get("options") or [] if isinstance(o, str)]
+        does = (list(x.get("does") or []) + [""] * len(opts))[:len(opts)]
+        return _sha(kind, x["id"], x.get("title"), x.get("body"), opts, does, x.get("by"), x.get("links"))
+    fields = {
+        "approval": ("key", "command", "rule", "terminal", "bot", "channel", "edit_hash", "base_hash", "diff"),
+        "proposal": ("kind", "pal", "file", "base", "text", "note", "meta"),
+        "draft": ("from", "to", "urgency", "title", "body", "track"),
+    }
+    return _sha(kind, x["id"], *(x.get(f) for f in fields[kind]))
+
+
+def proposal_never(p):
+    # Check the payload subtype, not just the outer `proposal accept` command.
+    if p.get("kind") == "agents" and re.fullmatch(r"(?:AGENTS\.md|CLAUDE(?:\.local)?\.md|\.claude/CLAUDE\.md)", p.get("file") or ""):
+        return None
+    if p.get("kind") == "dream" and (p.get("meta") or {}).get("kind") in ("skill", "tool", "process"):
+        return None
+    return f"this proposal changes a mission or brain, or has an unsupported kind: {OWNER}'s own click only"
+
+
+def approval_class(a):
+    import crewguard
+    rules = {a.get("rule"), *(r["name"] for r in crewguard.all_matches(a.get("command") or ""))}
+    forbidden = rules & NEVER_RULES
+    if forbidden:
+        return "local", f"it decides who may act as whom (rule {', '.join(sorted(forbidden))}): {OWNER}'s own click only"
+    return ("local" if all(rule_class(r) == "local" for r in rules) else "outward"), None
+
+
+def validate_snapshot(kind, record, tap):
+    """Called under the store's mutation lock with the record about to change.
+    Proposal callers write the validated in-memory payload, never a fresh read."""
+    if tap.get("kind") != kind or tap.get("item") != record.get("id") or tap.get("hash") != item_hash(kind, record):
+        raise TapError(f"{record.get('id')} changed after it was tapped")
+    if kind == "proposal":
+        why = proposal_never(record)
+        if why:
+            raise TapError(why)
+    if kind == "approval":
+        cls, why = approval_class(record)
+        if why or cls != tap.get("cls"):
+            raise TapError(why or "the approval's tap class changed")
+
+
 def _home_items():
     import crewhome
     import crewhelpers
@@ -157,7 +205,7 @@ def _home_items():
                                         *(f"link: {l}" for l in x.get("links") or [])]))
         out.append({"kind": "home", "id": x["id"], "cls": "home", "title": x.get("title") or "", "text": text, "by": x.get("by") or "",
                     "choices": [{"label": o, "does": d} for o, d in zip(opts, does)], "never": never,
-                    "hash": _sha("home", x["id"], x.get("title"), x.get("body"), opts, does[:len(opts)], x.get("by"), x.get("links"))})
+                    "hash": item_hash("home", x)})
     return out
 
 
@@ -171,15 +219,13 @@ def _approval_items():
     for a in crewguard.all_requests():
         if a.get("status") != "pending":
             continue
-        cls = rule_class(a.get("rule"))
+        cls, never = approval_class(a)
         who = f"{a.get('bot') or 'a shell'}" + (f" #{a['channel']}" if a.get("channel") else "")
         text = f"{who} wants to run a command that {a.get('why') or a.get('rule')}:\n{a.get('command') or ''}" + (f"\n\n{_clip(a.get('diff'), 6000)}" if a.get("diff") else "")
-        out.append({"kind": "approval", "id": a["id"], "cls": "local" if cls == "never" else cls, "title": f"{who}: {_clip(a.get('command'), 120)}",
+        out.append({"kind": "approval", "id": a["id"], "cls": cls, "title": f"{who}: {_clip(a.get('command'), 120)}",
                     "text": text, "by": who, "rule": a.get("rule"),
                     "choices": [{"label": "Approve", "does": "Lets exactly this command run, once"}, {"label": "Decline", "does": "The command is refused"}],
-                    "never": f"it decides who may act as whom (rule {a.get('rule')}): {OWNER}'s own click only" if cls == "never" else None,
-                    "hash": _sha("approval", a["id"], a.get("key"), a.get("command"), a.get("rule"), a.get("terminal"), a.get("bot"), a.get("channel"),
-                                 a.get("edit_hash"), a.get("base_hash"), a.get("diff"))})
+                    "never": never, "hash": item_hash("approval", a)})
     return out
 
 
@@ -191,9 +237,9 @@ def _proposal_items():
         what ="its mission" if p.get("kind") == "mission" else p.get("file") or (p.get("meta") or {}).get("pattern") or "a file"
         text = f"{p.get('by') or p.get('pal')} proposes a change to {what}" + (f": {p['note']}" if p.get("note") else "") + f"\n\n{_clip(p.get('text'), 6000)}"
         out.append({"kind": "proposal", "id": p["id"], "cls": "local", "title": f"{p.get('by') or p.get('pal')}: change {what}", "text": text, "by": p.get("by") or "",
-                    "choices": [{"label": "Accept", "does": "Writes the change"}, {"label": "Decline", "does": "The proposer is told"}], "never": None,
+                    "choices": [{"label": "Accept", "does": "Writes the change"}, {"label": "Decline", "does": "The proposer is told"}], "never": proposal_never(p),
                     "text_sha": crewproposals.text_sha(p),
-                    "hash": _sha("proposal", p["id"], p.get("kind"), p.get("pal"), p.get("file"), p.get("base"), p.get("text"), p.get("note"), p.get("meta"))})
+                    "hash": item_hash("proposal", p)})
     return out
 
 
@@ -206,7 +252,7 @@ def _draft_items():
         text = f"A draft by {card.get('from')}, to {card.get('to') or 'route'}:\n{card.get('title') or ''}\n{_clip(card.get('body'), 6000)}"
         out.append({"kind": "draft", "id": card["id"], "cls": "local", "title": f"Draft by {card.get('from')}: {_clip(card.get('title'), 100)}", "text": text,
                     "by": card.get("from") or "", "choices": [{"label": "Send", "does": "It goes out as its drafter's card, sent on this tap"}], "never": None,
-                    "hash": _sha("draft", card["id"], card.get("from"), card.get("to"), card.get("urgency"), card.get("title"), card.get("body"), card.get("track"))})
+                    "hash": item_hash("draft", card)})
     return out
 
 
@@ -232,14 +278,32 @@ def holds():
 
 
 def _save_hold(h):
+    _mark_used(h["kind"], h["item"])
     HOLDS.mkdir(parents=True, exist_ok=True)
     save_json(HOLDS / f"{h['id']}.json", h)
     keep = now_ms() - KEEP_DAYS * 86400 * 1000
     allh = holds()
     for old in allh:
-        if old.get("status") != "holding" and (old.get("ended") or old.get("at") or 0) < keep:
+        # Backfill older builds' records before pruning; fail closed if a marker can't be saved.
+        _mark_used(old["kind"], old["item"])
+        if old.get("status") not in ("holding", "running") and (old.get("ended") or old.get("at") or 0) < keep:
             (HOLDS / f"{old['id']}.json").unlink(missing_ok=True)
     save_json(SUMMARY, [h for h in allh if (h.get("ended") or h.get("at") or 0) >= keep][-200:])
+
+
+def _used_path(kind, iid):
+    return USED / (_sha(kind, iid) + ".json")
+
+
+def _mark_used(kind, iid):
+    USED.mkdir(parents=True, exist_ok=True)
+    path = _used_path(kind, iid)
+    if not path.exists():
+        save_json(path, {"kind": kind, "item": iid})
+
+
+def _was_used(kind, iid):
+    return _used_path(kind, iid).exists() or any(h["kind"] == kind and h["item"] == iid for h in holds())
 
 
 def _hold(hid):
@@ -278,11 +342,10 @@ def tickets(helper):
         t = load_json(f, None)
         if not isinstance(t, dict) or now - (t.get("made") or 0) > 2 * TICKET_TTL * 1000:
             f.unlink(missing_ok=True)
-    tapped = {(h["kind"], h["item"]) for h in holds()}
     out = []
     for x in items():
         why = x["never"] or _may(helper, x["cls"])
-        if not why and (x["kind"], x["id"]) in tapped:
+        if not why and _was_used(x["kind"], x["id"]):
             why = f"it was tapped once already: it's {OWNER}'s now"
         row = {"kind": x["kind"], "id": x["id"], "class": x["cls"], "title": x["title"], "text": x["text"], "by": x["by"], "choices": x["choices"],
                "hold_seconds": hold_seconds(helper, x["cls"])}
@@ -354,7 +417,7 @@ def _tap(helper, ticket, choice, relayed):
     if not pick:
         raise TapError(f"{choice!r} isn't one of its choices ({', '.join(c['label'] for c in x['choices'])})", counts=True)
     now, mine = now_ms(), [h for h in holds() if h.get("helper") == helper]
-    if any(h["kind"] == x["kind"] and h["item"] == x["id"] for h in holds()):
+    if _was_used(x["kind"], x["id"]):
         raise TapError(f"{x['id']} was tapped once already: it's {OWNER}'s now")
     if x["cls"] == "outward":
         if any(h["cls"] == "outward" and h["status"] in ("holding", "running") for h in mine):
@@ -500,6 +563,8 @@ def _still_good(h):
         return f"{h['item']} wasn't waiting any more"
     if x["hash"] != h.get("hash"):
         return f"{h['item']} changed after it was tapped"
+    if x["cls"] != h.get("cls"):
+        return "the item's tap class changed"
     if x["never"]:
         return x["never"]
     return None
@@ -529,4 +594,5 @@ def take_run_token(argv, nonce):
             return None
     except (TapError, KeyError):
         return None
-    return {"helper": h["helper"], "relayed": h.get("relayed") or "", "hold": h["id"], "label": label(h["helper"])}
+    return {"helper": h["helper"], "relayed": h.get("relayed") or "", "hold": h["id"], "label": label(h["helper"]),
+            "kind": h["kind"], "item": h["item"], "hash": h.get("hash"), "cls": h["cls"]}

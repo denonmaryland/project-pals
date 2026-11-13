@@ -1350,7 +1350,7 @@ def draft(frm, proof, suggest, title, body, urgency="normal", task=False, attach
                   extra={"track": "yes"} if task else None)
 
 
-def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None):
+def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None, make_task=None):
     """The owner's Send (a click): the draft becomes the owner's card (from the owner, drafted_by the
     partner), on `to`'s desk, in the ledger. The caller delivers it. Returns the card.
     On a relayed tap (T147: `tap` is crewlib.tap_authority()) it goes out as its drafter's own card,
@@ -1363,6 +1363,11 @@ def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None):
         card = read(path)
         if card.get("status") != "draft":
             raise DeskError(f"{card['id']} isn't a draft (it's {card.get('status')})")
+        if tap:
+            import crewtaps
+            crewtaps.validate_snapshot("draft", card, tap)
+        if make_task:
+            task = make_task(card)
         card["drafted_by"] = card.get("from")
         if tap:
             card.update({"from_kind": "pal", "proof": f"tap {tap.get('hold')}", "to": to or "To route", "status": "queued", "updated": iso()})

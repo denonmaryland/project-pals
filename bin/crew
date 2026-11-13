@@ -1828,11 +1828,11 @@ def cmd_desk(spaces, rest):
         if card.get("status") != "draft":
             die(f"{card['id']} isn't a draft")
         to, auto = desk_to(spaces, o.get("to") or card.get("to") or "auto")
-        task = None
-        if card.get("track") == "yes" and to and to != OWNER:
-            task = crewtasks.add(card["title"], spaces, None, acted(), card.get("body") or None, to, notify_assignee=False)["id"]
+        def make_task(current):
+            if current.get("track") == "yes" and to and to != OWNER:
+                return crewtasks.add(current["title"], spaces, None, acted(), current.get("body") or None, to, notify_assignee=False)["id"]
         from crewlib import tap_authority
-        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task, tap=tap_authority())
+        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, tap=tap_authority(), make_task=make_task)
         card, t, what = crewdesk.deliver(card, spaces) if not auto else (card, None, "sorting it to a pal")
         if o.get("json"):
             print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
@@ -2273,6 +2273,10 @@ def cmd_proposals(spaces, rest):
         p = crewproposals.get(pos[0])
         if p["status"] != "pending":
             die(f"{p['id']} is already {p['status']}")
+        from crewlib import tap_authority
+        if tap_authority():
+            import crewtaps
+            crewtaps.validate_snapshot("proposal", p, tap_authority())
         pattern = (p.get("meta") or {}).get("pattern")
         if sub == "decline":
             why = " ".join(pos[1:]) or o.get("note")

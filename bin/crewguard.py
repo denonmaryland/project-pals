@@ -1415,12 +1415,26 @@ def matches(cmd, _depth=0):
 
 
 def _matches(cmd):
+    return next(_matching_rules(cmd), None)
+
+
+def all_matches(cmd, _depth=0):
+    """Every applicable rule, including nested commands even when the outer command matched.
+    The normal gate keeps its first-match behavior; delegated approval needs the full set."""
+    found = {r["name"]: r for r in _matching_rules(cmd)}
+    if _depth < 3:
+        for inner in run_strings(cmd)[:200]:
+            found.update((r["name"], r) for r in all_matches(inner, _depth + 1))
+    return list(found.values())
+
+
+def _matching_rules(cmd):
     segs = [s for s in commands(cmd) if not _help(s)]
     flat = heredoc_free(cmd)
     for rule in policy().get("guarded", []):
         if rule.get("check"):
             if CHECKS.get(rule["check"], lambda _c: False)(cmd):
-                return rule
+                yield rule
             continue
         try:
             pat = re.compile(rule["pattern"])
@@ -1428,11 +1442,11 @@ def _matches(cmd):
             continue
         # Most rules: a command that starts that way. "anywhere" rules (URLs): anywhere in the line.
         if rule.get("anywhere") and pat.search(flat):
-            return rule
+            yield rule
+            continue
         # As written, or as run (normal_head: behind npx, a path, env, nice …; T26).
         if any(pat.match(seg) or pat.match(normal_head(seg)) for seg in segs):
-            return rule
-    return None
+            yield rule
 
 
 def key(terminal, cmd):
@@ -1537,6 +1551,9 @@ def decide(rid, approve, note=None, via=None, tap=None):
             feed("approval-refused", id=rid, bot=r["bot"], channel=r["channel"], wanted=want, status=r["status"])
             raise CrewError(f"{rid} was already {r['status']}" + (f" ({_ago(r['decided'])})" if r.get("decided") else "")
                             + "; nothing changed")
+        if tap:
+            import crewtaps
+            crewtaps.validate_snapshot("approval", r, tap)
         r["status"] = "approved" if approve else "denied"
         r["decided"] = now_ms()
         r["decided_via"] = via

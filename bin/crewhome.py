@@ -277,6 +277,8 @@ def answer(iid, text, *, by, tapped=None):
         if x.get("status") not in ("open", "parked"):
             raise HomeError(f"{x['id']} is {x['status']} already")
         if tapped:
+            import crewtaps
+            crewtaps.validate_snapshot("home", x, tapped)
             if x.get("owner_only"):
                 raise HomeError(f"{x['id']} is for {tapped.get('helper')}'s owner alone: it can't be answered by a tap")
             pick = [o for o in x.get("options") or [] if o.lower() == text.lower()]

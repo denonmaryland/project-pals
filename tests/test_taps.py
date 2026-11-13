@@ -488,7 +488,7 @@ class ProposalsAndDrafts(Taps):
         self.assertIn("sent on a tap by Pals", " ".join(r_.get("note", "") for r_ in c["receipts"]))
 
     def test_a_proposal_is_accepted_for_the_text_that_was_shown(self):
-        code = ("import crewproposals\np = crewproposals.propose('mission', 'Worker', 'Worker#general', 'Ship small things often.\\n', base_sha=None, note='shorter')\n"
+        code = ("import crewproposals\np = crewproposals.propose('agents', 'Worker', 'Worker#general', 'Ship small things often.\\n', file='AGENTS.md', base_sha=None, note='shorter')\n"
                 "print(json.dumps(p['id']))")
         pid = py(self.env, code)
         row = self.tickets()[pid]
@@ -523,7 +523,8 @@ class TheTapToken(Taps):
         d = self.dir
         (d / "run").mkdir(parents=True, exist_ok=True)
         (d / "holds").mkdir(parents=True, exist_ok=True)
-        (d / "holds" / "t-abc123.json").write_text(json.dumps({"id": "t-abc123", "helper": helper_, "kind": "home", "item": item or self.iid, "cls": cls,
+        digest = py(self.env, f"import crewtaps; print(json.dumps(crewtaps._item('home', {self.iid!r})['hash']))")
+        (d / "holds" / "t-abc123.json").write_text(json.dumps({"id": "t-abc123", "helper": helper_, "kind": "home", "item": item or self.iid, "cls": cls, "hash": digest,
                                                               "choice": choice, "relayed": "x", "status": hold_status, "at": 1, "run_at": 1}))
         nonce = "ab" * 16
         (d / "run" / f"{nonce}.json").write_text(json.dumps({"args": list(args or self.args), "at": int(time.time() * 1000) if at is None else at,
