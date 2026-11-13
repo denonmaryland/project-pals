@@ -1674,27 +1674,71 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
 
 
 HANDOVER_S = 120   # how long after the hook let a command through its program may claim that approval
-# The hand-over's language (T212 round 2): a literal path for cd (no quotes, ~, $ …), and the words of
-# a line: unquoted literal atoms, or quoted strings with nothing in them a shell would expand.
-HANDOVER_PATH = re.compile(r"[A-Za-z0-9_./:@%+=,-]+")
-_HO_ATOM = r"[A-Za-z0-9_./:@%+=,#-]+"
-_HO_WORD = rf"(?:{_HO_ATOM}|'[^'$`\\!]*'|\"[^\"$`\\!]*\")+"
-_HO_SIMPLE = rf"{_HO_WORD}(?:[ \t]+{_HO_WORD})*"
-_HO_LINE = re.compile(rf"[ \t]*{_HO_SIMPLE}(?:[ \t]*(?:&&|;)[ \t]*{_HO_SIMPLE})*[ \t]*")
+# The hand-over's language (T212 rounds 2 and 3): a literal path for cd (no quotes, ~, $ …, and never
+# starting with "-": `cd -` is OLDPWD, `cd --` / `-P` / `-L` go home), and the words of a line: unquoted
+# literal atoms, or quoted strings with nothing in them a shell would expand. Recognised by a linear
+# scan, character by character (round 3: a nested regex backtracked for seconds on a short tail),
+# with the line's length capped, and before the approvals lock is taken.
+HANDOVER_PATH = re.compile(r"[A-Za-z0-9_./:@%+=,][A-Za-z0-9_./:@%+=,-]*")
+HANDOVER_MAX = 2048
+_HO_ATOM_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:@%+=,#-")
+_HO_QUOTED_BANNED = frozenset("$`\\!\n")
 
 
 def handover_segments(cmd):
-    """[(raw segment, its words)] for a line in the hand-over language, else None."""
-    if not isinstance(cmd, str) or "\n" in cmd or not _HO_LINE.fullmatch(cmd):
+    """[(raw segment, its words)] for a line in the hand-over language, else None. One pass over the
+    line: words are runs of atom characters and quoted strings; segments split on ; and &&; anything
+    else (|, &, (, ), <, >, $, `, ~, \\, !, a newline, an unclosed quote, an empty segment) is None."""
+    if not isinstance(cmd, str) or not cmd.strip() or len(cmd) > HANDOVER_MAX:
         return None
-    import shlex
-    out = []
-    for raw in re.split(r"[ \t]*(?:&&|;)[ \t]*", cmd.strip()):
-        try:
-            out.append((raw, shlex.split(raw)))
-        except ValueError:
+    segs, raw, words, word, in_word, i, n = [], [], [], [], False, 0, len(cmd)
+
+    def end_word():
+        nonlocal word, in_word
+        if in_word:
+            words.append("".join(word))
+        word, in_word = [], False
+
+    def end_seg():
+        end_word()
+        text = "".join(raw).strip()
+        if not words or not text:
+            return False
+        segs.append((text, list(words)))
+        raw.clear()
+        words.clear()
+        return True
+    while i < n:
+        c = cmd[i]
+        if c in (" ", "\t"):
+            end_word()
+            raw.append(c)
+            i += 1
+        elif c == ";" or (c == "&" and cmd[i + 1:i + 2] == "&"):
+            if not end_seg():
+                return None
+            i += 1 if c == ";" else 2
+        elif c in ("'", '"'):
+            j = cmd.find(c, i + 1)
+            if j < 0:
+                return None
+            inner = cmd[i + 1:j]
+            if any(ch in _HO_QUOTED_BANNED for ch in inner):
+                return None
+            word.append(inner)
+            in_word = True
+            raw.append(cmd[i:j + 1])
+            i = j + 1
+        elif c in _HO_ATOM_CHARS:
+            word.append(c)
+            in_word = True
+            raw.append(c)
+            i += 1
+        else:
             return None
-    return out
+    if not end_seg():
+        return None
+    return segs
 
 
 def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=None):
@@ -1736,7 +1780,9 @@ def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=
         for raw, words in segs:
             if hit(raw):
                 return here
-            if len(words) == 2 and words[0] == "cd" and HANDOVER_PATH.fullmatch(raw.split(None, 1)[1].strip()):
+            # A plain cd: exactly `cd <path>`, the path unquoted and literal, never an option (-, --, -P, -L)
+            # and never missing (a bare cd goes home).
+            if len(words) == 2 and words[0] == "cd" and raw.split() == words and HANDOVER_PATH.fullmatch(words[1]):
                 here = os.path.normpath(os.path.join(here, words[1]))
                 continue
             return None   # something before the command that isn't a plain cd
@@ -1747,25 +1793,38 @@ def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=
             return os.path.realpath(a) == os.path.realpath(b)
         except OSError:
             return False
+    def eligible(r):
+        return (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
+                and not r.get("claimed") and r.get("asked_by") != "the program itself"
+                and now_ms() - r.get("used", 0) < seconds * 1000)
+    # All the parsing and re-checking first, without the approvals lock (T212 round 3: a slow
+    # rejection there held up every other approval); then, locked, claim the first that's unchanged.
+    good = []
+    for r in all_requests():
+        if not eligible(r) or not handover_segments(r.get("command") or "") \
+                or not any(hit(raw) for raw, _w in handover_segments(r["command"])):
+            continue
+        ctx = r.get("guard_context")
+        allowed = approval_rules(r)
+        if not isinstance(ctx, dict) or allowed is None or not allowed <= set(ctx.get("rules") or []):
+            continue
+        where = ran_in(r)
+        if where is None or (cwd is not None and not same_place(where, cwd)):
+            continue
+        if tip is not None and not (r.get("land_tip") and (tip.startswith(r["land_tip"]) or r["land_tip"].startswith(tip))):
+            continue
+        good.append(r)
+    if not good:
+        return None
     with locked("approvals"):
-        for r in all_requests():
-            if not (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
-                    and not r.get("claimed") and r.get("asked_by") != "the program itself"
-                    and now_ms() - r.get("used", 0) < seconds * 1000
-                    and any(hit(seg) for seg in commands(r.get("command") or ""))):
+        for r in good:
+            now = load_json(APPROVALS / f"{r['id']}.json", None)
+            if not now or not eligible(now) or {k: now.get(k) for k in ("command", "guard_context", "land_tip", "key")} \
+                    != {k: r.get(k) for k in ("command", "guard_context", "land_tip", "key")}:
                 continue
-            ctx = r.get("guard_context")
-            allowed = approval_rules(r)
-            if not isinstance(ctx, dict) or allowed is None or not allowed <= set(ctx.get("rules") or []):
-                continue
-            where = ran_in(r)
-            if where is None or (cwd is not None and not same_place(where, cwd)):
-                continue
-            if tip is not None and not (r.get("land_tip") and (tip.startswith(r["land_tip"]) or r["land_tip"].startswith(tip))):
-                continue
-            r["claimed"] = now_ms()
-            save_json(APPROVALS / f"{r['id']}.json", r)
-            return r
+            now["claimed"] = now_ms()
+            save_json(APPROVALS / f"{r['id']}.json", now)
+            return now
     return None
 
 

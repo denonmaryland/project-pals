@@ -201,11 +201,40 @@ print(json.dumps([held is None, bool(rec.get('claimed'))]))""")
             self.assertTrue(ok, line)
             self.assertEqual(step(wrong, rid), [False, False], f"no hand-over from the wrong folder: {line}")
             self.assertEqual(step(a, rid), [False, False], f"nor from A: the line's folder can't be vouched for: {line}")
+        # cd's own options aren't folders (T212 round 3): `cd -` goes to OLDPWD, `cd --`, `cd -P`, `cd -L`
+        # and a bare `cd` go home. Even with folders called that, no hand-over.
+        for name in ("-", "--", "-P", "-L"):
+            (a / name).mkdir(exist_ok=True)
+        for line, wrong in (("cd -; ./release 9.9.9 notes", a / "-"), ("cd --; ./release 9.9.9 notes", a / "--"),
+                            ("cd -P; ./release 9.9.9 notes", a / "-P"), ("cd -L; ./release 9.9.9 notes", a / "-L"),
+                            ("cd; ./release 9.9.9 notes", home), ("cd -- repo-b; ./release 9.9.9 notes", b)):
+            rid, ok = approve(line)
+            self.assertTrue(ok, line)
+            self.assertEqual(step(wrong, rid), [False, False], f"no hand-over: {line}")
+            self.assertEqual(step(a, rid), [False, False], line)
         # Plain cd with a literal path, joined by ; or &&, is followed.
         for line, right in ((f"cd {b} && ./release 9.9.9 notes", b), (f"cd {a}; cd ../repo-b; ./release 9.9.9 notes", b)):
             rid, ok = approve(line)
             self.assertEqual(step(a, rid), [False, False], line)
             self.assertEqual(step(right, rid), [True, True], line)
+
+    def test_t212r3_a_line_outside_the_handover_language_is_refused_quickly(self):
+        """T212 round 3: the hand-over's recogniser backtracked for seconds on a short unsupported tail,
+        inside the approvals lock. It must refuse at once, for any length."""
+        sys.path.insert(0, str(REPO / "bin"))
+        import crewguard
+        tails = ["a" * n + "$HOME" for n in (12, 20, 28, 32, 64)] + ["'a' " * 40 + "$(x)", '"a"' * 50 + "|"]
+        for tail in tails:
+            line = "./release 9.9.9 notes; " + tail
+            t0 = time.monotonic()
+            self.assertIsNone(crewguard.handover_segments(line))
+            self.assertLess(time.monotonic() - t0, 0.05, f"slow on a {len(tail)}-character tail")
+        long = "./release 9.9.9 notes; " + "cd a; " * 2000
+        t0 = time.monotonic()
+        self.assertIsNone(crewguard.handover_segments(long), "longer than the hand-over language allows")
+        self.assertLess(time.monotonic() - t0, 0.05)
+        ok = crewguard.handover_segments('cd /x/y && ./release 9.9.9 "what changed"; cd z')
+        self.assertEqual([w for _r, w in ok], [["cd", "/x/y"], ["./release", "9.9.9", "what changed"], ["cd", "z"]])
 
     # #trusted-helper's T215 regressions (t215-handover-regressions.txt), the owner half: the Full
     # (delegated helper) half belongs to its full-delegation branch and is kept there for its rebase.
