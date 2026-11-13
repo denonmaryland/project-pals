@@ -1649,6 +1649,10 @@ record; the owner turns it on again in the sheet.
 - **The installer** adds `hc-hold-.service.d/00-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
   unless a drop-in there already sets that (DeNon's own `10-oomd-avoid.conf` is left alone), and says
   which in its output; `--no-oomd-dropin` skips it, uninstall removes only Project Pals' file.
+  An update's snapshot records the drop-in's text (or that there was none), and Roll back puts that
+  back and runs `daemon-reload`, unless the file was changed since (then it stays, and Roll back
+  says so). A failed install takes away a drop-in it added itself, because the updater that rolls
+  it back may be an older build that doesn't know the file (T201, Codex T198).
 - **Low memory:** crewd writes `data/crew-memory.json` each minute (`available`, `total`, `floor`,
   `low`, `low_since`, `scope`, `scope_flags`). The floor is `"memory_floor_mb"`, else the larger of
   1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line

@@ -163,7 +163,62 @@ def config_state():
     return {"keys_file": keys is not None, "keys": {k: g.get(k) for k in MANAGED_KEYS},
             "settings_file": st is not None, "hooks": ours,
             "agy_hooks": isinstance(agy, dict) and AGY_HOOKS_KEY in agy,
-            "statusline_wrapped": _our_statusline(sl)}
+            "statusline_wrapped": _our_statusline(sl),
+            "oomd_dropin": _dropin_text()}
+
+
+# The hc-hold oomd drop-in the installer adds (T153, install.sh; crewmem.install_dropin). It lives in
+# the user's systemd folder, outside what a snapshot's files cover, so a snapshot records its content
+# (None: not there) and Roll back puts that back (T201, Codex T198 P2).
+def _dropin_path():
+    return Path.home() / ".config" / "systemd" / "user" / "hc-hold-.service.d" / "00-project-pals-oomd.conf"
+
+
+def _dropin_text():
+    try:
+        return _dropin_path().read_text()
+    except OSError:
+        return None
+
+
+def _dropin_ours():
+    """The text this build's installer writes, or None when crewmem isn't there to say."""
+    try:
+        import crewmem
+        return crewmem.DROPIN_TEXT
+    except Exception:
+        return None
+
+
+def restore_dropin(snap, log=print):
+    """Put the drop-in back as the snapshot had it: take ours away if it wasn't there, put the old
+    text back if it was. Only a file still as an install left it is changed (Project Pals' text now,
+    or missing); one edited since stays, and is reported. Snapshots from before T201 don't say, so
+    nothing is done for them. Reloads systemd after a change."""
+    if not isinstance(snap, dict) or "oomd_dropin" not in snap:
+        return []
+    was, now, p = snap.get("oomd_dropin"), _dropin_text(), _dropin_path()
+    if now == was:
+        return []
+    ours = _dropin_ours()
+    if now is not None and now != ours:
+        return [f"left {p} as it is: it was changed since the install"]
+    try:
+        if was is None:
+            p.unlink()
+            try:
+                p.parent.rmdir()   # only when empty: a drop-in of the owner's stays
+            except OSError:
+                pass
+            line = f"removed {p} (the install being undone added it)"
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(was)
+            line = f"put back {p} as it was before the install"
+    except OSError as e:
+        return [f"couldn't put back {p}: {e}"]
+    subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+    return [line]
 
 
 def restore_config(snap, log=print):
@@ -452,7 +507,7 @@ def rollback(path=None, log=print, wrote=None):
             else:
                 tar.extractall(dest, members=group)
     if snap:
-        for line in restore_config(snap, log=log):
+        for line in restore_config(snap, log=log) + restore_dropin(snap, log=log):
             log(line)
     # crewd holds its code in memory: restart it when what was put back differs from what it runs.
     if crewd_fingerprint() != crewd_before:
