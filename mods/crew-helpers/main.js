@@ -12,7 +12,7 @@ import { View, div, svg } from "gpui-kit";
 import { InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, exec, shared } from "herdr";
 import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetField, sheetToggle, pebble, scrollArea, crewCli, ownerCli } from "./crew.js";
-import { helperSub, helperLine, helperAgo, logRow, helperToday, helperNameOk } from "./helperlog.js";
+import { helperSub, helperLine, helperAgo, logRow, helperToday, helperNameOk, TAP_SWITCHES } from "./helperlog.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 34;
@@ -24,6 +24,7 @@ export default class CrewHelpers extends View {
     this.busy = null;        // the helper being changed
     this.shown = null;       // the helper whose line is shown (the one just switched on)
     this.confirm = null;     // the helper Remove asked about
+    this.confirmTap = null;  // "<helper>:outward": turning outward taps on asks once more, in place
     this.name = InputState.new({ placeholder: "A name your pals will see, e.g. Pals" });
     this.name.on("submit", (_e, cx) => this.add(cx));
     this.handle = cx.focus_handle();
@@ -59,6 +60,49 @@ export default class CrewHelpers extends View {
       this.busy = null;
       this.load(cx);
     });
+  }
+
+  // Relayed taps (T147): may this helper tap what waits on you, relaying your word from chat? Three
+  // switches, each off until your click, each with what it lets happen without you. Turning the
+  // outward one on asks once more, in place. The hold: minutes an outward tap waits before it runs.
+  setTap(h, what, value, cx) {
+    if (this.busy) return;
+    this.busy = h.name;
+    this.confirmTap = null;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try { await ownerCli(["settings", "trust-helper", h.name, "taps", what, String(value)]); }
+      catch (e) { notify({ title: "That didn't work", body: String(e.message ?? e).slice(0, 220), level: "warning", timeout: 6000 }); }
+      this.busy = null;
+      this.load(cx);
+    });
+  }
+
+  tapRows(d, h, i) {
+    const t = h.taps ?? {};
+    const busy = this.busy === h.name;
+    const box = div().id(`th-taps-${i}`).flex().flex_col().gap(4).ml(42).mb(8).px(10).py(8).rounded(6).bg(d.bg0).border_1().border_color(d.line)
+      .child(div().text_size(11).line_height("14px").font_weight(500).text_color(d.fg3)
+        .child(`What ${h.name} may tap for you, relaying your word from chat. Held before it runs; recorded as a tap, never as your click.`));
+    for (const [key, label, does] of TAP_SWITCHES) {
+      const on = t[key] === true, asking = this.confirmTap === `${h.name}:${key}`;
+      box.child(div().id(`th-tap-${key}-${i}`).flex().min_h(30).items_center().gap(10)
+        .child(div().flex().flex_col().flex_1().min_w(0)
+          .child(div().text_size(12).line_height("16px").text_color(key === "outward" && on ? d.warnText : d.body).child(label))
+          .child(div().text_size(11).line_height("14px").text_color(d.fg3).child(does)))
+        .when(key === "outward" && on, (el) => el
+          .child(pebble(d, { id: `th-hold-dn-${i}`, icon: "minus", disabled: busy || (t.hold ?? 5) <= 0, tooltip: "A minute less", onClick: (cx) => this.setTap(h, "hold", Math.max(0, (t.hold ?? 5) - 1), cx) }))
+          .child(div().w(52).flex_none().flex().justify_center().text_size(11).font_family(d.mono).text_color(d.fg2).child(`held ${t.hold ?? 5}m`))
+          .child(pebble(d, { id: `th-hold-up-${i}`, icon: "plus", disabled: busy || (t.hold ?? 5) >= 15, tooltip: "A minute more", onClick: (cx) => this.setTap(h, "hold", Math.min(15, (t.hold ?? 5) + 1), cx) })))
+        .when(!asking, (el) => el.child(sheetToggle(d, `th-tap-sw-${key}-${i}`, { label: on ? "On" : "Off", on,
+          onClick: (cx) => { if (key === "outward" && !on) { this.confirmTap = `${h.name}:${key}`; cx.notify(); } else this.setTap(h, key, on ? "off" : "on", cx); } })))
+        .when(asking, (el) => el
+          .child(pebble(d, { id: `th-tap-no-${i}`, label: "Keep it off", onClick: (cx) => { this.confirmTap = null; cx.notify(); } }))
+          .child(pebble(d, { id: `th-tap-yes-${i}`, label: "Turn it on", primary: true, disabled: busy, onClick: (cx) => this.setTap(h, key, "on", cx) }))));
+      if (asking) box.child(div().text_size(11).line_height("15px").text_color(d.warnText)
+        .child(`With this on, ${h.name}'s tap is the approval. Anything that can act as ${h.name} could push, release or land in your name, after the hold, without your click.`));
+    }
+    return box;
   }
 
   // The hourly limit, your click: 5 at a time, 5 to 500.
@@ -147,7 +191,7 @@ export default class CrewHelpers extends View {
     if (this.error) body.child(div().text_size(12).line_height("16px").text_color(d.warnText).child(`Couldn't read the helpers: ${this.error}`));
     if (info) {
       const list = div().flex().flex_col();
-      helpers.forEach((h, i) => list.child(this.helperRow(d, h, i)));
+      helpers.forEach((h, i) => { list.child(this.helperRow(d, h, i)); if (h.on && h.key) list.child(this.tapRows(d, h, i)); });
       if (!helpers.length) list.child(div().h(40).flex().items_center().text_size(12).text_color(d.fg3).child("No trusted helpers. Nothing outside Project Pals can send in your name."));
       body.child(list);
       // The line to give the helper that was just switched on (or its key rotated).

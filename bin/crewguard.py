@@ -22,7 +22,8 @@ POLICY = DATA / "crew-policy.json"
 # carries (two branches picking the same number can't strand a rule again).
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
 # 16: live-branch (T90) and base-branch (T136).
-DEFAULTS_VERSION = 16
+# 17: tap-write (T147). 16 was the live channel's (crew/live-updates).
+DEFAULTS_VERSION = 17
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -86,6 +87,10 @@ DEFAULT = {
         # refuses a key from inside a Herdr terminal as well; this holds the attempt and tells the owner.
         {"name": "helper-key", "why": "reaches for a trusted helper's key or name (those are the owner's assistants', not a pal's)",
          "check": "helper-keys", "pattern": r"$^"},
+        # Relayed taps (T147, data/crew-taps): tickets, holds and the one-time tokens a hold runs with.
+        # A file written there by hand would be a tap nobody made, or one let through early: like a
+        # click token (owner-click). Pals read holds with `pal taps`.
+        {"name": "tap-write", "why": "writes into the relayed taps (a ticket, a hold or a tap token nobody tapped)", "check": "tap-writes", "pattern": r"$^"},
         # The Live channel (T90): while the owner has it on, whatever lands on the branch it follows is
         # installed into their running Project Pals at once. So moving that branch by hand (git
         # update-ref refs/heads/main …, git branch -f main …) needs the click a landing needs. Off
@@ -691,6 +696,15 @@ def writes_queue(cmd):
 def writes_desk(cmd):
     """A write INTO data/crew-desk (as writes_queue); the Desk's mods (mods/crew-desk/…) aren't its cards (T68)."""
     return _writes_into(cmd, {"crew-desk"}, DESK_PLACE)
+
+
+TAPS_PLACE = _place(["crew-taps"])
+
+
+def writes_taps(cmd):
+    """A write INTO data/crew-taps (as writes_click): a ticket, a hold or a tap token made by hand
+    would be a tap nobody tapped (T147). `pal taps` reading them isn't a write."""
+    return _writes_into(cmd, {"crew-taps"}, TAPS_PLACE)
 
 
 def _writes_into(cmd, names, place):
@@ -1384,7 +1398,7 @@ def _help(seg):
 
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers,
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers, "tap-writes": writes_taps,
           "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
 
 
@@ -1401,12 +1415,26 @@ def matches(cmd, _depth=0):
 
 
 def _matches(cmd):
+    return next(_matching_rules(cmd), None)
+
+
+def all_matches(cmd, _depth=0):
+    """Every applicable rule, including nested commands even when the outer command matched.
+    The normal gate keeps its first-match behavior; delegated approval needs the full set."""
+    found = {r["name"]: r for r in _matching_rules(cmd)}
+    if _depth < 3:
+        for inner in run_strings(cmd)[:200]:
+            found.update((r["name"], r) for r in all_matches(inner, _depth + 1))
+    return list(found.values())
+
+
+def _matching_rules(cmd):
     segs = [s for s in commands(cmd) if not _help(s)]
     flat = heredoc_free(cmd)
     for rule in policy().get("guarded", []):
         if rule.get("check"):
             if CHECKS.get(rule["check"], lambda _c: False)(cmd):
-                return rule
+                yield rule
             continue
         try:
             pat = re.compile(rule["pattern"])
@@ -1414,11 +1442,11 @@ def _matches(cmd):
             continue
         # Most rules: a command that starts that way. "anywhere" rules (URLs): anywhere in the line.
         if rule.get("anywhere") and pat.search(flat):
-            return rule
+            yield rule
+            continue
         # As written, or as run (normal_head: behind npx, a path, env, nice …; T26).
         if any(pat.match(seg) or pat.match(normal_head(seg)) for seg in segs):
-            return rule
-    return None
+            yield rule
 
 
 def key(terminal, cmd):
@@ -1502,13 +1530,23 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     return r
 
 
-def recently_used(terminal, rule, seconds=120):
-    """Did the owner's approval of a `rule` command from this terminal just go through?"""
+def recently_used(terminal, rule, seconds=120, words=None):
+    """Did the owner's approval of a `rule` command from this terminal just go through? With `words`
+    (["land", "P#t", "--onto", "x"]): only an approval whose command ran exactly that pal subcommand
+    (Codex T180: one approval for `pal land P#t` must not cover `pal land P#t --onto other`)."""
+    def same(cmd):
+        if words is None:
+            return True
+        for seg in commands(cmd or ""):
+            w = normal_words(seg)
+            if len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words):
+                return True
+        return False
     return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
-               and now_ms() - r.get("used", 0) < seconds * 1000 for r in all_requests())
+               and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command")) for r in all_requests())
 
 
-def decide(rid, approve, note=None, via=None):
+def decide(rid, approve, note=None, via=None, tap=None):
     """The owner's answer. `via` says where it came from (the Inbox, a terminal), kept on the record
     with every attempt, so a click that seems not to have counted can be traced afterwards."""
     with locked("approvals"):
@@ -1523,6 +1561,9 @@ def decide(rid, approve, note=None, via=None):
             feed("approval-refused", id=rid, bot=r["bot"], channel=r["channel"], wanted=want, status=r["status"])
             raise CrewError(f"{rid} was already {r['status']}" + (f" ({_ago(r['decided'])})" if r.get("decided") else "")
                             + "; nothing changed")
+        if tap:
+            import crewtaps
+            crewtaps.validate_snapshot("approval", r, tap)
         r["status"] = "approved" if approve else "denied"
         r["decided"] = now_ms()
         r["decided_via"] = via
@@ -1530,7 +1571,12 @@ def decide(rid, approve, note=None, via=None):
             r["note"] = note
         save_json(f, r)
     feed("approval", id=rid, bot=r["bot"], channel=r["channel"], status=r["status"])
-    if approve:
+    if tap:
+        # A relayed tap (T147): the pal hears who tapped, never "<owner> approved".
+        who = f"{tap['helper']} tapped, relaying {OWNER} (not {OWNER}'s own click)"
+        msg = (f"[pal] {who}: approved: {r['command']}\nRun that exact command again now; it'll go through once." if approve else
+               f"[pal] {who}: said no to: {r['command']}\nDon't retry it; carry on without it or ask {OWNER}.")
+    elif approve:
         msg = f"[pal] {OWNER} approved: {r['command']}\nRun that exact command again now; it'll go through once."
     else:
         msg = f"[pal] {OWNER} said no to: {r['command']}" + (f"\nTheir note: {note}" if note else "") + f"\nDon't retry it; carry on without it or ask {OWNER}."

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { HELPERS_ATTENTION } from "../lib/helperlog.js";
+import { HELPERS_ATTENTION, TAPS_FILE } from "../lib/helperlog.js";
 
 const root = new URL("..", import.meta.url).pathname;
 // Herdr gives each mod copy a localStorage; here, a small in-memory one.
@@ -176,6 +176,36 @@ try {
   assert.ok(focused > 0, "showing Home gives it the keyboard (from a task, not during render)");
   const needs = v.needs();
   assert.deepEqual(needs.map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk", "helper"], "every kind, oldest first");
+  // A relayed tap that's being held (T147): first in Needs you, with Stop and Let it go now as your clicks.
+  fx.files[TAPS_FILE] = JSON.stringify([
+    { id: "t-abc123", helper: "Pals", kind: "approval", item: "a-222222", cls: "outward", choice: "Approve", relayed: "yes push it", title: "Herdr Mod #site: git push origin main",
+      by: "Herdr Mod #site", at: now - 2 * min, run_at: now + 3 * min, status: "holding" },
+    { id: "t-def456", helper: "Pals", kind: "home", item: "h-222222", cls: "home", choice: "Yes", relayed: "yes", title: "Ship it?", by: "Orca#general", at: now - 3 * min, run_at: now - 2 * min, status: "done" }]);
+  const vt = new Home();
+  await run((cx) => vt.init({}, cx));
+  await run((cx) => draw(vt, cx));
+  const tneeds = vt.needs();
+  assert.equal(tneeds[0].kind, "tap", "a held tap comes first: it goes through by itself");
+  assert.equal(tneeds.filter((n) => n.kind === "tap").length, 1, "only what's still held");
+  const tspec = vt.spec(tneeds[0]);
+  assert.deepEqual(tspec.tag[0], "Outward tap");
+  assert.deepEqual(tspec.options.map((o) => o.label), ["Stop", "Let it go now"]);
+  assert.equal(tspec.rec, null, "nothing is recommended: it's yours to stop or leave");
+  assert.match(tspec.options[1].does, /can't be undone/);
+  fx.calls.length = 0;
+  await run((cx) => tspec.options[0].run(cx));
+  const stop = fx.calls.find((c) => c[0] === "pal" && c[1] === "taps");
+  assert.deepEqual(stop.slice(1, 4), ["taps", "stop", "t-abc123"]);
+  assert.ok(stop.includes("--click"), "stopping a tap is the owner's click");
+  vt.busy = {};
+  await run((cx) => tspec.options[1].run(cx));
+  assert.deepEqual(fx.calls.filter((c) => c[0] === "pal" && c[1] === "taps").at(-1).slice(1, 4), ["taps", "now", "t-abc123"]);
+  // An answer that went through on a tap never reads "You answered", and isn't counted as one of yours.
+  const tapped = { id: "h-222222", kind: "ask", status: "answered", title: "Ship it?", answer: "Yes", answered_at: now - 2 * min, closed_at: now - 2 * min, by: "Orca#general",
+    at: now - 90 * min, tapped: { by: "Pals", relayed: "yes", hold: "t-def456", at: now - 2 * min } };
+  assert.ok(home.items.some((x) => x.id === "h-222222" && !x.tapped), "(the fixture's own answer is the owner's)");
+  delete fx.files[TAPS_FILE];
+  fx.calls.length = 0;
   // A trusted helper that's off without your click is yours to fix, with one click (T170).
   const hneed = needs.find((n) => n.kind === "helper");
   const hspec = v.spec(hneed);

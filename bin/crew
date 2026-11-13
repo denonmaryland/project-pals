@@ -45,6 +45,7 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  pal home ask … --owner-only | pal home owner-only ID   this ask is for the owner's own click: no helper's tap answers it
   pal welcome                       where the welcome tour stands (it runs on Home; replay it from the gear menu)
   pal welcome folders [--json]      the project folders the tour would suggest for a new pal (names and dates only)
   pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
@@ -98,7 +99,9 @@ Work
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
   pal routine edit ID [--name N] [--when "…"] [--prompt "…"] [--topic C]
   pal diff <Pal#topic> [--stat|--json] what a worktree topic changed
-  pal land <Pal#topic> [--check "cmd"] merge a worktree topic's branch into its project (needs the owner)
+  pal land <Pal#topic> [--check "cmd"] [--onto branch]
+                                     merge a worktree topic's branch into its project's main branch (or the
+                                     base named when it was made; --onto: another, on purpose; needs the owner)
 
 Mission, brain and agent files (the profile panel shows them all)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
@@ -153,6 +156,12 @@ Trusted helpers (your own assistants, sending normal work in your name; never a 
   pal settings trust-helper         who's trusted (pal helpers is the same; log: what they sent and tried)
   pal settings trust-helper <name> on|off|rotate|remove      the owner's, from Project Pals (About → Trusted helpers)
   PAL_HELPER=<name> pal tell|ask|task add --for|desk send …   how a helper sends; PAL_HELPER=<name> pal helpers check
+
+Relayed taps (a trusted helper taps what waits on you, relaying your word from chat; held, then run; never your click)
+  pal --as-helper taps [--json]     what waits, with each item's exact text and a one-time ticket
+  pal --as-helper tap <ticket> "<choice>" --relayed "what you said" | tap-cancel <hold>
+  pal taps [--json] | pal taps stop|now|undo <hold>   the holds; stop / let it go now / undo are yours (Home has the buttons)
+  pal settings trust-helper <name> taps home|local|outward on|off | taps hold <minutes>   which things it may tap (your click)
 
 Approvals (the owner)
   pal approvals                     guarded commands waiting on the owner
@@ -502,6 +511,7 @@ def cmd_feed(spaces, show_all, n):
                 "approval-refused": f"approval {e.get('id')}: a {e.get('wanted')} came after it was already {e.get('status')}; nothing changed",
                 "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}",
                 "helper": f"trusted helper: {e.get('text') or e.get('status')}",
+                "tap": f"relayed tap {e.get('hold')} by {e.get('helper')}: {e.get('item')} → {e.get('choice')} · {e.get('status')}",
                 "proposal": f"proposal {e.get('id')} ({e.get('what')}, {e.get('bot')}): {e.get('status')}"}.get(k, k)
         print(f"{time.strftime('%H:%M', time.localtime(e['at'] / 1000))} {what}")
     if not events:
@@ -742,7 +752,21 @@ def make_worktree(space, name, base=None):
     if not folder:
         raise CrewError(f"{space['name']} has no project folder")
     repo = git(folder, "rev-parse", "--show-toplevel")
-    base = base or git(repo, "branch", "--show-current") or "HEAD"
+    # Cut from the project's main branch, never from whatever the project folder has checked out (T177:
+    # 10 topics were cut from crew/pet-facelift because the folder was parked on it, and one landed
+    # there). A base named with --base is kept, and recorded as named.
+    named = bool(base)
+    # The main branch matters only when no base is named (Codex T184: a repo with trunk and release and
+    # no main / master / origin HEAD couldn't make a topic with --base trunk). Named: recorded when
+    # there is one to resolve, else nothing (the topic lands on its named base).
+    if named:
+        try:
+            primary = main_branch(repo)
+        except CrewError:
+            primary = None
+    else:
+        primary = main_branch(repo)
+    base = base or primary
     branch = f"crew/{slug(name)}"
     existing = git(repo, "branch", "--list", branch)
     n = 2
@@ -752,8 +776,45 @@ def make_worktree(space, name, base=None):
         n += 1
     path = WORKTREES / slug(space["name"]) / branch.split("/", 1)[1]
     path.parent.mkdir(parents=True, exist_ok=True)
-    git(repo, "worktree", "add", "-b", branch, str(path), base)
-    return {"path": str(path), "branch": branch, "base": base, "repo": repo}
+    cut = git(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
+    git(repo, "worktree", "add", "-b", branch, str(path), cut)
+    # primary: the project's main branch as resolved now, so landing resolves it the same way later
+    # (a repo whose only branch was trunk has crew/* branches beside it by then). cut: the commit the
+    # topic started from, so what it carries that isn't on the target is counted from there, whatever
+    # later happens to the branch it was cut from (Codex T180).
+    return {"path": str(path), "branch": branch, "base": base, "repo": repo, "cut": cut,
+            **({"primary": primary} if primary else {}), **({"base_named": True} if named else {})}
+
+
+def main_branch(repo):
+    """The project's main branch: what origin's HEAD points at, else main, else master, else the one
+    branch there is. Never just what the folder has checked out (T177)."""
+    head = git(repo, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD", check=False)
+    if head and "/" in head:
+        b = head.split("/", 1)[1]
+        if git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{b}", check=False):
+            return b
+    for b in ("main", "master"):
+        if git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{b}", check=False):
+            return b
+    # The one branch that isn't a topic's (crew/*): a repo whose trunk is called trunk.
+    heads = [h for h in git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads", check=False).split()
+             if not h.startswith("crew/")]
+    if len(heads) == 1:
+        return heads[0]
+    raise CrewError(f"{repo} has no main or master branch to land on; say which with --onto")
+
+
+def land_target(wt):
+    """Where a topic lands: the base it was made with when that was named (--base), else the project's
+    main branch. A base that's only on record because the project folder had it checked out when the
+    topic was made (before T177) isn't one: those topics land on main."""
+    if wt.get("base_named"):
+        return wt["base"]
+    p = wt.get("primary")
+    if p and git(wt["repo"], "rev-parse", "-q", "--verify", f"refs/heads/{p}", check=False):
+        return p
+    return main_branch(wt["repo"])
 
 
 def worktree_of(space, tab):
@@ -767,6 +828,12 @@ def worktree_of(space, tab):
 
 def diff_data(wt):
     p = wt["path"]
+    # What would land, where it would land (Review's "Land on …" names it).
+    try:
+        target = land_target(wt)
+    except CrewError:
+        target = wt["base"]
+    wt = {**wt, "base": target}
     mb = git(p, "merge-base", wt["base"], "HEAD")
     files = []
     for l in git(p, "diff", "--numstat", mb).splitlines():
@@ -807,15 +874,19 @@ def base_checkout(repo, base):
     return None
 
 
-def cmd_land(spaces, spec, check=None, at=None):
+def cmd_land(spaces, spec, check=None, at=None, onto=None):
     space, tab = find(spec, spaces)
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
     # terminal ID isn't the owner (Grok review H1).
     if ME and is_bot_terminal(ME):
-        if not crewguard.recently_used(ME, "land"):
+        # The approval is for this exact land: its topic and any --onto / --at / --check (Codex T180:
+        # an approved `pal land P#t` went through again with --onto another branch).
+        words = ["land", spec] + [x for k, v in (("--check", check), ("--at", at), ("--onto", onto)) if v for x in (k, v)]
+        line = "pal " + " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
+        if not crewguard.recently_used(ME, "land", words=words):
             s, t = where_of(ME, spaces)
-            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", line)
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
     else:
@@ -824,6 +895,31 @@ def cmd_land(spaces, spec, check=None, at=None):
     if git(wt["path"], "status", "--porcelain"):
         die(f"{space['name']} #{chan(tab)} has uncommitted changes; ask it to commit (or discard) them first")
     repo = wt["repo"]
+    # Where it lands (T177): --onto when the owner says so, else the named base, else the project's
+    # main branch. Never the branch the project folder happens to have out.
+    target = onto or land_target(wt)
+    if not git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{target}", check=False):
+        die(f"{repo} has no branch {target}; nothing changed")
+    # What the topic carries that isn't its own and isn't on the target yet (another topic's unlanded
+    # work, or what the folder had out when it was made): those commits would land too. Counted from
+    # the commit it was cut from, recorded when it was made, never from where that branch is now
+    # (Codex T180: deleting or rewinding it hid them). A topic recorded before that, cut from
+    # anything but the target, has no known starting point: it needs the owner to name the target.
+    if not onto:
+        cut = wt.get("cut")
+        if cut and git(repo, "cat-file", "-e", f"{cut}^{{commit}}", check=False) is not None \
+                and git(repo, "rev-parse", "-q", "--verify", f"{cut}^{{commit}}", check=False):
+            extra = git(repo, "rev-list", "--count", f"refs/heads/{target}..{cut}", check=False)
+            if extra.isdigit() and int(extra) > 0:
+                die(f"{wt['branch']} was cut from {wt.get('base')} at {cut[:7]}, which brings {extra} commit{'s' if extra != '1' else ''} "
+                    f"not on {target}; landing it would bring those too. Land {wt.get('base')} first, or on purpose: "
+                    f"pal land {space['name']}#{chan(tab)} --onto {target}. Nothing changed.")
+        elif wt.get("base") and wt["base"] != target:
+            die(f"{wt['branch']} was made from {wt['base']} (before Project Pals recorded where a topic starts), so what "
+                f"else it would bring onto {target} can't be told apart from its own work. Look at it in Review (it shows "
+                f"everything that would land), then land on purpose: pal land {space['name']}#{chan(tab)} --onto {target}. "
+                f"Nothing changed.")
+    wt = {**wt, "base": target}
     msg = f"Land {wt['branch']} ({space['name']} #{chan(tab)})"
     # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
     # since isn't what the owner looked at, so it doesn't land on that click.
@@ -1820,10 +1916,11 @@ def cmd_desk(spaces, rest):
         if card.get("status") != "draft":
             die(f"{card['id']} isn't a draft")
         to, auto = desk_to(spaces, o.get("to") or card.get("to") or "auto")
-        task = None
-        if card.get("track") == "yes" and to and to != OWNER:
-            task = crewtasks.add(card["title"], spaces, None, OWNER, card.get("body") or None, to, notify_assignee=False)["id"]
-        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task)
+        def make_task(current):
+            if current.get("track") == "yes" and to and to != OWNER:
+                return crewtasks.add(current["title"], spaces, None, acted(), current.get("body") or None, to, notify_assignee=False)["id"]
+        from crewlib import tap_authority
+        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, tap=tap_authority(), make_task=make_task)
         card, t, what = crewdesk.deliver(card, spaces) if not auto else (card, None, "sorting it to a pal")
         if o.get("json"):
             print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
@@ -1965,11 +2062,24 @@ def owner_args():
         if skip:
             skip = False
             continue
-        if a == "--click":
+        if a in ("--click", "--tap"):
             skip = True
             continue
         out.append(a)
     return out
+
+
+def tap_of():
+    """The one-time token of a relayed tap being carried out (crewtaps.run_due), if this run has one."""
+    return ARGV[ARGV.index("--tap") + 1] if "--tap" in ARGV and ARGV.index("--tap") + 1 < len(ARGV) else None
+
+
+def acted():
+    """Who decides in this run, as the record and the pals are told: the owner, or for a relayed tap
+    "<helper> (tapped, relayed from <owner>)" (T147: a tap is never recorded as the owner's click)."""
+    from crewlib import tap_authority
+    t = tap_authority()
+    return t["label"] if t else OWNER
 
 
 def click_of():
@@ -1979,7 +2089,7 @@ def click_of():
 def require_owner(what):
     """An owner decision: only the app's one-time click token for exactly this command line. Anything
     else (a pal, a missing or unknown terminal ID, a terminal typing "yes") is refused (review H1)."""
-    return owner_gate(owner_args(), click_of(), what)
+    return owner_gate(owner_args(), click_of(), what, tap=tap_of())
 
 
 def pal_of(spaces, spec=None):
@@ -2186,16 +2296,25 @@ def cmd_agents(spaces, rest):
         text = open(os.path.expanduser(o["from"])).read()
         if o.get("staged-sha") and crewagents.sha(text) != o["staged-sha"]:
             die("the staged text changed after the review; review it again")
-        out = crewagents.apply(name, folder, pos[1], text, o["expect"], o.get("note"))
-        brain_log(space, rec, name, f"{out['file']}: {o.get('note') or ('created' if out['created'] else 'edited')} ({OWNER})")
+        def write_review(_proposal=None):
+            out = crewagents.apply(name, folder, pos[1], text, o["expect"], o.get("note"))
+            brain_log(space, rec, name, f"{out['file']}: {o.get('note') or ('created' if out['created'] else 'edited')} ({OWNER})")
+            return out
         if o.get("proposal"):
             import crewproposals
-            crewproposals.decide(o["proposal"], "accepted", via="profile panel")
+            def validate_review(p):
+                if p["kind"] != "agents" or p["pal"] != name or p.get("file") != pos[1] or p["text"] != text:
+                    die("the proposal no longer matches this review; open it again")
+                crewagents.validate_apply(folder, pos[1], o["expect"])
+            decision = crewproposals.decide(o["proposal"], "accepted", via="profile panel", validate=validate_review, apply=write_review)
+            out = decision["result"]
             tell_proposer(spaces, o["proposal"], True)
-            pattern = (crewproposals.get(o["proposal"]).get("meta") or {}).get("pattern")
+            pattern = (decision.get("meta") or {}).get("pattern")
             if pattern:
                 import crewdream
                 crewdream.decided(pattern, True, o["proposal"])
+        else:
+            out = write_review()
         print(json.dumps(out) if o.get("json") else f"wrote {out['path']} (backup: {out['backup']}). Not committed.")
     elif sub == "propose":
         import crewproposals
@@ -2230,7 +2349,8 @@ def tell_proposer(spaces, pid, accepted, why=None):
         target = find(by, spaces)[1]
         lt = lead(target)
         if lt:
-            enqueue(lt["terminal"], f"{OWNER} {'accepted' if accepted else 'declined'} {what} ({pid})." + (f" Why: {why}" if why else ""), sender=OWNER)
+            enqueue(lt["terminal"], f"{'[pal] ' if acted() != OWNER else ''}{acted()} {'accepted' if accepted else 'declined'} {what} ({pid})."
+                    + (f" Why: {why}" if why else ""), sender=acted())
     except CrewError:
         pass
 
@@ -2247,49 +2367,58 @@ def cmd_proposals(spaces, rest):
         print(json.dumps({**p, "text_sha": crewproposals.text_sha(p)}))
     elif sub in ("accept", "decline") and pos:
         require_owner("Decide a proposal")
-        p = crewproposals.get(pos[0])
-        if p["status"] != "pending":
-            die(f"{p['id']} is already {p['status']}")
+        from crewlib import tap_authority
+        accepted = sub == "accept"
+        why = (" ".join(pos[1:]) or o.get("note")) if not accepted else None
+
+        def validate(p):
+            if tap_authority():
+                import crewtaps
+                crewtaps.validate_snapshot("proposal", p, tap_authority())
+            if accepted:
+                crewproposals.check_reviewed(p, o.get("text-sha"))
+                # Refusals before any effects leave the proposal available for a new review.
+                if p["kind"] != "dream":
+                    space, rec, name = pal_of(spaces, p["pal"])
+                    rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+                    if p["kind"] == "mission":
+                        d = crewbrain.brain_dir(name, rec)
+                        if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
+                            die("the mission changed since this was proposed; open it in the profile panel and compare")
+                    elif p["kind"] == "agents":
+                        import crewagents
+                        crewagents.validate_apply(folder_of(space, rec), p["file"], p.get("base") or "none")
+                    else:
+                        die(f"accept {p['kind']} proposals in the Inbox")
+
+        def apply(p):
+            if p["kind"] == "dream":
+                return apply_dream(spaces, p)
+            space, rec, name = pal_of(spaces, p["pal"])
+            rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+            if p["kind"] == "mission":
+                d = crewbrain.brain_dir(name, rec)
+                if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
+                    die("the mission changed since this was proposed; open it in the profile panel and compare")
+                crewbrain.write(d, "mission.md", p["text"])
+                brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=acted())
+            elif p["kind"] == "agents":
+                import crewagents
+                out = crewagents.apply(name, folder_of(space, rec), p["file"], p["text"], p.get("base") or "none", p.get("note"))
+                brain_log(space, rec, name, f"{out['file']}: {p.get('note') or 'edited'} (from {p['by']}'s proposal, {acted()})")
+            else:
+                die(f"accept {p['kind']} proposals in the Inbox")
+
+        p = crewproposals.decide(pos[0], "accepted" if accepted else "declined", why,
+                                 via=acted() if acted() != OWNER else "cli", validate=validate, apply=apply if accepted else None)
+        tell_proposer(spaces, p["id"], accepted, why)
         pattern = (p.get("meta") or {}).get("pattern")
-        if sub == "decline":
-            why = " ".join(pos[1:]) or o.get("note")
-            crewproposals.decide(p["id"], "declined", why, via="cli")
-            tell_proposer(spaces, p["id"], False, why)
-            if pattern:
-                import crewdream
-                crewdream.decided(pattern, False, p["id"], why)
-            print(f"declined {p['id']}")
-            return
-        if p["kind"] == "dream":
-            crewproposals.check_reviewed(p, o.get("text-sha"))   # review H5: the text the owner saw
-            print(apply_dream(spaces, p))
-            crewproposals.decide(p["id"], "accepted", via="cli")
-            import crewdream
-            crewdream.decided(pattern, True, p["id"])
-            tell_proposer(spaces, p["id"], True)
-            print(f"accepted {p['id']}; {pattern} is watched for {crewdream.WATCH_DAYS} days")
-            return
-        space, rec, name = pal_of(spaces, p["pal"])
-        rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
-        if p["kind"] == "mission":
-            crewproposals.check_reviewed(p, o.get("text-sha"))
-            d = crewbrain.brain_dir(name, rec)
-            if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
-                die("the mission changed since this was proposed; open it in the profile panel and compare")
-            crewbrain.write(d, "mission.md", p["text"])
-            brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=OWNER)
-        elif p["kind"] == "agents":
-            import crewagents
-            out = crewagents.apply(name, folder_of(space, rec), p["file"], p["text"], p.get("base") or "none", p.get("note"))
-            brain_log(space, rec, name, f"{out['file']}: {p.get('note') or 'edited'} (from {p['by']}'s proposal, {OWNER})")
-        else:
-            die(f"accept {p['kind']} proposals in the Inbox")
-        crewproposals.decide(p["id"], "accepted", via="cli")
-        tell_proposer(spaces, p["id"], True)
         if pattern:
             import crewdream
-            crewdream.decided(pattern, True, p["id"])
-        print(f"accepted {p['id']}")
+            crewdream.decided(pattern, accepted, p["id"], why)
+        if p.get("result"):
+            print(p["result"])
+        print(f"{'accepted' if accepted else 'declined'} {p['id']}")
     else:
         die("pal proposals [ls] [--json] | pal proposal show|accept|decline ID [\"why\"]")
 
@@ -2441,7 +2570,7 @@ def apply_dream(spaces, p):
     if kind in ("tool", "process"):
         title = next((l.strip("# ").strip() for l in p["text"].splitlines() if l.strip()), m.get("summary", "dream task"))[:120]
         target = m.get("pal") or (settings().get("head") if kind == "process" else None)
-        t = crewtasks.add(title, spaces, None, OWNER, p["text"], target)
+        t = crewtasks.add(title, spaces, None, acted(), p["text"], target)
         return f"added {t['id']} for {target or 'anyone'}"
     if kind == "context":
         import crewbrain
@@ -2488,8 +2617,10 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
     if decide:
         # Only the owner decides, with the Inbox's click (review H1).
         require_owner(f"{decide.capitalize()} a held command")
-        via = "the Inbox"
-        r = crewguard.decide(rid, decide == "approve", note, via=via)
+        from crewlib import tap_authority
+        t = tap_authority()
+        via = f"a tap by {t['helper']}, relayed from {OWNER} (hold {t['hold']})" if t else "the Inbox"
+        r = crewguard.decide(rid, decide == "approve", note, via=via, tap=t)
         print(f"{r['status']}: {r['bot']}{' #' + r['channel'] if r.get('channel') else ''}: {r['command']}")
         return
     pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
@@ -2526,6 +2657,98 @@ def cmd_owner_step(rest):
     sys.stderr.write(f"held for {OWNER}: {held['why'] or rule}. It waits in Project Pals' Inbox as {held['id']} ({bot}).\n"
                      f"After {OWNER}'s click there, run exactly the same command again within {crewguard.EXPIRE_MIN} minutes; it goes through once.\n")
     sys.exit(3)
+
+
+def cmd_taps(cmd, rest):
+    """Relayed taps (T147, bin/crewtaps.py): a trusted helper taps what waits on the owner, relaying
+    the owner's word from chat. Held before it runs; recorded as a tap, never as the owner's click.
+      pal --as-helper taps [--json]                 what waits: exact text, choices, a one-time ticket each
+      pal --as-helper tap <ticket> "<choice>" --relayed "the owner's words"
+      pal --as-helper tap-cancel <hold>             take a tap back while it's held
+      pal taps [--json]                             the holds (anyone)
+      pal taps stop|now|undo <hold>                 the owner's (a click)
+      pal taps run                                  carry out what's due (crewd does this each tick)"""
+    import crewtaps
+    import crewhelpers
+    as_json = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+
+    def me():
+        """The helper this run is, its key accepted; a tap is never anyone else's."""
+        p = crewhelpers.presented()
+        if not p:
+            die("that's a trusted helper's: pal --as-helper …")
+        if not p.get("name"):
+            die(f"{p['claim']}: not accepted: {p['why']}")
+        return p["name"]
+
+    try:
+        if cmd == "tap":
+            pos, o = opts(rest, ("relayed",))
+            if len(pos) != 2:
+                die('pal --as-helper tap <ticket> "<choice>" --relayed "what they said"')
+            h = crewtaps.tap(me(), pos[0], pos[1], o.get("relayed"))
+            when = time.strftime("%H:%M:%S", time.localtime(h["run_at"] / 1000))
+            out = {"hold": h["id"], "item": h["item"], "choice": h["choice"], "runs_at": h["run_at"], "class": h["cls"]}
+            print(json.dumps(out) if as_json else
+                  f"held: {h['item']} → {h['choice']} goes through at {when} unless it's stopped (hold {h['id']}). "
+                  f"To take it back: pal --as-helper tap-cancel {h['id']}. It is recorded as tapped by you, relayed from {OWNER}; not as {OWNER}'s click.")
+            return
+        if cmd == "tap-cancel":
+            if len(rest) != 1:
+                die("pal --as-helper tap-cancel <hold>")
+            h = crewtaps.cancel(me(), rest[0])
+            print(f"taken back: {h['item']} → {h['choice']} did not run. It's {OWNER}'s to answer now.")
+            return
+        sub = rest[0] if rest else "ls"
+        if crewhelpers.claimed() and sub == "ls":
+            rows = crewtaps.tickets(me())
+            if as_json:
+                print(json.dumps({"items": rows}, ensure_ascii=False))
+                return
+            for r in rows:
+                print(f"{r['id']} · {r['kind']} · {r['title']}")
+                print("   " + r["text"].replace("\n", "\n   "))
+                print("   " + (f"not tappable: {r['not_tappable']}" if r.get("not_tappable") else
+                               f"ticket {r['ticket']} · choices: {' | '.join(c['label'] for c in r['choices'])} · held {r['hold_seconds']}s before it runs"))
+            if not rows:
+                print("(nothing waits)")
+            return
+        if sub == "run":
+            for h in crewtaps.run_due():
+                print(f"{h['id']} {h['status']}: {h['item']} → {h['choice']}" + (f" ({h['result']})" if h.get("result") else ""))
+            return
+        if sub in ("stop", "now", "undo") and len(rest) == 2:
+            require_owner(f"{sub} a relayed tap")
+            if sub == "stop":
+                h = crewtaps.stop(rest[1])
+                print(f"stopped: {h['item']} → {h['choice']} did not run")
+            elif sub == "now":
+                crewtaps.now_(rest[1])
+                done = [h for h in crewtaps.run_due() if h["id"] == rest[1]]
+                print(f"{done[0]['status']}: {done[0]['item']} → {done[0]['choice']}" if done else f"{rest[1]} is on its way")
+            else:
+                h, x = crewtaps.undo(rest[1])
+                print(f"undone: {h['item']} is open again, for your own answer")
+                print(home_answer_to(herdr_spaces(), x, h["choice"], undone=True))
+            return
+        if sub == "ls" and len(rest) <= 1:
+            crewtaps.run_due()
+            hs = crewtaps.holds()
+            if as_json:
+                print(json.dumps({"holds": hs}, ensure_ascii=False))
+                return
+            for h in hs[-40:]:
+                left = max(0, int((h["run_at"] - now_ms()) / 1000))
+                print(f"{h['id']} · {h['status']}" + (f" ({left}s left)" if h["status"] == "holding" else "") + f" · {h['helper']} → {h['item']}: {h['choice']} · \"{h['relayed']}\"")
+            if not hs:
+                print("(no taps)")
+            return
+        die(cmd_taps.__doc__)
+    except crewtaps.TapError as e:
+        die(f"not tapped: {e}", code=5)
+    except crewhome.HomeError as e:
+        die(str(e))
 
 
 def cmd_helpers(rest):
@@ -2577,6 +2800,17 @@ def cmd_helpers(rest):
         for x in info["helpers"]:
             bad = att.get(x["name"])
             print(bad["text"] if bad else f"{x['name']}: " + ("on, its key works" if x["on"] else "off (your choice)"))
+        return
+    if len(rest) == 4 and rest[1] == "taps":
+        # Relayed taps (T147): may this helper tap questions on Home / approvals that stay on this
+        # computer / outward actions and landing, and how long an outward tap is held. The owner's click.
+        require_owner("changing settings")
+        try:
+            known, sw = crewhelpers.set_taps(rest[0], rest[2], rest[3])
+        except crewhelpers.HelperError as e:
+            die(str(e))
+        print(f"{known}: taps · Home questions {'on' if sw['home'] else 'off'} · approvals on this computer {'on' if sw['local'] else 'off'}"
+              f" · outward and landing {'on' if sw['outward'] else 'off'} (held {sw['hold']} min)")
         return
     if len(rest) == 3 and rest[1] == "limit":
         require_owner("changing settings")
@@ -2805,7 +3039,7 @@ def cmd_update(rest):
             space, tab = find(pos[2], herdr_spaces())
             wt = worktree_of(space, tab)
             with update_lock():
-                out = crewupdate.try_branch(crewupdate.repo_root(wt["path"]) or wt["repo"], wt["branch"], f"{space['name']}#{chan(tab)}", log=step, into=wt["base"])
+                out = crewupdate.try_branch(crewupdate.repo_root(wt["path"]) or wt["repo"], wt["branch"], f"{space['name']}#{chan(tab)}", log=step, into=land_target(wt))
             if git(wt["path"], "status", "--porcelain", check=False):
                 out["note"] = "the topic has uncommitted changes; they aren't in the trial"
         elif sub == "back":
@@ -2946,8 +3180,10 @@ def home_topic(spaces, spec):
         return spec.strip()
 
 
-def home_answer_to(spaces, x, answer):
-    """The owner's answer, as a card from them to whoever asked (held on its desk if it's asleep)."""
+def home_answer_to(spaces, x, answer, tap=None, undone=False):
+    """The owner's answer, as a card from them to whoever asked (held on its desk if it's asleep). A
+    relayed tap's (T147) goes as Project Pals' own card, saying who tapped and what the owner is
+    reported to have said: never as a card from the owner. `undone`: the owner undid that tap."""
     to = x.get("by") or ""
     if not to or "#" not in to and not to.strip():
         return "nobody to tell (it wasn't asked from a topic)"
@@ -2958,11 +3194,23 @@ def home_answer_to(spaces, x, answer):
         return f"{to} isn't open; the answer is on Home"
     except Exception:
         return f"{to} isn't open; the answer is on Home"
-    who = crewdesk.sender(spaces)
-    title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
-    body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
-    card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
-                           via="pal home answer")
+    if undone:
+        title = f"Stop: {OWNER} undid the tap on {x['id']}"[:crewdesk.TITLE_MAX]
+        body = (f"You asked on Home: {x.get('title', '')}\n\nA helper's tap had answered it ({answer}). {OWNER} has undone that: the question is open "
+                f"again and waits for {OWNER}'s own answer. Stop what you started on that answer, and say what you had already done.")
+        card = crewdesk.create("tell", dest, title, body, frm="crew", from_kind="system", proof="pal taps undo", urgency="soon", via="pal taps undo")
+    elif tap:
+        title = f"Re {x['id']}: {answer} (tapped by {tap['helper']}, relayed from {OWNER})"[:crewdesk.TITLE_MAX]
+        body = (f"You asked on Home: {x.get('title', '')}\n\n{tap['helper']} tapped: {answer}\n{OWNER}'s words, as {tap['helper']} reported them: "
+                f"\"{crewdesk.escape_body(tap['relayed'])}\"\n\nThis is a relayed tap, not {OWNER}'s own click. Go ahead on it. A command the approval gate "
+                f"holds still waits for its own approval. If {OWNER} undoes the tap you'll be told to stop.")
+        card = crewdesk.create("tell", dest, title, body, frm="crew", from_kind="system", proof=f"tap {tap['hold']}", via="pal home answer (tap)")
+    else:
+        who = crewdesk.sender(spaces)
+        title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
+        body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
+        card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
+                               via="pal home answer")
     card, _, what = crewdesk.deliver(card, spaces)
     return f"told {dest} ({what}) · card {card['id']}"
 
@@ -3251,12 +3499,13 @@ def cmd_home(spaces, rest):
                 for q in rel["queued"]:
                     print(f"  {q['id']}  {q['text']}")
         elif sub == "ask" and args:
-            pos, o = opts(args, ("topic", "body", "recommend", "why"))
+            pos, o = opts(args, ("topic", "body", "recommend", "why"), ("owner-only",))
             if len(images) > crewhome.IMAGES_MAX:
                 die(f"at most {crewhome.IMAGES_MAX} images")
             imgs = [str(Path(desk_attach(f)).resolve().relative_to(DATA)) for f in images]
             x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")),
-                             does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs)
+                             does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs,
+                             owner_only=bool(o.get("owner-only")))
             print(crewhome.line(x))
         elif sub == "recommend" and len(args) >= 2:
             pos, o = opts(args, ("why",))
@@ -3303,9 +3552,14 @@ def cmd_home(spaces, rest):
             # The owner's pick, from a click in Project Pals (main proved it); never a pal's, never typed.
             if not owner_proven():
                 require_owner("answer a question on Home")
-            x = crewhome.answer(args[0], " ".join(args[1:]), by=OWNER)
+            from crewlib import tap_authority
+            t = tap_authority()
+            x = crewhome.answer(args[0], " ".join(args[1:]), by=acted(), tapped=t)
             print(crewhome.line(x))
-            print(home_answer_to(spaces, x, x["answer"]))
+            print(home_answer_to(spaces, x, x["answer"], tap=t))
+        elif sub == "owner-only" and len(args) == 1:
+            # No helper's tap answers this ask (T147): its asker, the head pal or the owner marks it.
+            print(crewhome.line(crewhome.owner_only(args[0], by=by, role=role)))
         elif sub == "seen":
             if not owner_proven():
                 require_owner("mark Home seen")
@@ -3451,9 +3705,10 @@ def main(argv):
         name = argv[0].partition("=")[2].strip() or os.environ.get("PAL_HELPER") or "Pals"
         os.environ["PAL_HELPER"] = name
         argv = argv[1:]
-        ok = argv[:1] in (["tell"], ["ask"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
-        if not ok or "--click" in argv:
-            die(f"--as-helper is only for tell, ask, task add and desk send; anything that's {OWNER}'s still needs their click in Project Pals")
+        ok = argv[:1] in (["tell"], ["ask"], ["taps"], ["tap"], ["tap-cancel"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
+        if not ok or "--click" in argv or "--tap" in argv:
+            die(f"--as-helper is only for tell, ask, task add, desk send, and taps / tap / tap-cancel; anything else that's {OWNER}'s "
+                f"still needs their click in Project Pals")
     # Strict helpers (T170): a helper that asked for it sends in the owner's name or not at all. Checked
     # here, before a task or a card exists, so nothing half-happens; exit 4 tells the helper apart from
     # any other failure, and the line says why, for it to pass on to the owner.
@@ -3519,6 +3774,8 @@ def main(argv):
         return cmd_owner_step(rest)
     if cmd == "helpers":
         return cmd_helpers(rest)
+    if cmd in ("taps", "tap", "tap-cancel"):
+        return cmd_taps(cmd, rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).
@@ -3690,8 +3947,8 @@ def main(argv):
         pos, o = opts(rest, (), ("stat", "json"))
         cmd_diff(spaces, pos[0], "json" if o.get("json") else "stat" if o.get("stat") else "full")
     elif cmd == "land" and rest:
-        pos, o = opts(rest, ("check", "at"))
-        cmd_land(spaces, pos[0], o.get("check"), o.get("at"))
+        pos, o = opts(rest, ("check", "at", "onto"))
+        cmd_land(spaces, pos[0], o.get("check"), o.get("at"), o.get("onto"))
     else:
         die(__doc__)
 

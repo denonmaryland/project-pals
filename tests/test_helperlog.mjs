@@ -4,7 +4,7 @@
 // Run: node tests/test_helperlog.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperNeed } from "../lib/helperlog.js";
+import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperNeed, tapNeed, tapsHolding, tapUndoable, TAP_SWITCHES } from "../lib/helperlog.js";
 
 const root = new URL("..", import.meta.url).pathname;
 const read = (p) => readFileSync(root + p, "utf8");
@@ -84,6 +84,37 @@ const restored = helperNeed({ name: "Pals", reason: "restored-off", fix: "on", s
 assert.equal(restored.title, "Pals is off.");
 assert.equal(restored.fix.label, "Turn Pals on");
 assert.equal(restored.off.label, "Leave it off");
+
+// ── relayed taps (T147): Home's card for a held tap, and the record's lines ──
+const at = new Date(NOW); at.setHours(14, 7, 0, 0);
+const held = { id: "t-abc123", helper: "Pals", kind: "approval", item: "a-111111", cls: "outward", choice: "Approve", relayed: "yes push it",
+  title: "Helper #build: git push origin main", by: "Helper #build", at: at.getTime() - 5 * MIN, run_at: at.getTime(), status: "holding" };
+const tn = tapNeed(held, at.getTime() - 4 * MIN);
+assert.equal(tn.title, "Pals tapped Approve: Helper #build: git push origin main");
+assert.equal(tn.outward, true);
+assert.equal(tn.goes, "goes through at 14:07", "a clock time, so the card needs no timer");
+assert.match(tn.sub, /unless you stop it · Pals says you said: "yes push it" · an outward action · can't be undone once it runs$/);
+const soft = tapNeed({ ...held, cls: "home", kind: "home" }, at.getTime() + MIN);
+assert.equal(soft.goes, "going through now");
+assert.ok(!soft.outward && !/can't be undone/.test(soft.sub));
+const hs = [{ ...held, id: "t-2", at: 2 }, { ...held, id: "t-1", at: 1 }, { ...held, id: "t-3", status: "done", kind: "home" }, { ...held, id: "t-4", status: "done" }, null];
+assert.deepEqual(tapsHolding(hs).map((h) => h.id), ["t-1", "t-2"], "only what's still held, oldest first");
+assert.equal(tapUndoable(hs, "t-3"), true, "a question on Home that went through on a tap");
+assert.equal(tapUndoable(hs, "t-4"), false, "an approval that ran has run");
+assert.equal(tapUndoable(hs, "t-1"), false);
+assert.deepEqual(TAP_SWITCHES.map((s) => s[0]), ["home", "local", "outward"]);
+assert.match(TAP_SWITCHES[2][2], /can't be undone/);
+assert.deepEqual(logRow({ kind: "tap", helper: "Pals", choice: "Approve", title: "git push origin main", relayed: "yes", item: "a-111111", item_class: "outward", run_at: at.getTime() }),
+  { bold: "Pals tapped Approve", rest: 'git push origin main · you said: "yes" · held until 14:07', tone: "warn", card: "a-111111" });
+assert.equal(logRow({ kind: "tap", helper: "Pals", choice: "Recessed", title: "Q?", relayed: "r", item: "h-1", item_class: "home" }).tone, "sent");
+assert.equal(logRow({ kind: "tap-done", helper: "Pals", choice: "Recessed", title: "Q?", item: "h-1" }).bold, "Tap went through");
+assert.equal(logRow({ kind: "tap-stopped", helper: "Pals", choice: "Approve", title: "x" }).bold, "Tap stopped by you");
+assert.equal(logRow({ kind: "tap-cancelled", helper: "Pals", choice: "Approve", title: "x" }).bold, "Tap taken back by Pals");
+assert.deepEqual([logRow({ kind: "tap-dropped", helper: "Pals", choice: "A", title: "x", why: "it changed" }).tone, logRow({ kind: "tap-failed", helper: "Pals" }).tone], ["warn", "warn"]);
+assert.equal(logRow({ kind: "tap-undone", helper: "Pals", choice: "A", title: "x" }).bold, "Tap undone by you");
+assert.deepEqual(logRow({ kind: "tap-refused", helper: "Pals", why: "that ticket was used already" }), { bold: "Pals's tap was refused", rest: "that ticket was used already", tone: "warn", card: null });
+// Nothing in the record ever reads as the owner having approved.
+for (const k of ["tap", "tap-done", "tap-stopped", "tap-failed"]) assert.ok(!/You approved|You answered/.test(JSON.stringify(logRow({ kind: k, helper: "Pals", choice: "Approve", title: "x", relayed: "y" }))));
 
 // ── for Home ──
 const old = { ...sent, at: NOW - 30 * H, card: "c-000001" };
@@ -203,6 +234,40 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
     assert.ok(texts.includes('PAL_HELPER=Pals pal tell "<Pal>" "…"'));
     assert.ok(texts.includes("Pals tried: home answer h-e8c822 Release today") && texts.includes("Pals told Orca#ops"));
     assert.ok(!texts.some((t) => /palkey_/.test(t)));
+    // Relayed taps: three switches under a helper that's on. Home and local turn on with one click; the
+    // outward one asks once more in place, and says what it means.
+    for (const id of ["th-tap-sw-home-0", "th-tap-sw-local-0", "th-tap-sw-outward-0"]) assert.ok(clicks.has(id), `has ${id}`);
+    assert.ok(!clicks.has("th-tap-sw-home-1"), "a helper that's off has no tap switches");
+    assert.ok(!clicks.has("th-hold-up-0"), "the hold shows once outward taps are on");
+    await run((cx) => clicks.get("th-tap-sw-home-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "home", "on"]);
+    assert.ok(palCalls().at(-1).includes("--click"));
+    await draw(v);
+    const nTap = palCalls().length;
+    await run((cx) => clicks.get("th-tap-sw-outward-0")(null, cx));
+    assert.equal(palCalls().length, nTap, "the first click on outward only asks");
+    await draw(v);
+    assert.ok(clicks.has("th-tap-yes-0") && clicks.has("th-tap-no-0") && !clicks.has("th-tap-sw-outward-0"));
+    assert.ok(texts.some((t) => t.includes("Pals's tap is the approval") && t.includes("without your click")));
+    await run((cx) => clicks.get("th-tap-no-0")(null, cx));
+    await draw(v);
+    assert.equal(palCalls().length, nTap, "Keep it off: nothing ran");
+    await run((cx) => clicks.get("th-tap-sw-outward-0")(null, cx));
+    await draw(v);
+    await run((cx) => clicks.get("th-tap-yes-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "outward", "on"]);
+    fx.info = { ...fx.info, helpers: [{ ...pals, taps: { home: true, local: false, outward: true, hold: 5 } }, fx.info.helpers[1]] };
+    await run((cx) => v.load(cx));
+    await draw(v);
+    assert.ok(texts.includes("held 5m") && clicks.has("th-hold-up-0") && clicks.has("th-hold-dn-0"));
+    await run((cx) => clicks.get("th-hold-up-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "hold", "6"]);
+    await draw(v);
+    await run((cx) => clicks.get("th-tap-sw-outward-0")(null, cx));   // turning it off needs no second click
+    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "outward", "off"]);
+    fx.info = { helpers: [pals, { name: "Wabi", on: false, key: null, key_there: false, sent: 0, refused: 0 }], log: [refused, sent], max: 8 };
+    await run((cx) => v.load(cx));
+    await draw(v);
     // The hourly limit, 5 at a time, your click; a helper that isn't working says why in its row.
     await run((cx) => clicks.get("th-lim-up-0")(null, cx));
     assert.deepEqual(palCalls().at(-1).slice(1, 6), ["settings", "trust-helper", "Pals", "limit", "25"]);

@@ -8,6 +8,11 @@
   sent them, and how long each turn took. Reply in the box under it; Esc goes to the terminal to
   type live. It only reads: it never types into a terminal or answers a prompt.
 
+- **Land always goes to main.** A topic's branch now lands on the project's main branch (or a base
+  you named when making it), never on whatever branch the project folder happens to have out, and
+  new topics are cut from main the same way. A topic built on another topic's unlanded branch is
+  refused with how to land it on purpose (`pal land … --onto`).
+
 - **See your own changes live: the Live channel and Try it live.** For people who work on
   Project Pals itself. About has an **Update channel** switch: on Live, your install follows `main`
   in your own checkout. What you land is checked, installed and reloaded in place within seconds,
@@ -82,6 +87,20 @@
   over switched **off**, and its old key is deleted. That build accepted a request without any key
   and could be used by a pal, so turn Pals on again in Trusted helpers when you want it; your
   assistant's `pal --as-helper …` line keeps working after that.
+- **Relayed taps: your trusted helper can tap what waits on you, from your chat with it.** Away
+  from the app, your assistant shows you the exact thing that's waiting (a question on Home, a
+  held push or release, a proposal, a draft), you answer in chat, and it taps for you. Three
+  switches per helper in Trusted helpers, all off until you turn them on: Home questions,
+  approvals that stay on this computer, and push / release / land. A tap is held before it runs
+  (a minute; five for outward ones, your setting), shows first on Home with **Stop** and **Let it
+  go now**, and is recorded everywhere as "tapped by <helper>, relayed from you", never as your
+  click. A tapped answer on Home can be undone. At most 5 outward taps a day; three refused taps
+  switch tapping off. Settings, the trust and tap switches, updates and uninstall can never be
+  tapped, and you (or the asker) can mark a question "your click only".
+  **What to know before turning the outward switch on:** your helper's tap is then the approval.
+  Anything that can act as your helper could push, release or land in your name after the hold.
+  The hold, the limits and the record make that slow and visible; they can't prove it was you.
+
 - **A trusted helper stays as you left it, and you're told if it stops working.** Only your click
   turns a helper on or off: installs, updates and Roll back never touch its switch or its key. If
   a helper you left on can't be used (its key is missing or unreadable, it has reached its hourly

@@ -120,7 +120,7 @@ def _find(h, iid):
 
 
 def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=None, status="open",
-        does=(), recommend=None, why=None, links=(), images=()):
+        does=(), recommend=None, why=None, links=(), images=(), owner_only=False):
     if kind not in KINDS:
         raise HomeError(f"kind is one of {', '.join(KINDS)}")
     item = {"id": new_id("h-"), "kind": kind, "status": status, "title": _one_line(title, TITLE_MAX, "the title"),
@@ -183,6 +183,8 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
         item["factory"] = fac
     if status == "parked":
         item["parked_at"] = item["at"]
+    if owner_only and kind == "ask":
+        item["owner_only"] = True   # no helper's tap answers it (pal home ask --owner-only)
     with locked("home"):
         h = load()
         if status == "open" and sum(1 for x in h["items"] if x.get("status") == "open") >= OPEN_CAP:
@@ -261,8 +263,11 @@ def unpark(iid, *, by, role=None):
     return x
 
 
-def answer(iid, text, *, by):
-    """The owner's answer to an ask (the caller has checked the click)."""
+def answer(iid, text, *, by, tapped=None):
+    """The owner's answer to an ask (the caller has checked the click). Or a relayed tap's (T147:
+    `tapped` is crewlib.tap_authority(), the caller has taken its token): then it must be one of the
+    ask's listed choices, `by` says who tapped, and the item keeps who, what they relayed and which
+    hold, so Home shows "Tapped by …" and never "You answered"."""
     text = _one_line(text, 500, "the answer")
     with locked("home"):
         h = load()
@@ -271,7 +276,48 @@ def answer(iid, text, *, by):
             raise HomeError(f"{x['id']} is a {x.get('kind')}, not a question")
         if x.get("status") not in ("open", "parked"):
             raise HomeError(f"{x['id']} is {x['status']} already")
+        if tapped:
+            import crewtaps
+            crewtaps.validate_snapshot("home", x, tapped)
+            if x.get("owner_only"):
+                raise HomeError(f"{x['id']} is for {tapped.get('helper')}'s owner alone: it can't be answered by a tap")
+            pick = [o for o in x.get("options") or [] if o.lower() == text.lower()]
+            if x.get("status") != "open" or not pick:
+                raise HomeError(f"{x['id']}: a tap picks one of an open question's listed choices")
+            text = pick[0]
+            x["tapped"] = {"by": tapped.get("helper"), "relayed": _one_line(tapped.get("relayed") or "", 300, "the relayed words"),
+                           "hold": tapped.get("hold"), "at": now_ms()}
         x["status"], x["answer"], x["answered_at"], x["closed_at"], x["closed_by"] = "answered", text, now_ms(), now_ms(), by
+        _save(h)
+    return x
+
+
+def untap(iid):
+    """The owner undoes a tapped answer (the caller has checked the click): the question is open again,
+    for the owner's own answer only. What was tapped stays on the item as `untapped`, for the record."""
+    with locked("home"):
+        h = load()
+        x = _find(h, iid)
+        if x.get("status") != "answered" or not x.get("tapped"):
+            raise HomeError(f"{x['id']} wasn't answered by a tap")
+        x["untapped"] = {**x.pop("tapped"), "answer": x.pop("answer", None), "undone": now_ms()}
+        x["status"], x["owner_only"] = "open", True
+        for k in ("answered_at", "closed_at", "closed_by"):
+            x.pop(k, None)
+        _save(h)
+    return x
+
+
+def owner_only(iid, *, by, role=None):
+    """Mark an ask for the owner's own click: no helper's tap answers it. Its asker (any topic of that
+    pal), the head pal or the owner may; nobody can take the mark off but the owner answering it."""
+    with locked("home"):
+        h = load()
+        x = _find(h, iid)
+        if x.get("kind") != "ask":
+            raise HomeError(f"{x['id']} is a {x.get('kind')}, not a question")
+        _allow(x, by, role, "mark")
+        x["owner_only"] = True
         _save(h)
     return x
 
@@ -391,5 +437,9 @@ def line(x):
         bits.append(f"→ {x['answer']}")
     if x.get("withdrawn"):
         bits.append(f"withdrawn by {x.get('closed_by') or '?'}")
+    if x.get("tapped"):
+        bits.append(f"tapped by {x['tapped'].get('by')}, relayed")
+    if x.get("owner_only") and x.get("status") == "open":
+        bits.append("your click only")
     bits.append(f"· {x.get('by', '?')} · {ago(x.get('at'))}")
     return "  ".join(b for b in bits if b)
