@@ -288,6 +288,59 @@ print(json.dumps([crewguard.check('tH','Helper','build',command) for command in 
                 self.assertIsNotNone(request)
                 self.assertIn('nested-cwd', request['guard_context']['rules'])
 
+    def test_substitution_or_subshell_cd_cannot_hide_an_outer_live_commit(self):
+        outside = shlex.quote(str(self.root))
+        children = [f'echo $(cd {outside}; git status)',
+                    f'(cd {outside}; git status)',
+                    f'echo `cd {outside}; git status`',
+                    f'echo "$(cd {outside}; git status)"']
+        commands = [child + '; git commit -am update' for child in children]
+        results = py(self.env, f'''import crewguard, crewtaps
+crewguard.HOOK_CWD={str(self.repo)!r}
+out=[]
+for command in {commands!r}:
+    request=crewguard.check('tH','Helper','build',command)
+    out.append([bool(request),bool(crewtaps.approval_class(request)[1]) if request else False])
+print(json.dumps(out))''')
+        self.assertEqual(results, [[True, True]] * len(commands))
+
+    def test_substitution_readonly_and_quoted_controls_stay_free(self):
+        commands = ['echo $(git status)', '(git status); git log -1', 'echo `git status`',
+                    'echo "$(git status)"', "printf '%s' '$(git commit -am update)'",
+                    "printf '%s' '`git commit -am update`'", 'printf "%s" "(git commit -am update)"',
+                    "cat <<'DOC' > notes.txt\n$(git commit -am update)\nDOC"]
+        results = py(self.env, f'''import crewguard
+crewguard.HOOK_CWD={str(self.repo)!r}
+print(json.dumps([crewguard.matches(command) for command in {commands!r}]))''')
+        self.assertEqual(results, [None] * len(commands))
+
+    def test_skipped_conditional_or_loop_cd_cannot_hide_an_outer_live_commit(self):
+        outside = shlex.quote(str(self.root))
+        commands = [f'if false; then cd {outside}; fi; git commit -am update',
+                    f'while false; do cd {outside}; done; git commit -am update',
+                    f'cd {outside} | cat; git commit -am update',
+                    f'true || cd {outside}; git commit -am update',
+                    f'false && cd {outside}; git commit -am update']
+        results = py(self.env, f'''import crewguard, crewtaps
+crewguard.HOOK_CWD={str(self.repo)!r}
+out=[]
+for command in {commands!r}:
+    request=crewguard.check('tH','Helper','build',command)
+    out.append([bool(request),bool(crewtaps.approval_class(request)[1]) if request else False])
+print(json.dumps(out))''')
+        self.assertEqual(results, [[True, True]] * len(commands))
+
+    def test_conditional_readonly_and_quoted_controls_stay_free(self):
+        commands = ['if true; then git status; else git log -1; fi',
+                    'while false; do git status; done',
+                    'git status | cat', 'true || git status', 'true && git status',
+                    "printf '%s' 'if true; then git commit -am update; fi'",
+                    "cat <<'DOC' > notes.txt\nwhile true; do git commit -am update; done\nDOC"]
+        results = py(self.env, f'''import crewguard
+crewguard.HOOK_CWD={str(self.repo)!r}
+print(json.dumps([crewguard.matches(command) for command in {commands!r}]))''')
+        self.assertEqual(results, [None] * len(commands))
+
     def test_nested_candidate_overflow_requires_owner_at_gate_ticket_and_decision(self):
         code = 'import os; ' + '; '.join(f'os.system("echo {i}")' for i in range(201))
         code += '; os.system("git commit -am update")'

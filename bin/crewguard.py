@@ -107,7 +107,7 @@ DEFAULT = {
          "check": "moves-base-branch", "pattern": r"$^"},
         # Nested literal runners lose ordering/cwd in the heuristic parse. Hold potentially
         # affected Git mutations for the owner, even when no other rule happens to match.
-        {"name": "nested-cwd", "why": "runs a nested command whose execution context needs owner review",
+        {"name": "nested-cwd", "why": "uses a command execution context that needs owner review",
          "check": "nested-cwd", "pattern": r"$^"},
     ],
     "trusted": [],
@@ -139,6 +139,8 @@ HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n.*?\n\s*\2\s*(?=\n|$)
 HEREDOC_BODY = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n(.*?)\n\s*\2\s*(?=\n|$)", re.S)   # HEREDOC, body kept
 heredoc_free = lambda cmd: HEREDOC.sub(lambda m: m.group(1) + m.group(3), cmd)
 SPLIT = re.compile(r"\n|;|&&|\|\||\||\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
+# These flattened delimiters do not guarantee that a cd executes in the outer shell.
+CWD_UNCERTAIN_BOUNDARIES = {"$(", "`", "(", "|", "&&", "||", "then", "do", "else"}
 INNER = re.compile(r"""\b(?:sh|bash|zsh|eval)\s+(?:-\w+\s+)*-c\s+(['"])(.*?)\1""", re.S)
 # (A wrapper with options, `env -i …`, is left for normal_head, which knows them.)
 LEAD = re.compile(r"""^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+(?!-)|\w+=(?:'[^']*'|"[^"]*"|\S)*\s+)*""")
@@ -1468,7 +1470,11 @@ def nested_cwd(cmd, _depth=0, _seen=None):
     nested = _nested_commands(cmd, overflow)
     if overflow or len(nested) > 200:
         return True
-    if not nested:
+    # commands() also flattens child shells and conditional execution. A child or
+    # skipped cd must not change our view of an outer mutation; share its quote mask.
+    shell_boundary = any(m.group(0) in CWD_UNCERTAIN_BOUNDARIES
+                         for m in SPLIT.finditer(mask_quotes(heredoc_free(cmd))))
+    if not nested and not shell_boundary:
         return False
     if any(_cwd_git_mutation(seg) for seg in commands(cmd)) or _depth >= 3:
         return True
