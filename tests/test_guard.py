@@ -9,14 +9,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
-TMP = pals_tmp.mkdtemp(prefix="pals-test-")
+# One data folder for the in-process gate and the `pal` runs these tests start. crewlib fixes its
+# paths when first imported; when an earlier suite in this process imported it (test_sleep's sandbox,
+# through test_handoff, say), these tests use that folder, or the gate would read one folder while
+# the tests write another (T213: 7 tests failed after owner_step/land_base/handoff/taps).
+_crewlib = sys.modules.get("crewlib")
+TMP = str(_crewlib.DATA) if _crewlib is not None else pals_tmp.mkdtemp(prefix="pals-test-")
+Path(TMP).mkdir(parents=True, exist_ok=True)
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)
 # A fake hc first on PATH (N1): deciding an approval types a note into the pal's terminal, and that
 # must never reach a live Herdr session, nor fail where there's no hc. It logs what it was asked.
 SHIMS = Path(TMP) / "shims"
-SHIMS.mkdir()
+SHIMS.mkdir(exist_ok=True)
 (SHIMS / "hc").write_text(f'#!/bin/sh\necho "$@" >> "{TMP}/hc.log"\nexit 0\n')
 (SHIMS / "hc").chmod(0o755)
 os.environ["PATH"] = f"{SHIMS}:{os.environ.get('PATH', '/usr/bin:/bin')}"
