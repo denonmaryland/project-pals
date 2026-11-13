@@ -163,6 +163,47 @@ print(json.dumps(crewguard.owner_step('tW', 'Worker', 'general', './release 9.9.
         self.assertTrue(approve("./release 9.9.9 notes", None))
         self.assertFalse(step(str(a)))
 
+    # #trusted-helper's T215 regressions (t215-handover-regressions.txt), the owner half: the Full
+    # (delegated helper) half belongs to its full-delegation branch and is kept there for its rebase.
+    def hook_request(self, command):
+        """The hook's check of `command` run in self.root (None: it lets it through)."""
+        return py(self.env, f"""import os, crewguard
+crewguard.HOOK_CWD = {str(self.root)!r}
+print(json.dumps(crewguard.check('tH', 'Helper', 'build', {command!r})))""")
+
+    def test_t215_handover_from_different_cwd_cannot_spend_the_owners_approval(self):
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        command = "./release 9.9.9 owner"
+        request = self.hook_request(command)
+        answer = owner(self.env, self.data, "approve", request["id"], "--inbox")
+        self.assertEqual(answer.returncode, 0, answer.stderr)
+        self.assertIsNone(self.hook_request(command))   # the hook lets the original cwd run
+        result = py(self.env, f"""import os, crewguard
+os.chdir({str(elsewhere)!r})
+other = crewguard.owner_step('tH', 'Helper', 'build', {command!r}, 'release-script')
+record = next(r for r in crewguard.all_requests() if r['id'] == {request['id']!r})
+os.chdir({str(self.root)!r})
+same = crewguard.owner_step('tH', 'Helper', 'build', {command!r}, 'release-script')
+again = crewguard.owner_step('tH', 'Helper', 'build', {command!r}, 'release-script')
+print(json.dumps([bool(other), bool(record.get('claimed')), same, bool(again)]))""")
+        self.assertEqual(result, [True, False, None, True])
+
+    def test_t215_handover_without_saved_context_requires_a_fresh_approval(self):
+        command = "./release 9.9.9 unknown-context"
+        request = self.hook_request(command)
+        answer = owner(self.env, self.data, "approve", request["id"], "--inbox")
+        self.assertEqual(answer.returncode, 0, answer.stderr)
+        self.assertIsNone(self.hook_request(command))
+        f = self.data / "crew-approvals" / (request["id"] + ".json")
+        record = json.loads(f.read_text())
+        record.pop("guard_context")
+        f.write_text(json.dumps(record))
+        result = py(self.env, f"""import os, crewguard
+os.chdir({str(self.root)!r})
+print(json.dumps(crewguard.owner_step('tH', 'Helper', 'build', {command!r}, 'release-script')))""")
+        self.assertIsNotNone(result)
+
     def test_refusals(self):
         self.assertEqual(self.step(rule="no-such-rule").returncode, 1)
         self.assertEqual(pal(self.env, "owner-step", "release-script").returncode, 1)
