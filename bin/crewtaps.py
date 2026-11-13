@@ -164,6 +164,72 @@ def proposal_never(p):
     return f"this proposal changes a mission or brain, or has an unsupported kind: {OWNER}'s own click only"
 
 
+def _plain_tap_command(words):
+    """Reviewed argv shapes only. Never normalize wrappers, paths, aliases or git options."""
+    if words[:2] == ["git", "push"]:
+        args = words[2:]
+        flags = {"--force", "--force-with-lease", "--tags", "--dry-run", "--delete", "--set-upstream", "-u"}
+        while args and args[0] in flags:
+            args = args[1:]
+        return (2 <= len(args) <= 21 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args[0]) is not None
+                and all(re.fullmatch(r"\+?[A-Za-z0-9_][A-Za-z0-9_./:-]*", ref) for ref in args[1:]))
+    if words[:1] == ["git"]:
+        return tuple(words[1:]) in {
+            ("status",), ("status", "--short"), ("status", "--porcelain"),
+            ("log", "-1"), ("log", "--oneline"), ("log", "--oneline", "-1"),
+            ("show", "--stat"), ("diff", "--stat"),
+        }
+    if words[:3] == ["gh", "pr", "merge"]:
+        return (len(words) >= 4 and re.fullmatch(r"[1-9][0-9]*", words[3]) is not None
+                and all(w in {"--merge", "--squash", "--rebase", "--delete-branch", "--auto"} for w in words[4:]))
+    if len(words) >= 3 and words[0] in {"pal", "crew", "botz", "buddy"} and words[1] == "land":
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+#[A-Za-z0-9_.-]+", words[2]):
+            return False
+        args = words[3:]
+        # T206's program-owned request pins the tip in a trailing display comment.
+        if len(args) >= 3 and args[-3:-1] == ["#", "at"] and re.fullmatch(r"[0-9a-f]{12}", args[-1]):
+            args = args[:-3]
+        if len(args) % 2 or len(args) > 4:
+            return False
+        seen = set()
+        for option, value in zip(args[::2], args[1::2]):
+            pattern = {"--onto": r"[A-Za-z0-9][A-Za-z0-9_./-]*", "--at": r"[0-9a-f]{7,64}"}.get(option)
+            if option in seen or not pattern or not re.fullmatch(pattern, value):
+                return False
+            seen.add(option)
+        return True
+    return False
+
+
+def approval_shape_allowed(a):
+    """T210r2: tap authority uses a small positive language, not the hook's shell heuristic.
+    Local edits must be the hook's exact payload-bound edit record. Shell approvals contain only
+    reviewed literal argv shapes, optionally joined with ;/&&. No expansions, runners, redirects,
+    control syntax or unknown programs. Unrecognized operations remain available to the owner.
+    This same check runs for new tickets, old holds/tokens and the final locked decision.
+    """
+    command = a.get("command")
+    if not isinstance(command, str) or not command or len(command) > 4096:
+        return False
+    path, edit, base = (a.get(k) for k in ("path", "edit_hash", "base_hash"))
+    if (a.get("rule") == "agents-file" and isinstance(path, str) and os.path.isabs(path)
+            and os.path.basename(path) in {"AGENTS.md", "CLAUDE.md"}
+            and isinstance(edit, str) and re.fullmatch(r"[0-9a-f]{12}", edit)
+            and isinstance(base, str) and re.fullmatch(r"(?:[0-9a-f]{12}|none)", base)
+            and isinstance(a.get("diff"), str)):
+        return command == f"edit {path} [edit {edit}, base {base}]"
+    # Positive lexical grammar: quoting literal atoms is okay; expansion characters are never
+    # admitted, even in quotes. No shell parser or executable-name normalization is involved.
+    atom = r"[A-Za-z0-9_./:@%+#=\-]+"
+    word = rf"(?:{atom}|'{atom}'|\"{atom}\")"
+    simple = rf"{word}(?:[ \t]+{word})*"
+    if not re.fullmatch(rf"[ \t]*{simple}(?:[ \t]*(?:&&|;)[ \t]*{simple})*[ \t]*", command):
+        return False
+    import shlex
+    segments = re.split(r"[ \t]*(?:&&|;)[ \t]*", command.strip())
+    return len(segments) <= 8 and all(_plain_tap_command(shlex.split(segment)) for segment in segments)
+
+
 def approval_class(a):
     import crewguard
     contextual = crewguard.approval_rules(a)
@@ -173,7 +239,10 @@ def approval_class(a):
     forbidden = {str(r) for r in rules if rule_class(r) == "never"}
     if forbidden:
         return "local", f"owner-only or unclassified rule {', '.join(sorted(forbidden))}: {OWNER}'s own click only"
-    return ("local" if all(rule_class(r) == "local" for r in rules) else "outward"), clipped_reason("approval", a)
+    cls = "local" if all(rule_class(r) == "local" for r in rules) else "outward"
+    if not approval_shape_allowed(a):
+        return cls, f"this command is outside the reviewed tap command shapes: {OWNER}'s own click only"
+    return cls, clipped_reason("approval", a)
 
 
 def clipped_reason(kind, record):

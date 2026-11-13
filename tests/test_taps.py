@@ -48,9 +48,13 @@ class Taps(Base):
     def home(self):
         return json.loads((self.data / "crew-home" / "home.json").read_text())["items"]
 
-    def held(self, cmd="git push origin main", term="tH", pal_="Helper", topic="build"):
-        code = f"import crewguard\ncrewguard.HOOK_CWD = {str(self.root)!r}\nr = crewguard.check({term!r}, {pal_!r}, {topic!r}, {cmd!r})\nprint(json.dumps(r['id']))"
+    def held(self, cmd="git push origin main", term="tH", pal_="Helper", topic="build", extra=None):
+        code = f"import crewguard\ncrewguard.HOOK_CWD = {str(self.root)!r}\nr = crewguard.check({term!r}, {pal_!r}, {topic!r}, {cmd!r}, {extra!r})\nprint(json.dumps(r['id']))"
         return py(self.env, code)
+
+    def held_edit(self):
+        return self.held("edit /w/AGENTS.md [edit aaaaaaaaaaaa, base bbbbbbbbbbbb]",
+                         extra=dict(path="/w/AGENTS.md", edit_hash="aaaaaaaaaaaa", base_hash="bbbbbbbbbbbb", diff="-old\n+new"))
 
     def approval(self, rid):
         return json.loads((self.data / "crew-approvals" / f"{rid}.json").read_text())
@@ -386,7 +390,7 @@ class Approvals(Taps):
 
     def test_local_approvals_have_their_own_switch_and_the_short_hold(self):
         self.switch("local")
-        local = self.held("edit /w/AGENTS.md [edit aaaaaaaaaaaa, base bbbbbbbbbbbb]")
+        local = self.held_edit()
         out = self.held("git push origin main")
         rows = self.tickets()
         self.assertEqual((rows[local]["class"], rows[local]["hold_seconds"]), ("local", 60))
