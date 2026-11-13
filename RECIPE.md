@@ -1543,6 +1543,21 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
 - **Keys** (while you aren't typing): Esc the aimed topic's terminal; R reviews what needs you one
   at a time (1–4 press that card's buttons, → or j the next, ← or k back, Esc stops); / or Enter
   the message box. Esc in the box leaves the box first.
+- **Read** (T183, DeNon's pick A on h-4c9e54; plan in crew-boards/chat-view/): the aimed topic
+  card's **Read** (or O) shows that topic's conversation in place of the columns. Your messages on
+  the right, its replies as Markdown (selectable), code fences and pipe tables drawn as their own
+  boxes, each stretch of tool calls as one chip ("Edited retry.ts · Ran 1 command") with a check,
+  a blue dot while running or ✗ when a call failed, that opens to its calls; notes from pals and
+  rooms with who sent them, time lines after a gap, and a footer under each turn ("15:41 · worked
+  13 min · 6 tools"). The newest 60 rows show, then **Show earlier**; it follows the end until you
+  scroll up (↓ Newest). What the topic needs from you sits above it as the board's own cards. The
+  board's box under it sends to that topic. **Board · Read · Terminal** at the top: B the board,
+  Esc the terminal. Read never presses a key in a terminal or answers a prompt (those stay in the
+  terminal); a topic without a readable session (Codex today, a shell) says so and offers its
+  terminal. Data: `pal computer <Pal> read --topic <t> --json` (`crewboard.read_view`): the last
+  1.5 MB of its session file, read-only; re-read only when the file grew (one `stat` every 5 s).
+  A message a plugin handed in between turns is shown by its own header (Orca's card as Orca's).
+  Ideas from Flockbook (MIT): code and table boxes, chip marks, follow the end.
 - **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read only while shown and only
   when it's due: on showing, after your own click or message, when a topic's state or one of the
   files behind what needs you changed (checked with one `stat` every 5 s), else every 15 s while a

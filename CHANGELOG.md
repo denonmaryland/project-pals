@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Read a topic as a page.** On a pal's board, a topic's **Read** (or O) shows its conversation in
+  place of the columns: its replies as Markdown with code and table boxes, each stretch of tool
+  calls folded into one chip you can open (done, running or failed), notes from other pals with who
+  sent them, and how long each turn took. Reply in the box under it; Esc goes to the terminal to
+  type live. It only reads: it never types into a terminal or answers a prompt.
+
 - **See your own changes live: the Live channel and Try it live.** For people who work on
   Project Pals itself. About has an **Update channel** switch: on Live, your install follows `main`
   in your own checkout. What you land is checked, installed and reloaded in place within seconds,

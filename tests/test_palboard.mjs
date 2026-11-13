@@ -50,6 +50,8 @@ try {
     export const v_flex = div, h_flex = div;
     class St { constructor(o) { this.v = o?.value ?? ""; this.h = {}; } on(ev, f) { this.h[ev] = f; return true; } value() { return this.v; } set_value(v) { this.v = v; } focus() { this.focused = true; } set_auto_grow() {} }
     export const TextareaState = { new: (o) => new St(o) }, InputState = { new: (o) => new St(o) };
+    import { texts } from "gpui-kit";
+    export const TextView = { markdown: (id, t) => { texts.push(t); return div().id(id); } };
     export const Textarea = { new: () => div() }, Input = { new: () => div() };`);
   mod("herdr", `
     export const fx = { calls: [], overlays: [], notes: [], shared: { "crew.settings": { owner: "DeNon", head: "Orca" } }, spaces: [], files: {}, board: null, fail: null };
@@ -59,10 +61,12 @@ try {
       fx.calls.push([name, ...(args ?? [])]);
       if (name === "pal") {
         if (fx.fail) return { stdout: "", stderr: fx.fail, code: 1 };
+        if (args[0] === "computer" && args.includes("read")) return fx.read ? { stdout: JSON.stringify(fx.read), stderr: "", code: 0 } : { stdout: "", stderr: "no session", code: 1 };
         if (args[0] === "computer") return fx.board ? { stdout: JSON.stringify(fx.board), stderr: "", code: 0 } : { stdout: "", stderr: "no such pal", code: 1 };
         if (args[0] === "desk" && args[1] === "send") return { stdout: JSON.stringify({ card: { id: "c-9", to: args[2] }, what: "queued" }), stderr: "", code: 0 };
         return { stdout: "ok\\n", stderr: "", code: 0 };
       }
+      if (name === "stat" && args[1] === "%s") return { stdout: String(fx.readSize ?? 0), stderr: "", code: 0 };
       if (name === "stat") return { stdout: fx.stat ?? "100 100 100 100", stderr: "", code: 0 };
       return { stdout: "", stderr: "", code: 0 };
     };
@@ -78,6 +82,7 @@ try {
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods", "crew-palboard", "main.js"), join(dir, "crew-palboard.mjs"));
+  copyFileSync(join(root, "mods", "crew-palboard", "read.js"), join(dir, "read.js"));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
   const { clicks, texts, ids, reset } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
   const c = await import(pathToFileURL(join(dir, "crew.js")).href);
@@ -351,6 +356,93 @@ try {
   reset(); b.render(cx);
   assert.ok(ids.has("pb-topic-old-20"), "the aimed one shows even when folded");
   b.setAim(fx.spaces[1], "checkout", cx);
+
+  // ── Read (T183): a topic's conversation in place of the columns ──
+  { const R = await import(pathToFileURL(join(dir, "read.js")).href);
+    const blocks = R.mdBlocks("Found it.\n\n```ts\nif (x) {\n  await y();\n}\n```\n\n| Way | Load |\n|---|---|\n| **CDN** | 0.8 s |\n| Ours | 1.4 s |\n\nDone.");
+    assert.deepEqual(blocks.map((x) => x.kind), ["md", "code", "table", "md"]);
+    assert.deepEqual(blocks[1], { kind: "code", lang: "ts", lines: ["if (x) {", "  await y();", "}"] });
+    assert.deepEqual(blocks[2].head, ["Way", "Load"]);
+    assert.deepEqual(blocks[2].rows, [["CDN", "0.8 s"], ["Ours", "1.4 s"]], "bold and code marks come off cells");
+    assert.deepEqual(R.mdBlocks("```\nnever closed"), [{ kind: "code", lang: "", lines: ["never closed"] }], "an open fence runs to the end");
+    assert.deepEqual(R.mdBlocks("a | b\nnot a table"), [{ kind: "md", text: "a | b\nnot a table" }]);
+    assert.deepEqual(R.tableWidths(["A", "Long header"], [["x".repeat(100), "y"]]), [320, 97]);
+  }
+  fx.board = data(); b.loading = false; b.reload(cx); await tick();
+  b.setAim(fx.spaces[1], "checkout", cx);
+  reset(); b.render(cx);
+  assert.ok(ids.has("pb-read-checkout"), "the aimed card has Read");
+  const conv = (n = 0) => ({ pal: "Juniper", topic: "checkout", state: "working", task: null, path: "/s/checkout.jsonl", size: 500, harness: "claude", earlier: 0, rows: [
+    { k: "sep", text: "Today 15:28" },
+    { k: "you", text: "fix the double charge and prove it", at: NOW - 13 * min, images: 1 },
+    { k: "chip", text: "Edited retry.ts · Ran 1 command", state: "failed", calls: [{ verb: "edit", what: "retry.ts", state: "done", out: "" }, { verb: "command", what: "npm test", state: "failed", out: "1 failed" }] },
+    { k: "reply", text: "Found it.\n\n```ts\nif (x) {\n  await y();\n}\n```\n\n| Way | Load |\n|---|---|\n| CDN | 0.8 s |", at: NOW - 10 * min },
+    { k: "note", from: "Atlas", text: "tell me when it lands", at: NOW - 5 * min },
+    ...Array.from({ length: n }, (_, i) => ({ k: "reply", text: `more ${i}.`, at: NOW - min })),
+    { k: "footer", text: "15:41 · working 13 min · 2 tools so far" }] });
+  fx.read = conv(); fx.readSize = 500;
+  fx.calls.length = 0;
+  clicks.get("pb-read-checkout")(null, cx);
+  await tick();
+  assert.deepEqual(pals().at(-1), ["computer", "Juniper", "read", "--topic", "checkout", "--json"]);
+  assert.equal(b.reading, "checkout");
+  reset(); b.render(cx);
+  for (const want of ["#checkout", "fix the double charge and prove it", "Found it.", "if (x) {", "\u00a0\u00a0await y();", "0.8 s", "Edited retry.ts · Ran 1 command", "✗",
+    "Atlas · " , "tell me when it lands", "15:41 · working 13 min · 2 tools so far", "To #checkout", "Board", "Read", "Terminal"])
+    assert.ok(texts.some((x) => x === want || x.startsWith(want)), `Read shows “${want}”`);
+  assert.ok(texts.some((x) => /^you · \d\d:\d\d · 1 image$/.test(x)));
+  assert.ok(!ids.has("pb-col-working"), "the columns step aside");
+  const chipId = [...ids].find((x) => /^rd-\d+-2$/.test(x));
+  assert.ok(chipId, "the chip is a row");
+  assert.ok(!texts.includes("npm test"), "a chip starts folded");
+  clicks.get(chipId)(null, cx);
+  reset(); b.render(cx);
+  assert.ok(texts.includes("npm test") && texts.includes("1 failed"), "it opens to its calls");
+  // Re-read only when the session file grew: one stat, no pal command.
+  fx.calls.length = 0;
+  await b.checkRead(cx); await tick();
+  assert.equal(pals().length, 0, "same size: nothing read");
+  assert.deepEqual(fx.calls.find((x) => x[0] === "stat").slice(1, 4), ["-c", "%s", "/s/checkout.jsonl"]);
+  fx.readSize = 900; fx.read = conv(70);
+  await b.checkRead(cx); await tick();
+  assert.equal(pals().filter((x) => x.includes("read")).length, 1, "it grew: read again");
+  reset(); b.render(cx);
+  assert.ok(ids.has("rd-earlier") && texts.includes("Show earlier (16)"), "the newest 60 rows, then Show earlier");
+  clicks.get("rd-earlier")(null, cx);
+  reset(); b.render(cx);
+  assert.ok(!ids.has("rd-earlier"));
+  // Keys: Esc the topic's terminal; B the board; O opens the aimed card's Read.
+  b.key({ keystroke: "b" }, cx);
+  assert.equal(b.reading, null);
+  reset(); b.render(cx);
+  assert.ok(ids.has("pb-col-working"), "back to the columns");
+  b.key({ keystroke: "o" }, cx); await tick();
+  assert.equal(b.reading, "checkout");
+  b.key({ keystroke: "escape" }, cx);
+  assert.equal(fx.layout.children[0].active, "tab-view", "Esc: its terminal");
+  assert.ok(fx.calls.some((x) => x[0] === "run" && x[1] === "tab.select" && x[2].includes("t1")));
+  c.showBoard(fx.spaces[1]);
+  reset(); b.render(cx);
+  assert.equal(b.reading, null, "a new showing opens on the columns");
+  // A topic that needs you shows its card above its conversation, with the same buttons.
+  fx.read = { ...conv(), topic: "perf", state: "blocked" };
+  b.openRead(fx.spaces[1], "perf", cx); await tick();
+  reset(); b.render(cx);
+  assert.ok(ids.has("pb-need-h-1") && ids.has("pb-h-1-0"), "the ask's card and its buttons");
+  // No session file (a Codex pal): it says so and offers the terminal.
+  fx.read = { pal: "Juniper", topic: "notes", state: "idle", rows: [], earlier: 0, path: null, size: 0 };
+  b.openRead(fx.spaces[1], "notes", cx); await tick();
+  reset(); b.render(cx);
+  assert.ok(texts.some((x) => x.startsWith("There's no conversation file")) && ids.has("rd-term"));
+  // A read that fails says so.
+  fx.read = null;
+  b.openRead(fx.spaces[1], "checkout", cx); await tick();
+  reset(); b.render(cx);
+  assert.ok(texts.some((x) => x.startsWith("Couldn't read it")));
+  b.closeRead(cx);
+  // Read never types into a terminal or answers a prompt: only `pal computer … read` and stat.
+  assert.ok(!fx.calls.some((x) => x[0] === "hc" || (x[0] === "pal" && /^(approve|deny|send)$/.test(x[1] ?? ""))));
+  assert.match(readFileSync(join(root, "mods/crew-palboard/read.js"), "utf8"), /minchenlee\/flockbook, MIT/, "ideas from Flockbook are credited");
 
   // ── a key switches to another pal while the board is up: back to the terminal ──
   fx.board = data(); b.loading = false; b.reload(cx); await tick();
