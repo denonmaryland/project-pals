@@ -748,7 +748,16 @@ def make_worktree(space, name, base=None):
     # 10 topics were cut from crew/pet-facelift because the folder was parked on it, and one landed
     # there). A base named with --base is kept, and recorded as named.
     named = bool(base)
-    primary = main_branch(repo)
+    # The main branch matters only when no base is named (Codex T184: a repo with trunk and release and
+    # no main / master / origin HEAD couldn't make a topic with --base trunk). Named: recorded when
+    # there is one to resolve, else nothing (the topic lands on its named base).
+    if named:
+        try:
+            primary = main_branch(repo)
+        except CrewError:
+            primary = None
+    else:
+        primary = main_branch(repo)
     base = base or primary
     branch = f"crew/{slug(name)}"
     existing = git(repo, "branch", "--list", branch)
@@ -765,8 +774,8 @@ def make_worktree(space, name, base=None):
     # (a repo whose only branch was trunk has crew/* branches beside it by then). cut: the commit the
     # topic started from, so what it carries that isn't on the target is counted from there, whatever
     # later happens to the branch it was cut from (Codex T180).
-    return {"path": str(path), "branch": branch, "base": base, "repo": repo, "primary": primary, "cut": cut,
-            **({"base_named": True} if named else {})}
+    return {"path": str(path), "branch": branch, "base": base, "repo": repo, "cut": cut,
+            **({"primary": primary} if primary else {}), **({"base_named": True} if named else {})}
 
 
 def main_branch(repo):

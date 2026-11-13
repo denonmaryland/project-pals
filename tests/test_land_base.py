@@ -331,5 +331,22 @@ class LandBase(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+    def test_t184_a_named_base_needs_no_main_branch(self):
+        """Codex T184: with trunk and release and no main, master or origin HEAD, `--base trunk` must
+        still make the topic (the main branch only matters when no base is named)."""
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-D", "crew/parked")
+        self.git("branch", "-m", "main", "trunk")
+        self.git("branch", "release")
+        wt = self.topic("x", "trunk")
+        self.assertEqual((wt["base"], wt.get("base_named")), ("trunk", True))
+        self.assertNotIn("primary", wt, "nothing to record: there's no main branch to resolve")
+        self.commit_in(wt, "x")
+        self.assertEqual(json.loads(self.pal("diff", "Builder#x", "--json").stdout)["base"], "trunk")
+        r = self.pal("land", "Builder#x", click=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("landed crew/x on trunk", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
