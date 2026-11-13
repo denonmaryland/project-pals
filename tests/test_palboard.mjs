@@ -398,6 +398,33 @@ try {
   clicks.get(chipId)(null, cx);
   reset(); b.render(cx);
   assert.ok(texts.includes("npm test") && texts.includes("1 failed"), "it opens to its calls");
+  // T194 (Codex T193 P1): Read never approves or answers. The board has #docs' approval a-1, which
+  // Read on #checkout doesn't show: R and then 1 must do nothing at all.
+  fx.calls.length = 0;
+  b.key({ keystroke: "r" }, cx); b.key({ keystroke: "1" }, cx); b.key({ keystroke: "2" }, cx); b.key({ keystroke: "enter" }, cx);
+  await tick();
+  assert.equal(b.review, null, "no review in Read");
+  assert.ok(!pals().some((x) => /^(approve|deny|home|desk)$/.test(x[0])), "no approval, answer or card close from Read's keys");
+  // T194 (Codex T193 P1): following keeps the conversation on screen: the offset is the measured end.
+  { const s = c.scrollState(`rd-scroll-${b.readKey}`);
+    s.content = 1000; s.view = 500; s.y = 500; b.readFollow = true; b.readMeasured = true;
+    reset(); b.render(cx);
+    assert.equal(s.y, 500, "at the end, not a billion pixels down");
+    s.content = 1200;                                                  // a new reply landed
+    reset(); b.render(cx);
+    assert.equal(s.y, 700, "following: to the new end");
+    s.y = 300;                                                         // you scrolled up
+    reset(); b.render(cx);
+    assert.equal(b.readFollow, false, "scrolling up stops following");
+    assert.equal(s.y, 300, "and your place is kept");
+    assert.ok(ids.has("rd-newest"));
+    s.content = 1500;
+    reset(); b.render(cx);
+    assert.equal(s.y, 300, "new rows don't pull you down while you read");
+    clicks.get("rd-newest")(null, cx);
+    reset(); b.render(cx);
+    assert.equal(s.y, 1000, "↓ Newest: back to the end, following"); }
+
   // Re-read only when the session file grew: one stat, no pal command.
   fx.calls.length = 0;
   await b.checkRead(cx); await tick();
@@ -428,7 +455,8 @@ try {
   fx.read = { ...conv(), topic: "perf", state: "blocked" };
   b.openRead(fx.spaces[1], "perf", cx); await tick();
   reset(); b.render(cx);
-  assert.ok(ids.has("pb-need-h-1") && ids.has("pb-h-1-0"), "the ask's card and its buttons");
+  assert.ok(ids.has("rd-need-h-1") && !ids.has("pb-need-h-1") && !ids.has("pb-h-1-0"), "what it needs shows as a notice, without buttons (T194)");
+  assert.ok(texts.some((x) => x.includes("Answer it on the board")), "and says where to answer it");
   // No session file (a Codex pal): it says so and offers the terminal.
   fx.read = { pal: "Juniper", topic: "notes", state: "idle", rows: [], earlier: 0, path: null, size: 0 };
   b.openRead(fx.spaces[1], "notes", cx); await tick();

@@ -17,7 +17,9 @@ and for the pal: `needs` (all of them, oldest first, so the longest wait is on t
 (its open tasks no topic has claimed). The builders take what they read as arguments, so tests
 drive them with plain data."""
 import json
+import os
 import re
+import stat as statmod
 import subprocess
 import time
 from pathlib import Path
@@ -83,21 +85,88 @@ def lead(text, limit=LINE_MAX):
     return out
 
 
+# ── Opening a session file safely (T194, Codex T193) ──────────────────────────────────────────
+# A topic's link record (crew-sessions/<terminal>.json) names its session file. Before reading it:
+# the record must be this terminal's; the file must sit under the harness's own folder, reached
+# with no symlink anywhere below that folder and no "..", be a regular file this user owns, and it
+# is opened non-blocking without following a symlink. Then exactly the last `tail` bytes (at most)
+# are read from the size the open file reports, so a growing file can't push past the cap.
+
+def session_roots():
+    home = Path.home()
+    return {"claude": home / ".claude" / "projects", "agy": home / ".gemini" / "antigravity-cli"}
+
+
+def _under(root, path):
+    """`path`'s parts below `root`, when it is under it with no "..", else None."""
+    try:
+        rel = Path(os.path.normpath(str(path))).relative_to(os.path.normpath(str(root)))
+    except ValueError:
+        return None
+    parts = rel.parts
+    return parts if parts and ".." not in Path(str(path)).parts else None
+
+
+def safe_tail(path, harness, tail):
+    """(bytes, size) of the end of an allowed session file, or None when it isn't one."""
+    root = session_roots().get("agy" if harness == "agy" else "claude")
+    parts = _under(root, path) if root else None
+    if not parts:
+        return None
+    # No symlink in any folder below the root (the root itself may be one: dotfiles setups).
+    cur = Path(root)
+    for part in parts[:-1]:
+        cur = cur / part
+        try:
+            if not statmod.S_ISDIR(os.lstat(cur).st_mode):
+                return None
+        except OSError:
+            return None
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(str(cur / parts[-1]), flags)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not statmod.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            return None
+        size = st.st_size
+        start = max(0, size - tail)
+        os.lseek(fd, start, os.SEEK_SET)
+        want, chunks = size - start, []
+        while want > 0:
+            b = os.read(fd, min(want, 1 << 20))
+            if not b:
+                break
+            chunks.append(b)
+            want -= len(b)
+        data = b"".join(chunks)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if start:
+        nl = data.find(b"\n")
+        data = data[nl + 1:] if nl >= 0 else b""   # the first line is cut
+    return data, size
+
+
+def _link_ok(lk, terminal):
+    """A link record that names this terminal (or none, from older installs) and a transcript."""
+    return bool(lk) and bool(lk.get("transcript")) and lk.get("terminal") in (None, terminal)
+
+
 def tail_bubbles(path, agy=False, tail=TAIL):
     """The bubbles (crewchat's: you, note, bot, tool, event) in the end of a session file."""
     import crewchat
     p = Path(path)
     if agy:
         p = crewchat.agy_transcript_path(p)
-    try:
-        size = p.stat().st_size
-        with open(p, "rb") as f:
-            f.seek(max(0, size - tail))
-            if size > tail:
-                f.readline()          # the first line is cut
-            data = f.read()
-    except OSError:
+    got = safe_tail(p, "agy" if agy else "claude", tail)
+    if not got:
         return []
+    data = got[0]
     out, state = [], {}
     for raw in data.split(b"\n"):
         try:
@@ -137,7 +206,7 @@ def read_line(terminal, state, links):
     """A topic's line from its linked session file; None when it has none (Codex pals, shells)."""
     import crewchat
     lk = (links or {}).get(terminal)
-    if not lk or not lk.get("transcript"):
+    if not _link_ok(lk, terminal):
         return None
     raw = Path(lk["transcript"])
     return topic_line(tail_bubbles(raw, agy=crewchat.is_agy_link(lk, raw)), state)
@@ -281,13 +350,18 @@ def _results(data):
             continue
         try:
             e = json.loads(raw.decode("utf-8", "replace"))
-        except ValueError:
-            continue
-        for b in (e.get("message") or {}).get("content") or []:
-            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id"):
+            msg = e.get("message") if isinstance(e, dict) else None
+            content = msg.get("content") if isinstance(msg, dict) else None
+            if not isinstance(content, list):
+                continue
+            for b in content:
+                if not (isinstance(b, dict) and b.get("type") == "tool_result" and isinstance(b.get("tool_use_id"), str)):
+                    continue
                 c = b.get("content")
-                text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
+                text = c if isinstance(c, str) else " ".join(str(x.get("text", "")) for x in c if isinstance(x, dict)) if isinstance(c, list) else ""
                 out[b["tool_use_id"]] = (bool(b.get("is_error")), " ".join(str(text).split())[:OUT_MAX])
+        except (ValueError, TypeError, AttributeError):   # one odd record never breaks the read
+            continue
     return out
 
 
@@ -337,7 +411,7 @@ def read_rows(bubbles, results=None, working=False, now_ms=None, limit=READ_ROWS
     now_ms = now_ms or int(time.time() * 1000)
     results = results or {}
     rows, chip, turn = [], None, None
-    last_at = 0
+    last_at, turn_no = 0, 0
 
     def close_turn(ended_at, still=False):
         nonlocal turn
@@ -362,6 +436,7 @@ def read_rows(bubbles, results=None, working=False, now_ms=None, limit=READ_ROWS
             else:
                 rows.append({"k": "event", "text": b.get("text") or "", "at": at})
             if k != "event":
+                turn_no += 1
                 turn = {"start": at, "tools": 0, "replies": 0}
         elif k == "bot" and (b.get("text") or "").strip():
             chip = None
@@ -371,7 +446,7 @@ def read_rows(bubbles, results=None, working=False, now_ms=None, limit=READ_ROWS
             turn["replies"] += 1
         elif k == "tool":
             if chip is None:
-                chip = {"k": "chip", "calls": [], "at": at}
+                chip = {"k": "chip", "calls": [], "at": at, "turn": turn_no}
                 rows.append(chip)
             r = results.get(b.get("id")) if b.get("id") else None
             chip["calls"].append({"verb": b.get("verb") or "tool", "what": b.get("what") or "",
@@ -383,12 +458,14 @@ def read_rows(bubbles, results=None, working=False, now_ms=None, limit=READ_ROWS
             continue
         last_at = at or last_at
     close_turn(now_ms if working else last_at, still=working)
-    # Calls without a result: running while the topic works and it's the last stretch, else done.
+    # Calls without a result: running while the topic works and they belong to its current turn,
+    # else done (an older turn's call whose result was never written isn't running now).
     chips = [r for r in rows if r["k"] == "chip"]
-    for i, c in enumerate(chips):
+    for c in chips:
+        current = c.pop("turn", None) == turn_no
         for call in c["calls"]:
             if call["state"] == "open":
-                call["state"] = "running" if working and i == len(chips) - 1 else "done"
+                call["state"] = "running" if working and current else "done"
         c["text"] = chip_label(c["calls"])
         c["state"] = "failed" if any(x["state"] == "failed" for x in c["calls"]) else "running" if any(x["state"] == "running" for x in c["calls"]) else "done"
     earlier = max(0, len(rows) - limit)
@@ -399,21 +476,19 @@ def read_view(terminal, state, links, now_ms=None, tail=READ_TAIL):
     """A topic's conversation for Read: {rows, earlier, path, size, harness}. No linked session (a
     Codex pal, a shell): rows empty and `path` None, and the view says to read it in the terminal."""
     import crewchat
+    none = {"rows": [], "earlier": 0, "path": None, "size": 0, "harness": None, "refused": None}
     lk = (links or {}).get(terminal)
     if not lk or not lk.get("transcript"):
-        return {"rows": [], "earlier": 0, "path": None, "size": 0, "harness": None}
+        return none
+    if not _link_ok(lk, terminal):
+        return {**none, "refused": "not its own session file"}
     raw = Path(lk["transcript"])
     agy = crewchat.is_agy_link(lk, raw)
     p = crewchat.agy_transcript_path(raw) if agy else raw
-    try:
-        size = p.stat().st_size
-        with open(p, "rb") as f:
-            f.seek(max(0, size - tail))
-            if size > tail:
-                f.readline()
-            data = f.read()
-    except OSError:
-        return {"rows": [], "earlier": 0, "path": None, "size": 0, "harness": None}
+    got = safe_tail(p, "agy" if agy else "claude", tail)
+    if not got:
+        return {**none, "refused": "not its own session file"}
+    data, size = got
     bubbles, st = [], {}
     for line in data.split(b"\n"):
         try:
@@ -423,4 +498,4 @@ def read_view(terminal, state, links, now_ms=None, tail=READ_TAIL):
             continue
     rows, earlier = read_rows(bubbles, {} if agy else _results(data), state == "working", now_ms)
     return {"rows": rows, "earlier": earlier, "path": str(p), "size": size, "harness": "agy" if agy else "claude",
-            "cut": size > tail}
+            "cut": size > tail, "refused": None}

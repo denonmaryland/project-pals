@@ -262,6 +262,15 @@ export default class CrewPalBoard extends View {
       if (k === "escape") { this.picking = false; try { this.handle.focus(); } catch { /* not ready */ } this.typing = false; cx.notify(); }
       return;
     }
+    // Read never approves or answers anything (T194, Codex T193): only Esc (its terminal), B (the
+    // board) and / (the box). The board's review and its buttons work only on the board.
+    if (this.reading) {
+      this.review = null;
+      if (k === "escape") openTerminal(space, tabOf(space, this.reading));
+      else if (k === "b") this.closeRead(cx);
+      else if (k === "/") { this.input.focus(); cx.notify(); }
+      return;
+    }
     const needs = this.columns().you;
     if (this.review != null) {
       const c = needs[Math.min(this.review, needs.length - 1)];
@@ -271,9 +280,8 @@ export default class CrewPalBoard extends View {
       if (/^[1-4]$/.test(k)) { const a = this.needActs(space, c.need)[Number(k) - 1]; if (a && !this.busy[`need-${c.need.id}`]) a.go(cx); cx.notify(); }
       return;
     }
-    if (k === "escape") { openTerminal(space, tabOf(space, this.reading ?? this.aimed(space))); return; }
-    if (this.reading && k === "b") { this.closeRead(cx); return; }
-    if (!this.reading && k === "o") { const a = this.aimed(space); const tp = (this.data?.topics ?? []).find((t) => t.topic === a); if (tp && tp.state !== "shell") this.openRead(space, a, cx); return; }
+    if (k === "escape") { openTerminal(space, tabOf(space, this.aimed(space))); return; }
+    if (k === "o") { const a = this.aimed(space); const tp = (this.data?.topics ?? []).find((t) => t.topic === a); if (tp && tp.state !== "shell") this.openRead(space, a, cx); return; }
     if (k === "r" && needs.length) { this.review = 0; cx.notify(); return; }
     if (k === "/" || k === "enter") { this.input.focus(); cx.notify(); }
   }
@@ -348,9 +356,20 @@ export default class CrewPalBoard extends View {
         .child(seg("rd-seg-board", "Board", false, (cx) => this.closeRead(cx), "B"))
         .child(seg("rd-seg-read", "Read", true, () => {}))
         .child(seg("rd-seg-term", "Terminal", false, () => openTerminal(space, tab), "Esc")));
+    // What it needs from you, as notices only: Read never approves or answers (T194). The buttons
+    // are on the board, one key away.
     const needs = cols.you.filter((c) => c.need.topic === topic);
     const body = v_flex().flex_1().min_h(0).px(PAD).pt(12).gap(10);
-    if (needs.length) body.child(v_flex().flex_none().w_full().max_w(820).mx_auto().gap(8).children(needs.map((c) => this.needCard(d, space, c, false))));
+    if (needs.length) {
+      body.child(v_flex().flex_none().w_full().max_w(820).mx_auto().gap(6).children(needs.map((c) => {
+        const n = c.need;
+        return h_flex().id(`rd-need-${n.id}`).gap(8).items_center().py(7).px(10).rounded(d.r.md).bg(d.raised).border_1().border_color(d.warn + "55")
+          .child(this.chip(d, KIND[n.kind] ?? n.kind, d.warnText))
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(d.fg1).child(n.title || "(no title)"))
+          .when(Boolean(n.since), (el) => el.child(div().flex_none().text_size(10.5).font_family(d.mono).text_color(d.warnText).child(`waiting ${waited(n.since)}`)))
+          .child(div().flex_none().text_size(11.5).text_color(d.fg3).child(n.kind === "prompt" ? "Answer it in the terminal (Esc)" : "Answer it on the board (B)"));
+      })));
+    }
     const data = this.readData;
     body.child(data?.rows?.length ? conversation(this, d, data)
       : nothing(d, data, () => openTerminal(space, tab), this.readErr && !data ? `Couldn't read it: ${clip(this.readErr, 160)}` : null));

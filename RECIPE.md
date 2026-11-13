@@ -1550,12 +1550,17 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   a blue dot while running or ✗ when a call failed, that opens to its calls; notes from pals and
   rooms with who sent them, time lines after a gap, and a footer under each turn ("15:41 · worked
   13 min · 6 tools"). The newest 60 rows show, then **Show earlier**; it follows the end until you
-  scroll up (↓ Newest). What the topic needs from you sits above it as the board's own cards. The
-  board's box under it sends to that topic. **Board · Read · Terminal** at the top: B the board,
-  Esc the terminal. Read never presses a key in a terminal or answers a prompt (those stay in the
-  terminal); a topic without a readable session (Codex today, a shell) says so and offers its
-  terminal. Data: `pal computer <Pal> read --topic <t> --json` (`crewboard.read_view`): the last
+  scroll up (↓ Newest). What the topic needs from you sits above it as notices with no buttons
+  ("Answer it on the board (B)", or in the terminal for a prompt): **Read never approves, answers
+  or closes anything**, and its only keys are Esc (the terminal), B (the board) and / (the box);
+  R and 1–4 are the board's alone (T194, Codex T193). The board's box under it sends to that topic.
+  **Board · Read · Terminal** at the top. Read never presses a key in a terminal; a topic without a
+  readable session (Codex today, a shell) says so and offers its terminal. Data: `pal computer <Pal> read --topic <t> --json` (`crewboard.read_view`): the last
   1.5 MB of its session file, read-only; re-read only when the file grew (one `stat` every 5 s).
+  The file must be the one this terminal's link names, under the harness's own folder
+  (`~/.claude/projects`, `~/.gemini/antigravity-cli`) with no symlink below it and no `..`, a
+  regular file this user owns; it is opened non-blocking without following symlinks and read
+  with a hard byte cap from the size the open file reports. Anything else reads as nothing.
   A message a plugin handed in between turns is shown by its own header (Orca's card as Orca's).
   Ideas from Flockbook (MIT): code and table boxes, chip marks, follow the end.
 - **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read only while shown and only

@@ -137,10 +137,14 @@ export function conversation(v, d, data) {
   const rows = data?.rows ?? [];
   const sid = `rd-scroll-${v.readKey}`;
   const s = scrollState(sid);
-  const atEnd = s.content <= s.view + 2 || s.y >= s.content - s.view - 24;
-  if (v.readFollow && !atEnd && s.content > 0 && v.readMeasured) v.readFollow = false;
-  if (!v.readFollow && atEnd && s.content > 0) v.readFollow = true;
-  if (v.readFollow) s.y = 1e9;   // clamped to the end once the content's height is known
+  // Follow the end until you scroll up (T194, Codex T193: the offset is always a measured end, never
+  // a huge number the scroll area would draw as is). You scrolled up when the offset is above where
+  // we last put it; new rows growing the content below it don't count.
+  const end = Math.max(0, s.content - s.view);
+  if (v.readFollow && v.readMeasured && s.y < (v.readLastY ?? 0) - 0.5) v.readFollow = false;
+  else if (!v.readFollow && s.content > 0 && s.y >= end - 2) v.readFollow = true;
+  if (v.readFollow) s.y = end;
+  v.readLastY = s.y;
   v.readMeasured = s.content > 0;
   const shown = rows.slice(Math.max(0, rows.length - v.readShown));
   const hidden = rows.length - shown.length + (data?.earlier ?? 0);
@@ -155,7 +159,7 @@ export function conversation(v, d, data) {
     .child(scrollArea(d, sid, list).size_full());
   if (!v.readFollow && s.content > s.view + 24) {
     area.child(h_flex().absolute().bottom(10).left(0).right(0).justify_center()
-      .child(pebble(d, { id: "rd-newest", icon: "arrow-down", label: "Newest", onClick: (cx) => { v.readFollow = true; cx.notify(); } })));
+      .child(pebble(d, { id: "rd-newest", icon: "arrow-down", label: "Newest", onClick: (cx) => { v.readFollow = true; s.y = Math.max(0, s.content - s.view); v.readLastY = s.y; cx.notify(); } })));
   }
   return area;
 }

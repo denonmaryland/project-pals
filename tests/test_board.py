@@ -5,6 +5,7 @@ session file, its branch against its base, what it needs from the owner, which c
 herdr-app, like test_computer.
 Run: python3 -m unittest tests.test_board"""
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -106,7 +107,11 @@ class Line(unittest.TestCase):
 
     def test_read_from_the_end_of_a_session_file(self):
         import crewboard
+        from unittest import mock
         d = Path(pals_tmp.mkdtemp(prefix="pals-board-"))
+        p = mock.patch.object(crewboard, "session_roots", lambda: {"claude": d, "agy": d / "agy"})
+        p.start()
+        self.addCleanup(p.stop)
         f = d / "s.jsonl"
         pad = [bot("An early reply that is far from the end of the file. " + "pad " * 200, "2026-11-09T10:00:00.000Z") for _ in range(40)]
         f.write_text("\n".join(pad + [user("the double charge, fix it and prove it", "2026-11-09T15:28:00.000Z"),
@@ -306,9 +311,25 @@ class Read(unittest.TestCase):
                          "Ran 2 commands · Looked up 1 page")
         self.assertEqual(chip_label([{"verb": "mystery", "what": ""}]), "Used 1 tool")
 
+    def test_an_old_turns_unfinished_tool_is_not_running(self):
+        b = [{"kind": "you", "text": "old turn", "at": 1000},
+             {"kind": "tool", "verb": "command", "what": "old command", "id": "a", "at": 2000},
+             {"kind": "bot", "text": "finished that.", "at": 3000},
+             {"kind": "you", "text": "new turn", "at": 4000},
+             {"kind": "bot", "text": "looking.", "at": 5000}]
+        rows, _ = self.rows(b, {}, working=True)
+        self.assertEqual(next(r for r in rows if r["k"] == "chip")["state"], "done")
+        b.append({"kind": "tool", "verb": "command", "what": "new command", "id": "b", "at": 6000})
+        rows, _ = self.rows(b, {}, working=True)
+        self.assertEqual([r["state"] for r in rows if r["k"] == "chip"], ["done", "running"])
+
     def test_from_a_session_file_read_only(self):
         import crewboard
+        from unittest import mock
         d = Path(pals_tmp.mkdtemp(prefix="pals-read-"))
+        p = mock.patch.object(crewboard, "session_roots", lambda: {"claude": d, "agy": d / "agy"})
+        p.start()
+        self.addCleanup(p.stop)
         f = d / "s.jsonl"
         f.write_text("\n".join([
             user("The pals plugin sent a message:\n[from Orca, a pal, not DeNon] please check the docs\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn.", "2026-11-09T15:00:00.000Z"),
@@ -332,12 +353,107 @@ class Read(unittest.TestCase):
         self.assertEqual((r[0]["kind"], r[0]["text"]), ("you", "📥 Re h-1: Build it"))
 
 
+class ReadSafety(unittest.TestCase):
+    """T194 (Codex T193): Read opens only the topic's own regular, owned session file under the
+    harness's own folder, never through a symlink, never blocking, never more than its byte cap,
+    and one odd record never breaks the read."""
+
+    def setUp(self):
+        import crewboard
+        from unittest import mock
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-read-safe-"))
+        self.claude = self.root / "claude-projects"
+        (self.claude / "p").mkdir(parents=True)
+        p = mock.patch.object(crewboard, "session_roots", lambda: {"claude": self.claude, "agy": self.root / "agy"})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def view(self, path, terminal="t1", lk=None, tail=None):
+        import crewboard
+        rec = lk or {"terminal": terminal, "transcript": str(path), "harness": "claude"}
+        kw = {"tail": tail} if tail else {}
+        return crewboard.read_view(terminal, "idle", {terminal: rec}, **kw)
+
+    def session(self, name="s.jsonl", text="a reply."):
+        f = self.claude / "p" / name
+        f.write_text(bot(text, "2026-11-13T10:00:00.000Z") + "\n")
+        return f
+
+    def test_its_own_file_reads(self):
+        v = self.view(self.session())
+        self.assertEqual([r["k"] for r in v["rows"]][-2:], ["reply", "footer"])
+
+    def test_a_symlinked_file_is_refused(self):
+        other = self.session("other.jsonl", "SYNTHETIC OTHER TOPIC")
+        link = self.claude / "p" / "topic-a.jsonl"
+        link.symlink_to(other)
+        v = self.view(link)
+        self.assertEqual((v["rows"], v["path"]), ([], None))
+        self.assertEqual(v["refused"], "not its own session file")
+
+    def test_a_symlinked_folder_is_refused(self):
+        real = self.root / "elsewhere"
+        real.mkdir()
+        (real / "s.jsonl").write_text(bot("hidden", "2026-11-13T10:00:00.000Z") + "\n")
+        (self.claude / "q").symlink_to(real)
+        self.assertEqual(self.view(self.claude / "q" / "s.jsonl")["rows"], [])
+
+    def test_outside_the_harness_folder_is_refused(self):
+        f = self.root / "loose.jsonl"
+        f.write_text(bot("loose", "2026-11-13T10:00:00.000Z") + "\n")
+        self.assertEqual(self.view(f)["rows"], [])
+        self.assertEqual(self.view(self.claude / "p" / ".." / ".." / "loose.jsonl")["rows"], [], "no climbing out with ..")
+
+    def test_another_terminals_link_or_another_owner_is_refused(self):
+        import crewboard
+        from unittest import mock
+        f = self.session()
+        self.assertEqual(self.view(f, lk={"terminal": "t2", "transcript": str(f), "harness": "claude"})["rows"], [])
+        me = os.getuid()
+        with mock.patch.object(crewboard.os, "getuid", lambda: me + 1):
+            self.assertEqual(self.view(f)["rows"], [])
+
+    def test_a_fifo_never_blocks(self):
+        fifo = self.claude / "p" / "pipe.jsonl"
+        os.mkfifo(fifo)
+        code = ("import sys; sys.path.insert(0, 'bin'); import crewboard; from pathlib import Path;"
+                f"crewboard.session_roots = lambda: {{'claude': Path({str(self.claude)!r}), 'agy': Path('/nonexistent')}};"
+                "v = crewboard.read_view('t1', 'idle', {'t1': {'terminal': 't1', 'transcript': sys.argv[1]}}); print(v['refused'])")
+        r = subprocess.run([sys.executable, "-c", code, str(fifo)], capture_output=True, text=True, timeout=5,
+                           cwd=str(Path(__file__).resolve().parent.parent))
+        self.assertEqual(r.stdout.strip(), "not its own session file", r.stderr)
+
+    def test_the_byte_cap_holds_while_the_file_grows(self):
+        import crewboard
+        from unittest import mock
+        f = self.session(text="initial")
+        seen, real_fstat = [], os.fstat
+        def fstat_then_append(fd):
+            st = real_fstat(fd)
+            with open(f, "a") as g:
+                g.write(bot("x" * 4096, "2026-11-13T10:01:00.000Z") + "\n")
+            return st
+        with mock.patch.object(crewboard.os, "fstat", fstat_then_append), \
+                mock.patch.object(crewboard, "_results", lambda data: seen.append(len(data)) or {}):
+            self.view(f, tail=128)
+        self.assertTrue(seen and max(seen) <= 128, seen)
+
+    def test_one_odd_record_keeps_the_rest(self):
+        f = self.session(text="valid reply")
+        with open(f, "a") as g:
+            g.write('["tool_result"]\n{"type":"user","message":{"content":[{"type":"tool_result"}]}}\n'
+                    '{"type":"user","message":"tool_result"}\n{"type":"user","message":{"content":"tool_result"}}\n')
+        v = self.view(f)
+        self.assertIn("valid reply", [r.get("text") for r in v["rows"]])
+
+
 class TheCommand(unittest.TestCase):
     def setUp(self):
         self.env, self.data = sandbox()
 
     def test_board_json(self):
-        session = self.data / "worker.jsonl"
+        session = Path(self.env["HOME"]) / ".claude" / "projects" / "-p-worker" / "worker.jsonl"
+        session.parent.mkdir(parents=True)
         session.write_text("\n".join([user("rewrite the setup guide", "2026-11-09T13:00:00.000Z"),
                                       bot("Rewrote the setup guide. It's ready to push.", "2026-11-09T14:02:00.000Z")]) + "\n")
         (self.data / "crew-sessions").mkdir()
