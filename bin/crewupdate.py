@@ -506,6 +506,14 @@ def rollback(path=None, log=print, wrote=None):
                 tar.extractall(dest, members=group, filter="data")
             else:
                 tar.extractall(dest, members=group)
+    # Putting a build back is an install: crew-install.json came back with the old build's "installed",
+    # and the helpers' recovery trusts that time (crewhelpers._copy_current: a copy written before the
+    # last install can't be vouched for). Left rewound, a backup with a helper On, made before an
+    # older build saved the owner's Off to the list only, would look current again (T208, Codex T199 d).
+    ins = installed()
+    if isinstance(ins, dict) and ins:
+        ins["installed"] = time.time()
+        save_json(INSTALL, ins)
     if snap:
         for line in restore_config(snap, log=log) + restore_dropin(snap, log=log):
             log(line)
