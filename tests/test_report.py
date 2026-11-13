@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -116,12 +117,19 @@ class Report(unittest.TestCase):
             self.assertIsNone(report.probe(["/bin/sh", "-c", shell]))
         pid = int(pidfile.read_text())
         try:
-            # A killed grandchild may be a zombie until init reaps it; it must not run.
+            # The wrapper can be reaped before its grandchild processes SIGKILL.
+            # Allow that scheduling delay, but still fail if the child survives.
+            # A zombie is stopped, even if init has not reaped it yet.
             status = Path(f"/proc/{pid}/stat")
-            try:
-                state = status.read_text().rsplit(")", 1)[1].split()[0]
-            except FileNotFoundError:
-                state = "gone"
+            deadline = time.monotonic() + 1.0
+            while True:
+                try:
+                    state = status.read_text().rsplit(")", 1)[1].split()[0]
+                except (FileNotFoundError, ProcessLookupError):
+                    state = "gone"
+                if state in ("Z", "gone") or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.01)
             self.assertIn(state, ("Z", "gone"))
         finally:
             try:
