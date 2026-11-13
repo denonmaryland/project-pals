@@ -395,5 +395,47 @@ class LandBase(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "main"), self.main0)
 
 
+    def test_t206_no_used_approval_is_left_to_replay_after_a_handoff(self):
+        """The boundary #codex-sol asked about: a handoff voids an unclaimed hand-over only inside the
+        two-minute window, because outside it nothing counts a used approval at all (recently_used
+        reads only used, unclaimed ones younger than HANDOVER_S; check() and owner_step match only
+        approved and pending ones). So an older one is inert with or without the handoff."""
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        approvals = self.data / "crew-approvals"
+        approvals.mkdir(parents=True, exist_ok=True)
+
+        def used(rid, ago_s):
+            now = int(time.time() * 1000)
+            (approvals / f"{rid}.json").write_text(json.dumps({"id": rid, "terminal": "test-bot", "rule": "land", "status": "used",
+                                                              "used": now - ago_s * 1000, "at": now - ago_s * 1000, "command": "pal land Builder#x"}))
+
+        def handoff():
+            code = f"import sys; sys.path.insert(0, {str(BIN)!r}); import crewhandoff; print(crewhandoff.void_approvals('test-bot'))"
+            r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout
+        # Older than the window: nothing to void, and land doesn't count it either way.
+        used("a-old001", 125)
+        self.assertNotIn("Builder#x", handoff())
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0, "an old used approval lets nothing through")
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+        # Just inside the window: the handoff voids it, so the new brain's land is held.
+        used("a-new001", 100)
+        self.assertIn("Builder#x", handoff())
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+        # Control: inside the window and no handoff, the program it was let through for may claim it once.
+        used("a-new002", 100)
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotEqual(self.git("rev-parse", "main"), self.main0)
+        self.commit_in(wt, "second")
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0, "and only once")
+
+
 if __name__ == "__main__":
     unittest.main()
