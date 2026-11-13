@@ -47,7 +47,7 @@ import {
   severalFactories, currentFactory, inFactory, homeItemShown,
   withoutChief, welcomePending,
 } from "./crew.js";
-import { logRow, helperRows, helperToday, helperNeed } from "./helperlog.js";
+import { logRow, helperRows, helperToday, helperNeed, tapNeed, tapsHolding, tapUndoable } from "./helperlog.js";
 import { welcomeView, welcomeKey } from "./welcome.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -185,8 +185,10 @@ export default class CrewHome extends View {
     for (const [term, st] of Object.entries(this.ops.stalled ?? {})) out.push({ key: `s-${term}`, kind: "stuck", at: st.since, pal: st.bot, st });
     // A trusted helper that isn't working, or is off without your click (T170): yours whichever factory shows.
     for (const h of this.ops.helpers ?? []) out.push({ key: `th-${h.name}`, kind: "helper", at: h.since, pal: h.name, h });
+    // A relayed tap that's being held (T147): it goes through by itself unless you stop it, so it comes first.
+    for (const h of tapsHolding(this.ops.taps)) out.push({ key: `tap-${h.id}`, kind: "tap", at: 0, held: h.at, pal: h.helper, h });
     // Home items were filtered on load; everything else goes by its pal.
-    return out.filter((n) => n.kind === "ask" || n.kind === "login" || n.kind === "helper" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
+    return out.filter((n) => n.kind === "ask" || n.kind === "login" || n.kind === "helper" || n.kind === "tap" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
   }
 
   since() {
@@ -325,6 +327,13 @@ export default class CrewHome extends View {
       sub = `${p.id}${p.note ? ` · ${clip(p.note, 120)}` : ""}`;
       acts = [B("no", "Decline", (cx) => this.act(n.key, ["proposal", "decline", p.id], "Declined", cx)), div().w(10).flex_none(),
         B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { primary: true })];
+    } else if (n.kind === "tap") {
+      const h = n.h, tn = tapNeed(h);
+      tag = this.tag(d, tn.outward ? "Outward tap" : "Tap", tn.outward ? d.err : "#B79CF7");
+      title = tn.title;
+      sub = tn.sub;
+      acts = [B("stop", "Stop", (cx) => this.act(n.key, ["taps", "stop", h.id], "Stopped: it did not run", cx), { primary: true }),
+        B("now", "Let it go now", (cx) => this.act(n.key, ["taps", "now", h.id], "Let through", cx))];
     } else if (n.kind === "helper") {
       const h = n.h, hn = helperNeed(h);
       const sheet = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
@@ -368,7 +377,7 @@ export default class CrewHome extends View {
 
   // Nothing waiting: the head pal's pet, "All caught up", one quiet line.
   caughtUp(d, t) {
-    const answered = this.home.items.filter((x) => x.status === "answered" && (x.answered_at ?? 0) >= midnight()).length;
+    const answered = this.home.items.filter((x) => x.status === "answered" && !x.tapped && (x.answered_at ?? 0) >= midnight()).length;   // yours, not a helper's taps
     const head = this.who();
     return v_flex().id("caught-up").flex_1().min_h(0).items_center().justify_center().gap(10)
       .child(this.face(head, "idle", 120, t))
@@ -508,7 +517,8 @@ export default class CrewHome extends View {
     } else if (r.kind === "note") {
       icon = svg(`${ICON}/ds-notebook.svg`).size(11).text_color(d.fg2); bold = short(r.x.by); rest = r.x.title; right = "note";
     } else if (r.kind === "answered") {
-      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = "You answered"; rest = `${r.x.title} → ${r.x.answer}`; right = short(r.x.by);
+      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = r.x.tapped ? `Tapped by ${r.x.tapped.by}` : "You answered"; rest = `${r.x.title} → ${r.x.answer}${r.x.tapped ? " · relayed, not your click" : ""}`; right = short(r.x.by);
+      if (r.x.tapped) icon = dot("#B79CF7");
     } else if (r.kind === "closed") {
       icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(r.x.withdrawn ? d.warn : d.ok); bold = r.x.withdrawn ? "Withdrawn" : "Done";
       rest = `${r.x.title}${r.x.result ? ` · ${r.x.result}` : ""}`; right = short(r.x.closed_by ?? r.x.by);
@@ -611,6 +621,9 @@ export default class CrewHome extends View {
         .child(h_flex().flex_1().min_w(0).gap(6).items_center()
           .child(div().flex_none().max_w(200).truncate().text_size(12.5).font_weight(500).text_color(h.tone === "warn" ? d.warnText : h.tone === "quiet" ? d.fg2 : d.fg1).child(h.bold))
           .child(div().min_w(0).truncate().text_size(12.5).text_color(d.body).child(h.rest)))
+        .when(e.kind === "tap-done" && tapUndoable(this.ops.taps, e.hold), (el) => el.child(div().id(`name-undo-${i}`).flex_none().px(6).h(22).flex().items_center()
+          .rounded(d.r.xs).cursor_pointer().hover((s) => s.bg(d.hover)).text_size(11.5).text_color(d.body)
+          .on_click((_e, cx) => this.act(`undo-${e.hold}`, ["taps", "undo", e.hold], "Undone: the question is open again", cx)).child("Undo")))
         .child(div().w(40).flex_none().text_right().text_size(11).text_color(e.at > (this.home.seen || 0) ? d.infoText : d.fg4).child(homeAge(e.at)));
     }));
     return v_flex().flex_1().min_h(0)
@@ -688,6 +701,14 @@ export default class CrewHome extends View {
         title: `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`, body: p.note,
         options: [o("Decline", "The pal is told", owner(["proposal", "decline", p.id], "Declined")),
           o("View", "Opens the change in the profile panel", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { gapBefore: true })] };
+    }
+    if (n.kind === "tap") {
+      const h = n.h, tn = tapNeed(h);
+      return { tag: [tn.outward ? "Outward tap" : "Tap", tn.outward ? this.d.err : "#B79CF7"], who: null, topic: h.by && h.by.includes("#") ? h.by : null,
+        sub: `tapped by ${h.helper}, relayed from you · ${tn.goes}`, title: tn.title, body: tn.sub,
+        rec: null,
+        options: [o("Stop", "It doesn't run; the item is yours to answer", owner(["taps", "stop", h.id], "Stopped: it did not run")),
+          o("Let it go now", tn.outward ? "Runs at once. It can't be undone" : "Runs at once", owner(["taps", "now", h.id], "Let through"), { gapBefore: true })] };
     }
     if (n.kind === "helper") {
       const h = n.h, hn = helperNeed(h);

@@ -151,6 +151,14 @@ class Crewd:
 
     def tick(self):
         save_json(DATA / "crew-daemon.json", {"at": time.time(), "pid": os.getpid()})
+        # Relayed taps whose hold is over are carried out here (T147): every tick, whatever else is
+        # up, before anything that might return early. Nothing held: one directory look.
+        try:
+            import crewtaps
+            for h in crewtaps.run_due():
+                log(f"tap {h['id']} {h['status']}: {h['helper']} → {h['item']}: {h['choice']}" + (f" ({h['result']})" if h.get("result") else ""))
+        except Exception:
+            log("taps failed:\n" + traceback.format_exc())
         if time.time() - self.last_mem > 60:
             self.last_mem = time.time()
             self.memory()

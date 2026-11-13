@@ -6,7 +6,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
-import {
+import { tapNeed, tapsHolding } from "./helperlog.js";
+import { alertSound,
   crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
   migrateChannelKeys, linkRecords, updateBot, refreshMachines,
   STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
@@ -101,6 +102,15 @@ export default class CrewRoster extends View {
     this.ops = { approvals: [], proposals: [], tasks: [], routines: [], stalled: {}, daemon: true };
     const ops = (cx) => cx.spawn(async (cx) => {
       try { this.ops = await loadOps(); } catch {}
+      // A relayed tap just started its hold (T147): say so once, wherever you are in the app. An outward
+      // one (a push, a release, a landing) also plays the "needs you" sound: it goes through by itself.
+      for (const h of tapsHolding(this.ops.taps)) {
+        if ((this.tapsSaid ??= new Set()).has(h.id)) continue;
+        this.tapsSaid.add(h.id);
+        const tn = tapNeed(h);
+        notify({ title: tn.title, body: `${tn.goes} unless you stop it. Stop is on Home.`, level: tn.outward ? "warning" : "info", timeout: tn.outward ? 20000 : 8000 });
+        if (tn.outward) alertSound("blocked");
+      }
       // What blocked agents said (only they're asked), so a pal asking another pal isn't counted (T19).
       try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
       // What needs DeNon, for the status bar's "N need you", with why each counts (published only

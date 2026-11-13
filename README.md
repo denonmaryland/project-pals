@@ -180,6 +180,10 @@ tokens or the Desk's cards. The command waits in your Inbox until you click Appr
   your click sends a message as you.
 - `./release` asks for your click from any terminal, not only a pal's, and only whoever put
   something on Home, the head pal or your click takes it off.
+- **Relayed taps** (off by default, per helper): a trusted helper can also tap what waits on you
+  when you've answered it in chat, with a hold before anything runs, Stop on Home, and a record
+  that always says it was a tap. If you turn on taps for push, release and land, the helper's tap
+  is the approval: read the note in Trusted helpers first.
 - **Trusted helpers** (About → Settings): you can let one of your own assistants send normal work
   to your pals in your name (`PAL_HELPER=<name> pal tell …`). It's off until you switch a helper
   on, one click turns it off or gives it a new key, and Home shows everything it sent and tried. It

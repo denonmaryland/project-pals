@@ -377,6 +377,10 @@ def switch(name, on, pals=()):
             e.pop("rotated", None)
         e["on"], e["switched"] = bool(on), now_ms()   # `switched`: the owner has decided this helper's state
         e.pop("restored_off", None)
+        if not on and isinstance(e.get("taps"), dict):
+            # Off means off for tapping too (T147): its three tap switches go with it, and stay off
+            # when the helper is switched on again, until the owner turns each one on.
+            e["taps"] = {**e["taps"], "home": False, "local": False, "outward": False}
         _save(h)
     log("switch", known, action="on" if on else "off", **({"key": "made"} if made else {}))
     check()
@@ -397,6 +401,62 @@ def rotate(name):
     log("switch", known, action="rotate")
     check()
     return known, e
+
+
+def set_taps(name, what, value):
+    """A helper's relayed-tap switches (T147), the owner's click: `what` is home | local | outward
+    (value on | off: may this helper tap that class of thing) or hold (value: minutes an outward tap
+    waits before it runs, 0 to 15). Only for a helper that is switched on."""
+    import crewtaps
+    _ready()
+    with locked(SEND), locked("helpers"):
+        h = _load()
+        known = canonical(name, h)
+        if not known:
+            raise HelperError(f"no helper called {name}")
+        e = h["helpers"][known]
+        taps = dict(e.get("taps") if isinstance(e.get("taps"), dict) else {})
+        if what in crewtaps.CLASSES:
+            if value not in ("on", "off"):
+                raise HelperError(f"pal settings trust-helper {known} taps {what} on|off")
+            if value == "on" and not e.get("on"):
+                raise HelperError(f"{known} is switched off: switch the helper on first")
+            taps[what] = value == "on"
+            taps.pop("auto_off", None)   # the owner has looked: the switch-off notice is answered
+        elif what == "hold":
+            try:
+                n = int(value)
+            except (TypeError, ValueError):
+                raise HelperError("the hold is a number of minutes")
+            if not 0 <= n <= crewtaps.OUTWARD_HOLD_MAX:
+                raise HelperError(f"the hold is 0 to {crewtaps.OUTWARD_HOLD_MAX} minutes")
+            taps["hold"] = n
+        else:
+            raise HelperError(f"pal settings trust-helper {known} taps home|local|outward on|off, or taps hold <minutes>")
+        e["taps"] = taps
+        _save(h)
+    log("switch", known, action=f"taps {what} {value}")
+    check()
+    return known, crewtaps.switches(e)
+
+
+def taps_auto_off(name, why):
+    """Too many refused taps: tapping goes off for this helper until the owner's click (crewtaps).
+    Not the owner's doing, so it's said out loud (health: taps-off). The helper itself stays on."""
+    with locked(SEND), locked("helpers"):
+        h = _load()
+        known = canonical(name, h)
+        if not known:
+            return None
+        e = h["helpers"][known]
+        taps = dict(e.get("taps") if isinstance(e.get("taps"), dict) else {})
+        if not any(taps.get(c) for c in ("home", "local", "outward")):
+            return None
+        e["taps"] = {**taps, "home": False, "local": False, "outward": False, "auto_off": {"at": now_ms(), "why": _clip(why, 200)}}
+        _save(h)
+    log("switch", known, action="taps off (refused taps)", why=why)
+    check()
+    return known
 
 
 def set_limit(name, per_hour):
@@ -676,6 +736,11 @@ def health(name, e, now=None):
                     "text": f"{name} is off. The list of helpers was damaged and came back from a copy that another build may have made out of date, "
                             f"so {name} was switched off, not guessed on, and not by you. What it sends is not in your name."}
         return None   # the owner switched it off
+    auto = (e.get("taps") or {}).get("auto_off") if isinstance(e.get("taps"), dict) else None
+    if auto:
+        return {"reason": "taps-off", "fix": None,
+                "text": f"{name} can't tap for you any more. Tapping was switched off, not by you: {auto.get('why') or 'its taps were refused'}. "
+                        f"{name} still sends normal work. Turn tapping on again in Trusted helpers if those taps were yours."}
     try:
         key = _read_key(key_path(name))
     except HelperError as ex:
@@ -754,6 +819,11 @@ def check(bump=None):
 
 # ─── what the app and `pal helpers` show ─────────────────────────────────────────────────────
 
+def _taps_of(e):
+    import crewtaps
+    return crewtaps.switches(e)
+
+
 def _is_sealed(p):
     try:
         with open(p, "rb") as f:
@@ -780,5 +850,5 @@ def listing(log_limit=200):
                     "sent_today": sum(1 for x in mine if x.get("kind") == "sent" and (x.get("at") or 0) >= day),
                     "refused_today": sum(1 for x in mine if x.get("kind") == "refused" and (x.get("at") or 0) >= day),
                     "sent_hour": sum(1 for x in mine if x.get("kind") == "sent" and (x.get("at") or 0) >= now - 3600 * 1000),
-                    "per_hour": int(e.get("per_hour") or PER_HOUR), "carried_over": bool(e.get("carried_over") and not e.get("switched")), "attention": att.get(name)})
+                    "per_hour": int(e.get("per_hour") or PER_HOUR), "carried_over": bool(e.get("carried_over") and not e.get("switched")), "attention": att.get(name), "taps": _taps_of(e)})
     return {"helpers": out, "log": log_[-log_limit:][::-1], "max": MAX, "env": ENV}

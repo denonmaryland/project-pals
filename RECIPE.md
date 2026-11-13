@@ -1664,8 +1664,82 @@ record; the owner turns it on again in the sheet.
 - **`pal ram [--json]`:** each awake topic's agent tree (PSS plus SwapPss), whether it has its own
   scope, and the machine's memory.
 
+### Relayed taps (after 0.4.3)
+
+The owner is away from the app, in chat with a trusted helper. The helper shows them the exact
+thing that waits, they answer there, and the helper taps it for them. Not only questions on Home:
+held commands (a push, a release, a landing), proposals and drafts too. A tap is recorded and told
+as a tap, never as the owner's click. Off for every helper until the owner switches it on.
+
+- **Three switches per helper**, under its row in Trusted helpers (only for a helper that is on),
+  each with one sentence on what it lets happen without the owner: **Home questions**, **Approvals
+  on this computer** (proposals, drafts, held edits that stay local), **Push, release, land**
+  (the explicitly classified rules for push, publish, release, deploy, merge, post, messaging
+  people, landing and `./release`'s own request). New/custom rules stay owner-click only until
+  explicitly classified in the code. Turning the last one on asks once
+  more in place ("<helper>'s tap is the approval…"); while it's on, −/+ sets how long an outward
+  tap is held (5 minutes; 0 to 15). `pal settings trust-helper <name> taps home|local|outward
+  on|off`, `taps hold <minutes>`: the owner's click. Switching the helper off switches all three
+  off, and they stay off when it's switched on again.
+- **The helper's side.** `pal --as-helper taps [--json]` lists what waits with the exact text
+  Project Pals wrote for each (the question and what each choice does; the command and its diff;
+  the proposal's text; the draft) and, for what it may tap, a one-time **ticket**; for the rest,
+  why not. `pal --as-helper tap <ticket> "<choice>" --relayed "the owner's words"` taps;
+  `pal --as-helper tap-cancel <hold>` takes it back while it's held. A refused tap exits 5 with
+  "not tapped: <why>".
+- **A ticket** is good for one item as it was shown (a fingerprint of its text, choices and
+  command: a change of one character refuses the tap), one of its listed choices, one use, ten
+  minutes, and not sooner than twenty seconds after it was made.
+- **The hold.** A tap runs after a minute, an outward one after the helper's hold. Until then it
+  is first under **Needs you** on Home as a **Tap** card (red **Outward tap** for the last class):
+  what was tapped, the clock time it goes through, the words the helper says the owner said, and
+  **Stop** and **Let it go now** (the owner's clicks). The sidebar toasts when a hold starts and
+  plays the "needs you" sound for an outward one. When its time comes it is checked again (helper
+  on, switch on, item unchanged) and dropped if not.
+- **What it runs as.** The owner's own command for that item (`pal home answer`, `approve` / `deny`,
+  `proposal accept` / `decline`, `desk send-draft`), carried out by crewd on its next tick, with a
+  one-time tap token in place of a click token. Each says who: Home's item keeps `tapped: {by,
+  relayed, hold}` and Today reads "Tapped by Pals", never "You answered"; the asker's card is
+  Project Pals' own ("[pal]"), "tapped by Pals, relayed from <owner>", with the reported words and
+  "not <owner>'s own click"; an approval's record says `decided via: a tap by Pals, relayed from
+  <owner>` and the pal is told "Pals tapped, relaying <owner>"; a proposal's `via` is the same; a
+  tapped draft goes out as its drafter's card, a pal's, not the owner's.
+- **Undo** (In your name, on a tapped Home answer): the question is open again, marked for the
+  owner's own click, and the asker gets "Stop: <owner> undid the tap". An approval that ran has
+  run: Stop during the hold is the only way to prevent it.
+- **Limits.** 5 outward taps a day and 30 others an hour per helper; one outward hold at a time;
+  one tap per item ever (after a Stop, a cancel or an Undo the item is the owner's). Three refused
+  taps in ten minutes (a bad, used, old or too-early ticket, a changed item, a choice that isn't
+  listed) switch that helper's tapping off, drop what it had in hand, and raise a Helper card.
+- **Never tappable**, whatever is switched on: the trust switch and these switches; settings,
+  missions, brains, renaming, updates, roll back, uninstall, marking Home seen, the Desk's other
+  owner actions; held commands that reach for a helper's key, a click token, the message queue,
+  the Desk's cards or the taps' own files, or that uninstall; a question without listed choices;
+  mission and brain proposals (including dream context and brain files), unknown proposal kinds;
+  items whose diff, proposal text or draft body exceeds the 6000 characters shown to the helper;
+  a question a helper put on Home; and a question marked **your click only** (`pal home ask …
+  --owner-only`, or `pal home owner-only <id>` by its asker or the head pal).
+- **The record** (In your name, `pal helpers log`, `pal feed`): every tap with its hold time and the
+  relayed words, and how it ended: went through, stopped, taken back, dropped (and why), failed,
+  undone, refused (and why).
+
+Data: `data/crew-taps/` (written only by `pal`): `tickets/k-….json`, `holds/t-….json` (`{id, helper,
+kind home|approval|proposal|draft, item, cls home|local|outward, choice, relayed, title, hash, at,
+run_at, status holding|running|done|stopped|cancelled|dropped|failed|undone, result}`),
+`holds.json` (the recent ones, for the app), `run/<nonce>.json` (the tap token of a hold being
+carried out). A helper's switches are `taps: {home, local, outward, hold}` on its entry in
+`helpers.json`. Holds are kept 14 days. Permanent `used/<item-hash>.json` markers keep the
+one-tap-per-item restriction after history expires; older holds get markers before cleanup.
+
 ## Built from
 
+- **Relayed taps:** `bin/crewtaps.py` (items and their fingerprints, tickets, holds, limits,
+  `run_due`, `take_run_token`); `crewlib.owner_gate(…, tap=)` and `tap_authority()`; `pal taps | tap
+  | tap-cancel`, `acted()` and the `--tap` token in bin/crew; `crewhome.answer(tapped=)`, `untap`,
+  `owner_only`; `crewguard.decide(tap=)` and the `tap-write` rule (policy defaults 17);
+  `crewdesk.send_draft(tap=)`; `crewhelpers.set_taps` / `taps_auto_off`; crewd's tick; `tapNeed`,
+  `tapsHolding`, `tapUndoable` and `TAP_SWITCHES` in `lib/helperlog.js`; the Tap card and Undo in
+  `crew-home`, the switches in `crew-helpers`, the toast and sound in `crew-roster`.
 - **Layout:** `layouts/pals.json`, the tree above.
   - Stack `center` has the children `tab-view`, `room-view`, `desk-view` and `home-view`. `showRoom` / `showTabs` switch it
     and show or hide `crew-composer`.
@@ -2032,6 +2106,38 @@ record; the owner turns it on again in the sheet.
   changes a switch: if keys must be remade it remakes them in place. And anything that leaves a
   helper unusable raises the Helper card. The carry-over itself is marked done in the old folder
   (`data/crew-helper/.carried-over`), so a list that later goes missing can't trigger it again.
+- **A tap is the approval, and no test can make it the owner's.** A key proves the helper; Project
+  Pals never sees the chat where the owner answered. With the outward switch on, whatever can act
+  as the helper (its key, a bug in it, text that tricks it) can have a push, a release or a
+  landing approved in the owner's name, and since a helper can also ask a pal for work, one party
+  can close the whole loop. The owner chose this (h-5cadb2, over a second factor). The ticket,
+  the hold, the limits and the record bound it and make it visible; they don't prove anything.
+- **A tap token is not a click token.** It is taken only when no click is given, only for the six
+  commands a tap may stand in for (`crewtaps.TAPPABLE`), only for exactly the command line it was
+  written for, within two minutes, for a hold that is `running`; and never when the run presents
+  itself as a helper. Everything it does says the helper tapped. Settings, the trust and tap
+  switches, `pal taps now`, updates and the rest refuse it: a tap must not be able to widen taps.
+- **Fingerprint what would be written, not what is listed.** `crewproposals.all_()` leaves a
+  proposal's text out; a fingerprint made from that would not have noticed the text being swapped
+  after the owner was shown it.
+- **Validate the record being changed.** Home answers, approval decisions and draft sends compare
+  the hold's fingerprint under their store's mutation lock. Proposal execution validates the
+  in-memory payload it writes, including the proposal subtype, under the proposals lock. A changed item is refused even
+  after a hold was dispatched. A draft's task is created only after this validation.
+- **The first matching rule isn't the whole command.** Tap classification checks every matching
+  rule, including nested commands: any never-tappable rule wins, then outward, then local. The
+  approval decision repeats this check under its lock. The normal gate keeps its first-match label.
+- **Reserve a proposal before applying it.** Accept, decline, profile-panel application and expiry
+  share the proposals lock. An accepted write first becomes `applying`, then `accepted`; a
+  pre-write validation refusal stays `pending` for another review. An application that raises
+  becomes `failed`. A crash may leave `applying`. These states are not
+  pending or automatically retried: inspect possible partial effects before proposing again.
+- **A shortened preview cannot authorize a longer write.** Clipped items have no ticket and old
+  tokens for them are refused at execution. Dream tool/process tasks record the tap actor, not
+  the owner, when created on a tap.
+- **A hold shows a clock time, not a countdown.** A countdown needs a timer redrawing the window.
+- **Refusals that are nobody's fault don't count** toward the three that switch tapping off (a
+  limit reached, an item already tapped, a switch that's off): only ones that look like guessing.
 - **A reader must not repair the list.** The first version of the backup had any reader write the
   copy back over a damaged list, with no lock: a reader holding an old copy ("on") could finish
   after the owner's Off was saved and switch the helper back on. Readers now only read (from the
@@ -2127,6 +2233,15 @@ record; the owner turns it on again in the sheet.
   accepted, `pal approve`, `pal settings …`, `pal home answer|done|drop|park` and the rest of the
   owner's commands are refused and each try is in the record (`tests/test_helpers.py`,
   `tests/test_guard.py` HelperKeys, `tests/test_helperlog.mjs`, the mod's `keys.test.ts`).
+- With no tap switch on, `pal --as-helper taps` shows what waits and gives no ticket. With Home
+  questions on: a ticket; `tap` sooner than 20 seconds is refused; then `tap <ticket> "A"
+  --relayed "…"` puts a Tap card first under Needs you, Stop ends it unrun, and left alone the
+  question is answered a minute later, Today says "Tapped by Pals", and the asker's card says so.
+  With the outward switch on, a held `git push` tapped Approve is approved five minutes later with
+  `decided via: a tap by Pals…`, and the pal's command goes through once. A question edited after
+  its ticket, a sixth outward tap in a day, a held command that reaches for a key, and any command
+  outside the six run with a tap token are all refused (`tests/test_taps.py`, TapFiles in
+  `tests/test_guard.py`, `tests/test_helperlog.mjs`, `tests/test_home_view.mjs`).
 - With Pals on, `./install.sh` again leaves `helpers.json` and the key byte for byte and ends with
   "trusted helper: Pals: on, its key works". Delete the key file: `pal helpers health` says "Pals
   is on, but its key file is missing", Home shows one Helper card with Rotate key, `pal feed` has
