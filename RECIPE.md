@@ -537,6 +537,19 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   `git merge-tree --write-tree`, commits with `commit-tree` and moves the branch with `update-ref`
   only if it's still where it was. No checkout is touched. A branch that's on the base already
   lands nothing ("is on main already") instead of making an empty merge.
+  Where it lands (T177): the project's main branch (origin's HEAD, else `main`, else `master`), or
+  the base named with `--base` when the topic was made (recorded as `base_named`), or `--onto
+  <branch>` on purpose. Never the branch the project folder has checked out: a worktree topic is
+  cut from the main branch, not from whatever the folder had out (10 topics had been cut from
+  `crew/pet-facelift` that way, and an approved land merged into it). A topic cut from a branch
+  that has commits not on the target is refused, with how to land it on purpose. Review's diff is
+  against where it would land. A topic records the main branch as resolved when it was made
+  (`primary`: a repo whose only branch is `trunk` lands on `trunk` after `crew/*` branches exist) and
+  the commit it was cut from (`cut`); what it carries that isn't on the target is counted from that
+  commit, so deleting or rewinding the branch it came from changes nothing. A topic recorded before
+  `cut` existed and made from anything but the target needs `--onto` (Codex T180). A pal's land is
+  held for one exact command: an approval of `pal land P#t` doesn't cover `pal land P#t --onto x`,
+  in land's own check or through the hook's approval.
   `pal version` and `pal update status` say the build, the channel, a trial and a held commit.
 - **Tester diagnostics** (T155): `pal report` prints a fenced Markdown diagnostic locally and
   uploads nothing. `bin/crewreport.py` runs before the CLI loads settings or discovers pals.

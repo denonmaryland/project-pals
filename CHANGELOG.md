@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Land always goes to main.** A topic's branch now lands on the project's main branch (or a base
+  you named when making it), never on whatever branch the project folder happens to have out, and
+  new topics are cut from main the same way. A topic built on another topic's unlanded branch is
+  refused with how to land it on purpose (`pal land … --onto`).
 - **See your own changes live: the Live channel and Try it live.** For people who work on
   Project Pals itself. About has an **Update channel** switch: on Live, your install follows `main`
   in your own checkout. What you land is checked, installed and reloaded in place within seconds,
