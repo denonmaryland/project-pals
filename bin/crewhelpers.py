@@ -218,7 +218,12 @@ def _copy_current():
         pass
     if not times:
         return True
-    return isinstance(at, (int, float)) and at >= max(times)
+    # install.sh records whole seconds (int(time.time()), in both places), so an install in the same
+    # second as the copy can't be ordered against it. Fail toward Off: a whole-second time counts as
+    # the end of that second (T209 round 2). A copy written that close to an install is brought level
+    # again by the next run of this version (sync_backup), so only a lost list in that moment pays.
+    latest = max(t + 1000 if float(t).is_integer() and t % 1000 == 0 else t for t in times)
+    return isinstance(at, (int, float)) and at >= latest
 
 
 def sync_backup():

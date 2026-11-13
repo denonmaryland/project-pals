@@ -1657,8 +1657,12 @@ record; the owner turns it on again in the sheet.
   back predates the memory work and ours goes. Roll back reads Project Pals' drop-in text before it
   swaps the library, which can take `crewmem.py` away (T209).
   **Watch out:** an older build's own updater, rolling back after an install that passed its checks
-  (its runtime verification), can't be taught any of this: the drop-in stays until the next install
-  or `pal uninstall`.
+  (its runtime verification), can't be taught any of this: the drop-in stays with the older build.
+  Installing this version or later again makes it right (the drop-in belongs with per-pal scopes).
+  To take it away while the older build stays, delete
+  `~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf` by hand and run
+  `systemctl --user daemon-reload`. An older build's `pal uninstall` may not know the file; this
+  version's uninstaller removes it (with the rest of Project Pals).
 - **Low memory:** crewd writes `data/crew-memory.json` each minute (`available`, `total`, `floor`,
   `low`, `low_since`, `scope`, `scope_flags`). The floor is `"memory_floor_mb"`, else the larger of
   1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line

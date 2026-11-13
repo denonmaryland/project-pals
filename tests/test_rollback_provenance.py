@@ -83,6 +83,29 @@ class RollbackStampsTheInstallTime(unittest.TestCase):
         """))
         self.assertGreaterEqual(out["installed"], out["t0"])
 
+    def test_an_install_in_the_same_second_as_the_copy_counts_as_after_it(self):
+        # install.sh writes whole seconds (int(time.time()) in crew-install.json, that * 1000 in the
+        # log). The copy at S + 0.75 s, the older build's install at S + 0.9 s logged as S: the order
+        # is unknown, so the copy isn't vouched for and the helper comes back Off (T209 round 2).
+        out = run(PRELUDE + textwrap.dedent("""
+            S = int(time.time()) - 60
+            crewupdate.INSTALL.write_text(json.dumps({"version": "0.4.3", "installed": S - 3600}))
+            crewhelpers._save({"version": 1, "helpers": {"Pals": {"on": True, "sha256": "synthetic"}}})
+            b = json.loads(crewhelpers.BACKUP.read_text()); b["at"] = S * 1000 + 750
+            crewhelpers.BACKUP.write_text(json.dumps(b))
+            crewupdate.INSTALL.write_text(json.dumps({"version": "historical", "installed": S}))
+            (crewupdate.DATA / "crew-installs.jsonl").write_text(json.dumps({"at": S * 1000, "version": "historical"}) + "\\n")
+            crewhelpers.FILE.unlink()
+            current = crewhelpers._copy_current()
+            crewhelpers.restore_list()
+            later = dict(b, at=(S + 1) * 1000)   # a copy from the next second on is after it
+            crewhelpers.BACKUP.write_text(json.dumps(later))
+            print(json.dumps({"current": current, "on": on(), "next_second": crewhelpers._copy_current()}))
+        """))
+        self.assertFalse(out["current"])
+        self.assertFalse(out["on"])
+        self.assertTrue(out["next_second"])
+
     def test_a_current_copy_still_restores_on_after_a_normal_crash(self):
         # The case recovery exists for: no build swap, the list damaged, the copy current. On stays On.
         out = run(PRELUDE + textwrap.dedent("""
