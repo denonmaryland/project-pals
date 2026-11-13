@@ -66,12 +66,13 @@ OUTWARD_PER_DAY, OTHER_PER_HOUR = 5, 30
 REFUSALS, REFUSAL_WINDOW = 3, 600
 RUN_TTL = 120             # seconds a tap token is good for
 KEEP_DAYS = 14
+SHOWN_TEXT_MAX = 6000
 
 # Which held commands a tap may answer, by the gate's rule. Local: stays on this computer and can be
-# put back. Never: commands that decide who may speak or act as whom. Everything else, a rule the
-# owner added included, is outward: the longer hold and the daily limit.
+# put back. Outward is explicitly enumerated; new/custom rules stay owner-only until classified.
 LOCAL_RULES = {"agents-file", "agents-file-shell", "agents-file-interpreter"}
-NEVER_RULES = {"helper-key", "owner-click", "queue-write", "desk-write", "tap-write", "uninstall", "uninstall-indirect"}
+OUTWARD_RULES = {"push", "publish", "release", "merge", "post", "deploy", "message", "message-api", "land", "release-script", "live-branch", "base-branch"}
+NEVER_RULES = {"helper-key", "notify-key", "owner-click", "queue-write", "desk-write", "tap-write", "uninstall", "uninstall-indirect"}
 # The owner's commands a tap token may stand in for (crewlib.owner_gate checks the same list).
 TAPPABLE = (("home", "answer"), ("approve",), ("deny",), ("proposal", "accept"), ("proposal", "decline"), ("desk", "send-draft"))
 
@@ -152,6 +153,9 @@ def item_hash(kind, x):
 
 
 def proposal_never(p):
+    clipped = clipped_reason("proposal", p)
+    if clipped:
+        return clipped
     # Check the payload subtype, not just the outer `proposal accept` command.
     if p.get("kind") == "agents" and re.fullmatch(r"(?:AGENTS\.md|CLAUDE(?:\.local)?\.md|\.claude/CLAUDE\.md)", p.get("file") or ""):
         return None
@@ -163,17 +167,26 @@ def proposal_never(p):
 def approval_class(a):
     import crewguard
     rules = {a.get("rule"), *(r["name"] for r in crewguard.all_matches(a.get("command") or ""))}
-    forbidden = rules & NEVER_RULES
+    forbidden = {str(r) for r in rules if rule_class(r) == "never"}
     if forbidden:
-        return "local", f"it decides who may act as whom (rule {', '.join(sorted(forbidden))}): {OWNER}'s own click only"
-    return ("local" if all(rule_class(r) == "local" for r in rules) else "outward"), None
+        return "local", f"owner-only or unclassified rule {', '.join(sorted(forbidden))}: {OWNER}'s own click only"
+    return ("local" if all(rule_class(r) == "local" for r in rules) else "outward"), clipped_reason("approval", a)
+
+
+def clipped_reason(kind, record):
+    field = {"approval": "diff", "proposal": "text", "draft": "body"}.get(kind)
+    if field and len(str(record.get(field) or "")) > SHOWN_TEXT_MAX:
+        return f"too long to show in full: {OWNER}'s own click only"
+    return None
 
 
 def validate_snapshot(kind, record, tap):
     """Called under the store's mutation lock with the record about to change.
-    Proposal callers write the validated in-memory payload, never a fresh read."""
+    Proposal callers keep their decision lock while writing this validated payload."""
     if tap.get("kind") != kind or tap.get("item") != record.get("id") or tap.get("hash") != item_hash(kind, record):
         raise TapError(f"{record.get('id')} changed after it was tapped")
+    if clipped_reason(kind, record):
+        raise TapError(clipped_reason(kind, record))
     if kind == "proposal":
         why = proposal_never(record)
         if why:
@@ -210,7 +223,7 @@ def _home_items():
 
 
 def rule_class(rule):
-    return "never" if rule in NEVER_RULES else "local" if rule in LOCAL_RULES else "outward"
+    return "local" if rule in LOCAL_RULES else "outward" if rule in OUTWARD_RULES else "never"
 
 
 def _approval_items():
@@ -221,7 +234,7 @@ def _approval_items():
             continue
         cls, never = approval_class(a)
         who = f"{a.get('bot') or 'a shell'}" + (f" #{a['channel']}" if a.get("channel") else "")
-        text = f"{who} wants to run a command that {a.get('why') or a.get('rule')}:\n{a.get('command') or ''}" + (f"\n\n{_clip(a.get('diff'), 6000)}" if a.get("diff") else "")
+        text = f"{who} wants to run a command that {a.get('why') or a.get('rule')}:\n{a.get('command') or ''}" + (f"\n\n{_clip(a.get('diff'), SHOWN_TEXT_MAX)}" if a.get("diff") else "")
         out.append({"kind": "approval", "id": a["id"], "cls": cls, "title": f"{who}: {_clip(a.get('command'), 120)}",
                     "text": text, "by": who, "rule": a.get("rule"),
                     "choices": [{"label": "Approve", "does": "Lets exactly this command run, once"}, {"label": "Decline", "does": "The command is refused"}],
@@ -235,7 +248,7 @@ def _proposal_items():
     for p in crewproposals.all_("pending"):
         p = crewproposals.get(p["id"])   # with its text (a listing leaves it out): the fingerprint must cover what would be written
         what ="its mission" if p.get("kind") == "mission" else p.get("file") or (p.get("meta") or {}).get("pattern") or "a file"
-        text = f"{p.get('by') or p.get('pal')} proposes a change to {what}" + (f": {p['note']}" if p.get("note") else "") + f"\n\n{_clip(p.get('text'), 6000)}"
+        text = f"{p.get('by') or p.get('pal')} proposes a change to {what}" + (f": {p['note']}" if p.get("note") else "") + f"\n\n{_clip(p.get('text'), SHOWN_TEXT_MAX)}"
         out.append({"kind": "proposal", "id": p["id"], "cls": "local", "title": f"{p.get('by') or p.get('pal')}: change {what}", "text": text, "by": p.get("by") or "",
                     "choices": [{"label": "Accept", "does": "Writes the change"}, {"label": "Decline", "does": "The proposer is told"}], "never": proposal_never(p),
                     "text_sha": crewproposals.text_sha(p),
@@ -249,9 +262,9 @@ def _draft_items():
     for path, card in crewdesk.cards(where=("open",)):
         if card.get("unreadable") or card.get("status") != "draft" or path.parent.parent.name != crewdesk.DRAFTS:
             continue
-        text = f"A draft by {card.get('from')}, to {card.get('to') or 'route'}:\n{card.get('title') or ''}\n{_clip(card.get('body'), 6000)}"
+        text = f"A draft by {card.get('from')}, to {card.get('to') or 'route'}:\n{card.get('title') or ''}\n{_clip(card.get('body'), SHOWN_TEXT_MAX)}"
         out.append({"kind": "draft", "id": card["id"], "cls": "local", "title": f"Draft by {card.get('from')}: {_clip(card.get('title'), 100)}", "text": text,
-                    "by": card.get("from") or "", "choices": [{"label": "Send", "does": "It goes out as its drafter's card, sent on this tap"}], "never": None,
+                    "by": card.get("from") or "", "choices": [{"label": "Send", "does": "It goes out as its drafter's card, sent on this tap"}], "never": clipped_reason("draft", card),
                     "hash": item_hash("draft", card)})
     return out
 

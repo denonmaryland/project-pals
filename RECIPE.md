@@ -1661,8 +1661,9 @@ as a tap, never as the owner's click. Off for every helper until the owner switc
 - **Three switches per helper**, under its row in Trusted helpers (only for a helper that is on),
   each with one sentence on what it lets happen without the owner: **Home questions**, **Approvals
   on this computer** (proposals, drafts, held edits that stay local), **Push, release, land**
-  (every other held command: push, publish, release, deploy, merge, post, messaging people, a
-  landing, `./release`'s own request, a rule the owner added). Turning the last one on asks once
+  (the explicitly classified rules for push, publish, release, deploy, merge, post, messaging
+  people, landing and `./release`'s own request). New/custom rules stay owner-click only until
+  explicitly classified in the code. Turning the last one on asks once
   more in place ("<helper>'s tap is the approval…"); while it's on, −/+ sets how long an outward
   tap is held (5 minutes; 0 to 15). `pal settings trust-helper <name> taps home|local|outward
   on|off`, `taps hold <minutes>`: the owner's click. Switching the helper off switches all three
@@ -1702,6 +1703,7 @@ as a tap, never as the owner's click. Off for every helper until the owner switc
   owner actions; held commands that reach for a helper's key, a click token, the message queue,
   the Desk's cards or the taps' own files, or that uninstall; a question without listed choices;
   mission and brain proposals (including dream context and brain files), unknown proposal kinds;
+  items whose diff, proposal text or draft body exceeds the 6000 characters shown to the helper;
   a question a helper put on Home; and a question marked **your click only** (`pal home ask …
   --owner-only`, or `pal home owner-only <id>` by its asker or the head pal).
 - **The record** (In your name, `pal helpers log`, `pal feed`): every tap with its hold time and the
@@ -2107,11 +2109,18 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   after the owner was shown it.
 - **Validate the record being changed.** Home answers, approval decisions and draft sends compare
   the hold's fingerprint under their store's mutation lock. Proposal execution validates the
-  in-memory payload it writes, including the proposal subtype. A changed item is refused even
+  in-memory payload it writes, including the proposal subtype, under the proposals lock. A changed item is refused even
   after a hold was dispatched. A draft's task is created only after this validation.
 - **The first matching rule isn't the whole command.** Tap classification checks every matching
   rule, including nested commands: any never-tappable rule wins, then outward, then local. The
   approval decision repeats this check under its lock. The normal gate keeps its first-match label.
+- **Reserve a proposal before applying it.** Accept, decline, profile-panel application and expiry
+  share the proposals lock. An accepted write first becomes `applying`, then `accepted`; an
+  application that raises becomes `failed`. A crash may leave `applying`. These states are not
+  pending or automatically retried: inspect possible partial effects before proposing again.
+- **A shortened preview cannot authorize a longer write.** Clipped items have no ticket and old
+  tokens for them are refused at execution. Dream tool/process tasks record the tap actor, not
+  the owner, when created on a tap.
 - **A hold shows a clock time, not a countdown.** A countdown needs a timer redrawing the window.
 - **Refusals that are nobody's fault don't count** toward the three that switch tapping off (a
   limit reached, an item already tapped, a switch that's off): only ones that look like guessing.

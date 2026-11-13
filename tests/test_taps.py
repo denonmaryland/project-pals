@@ -409,13 +409,14 @@ class Approvals(Taps):
             self.assertEqual(self.approval(rid)["rule"], rule)
             self.assertNotIn("ticket", rows[rid], rule)
             self.assertIn("own click only", rows[rid]["not_tappable"], rule)
-        # A rule the owner added is treated as outward: the long hold and the daily limit.
+        # A new/custom rule has no delegated class: only the owner's click may answer it.
         pol = self.data / "crew-policy.json"
         p = json.loads(pol.read_text())
         p["guarded"].append({"name": "my-rule", "why": "mine", "pattern": r"^my-tool\b"})
         pol.write_text(json.dumps(p))
         mine = self.held("my-tool go")
-        self.assertEqual(self.tickets()[mine]["class"], "outward")
+        self.assertNotIn("ticket", self.tickets()[mine])
+        self.assertIn("unclassified rule", self.tickets()[mine]["not_tappable"])
 
     def test_outward_taps_five_a_day_and_one_at_a_time(self):
         self.switch("outward")
