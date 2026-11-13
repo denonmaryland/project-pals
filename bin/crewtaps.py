@@ -1,43 +1,10 @@
-"""Relayed taps (T147): a trusted helper taps what's waiting on the owner, relaying the owner's word.
+"""Historical relayed taps and their migration to standing helper trust levels.
 
-The owner is away from the app, in chat with their helper. The helper shows them the exact thing
-that waits (a question on Home, a held command, a proposal, a draft), the owner answers there, and
-the helper taps it. DeNon's own picks, 2026-11-11: h-8287ee "Plan it as asked", h-5cadb2 "As asked,
-with holds", h-8d5b13 "Build now, land after Codex" (the plan: crew-boards/trusted-helper/
-relayed-taps-full.html).
-
-    pal --as-helper taps [--json]                       what waits, each with its exact text and a ticket
-    pal --as-helper tap <ticket> "<choice>" --relayed "the owner's words"
-    pal --as-helper tap-cancel <hold>                   take a tap back while it's held
-    pal taps [--json]                                   the holds (anyone)
-    pal taps stop|now|undo <hold>                       the owner's (a click)
-    pal taps run                                        carry out the holds that are due (crewd does)
-
-What a tap is, and isn't. A key proves the helper; nothing here can prove the owner said it. So a
-tap is always "<helper> reports that <owner> picked B", recorded and shown as that, never as the
-owner's click. With the outward switch on, a tap IS the approval of a push, a release or a landing:
-anything that can act as the helper can then get those done in the owner's name. What bounds that:
-
-  - a ticket: one item as Project Pals showed it (a fingerprint), its listed choices, one use, ten
-    minutes, and not sooner than twenty seconds (a person reads; a loop doesn't wait);
-  - three switches per helper (home / local / outward), each off until the owner's click;
-  - a hold before anything runs (a minute; five for outward ones) with Stop on Home and tap-cancel;
-  - limits (5 outward a day, 30 others an hour, one outward hold at a time, one tap per item ever);
-  - three refused taps in ten minutes switch tapping off for that helper until the owner's click;
-  - what a helper can never tap: the trust and tap switches, settings, missions, updates, uninstall,
-    and held commands that reach for keys, click tokens, the queue, the Desk's cards or these files
-    (those decide what the helper itself, or a pal, may do).
-
-How it runs. tap() writes a hold. When it's due, run_due() (crewd each tick; any `pal taps` call)
-checks again (helper on, switch on, item unchanged) and runs the owner's own command for it with a
-one-time TAP token in place of a click token (data/crew-taps/run/<nonce>.json, for exactly that
-command line): crewlib.owner_gate takes it for the six commands below and nothing else, and each of
-them says "tapped by <helper>, relayed from <owner>" wherever it would have said the owner.
-
-  data/crew-taps/tickets/<k-…>.json   one per item per listing
-  data/crew-taps/holds/<t-…>.json     a tap: holding → running → done | stopped | cancelled | dropped | failed
-  data/crew-taps/holds.json           the recent holds in one file, for the app
-  data/crew-taps/run/<nonce>.json     the tap token of a hold being carried out
+Tap authorization is retired. No new tickets are minted, taps/expedited runs refuse, and old
+execution tokens never pass the owner gate. run_due() cancels legacy queued holds without starting
+commands; formerly running work is marked uncertain. Existing history and explicit owner Undo of
+old Home answers remain available. Off/Work only never gain approval authority from old tap flags;
+Full control uses the ordinary CLI with its authenticated current standing grant instead.
 """
 import hashlib
 import json
@@ -346,33 +313,14 @@ def _log(kind, helper, **fields):
 
 # ─── the helper's side: tickets and taps ─────────────────────────────────────────────────────
 
+RETIRED = "relayed taps are retired; the owner chooses Work only or Full control in Trusted helpers"
+
+
 def tickets(helper):
-    """What waits, for `helper` (its key was accepted by the caller): every item with the exact text
-    Project Pals wrote for it. One it may tap carries a ticket; the others say why not."""
-    TICKETS.mkdir(parents=True, exist_ok=True)
-    now = now_ms()
-    for f in _files(TICKETS):   # tidy: tickets past their time
-        t = load_json(f, None)
-        if not isinstance(t, dict) or now - (t.get("made") or 0) > 2 * TICKET_TTL * 1000:
-            f.unlink(missing_ok=True)
-    out = []
-    for x in items():
-        why = x["never"] or _may(helper, x["cls"])
-        if not why and _was_used(x["kind"], x["id"]):
-            why = f"it was tapped once already: it's {OWNER}'s now"
-        row = {"kind": x["kind"], "id": x["id"], "class": x["cls"], "title": x["title"], "text": x["text"], "by": x["by"], "choices": x["choices"],
-               "hold_seconds": hold_seconds(helper, x["cls"])}
-        if why:
-            row["not_tappable"] = why
-        else:
-            t = {"id": _new("k-"), "helper": helper, "kind": x["kind"], "item": x["id"], "cls": x["cls"], "hash": x["hash"],
-                 "choices": [c["label"] for c in x["choices"]], "made": now, "used": None}
-            save_json(TICKETS / f"{t['id']}.json", t)
-            row["ticket"] = t["id"]
-            row["ticket_good_for_seconds"] = TICKET_TTL
-            row["tap_not_before_seconds"] = READ_SECONDS
-        out.append(row)
-    return out
+    """Read waiting items without creating authority. Old tap flags never become Full control."""
+    return [{"kind": x["kind"], "id": x["id"], "class": x["cls"], "title": x["title"],
+             "text": x["text"], "by": x["by"], "choices": x["choices"],
+             "not_tappable": RETIRED} for x in items()]
 
 
 def hold_seconds(helper, cls):
@@ -383,71 +331,12 @@ def hold_seconds(helper, cls):
 
 
 def tap(helper, ticket, choice, relayed):
-    """A tap by `helper` (its key was accepted by the caller). Returns the hold. Refusals raise TapError
-    and are on the record; three that count, in ten minutes, switch tapping off for this helper."""
-    try:
-        with locked("taps"):
-            return _tap(helper, ticket, choice, relayed)
-    except TapError as e:
-        _log("tap-refused", helper, ticket=_clip(ticket, 40), choice=_clip(choice, 60), why=str(e), counts=bool(e.counts))
-        if e.counts:
-            _maybe_switch_off(helper)
-        raise
+    """No new relayed authority, even for a helper whose old switches remain on disk."""
+    raise TapError(RETIRED)
 
 
 def _tap(helper, ticket, choice, relayed):
-    relayed = " ".join(str(relayed or "").split())
-    if not relayed:
-        raise TapError(f'say what {OWNER} said: --relayed "their words"')
-    if len(relayed) > 300:
-        raise TapError("the relayed words are at most 300 characters")
-    if not re.fullmatch(r"k-[0-9a-f]{12}", ticket or ""):
-        raise TapError("that isn't a ticket (k-…): ask for one with pal --as-helper taps", counts=True)
-    path = TICKETS / f"{ticket}.json"
-    t = load_json(path, None)
-    if not isinstance(t, dict):
-        raise TapError("no such ticket: ask again with pal --as-helper taps", counts=True)
-    if t.get("helper") != helper:
-        raise TapError("that ticket was made for another helper", counts=True)
-    if t.get("used"):
-        raise TapError("that ticket was used already: a ticket is good for one tap", counts=True)
-    age = (now_ms() - (t.get("made") or 0)) / 1000
-    if age > TICKET_TTL:
-        raise TapError(f"that ticket is older than {TICKET_TTL // 60} minutes: ask again with pal --as-helper taps", counts=True)
-    if age < READ_SECONDS:
-        raise TapError(f"too soon: a tap comes at least {READ_SECONDS} seconds after its ticket, time enough for {OWNER} to read it", counts=True)
-    x = _item(t["kind"], t["item"])
-    if not x:
-        raise TapError(f"{t['item']} isn't waiting any more")
-    if x["hash"] != t.get("hash"):
-        raise TapError(f"{t['item']} changed since that ticket was made: show {OWNER} what it says now (pal --as-helper taps)", counts=True)
-    if x["never"]:
-        raise TapError(f"{t['item']} can't be tapped: {x['never']}", counts=True)
-    why = _may(helper, x["cls"])
-    if why:
-        raise TapError(why)
-    pick = next((c["label"] for c in x["choices"] if c["label"].lower() == str(choice or "").strip().lower()), None)
-    if not pick:
-        raise TapError(f"{choice!r} isn't one of its choices ({', '.join(c['label'] for c in x['choices'])})", counts=True)
-    now, mine = now_ms(), [h for h in holds() if h.get("helper") == helper]
-    if _was_used(x["kind"], x["id"]):
-        raise TapError(f"{x['id']} was tapped once already: it's {OWNER}'s now")
-    if x["cls"] == "outward":
-        if any(h["cls"] == "outward" and h["status"] in ("holding", "running") for h in mine):
-            raise TapError("another outward tap of yours is still held: one at a time")
-        if sum(1 for h in mine if h["cls"] == "outward" and now - h["at"] < 86400 * 1000) >= OUTWARD_PER_DAY:
-            raise TapError(f"{OUTWARD_PER_DAY} outward taps a day is the limit: {OWNER} approves this one in Project Pals")
-    elif sum(1 for h in mine if h["cls"] != "outward" and now - h["at"] < 3600 * 1000) >= OTHER_PER_HOUR:
-        raise TapError(f"{OTHER_PER_HOUR} taps an hour is the limit")
-    t["used"] = now
-    save_json(path, t)
-    h = {"id": _new("t-", 3), "helper": helper, "kind": x["kind"], "item": x["id"], "cls": x["cls"], "choice": pick, "relayed": relayed,
-         "title": x["title"], "by": x["by"], "hash": x["hash"], "ticket": ticket, "at": now, "run_at": now + hold_seconds(helper, x["cls"]) * 1000,
-         "status": "holding", **({"rule": x["rule"]} if x.get("rule") else {}), **({"text_sha": x["text_sha"]} if x.get("text_sha") else {})}
-    _save_hold(h)
-    _log("tap", helper, hold=h["id"], item=h["item"], item_kind=h["kind"], item_class=h["cls"], choice=pick, relayed=relayed, title=h["title"], run_at=h["run_at"])
-    feed("tap", helper=helper, hold=h["id"], status="holding", item=h["item"], choice=pick, text=h["title"], outward=h["cls"] == "outward")
-    return h
+    raise TapError(RETIRED)
 
 
 def _maybe_switch_off(helper):
@@ -483,14 +372,7 @@ def stop(hid):
 
 
 def now_(hid):
-    """Let it go now: the hold ends at once (the caller then runs what's due)."""
-    with locked("taps"):
-        h = _hold(hid)
-        if h.get("status") != "holding":
-            raise TapError(f"{hid} is {h.get('status')} already")
-        h["run_at"], h["hurried"] = now_ms(), True
-        _save_hold(h)
-        return h
+    raise TapError(RETIRED)
 
 
 def undo(hid):
@@ -533,36 +415,19 @@ def _args(h):
 
 
 def run_due():
-    """Carry out every hold whose time has come. Safe to call from anywhere, as often as you like:
-    each hold is taken under the lock, and runs once. Returns the holds it ended."""
-    if not HOLDS.is_dir() or not any(HOLDS.iterdir()):
-        return []
+    """Retire unfinished legacy holds without executing anything; retain history for inspection.
+    A former running action may already have crossed an external boundary, so say uncertain.
+    """
     out = []
-    while True:
-        with locked("taps"):
-            due = next((h for h in holds() if h.get("status") == "holding" and (h.get("run_at") or 0) <= now_ms()), None)
-            if not due:
-                return out
-            why = _still_good(due)
-            if why:
-                out.append(_end(due, "dropped", why))
-                continue
-            args = _args(due)
-            nonce = secrets.token_hex(16)
-            RUN.mkdir(parents=True, exist_ok=True)
-            save_json(RUN / f"{nonce}.json", {"args": args, "at": now_ms(), "hold": due["id"], "helper": due["helper"], "relayed": due["relayed"]})
-            due["status"], due["started"] = "running", now_ms()
-            _save_hold(due)
-        # Outside the lock: the command it runs may itself ask what's held (pal taps).
-        env = {k: v for k, v in os.environ.items() if k not in ("PAL_HELPER", "PAL_HELPER_KEY_FILE", "PAL_HELPER_STRICT", "HC_TERMINAL_ID")}
-        try:
-            r = subprocess.run([*_pal(), *args, "--tap", nonce], capture_output=True, text=True, timeout=180, env=env)
-            ok, said = r.returncode == 0, (r.stdout.strip().splitlines() or [""])[-1] if r.returncode == 0 else (r.stderr.strip().splitlines() or ["failed"])[-1]
-        except (OSError, subprocess.TimeoutExpired) as e:
-            ok, said = False, str(e)
-        (RUN / f"{nonce}.json").unlink(missing_ok=True)
-        with locked("taps"):
-            out.append(_end(_hold(due["id"]), "done" if ok else "failed", said))
+    with locked("taps"):
+        for h in holds():
+            if h.get("status") == "holding":
+                out.append(_end(h, "cancelled", "legacy tap cancelled: " + RETIRED))
+            elif h.get("status") == "running":
+                out.append(_end(h, "failed", "legacy tap was running at migration; outcome uncertain, inspect before retrying"))
+        for f in _files(RUN):
+            f.unlink(missing_ok=True)
+    return out
 
 
 def _still_good(h):
@@ -584,28 +449,7 @@ def _still_good(h):
 
 
 def take_run_token(argv, nonce):
-    """For crewlib.owner_gate: the tap being carried out with this token, or None. Used up either way.
-    Good for exactly the command line it was written for, for a short while, for a hold that is
-    running, and only for the commands a tap may stand in for."""
-    if not re.fullmatch(r"[0-9a-f]{32}", nonce or ""):
-        return None
-    path = RUN / f"{nonce}.json"
-    tok = load_json(path, None)
-    path.unlink(missing_ok=True)
-    if not isinstance(tok, dict) or tok.get("args") != list(argv) or now_ms() - (tok.get("at") or 0) > RUN_TTL * 1000:
-        return None
-    if not any(tuple(argv[:len(p)]) == p for p in TAPPABLE):
-        return None
-    h = load_json(HOLDS / f"{tok.get('hold')}.json", None)
-    if not isinstance(h, dict) or h.get("status") != "running" or h.get("helper") != tok.get("helper"):
-        return None
-    # The token is only as good as the tap behind it: that helper is on with this class of tap
-    # switched on (so with taps off, the default, a tap token opens nothing at all), and the command
-    # is the one this hold's item and choice come to, not merely the one the token file names.
-    try:
-        if h.get("cls") not in CLASSES or _may(h["helper"], h["cls"]) or list(argv) != _args(h):
-            return None
-    except (TapError, KeyError):
-        return None
-    return {"helper": h["helper"], "relayed": h.get("relayed") or "", "hold": h["id"], "label": label(h["helper"]),
-            "kind": h["kind"], "item": h["item"], "hash": h.get("hash"), "cls": h["cls"]}
+    """Legacy tap tokens never authorize owner operations after the trust-level migration."""
+    if re.fullmatch(r"[0-9a-f]{32}", nonce or ""):
+        (RUN / f"{nonce}.json").unlink(missing_ok=True)
+    return None

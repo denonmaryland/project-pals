@@ -46,7 +46,7 @@ CLOSED = ("done", "cancelled", "expired")
 URGENCY = ("low", "normal", "soon", "now")
 HELD = ("draft", "prompt", "asleep", "no-hooks", "gone", "suggestion?")
 # Fields only Project Pals writes: a hand edit to one of these is put back from events.jsonl.
-GUARDED = ("status", "from", "from_kind", "proof", "relaying", "kind")
+GUARDED = ("status", "from", "from_kind", "proof", "relaying", "kind", "delegated")
 EDITABLE = ("title", "body", "to", "urgency", "expires")
 TITLE_MAX = 120
 BODY_MAX = 32 * 1024
@@ -385,6 +385,8 @@ def mark(cid, status, by, via, note="", **fields):
 
 def card_hash(card):
     keys = ("id", "from", "from_kind", "to", "kind", "urgency", "title", "body")
+    if card.get("delegated"):
+        keys += ("delegated",)   # legacy cards retain their original ledger hashes
     return hashlib.sha256(json.dumps([card.get(k) or "" for k in keys], ensure_ascii=False).encode()).hexdigest()
 
 
@@ -580,7 +582,8 @@ def _create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None
     crewchief.refuse_target(to)   # the Chief takes no cards: it pulls (crew-boards/chief/design.md)
     if urgency not in URGENCY:
         raise DeskError(f"urgency is one of {', '.join(URGENCY)}")
-    if urgency == "now" and from_kind != "owner":
+    import crewhelpers
+    if urgency == "now" and from_kind != "owner" and not (from_kind == "helper" and crewhelpers.full_authority()):
         urgency = "soon"   # only the owner interrupts (§7.3)
     if int(depth or 0) > DEPTH_MAX:
         raise DeskError(f"that thread is {DEPTH_MAX} cards deep already; stop and tell {HEAD} or {OWNER} what's going on")
@@ -602,6 +605,11 @@ def _create(kind, to, title, body="", *, frm, from_kind, proof="", relaying=None
         if kind not in ("tell", "ask", "task"):
             raise DeskError("a helper sends a tell, a question or a task, nothing else")
         relaying = None   # a helper speaks for the owner by its key; "relaying" is a pal's word for hearsay
+        delegated = crewhelpers.full_authority()
+        # Never accept claimed authority through `extra`; stamp it from the verified credential.
+        extra = {k: v for k, v in (extra or {}).items() if k != "delegated"}
+        if delegated:
+            extra["delegated"] = crewhelpers.recheck_full(delegated)
     ensure()
     cid = new_id("c-")
     folder = folder or folder_of(to)
@@ -790,6 +798,8 @@ def who(card):
         # One of the owner's own assistants, switched on by the owner and sent with its key (T116). Not
         # "[quoted: from …": that's what unforge() makes of a forged header, so a body could copy it.
         if helper_verified(card):
+            if card.get("delegated"):
+                return f"[from {name}, acting under Full control]"
             return f"[from {OWNER} via {name}, a trusted helper: normal work only]"
         return f"[claims to be from {OWNER} via {name}, unverified (edited after sending, or sent without {name}'s key)]"
     return f"[from {name}, not verified as {OWNER}]"
@@ -821,7 +831,14 @@ def frame(card):
         out += "\n" + body
     if helper_verified(card):
         import crewhelpers
-        out += "\n→ " + crewhelpers.limits(card.get("from") or "It")   # what it can't authorise, on the card itself
+        if card.get("delegated"):
+            try:
+                crewhelpers.validate_grant(card["delegated"])
+                out += "\n→ " + crewhelpers.limits(card['from'], full=True)
+            except CrewError:
+                out += "\n→ This helper's Full control grant is no longer current. Do not act on its queued instructions."
+        else:
+            out += "\n→ " + crewhelpers.limits(card.get("from") or "It")
     if card.get("kind") == "checkin":
         out += (f"\n→ For each: pal desk pass <id> \"Pal#topic\" \"why\" to a topic that can take it, cancel it if it's stale, "
                 f"or tell {OWNER} in one line. Never clear an input box or answer a prompt yourself. Then pal desk done {cid}.")
@@ -842,7 +859,16 @@ def frame_for(item, strict=False):
     if not cid:
         return None if strict else item.get("text")
     try:
-        return frame(read(need(cid)))
+        card = read(need(cid))
+        if card.get("delegated"):
+            import crewhelpers
+            try:
+                crewhelpers.validate_grant(card["delegated"])
+            except CrewError:
+                if card.get("status") not in CLOSED:
+                    mark(cid, "cancelled", "Project Pals", "delegation-revoked", "Full control grant is no longer current")
+                return f"[pal] Cancelled {cid}: the helper's Full control grant is no longer current. Do not carry out its queued instructions."
+        return frame(card)
     except (DeskError, OSError):
         return None if strict else item.get("text")
 
@@ -1350,11 +1376,13 @@ def draft(frm, proof, suggest, title, body, urgency="normal", task=False, attach
                   extra={"track": "yes"} if task else None)
 
 
-def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None, make_task=None):
+def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None, make_task=None, delegated=None):
     """The owner's Send (a click): the draft becomes the owner's card (from the owner, drafted_by the
     partner), on `to`'s desk, in the ledger. The caller delivers it. Returns the card.
     On a relayed tap (T147: `tap` is crewlib.tap_authority()) it goes out as its drafter's own card,
     a pal's, with who tapped in its receipts: a tap never makes a card "from the owner"."""
+    from crewlib import delegation_authority
+    delegated = delegated or delegation_authority()
     path = need(cid)
     src = path.parent.parent.name
     dst = folder_of(to)
@@ -1366,10 +1394,16 @@ def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None, make_task
         if tap:
             import crewtaps
             crewtaps.validate_snapshot("draft", card, tap)
+        if delegated:
+            import crewhelpers
+            delegated = crewhelpers.recheck_full(delegated)
         if make_task:
             task = make_task(card)
         card["drafted_by"] = card.get("from")
-        if tap:
+        if delegated:
+            card.update({"from": delegated["helper"], "from_kind": "helper", "proof": "full control",
+                         "delegated": delegated, "to": to or "To route", "status": "queued", "updated": iso()})
+        elif tap:
             card.update({"from_kind": "pal", "proof": f"tap {tap.get('hold')}", "to": to or "To route", "status": "queued", "updated": iso()})
         else:
             card.update({"from": OWNER, "from_kind": "owner", "proof": "click", "to": to or "To route", "status": "queued",
@@ -1382,7 +1416,8 @@ def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None, make_task
         if task:
             card["task"] = task
         card.pop("track", None)
-        _event(card, "queued", tap["label"] if tap else OWNER, "send-draft",
+        _event(card, "queued", delegated["label"] if delegated else tap["label"] if tap else OWNER, "send-draft",
+               f"{delegated['label']}: sent {card['drafted_by']}'s draft" if delegated else
                f"sent on a tap by {tap['helper']}, relayed from {OWNER}: not {OWNER}'s own Send" if tap else f"{OWNER} sent {card['drafted_by']}'s draft",
                **{k: card.get(k) for k in GUARDED if k != "status"}, to=card["to"], urgency=card.get("urgency"))
         dest = DESK / dst / "open" / path.name
