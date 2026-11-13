@@ -163,6 +163,50 @@ print(json.dumps(crewguard.owner_step('tW', 'Worker', 'general', './release 9.9.
         self.assertTrue(approve("./release 9.9.9 notes", None))
         self.assertFalse(step(str(a)))
 
+    def test_t212r2_only_plain_cd_before_the_command_moves_the_folder(self):
+        """#codex-sol T212 round 2: the hand-over worked out the wrong folder for a cd inside an
+        unmatched case, an env-wrapped cd and a quoted tilde, and owner_step claimed once from there.
+        Now a folder is accepted only when every segment before the command is a plain `cd <literal
+        path>` (no quotes, ~, variables, env, case or other wrapper), joined by ; or &&. Anything else:
+        no hand-over, and the approval stays unspent where it was approved."""
+        a, b = self.root / "repo-a", self.root / "repo-b"
+        (a / "~").mkdir(parents=True)
+        b.mkdir()
+        bin_ = str(REPO / "bin")
+        def run(code):
+            r = subprocess.run([sys.executable, "-c", "import sys, json, os\nsys.path.insert(0, %r)\nimport crewguard\n" % bin_ + code],
+                               env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return json.loads(r.stdout.strip().splitlines()[-1])
+        def approve(line):
+            return run(f"""crewguard.HOOK_CWD = {str(a)!r}
+r = crewguard.check('tW', 'Worker', 'general', {line!r})
+crewguard.decide(r['id'], True, via='test')
+print(json.dumps([r['id'], crewguard.check('tW', 'Worker', 'general', {line!r}) is None]))""")
+        def step(where, rid):
+            return run(f"""os.chdir({str(where)!r})
+held = crewguard.owner_step('tW', 'Worker', 'general', './release 9.9.9 notes', 'release-script')
+rec = next(r for r in crewguard.all_requests() if r['id'] == {rid!r})
+print(json.dumps([held is None, bool(rec.get('claimed'))]))""")
+        home = Path(self.env["HOME"])
+        for line, wrong in ((f"case a in b) :; cd {b};; esac; ./release 9.9.9 notes", b),
+                            (f"env cd {b}; ./release 9.9.9 notes", b),
+                            ("cd '~'; ./release 9.9.9 notes", home),
+                            ("cd ~; ./release 9.9.9 notes", home),
+                            (f"cd $HOME; ./release 9.9.9 notes", home),
+                            (f"(cd {b}); ./release 9.9.9 notes", b),
+                            (f"echo hi; cd {b} && ./release 9.9.9 notes", b),
+                            (f'cd "{b}" && ./release 9.9.9 notes', b)):
+            rid, ok = approve(line)
+            self.assertTrue(ok, line)
+            self.assertEqual(step(wrong, rid), [False, False], f"no hand-over from the wrong folder: {line}")
+            self.assertEqual(step(a, rid), [False, False], f"nor from A: the line's folder can't be vouched for: {line}")
+        # Plain cd with a literal path, joined by ; or &&, is followed.
+        for line, right in ((f"cd {b} && ./release 9.9.9 notes", b), (f"cd {a}; cd ../repo-b; ./release 9.9.9 notes", b)):
+            rid, ok = approve(line)
+            self.assertEqual(step(a, rid), [False, False], line)
+            self.assertEqual(step(right, rid), [True, True], line)
+
     # #trusted-helper's T215 regressions (t215-handover-regressions.txt), the owner half: the Full
     # (delegated helper) half belongs to its full-delegation branch and is kept there for its rebase.
     def hook_request(self, command):

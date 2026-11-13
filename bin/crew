@@ -876,6 +876,10 @@ def base_checkout(repo, base):
 
 def cmd_land(spaces, spec, check=None, at=None, onto=None):
     space, tab = find(spec, spaces)
+    # A commit id (SHA-1 or SHA-256, abbreviated or full), checked before any approval is asked for
+    # or used (T212 round 2: a 64-hex tip failed a 7..40 check after the approval was spent).
+    if at and not re.fullmatch(r"[0-9a-f]{7,64}", at):
+        die(f"--at takes a commit id (hexadecimal), not {at!r}; nothing changed")
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
     # terminal ID isn't the owner (Grok review H1).
@@ -937,7 +941,7 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
     # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
     # since isn't what the owner looked at, so it doesn't land on that click.
     tip_now = git(repo, "rev-parse", "--verify", f"refs/heads/{wt['branch']}")
-    if at and not (re.fullmatch(r"[0-9a-f]{7,40}", at) and tip_now.startswith(at)):
+    if at and not tip_now.startswith(at):
         die(f"{wt['branch']} has moved since ({tip_now[:7]} now, {at[:7]} then), so it wasn't landed: look at it again (Review → Try it live) first")
 
     def conflicted(text):

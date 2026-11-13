@@ -491,5 +491,44 @@ class LandBase(unittest.TestCase):
         self.assertEqual(self.git("log", "-1", "--format=%P", "main").split(), [self.main0, tip_a])
 
 
+    def test_t212r2_a_sha256_repository_lands(self):
+        """#codex-sol T212 round 2: in a SHA-256 repository the 64-hex tip failed the 7..40 check, so
+        a plain approved land was spent and then refused as 'moved'. Both object formats land, and a
+        bad --at is refused before any approval is used."""
+        import shutil
+        shutil.rmtree(self.repo)
+        self.repo.mkdir()
+        self.git("init", "-q", "--object-format=sha256", "-b", "main")
+        self.write("a", "one\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "A")
+        self.main0 = self.git("rev-parse", "main")
+        self.assertEqual(len(self.main0), 64)
+        wt = self.topic("x")
+        tip = self.commit_in(wt, "x")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.approve_all_pending()
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git("log", "-1", "--format=%P", "main").split(), [self.main0, tip])
+        # The hook's hand-over too.
+        self.commit_in(wt, "y")
+        req = self.hook_check(wt)
+        self.assertEqual(len(req.get("land_tip", "")), 64)
+        self.approve_all_pending()
+        self.assertIsNone(self.hook_check(wt))
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_t212r2_a_bad_at_spends_no_approval(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "x")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x", "--at", "not-a-commit").returncode, 0)
+        self.assertFalse((self.data / "crew-approvals").exists() and list((self.data / "crew-approvals").glob("*.json")),
+                         "refused before asking or using anything")
+
+
 if __name__ == "__main__":
     unittest.main()

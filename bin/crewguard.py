@@ -1674,6 +1674,27 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
 
 
 HANDOVER_S = 120   # how long after the hook let a command through its program may claim that approval
+# The hand-over's language (T212 round 2): a literal path for cd (no quotes, ~, $ …), and the words of
+# a line: unquoted literal atoms, or quoted strings with nothing in them a shell would expand.
+HANDOVER_PATH = re.compile(r"[A-Za-z0-9_./:@%+=,-]+")
+_HO_ATOM = r"[A-Za-z0-9_./:@%+=,#-]+"
+_HO_WORD = rf"(?:{_HO_ATOM}|'[^'$`\\!]*'|\"[^\"$`\\!]*\")+"
+_HO_SIMPLE = rf"{_HO_WORD}(?:[ \t]+{_HO_WORD})*"
+_HO_LINE = re.compile(rf"[ \t]*{_HO_SIMPLE}(?:[ \t]*(?:&&|;)[ \t]*{_HO_SIMPLE})*[ \t]*")
+
+
+def handover_segments(cmd):
+    """[(raw segment, its words)] for a line in the hand-over language, else None."""
+    if not isinstance(cmd, str) or "\n" in cmd or not _HO_LINE.fullmatch(cmd):
+        return None
+    import shlex
+    out = []
+    for raw in re.split(r"[ \t]*(?:&&|;)[ \t]*", cmd.strip()):
+        try:
+            out.append((raw, shlex.split(raw)))
+        except ValueError:
+            return None
+    return out
 
 
 def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=None):
@@ -1700,23 +1721,25 @@ def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=
             len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words))
 
     def ran_in(r):
-        """The folder the approved line runs the matching segment in, or None if it can't be told."""
+        """The folder the approved line runs the matching segment in, or None if it can't be vouched
+        for (T212 round 2). An allowlist, not a parser: the line must be segments joined by ; or &&,
+        every segment before the command a plain `cd <literal path>` (no quotes, ~, variables, env,
+        case or any other wrapper or syntax), and the command a literal one (quoted words allowed,
+        never an expansion). Anything else means no hand-over: the owner is asked again."""
         ctx = r.get("guard_context")
         if not isinstance(ctx, dict) or not isinstance(ctx.get("cwd"), str) or not os.path.isabs(ctx["cwd"]):
             return None
-        cmd = r.get("command") or ""
-        if _nested_commands(cmd, []) or any(m.group(0) in CWD_UNCERTAIN_BOUNDARIES - {"&&"}
-                                            for m in SPLIT.finditer(mask_quotes(heredoc_free(cmd)))):
+        segs = handover_segments(r.get("command") or "")
+        if segs is None:
             return None
         here = ctx["cwd"]
-        for seg in commands(cmd):
-            if hit(seg):
+        for raw, words in segs:
+            if hit(raw):
                 return here
-            w = normal_words(seg)
-            if w[:1] == ["cd"]:
-                if len(w) != 2 or w[1].startswith("-") or "$" in w[1]:
-                    return None
-                here = os.path.normpath(os.path.join(here, os.path.expanduser(w[1])))
+            if len(words) == 2 and words[0] == "cd" and HANDOVER_PATH.fullmatch(raw.split(None, 1)[1].strip()):
+                here = os.path.normpath(os.path.join(here, words[1]))
+                continue
+            return None   # something before the command that isn't a plain cd
         return None
 
     def same_place(a, b):
