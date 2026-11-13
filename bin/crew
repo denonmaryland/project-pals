@@ -137,6 +137,7 @@ Settings
 
 Updates
   pal version                       what's installed
+  pal report                        paste-ready diagnostics for an issue; no raw logs or private text
   pal update [check|apply|rollback] [--json]
                                      check GitHub for a newer release, install it, or put the previous one back
   pal update status [--json]        the build that's running (branch, commit), the channel, a trial
@@ -186,6 +187,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE if (HERE / "crewlib.py").exists() else Path.home() / ".local" / "lib" / "herdr-crew"))
+# Reporting must also work before setup, without loading settings, discovering pals or writing caches.
+if __name__ == "__main__" and sys.argv[1:2] == ["report"]:
+    sys.dont_write_bytecode = True
+    import crewreport
+    sys.exit(crewreport.main(sys.argv[2:]))
+
 from crewlib import (owner_gate, prove_owner, owner_proven, header, unforge, HOME, DATA, REQS, ROOMS, FEED, MEMORY, WORKTREES, HOOKED, ME, SHELLS, PRIMER, CrewError, OWNER, settings, SETTINGS, die, load_json, save_json,
                      locked, herdr_spaces, records, record_of, chan, lead, find, whoami, where_of, is_bot_terminal,
                      live_agents, term_info, proc_comm, child_pids, shell_is_bare, clear_osc_status, settle_terminal, agent_running, owns_terminal, screen, meaningful,
