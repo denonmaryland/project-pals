@@ -82,8 +82,9 @@ print(json.dumps(args + ['--tap', nonce]))
         self.assertIn("tap token isn't good", r.stderr)  # refused before entering the decision
         self.assertEqual(self.approval(rid)["status"], "pending")
 
-    def test_nested_outward_operation_uses_outward_switch(self):
+    def test_nested_outward_operation_keeps_class_but_needs_owner(self):
         self.switch("local")
+        self.switch("outward")
         # The outer local edit must not hide the nested push from classification.
         command = 'printf x > AGENTS.md; python3 -c \'import os; os.system("git push origin main")\''
         rid = self.held(command)
@@ -141,7 +142,7 @@ except crewtaps.TapError as e:
 
     def test_changed_approval_at_dispatch_stays_pending(self):
         self.switch("local")
-        rid = self.held("printf x > AGENTS.md")
+        rid = self.held_edit()
         hid = self.tapped(rid, "Approve")
         self.due(hid)
         py(self.env, f'''
