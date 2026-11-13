@@ -1350,9 +1350,11 @@ def draft(frm, proof, suggest, title, body, urgency="normal", task=False, attach
                   extra={"track": "yes"} if task else None)
 
 
-def send_draft(cid, to, urgency=None, auto=False, task=None):
+def send_draft(cid, to, urgency=None, auto=False, task=None, tap=None):
     """The owner's Send (a click): the draft becomes the owner's card (from the owner, drafted_by the
-    partner), on `to`'s desk, in the ledger. The caller delivers it. Returns the card."""
+    partner), on `to`'s desk, in the ledger. The caller delivers it. Returns the card.
+    On a relayed tap (T147: `tap` is crewlib.tap_authority()) it goes out as its drafter's own card,
+    a pal's, with who tapped in its receipts: a tap never makes a card "from the owner"."""
     path = need(cid)
     src = path.parent.parent.name
     dst = folder_of(to)
@@ -1362,8 +1364,11 @@ def send_draft(cid, to, urgency=None, auto=False, task=None):
         if card.get("status") != "draft":
             raise DeskError(f"{card['id']} isn't a draft (it's {card.get('status')})")
         card["drafted_by"] = card.get("from")
-        card.update({"from": OWNER, "from_kind": "owner", "proof": "click", "to": to or "To route", "status": "queued",
-                     "updated": iso()})
+        if tap:
+            card.update({"from_kind": "pal", "proof": f"tap {tap.get('hold')}", "to": to or "To route", "status": "queued", "updated": iso()})
+        else:
+            card.update({"from": OWNER, "from_kind": "owner", "proof": "click", "to": to or "To route", "status": "queued",
+                         "updated": iso()})
         card.pop("relaying", None)
         if urgency:
             card["urgency"] = urgency
@@ -1372,13 +1377,15 @@ def send_draft(cid, to, urgency=None, auto=False, task=None):
         if task:
             card["task"] = task
         card.pop("track", None)
-        _event(card, "queued", OWNER, "send-draft", f"{OWNER} sent {card['drafted_by']}'s draft",
+        _event(card, "queued", tap["label"] if tap else OWNER, "send-draft",
+               f"sent on a tap by {tap['helper']}, relayed from {OWNER}: not {OWNER}'s own Send" if tap else f"{OWNER} sent {card['drafted_by']}'s draft",
                **{k: card.get(k) for k in GUARDED if k != "status"}, to=card["to"], urgency=card.get("urgency"))
         dest = DESK / dst / "open" / path.name
         _write(dest, card)
         if dest != path:
             path.unlink(missing_ok=True)
-    ledger_add(card)
+    if not tap:
+        ledger_add(card)   # the owner's own Send only: a tapped draft is its drafter's card, not the owner's words
     return card
 
 

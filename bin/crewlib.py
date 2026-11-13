@@ -365,8 +365,23 @@ CLICKS = DATA / "crew-clicks"
 CLICK_TTL = 120
 
 
-def owner_gate(argv, click=None, what="this"):
-    """Return "the app" when the owner's click token for exactly `argv` is there, else exit refusing."""
+_tap = None   # the relayed tap this run is carrying out (owner_gate took its token), else None
+
+
+def tap_authority():
+    """{"helper", "relayed", "hold", "label"} when this run carries out a relayed tap (T147), else None.
+    A command that would say the owner did something says `label` instead: a tap is never recorded
+    as the owner's click."""
+    return _tap
+
+
+def owner_gate(argv, click=None, what="this", tap=None):
+    """Return "the app" when the owner's click token for exactly `argv` is there, else exit refusing.
+    Or "a tap": `tap` is the one-time token of a relayed tap being carried out (crewtaps.run_due wrote
+    it for exactly this command line, for a hold that is running, and only for the few commands a tap
+    may stand in for). The run then speaks as "<helper> (tapped, relayed from <owner>)", never as
+    the owner: tap_authority() says who."""
+    global _tap
     if os.environ.get("PAL_HELPER"):
         # Presented as a trusted helper (T116): never an owner decision, whatever else comes with it,
         # a click token included (from build 7692987). A key sends normal work; it's never a click.
@@ -377,6 +392,12 @@ def owner_gate(argv, click=None, what="this"):
         except Exception:   # the record must never be why a refusal doesn't happen
             pass
         die(f"{what}: only {OWNER} decides this, with a click in Project Pals (a trusted helper's key isn't a click)")
+    if tap and not click:
+        import crewtaps
+        _tap = crewtaps.take_run_token(list(argv), tap)
+        if _tap:
+            return "a tap"
+        die("that tap token isn't good (used, expired, or for something else): nothing was done")
     if click:
         if not re.fullmatch(r"[0-9a-f]{16,64}", click):
             die("that isn't a click token")

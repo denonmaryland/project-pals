@@ -22,7 +22,8 @@ POLICY = DATA / "crew-policy.json"
 # carries (two branches picking the same number can't strand a rule again).
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
 # 16: live-branch (T90) and base-branch (T136).
-DEFAULTS_VERSION = 16
+# 17: tap-write (T147). 16 was the live channel's (crew/live-updates).
+DEFAULTS_VERSION = 17
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -86,6 +87,10 @@ DEFAULT = {
         # refuses a key from inside a Herdr terminal as well; this holds the attempt and tells the owner.
         {"name": "helper-key", "why": "reaches for a trusted helper's key or name (those are the owner's assistants', not a pal's)",
          "check": "helper-keys", "pattern": r"$^"},
+        # Relayed taps (T147, data/crew-taps): tickets, holds and the one-time tokens a hold runs with.
+        # A file written there by hand would be a tap nobody made, or one let through early: like a
+        # click token (owner-click). Pals read holds with `pal taps`.
+        {"name": "tap-write", "why": "writes into the relayed taps (a ticket, a hold or a tap token nobody tapped)", "check": "tap-writes", "pattern": r"$^"},
         # The Live channel (T90): while the owner has it on, whatever lands on the branch it follows is
         # installed into their running Project Pals at once. So moving that branch by hand (git
         # update-ref refs/heads/main …, git branch -f main …) needs the click a landing needs. Off
@@ -691,6 +696,15 @@ def writes_queue(cmd):
 def writes_desk(cmd):
     """A write INTO data/crew-desk (as writes_queue); the Desk's mods (mods/crew-desk/…) aren't its cards (T68)."""
     return _writes_into(cmd, {"crew-desk"}, DESK_PLACE)
+
+
+TAPS_PLACE = _place(["crew-taps"])
+
+
+def writes_taps(cmd):
+    """A write INTO data/crew-taps (as writes_click): a ticket, a hold or a tap token made by hand
+    would be a tap nobody tapped (T147). `pal taps` reading them isn't a write."""
+    return _writes_into(cmd, {"crew-taps"}, TAPS_PLACE)
 
 
 def _writes_into(cmd, names, place):
@@ -1384,7 +1398,7 @@ def _help(seg):
 
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers,
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers, "tap-writes": writes_taps,
           "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
 
 
@@ -1508,7 +1522,7 @@ def recently_used(terminal, rule, seconds=120):
                and now_ms() - r.get("used", 0) < seconds * 1000 for r in all_requests())
 
 
-def decide(rid, approve, note=None, via=None):
+def decide(rid, approve, note=None, via=None, tap=None):
     """The owner's answer. `via` says where it came from (the Inbox, a terminal), kept on the record
     with every attempt, so a click that seems not to have counted can be traced afterwards."""
     with locked("approvals"):
@@ -1530,7 +1544,12 @@ def decide(rid, approve, note=None, via=None):
             r["note"] = note
         save_json(f, r)
     feed("approval", id=rid, bot=r["bot"], channel=r["channel"], status=r["status"])
-    if approve:
+    if tap:
+        # A relayed tap (T147): the pal hears who tapped, never "<owner> approved".
+        who = f"{tap['helper']} tapped, relaying {OWNER} (not {OWNER}'s own click)"
+        msg = (f"[pal] {who}: approved: {r['command']}\nRun that exact command again now; it'll go through once." if approve else
+               f"[pal] {who}: said no to: {r['command']}\nDon't retry it; carry on without it or ask {OWNER}.")
+    elif approve:
         msg = f"[pal] {OWNER} approved: {r['command']}\nRun that exact command again now; it'll go through once."
     else:
         msg = f"[pal] {OWNER} said no to: {r['command']}" + (f"\nTheir note: {note}" if note else "") + f"\nDon't retry it; carry on without it or ask {OWNER}."

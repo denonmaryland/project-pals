@@ -45,6 +45,7 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
+  pal home ask … --owner-only | pal home owner-only ID   this ask is for the owner's own click: no helper's tap answers it
   pal welcome                       where the welcome tour stands (it runs on Home; replay it from the gear menu)
   pal welcome folders [--json]      the project folders the tour would suggest for a new pal (names and dates only)
   pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
@@ -152,6 +153,12 @@ Trusted helpers (your own assistants, sending normal work in your name; never a 
   pal settings trust-helper         who's trusted (pal helpers is the same; log: what they sent and tried)
   pal settings trust-helper <name> on|off|rotate|remove      the owner's, from Project Pals (About → Trusted helpers)
   PAL_HELPER=<name> pal tell|ask|task add --for|desk send …   how a helper sends; PAL_HELPER=<name> pal helpers check
+
+Relayed taps (a trusted helper taps what waits on you, relaying your word from chat; held, then run; never your click)
+  pal --as-helper taps [--json]     what waits, with each item's exact text and a one-time ticket
+  pal --as-helper tap <ticket> "<choice>" --relayed "what you said" | tap-cancel <hold>
+  pal taps [--json] | pal taps stop|now|undo <hold>   the holds; stop / let it go now / undo are yours (Home has the buttons)
+  pal settings trust-helper <name> taps home|local|outward on|off | taps hold <minutes>   which things it may tap (your click)
 
 Approvals (the owner)
   pal approvals                     guarded commands waiting on the owner
@@ -495,6 +502,7 @@ def cmd_feed(spaces, show_all, n):
                 "approval-refused": f"approval {e.get('id')}: a {e.get('wanted')} came after it was already {e.get('status')}; nothing changed",
                 "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}",
                 "helper": f"trusted helper: {e.get('text') or e.get('status')}",
+                "tap": f"relayed tap {e.get('hold')} by {e.get('helper')}: {e.get('item')} → {e.get('choice')} · {e.get('status')}",
                 "proposal": f"proposal {e.get('id')} ({e.get('what')}, {e.get('bot')}): {e.get('status')}"}.get(k, k)
         print(f"{time.strftime('%H:%M', time.localtime(e['at'] / 1000))} {what}")
     if not events:
@@ -1816,7 +1824,8 @@ def cmd_desk(spaces, rest):
         task = None
         if card.get("track") == "yes" and to and to != OWNER:
             task = crewtasks.add(card["title"], spaces, None, OWNER, card.get("body") or None, to, notify_assignee=False)["id"]
-        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task)
+        from crewlib import tap_authority
+        card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task, tap=tap_authority())
         card, t, what = crewdesk.deliver(card, spaces) if not auto else (card, None, "sorting it to a pal")
         if o.get("json"):
             print(json.dumps({"card": crewdesk.summary(card, crewdesk.need(card["id"])), "terminal": t, "what": what}, ensure_ascii=False))
@@ -1958,11 +1967,24 @@ def owner_args():
         if skip:
             skip = False
             continue
-        if a == "--click":
+        if a in ("--click", "--tap"):
             skip = True
             continue
         out.append(a)
     return out
+
+
+def tap_of():
+    """The one-time token of a relayed tap being carried out (crewtaps.run_due), if this run has one."""
+    return ARGV[ARGV.index("--tap") + 1] if "--tap" in ARGV and ARGV.index("--tap") + 1 < len(ARGV) else None
+
+
+def acted():
+    """Who decides in this run, as the record and the pals are told: the owner, or for a relayed tap
+    "<helper> (tapped, relayed from <owner>)" (T147: a tap is never recorded as the owner's click)."""
+    from crewlib import tap_authority
+    t = tap_authority()
+    return t["label"] if t else OWNER
 
 
 def click_of():
@@ -1972,7 +1994,7 @@ def click_of():
 def require_owner(what):
     """An owner decision: only the app's one-time click token for exactly this command line. Anything
     else (a pal, a missing or unknown terminal ID, a terminal typing "yes") is refused (review H1)."""
-    return owner_gate(owner_args(), click_of(), what)
+    return owner_gate(owner_args(), click_of(), what, tap=tap_of())
 
 
 def pal_of(spaces, spec=None):
@@ -2223,7 +2245,8 @@ def tell_proposer(spaces, pid, accepted, why=None):
         target = find(by, spaces)[1]
         lt = lead(target)
         if lt:
-            enqueue(lt["terminal"], f"{OWNER} {'accepted' if accepted else 'declined'} {what} ({pid})." + (f" Why: {why}" if why else ""), sender=OWNER)
+            enqueue(lt["terminal"], f"{'[pal] ' if acted() != OWNER else ''}{acted()} {'accepted' if accepted else 'declined'} {what} ({pid})."
+                    + (f" Why: {why}" if why else ""), sender=acted())
     except CrewError:
         pass
 
@@ -2246,7 +2269,7 @@ def cmd_proposals(spaces, rest):
         pattern = (p.get("meta") or {}).get("pattern")
         if sub == "decline":
             why = " ".join(pos[1:]) or o.get("note")
-            crewproposals.decide(p["id"], "declined", why, via="cli")
+            crewproposals.decide(p["id"], "declined", why, via=acted() if acted() != OWNER else "cli")
             tell_proposer(spaces, p["id"], False, why)
             if pattern:
                 import crewdream
@@ -2256,7 +2279,7 @@ def cmd_proposals(spaces, rest):
         if p["kind"] == "dream":
             crewproposals.check_reviewed(p, o.get("text-sha"))   # review H5: the text the owner saw
             print(apply_dream(spaces, p))
-            crewproposals.decide(p["id"], "accepted", via="cli")
+            crewproposals.decide(p["id"], "accepted", via=acted() if acted() != OWNER else "cli")
             import crewdream
             crewdream.decided(pattern, True, p["id"])
             tell_proposer(spaces, p["id"], True)
@@ -2270,14 +2293,14 @@ def cmd_proposals(spaces, rest):
             if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
                 die("the mission changed since this was proposed; open it in the profile panel and compare")
             crewbrain.write(d, "mission.md", p["text"])
-            brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=OWNER)
+            brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=acted())
         elif p["kind"] == "agents":
             import crewagents
             out = crewagents.apply(name, folder_of(space, rec), p["file"], p["text"], p.get("base") or "none", p.get("note"))
-            brain_log(space, rec, name, f"{out['file']}: {p.get('note') or 'edited'} (from {p['by']}'s proposal, {OWNER})")
+            brain_log(space, rec, name, f"{out['file']}: {p.get('note') or 'edited'} (from {p['by']}'s proposal, {acted()})")
         else:
             die(f"accept {p['kind']} proposals in the Inbox")
-        crewproposals.decide(p["id"], "accepted", via="cli")
+        crewproposals.decide(p["id"], "accepted", via=acted() if acted() != OWNER else "cli")
         tell_proposer(spaces, p["id"], True)
         if pattern:
             import crewdream
@@ -2481,8 +2504,10 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
     if decide:
         # Only the owner decides, with the Inbox's click (review H1).
         require_owner(f"{decide.capitalize()} a held command")
-        via = "the Inbox"
-        r = crewguard.decide(rid, decide == "approve", note, via=via)
+        from crewlib import tap_authority
+        t = tap_authority()
+        via = f"a tap by {t['helper']}, relayed from {OWNER} (hold {t['hold']})" if t else "the Inbox"
+        r = crewguard.decide(rid, decide == "approve", note, via=via, tap=t)
         print(f"{r['status']}: {r['bot']}{' #' + r['channel'] if r.get('channel') else ''}: {r['command']}")
         return
     pend = [a for a in crewguard.all_requests() if a["status"] == "pending"]
@@ -2519,6 +2544,98 @@ def cmd_owner_step(rest):
     sys.stderr.write(f"held for {OWNER}: {held['why'] or rule}. It waits in Project Pals' Inbox as {held['id']} ({bot}).\n"
                      f"After {OWNER}'s click there, run exactly the same command again within {crewguard.EXPIRE_MIN} minutes; it goes through once.\n")
     sys.exit(3)
+
+
+def cmd_taps(cmd, rest):
+    """Relayed taps (T147, bin/crewtaps.py): a trusted helper taps what waits on the owner, relaying
+    the owner's word from chat. Held before it runs; recorded as a tap, never as the owner's click.
+      pal --as-helper taps [--json]                 what waits: exact text, choices, a one-time ticket each
+      pal --as-helper tap <ticket> "<choice>" --relayed "the owner's words"
+      pal --as-helper tap-cancel <hold>             take a tap back while it's held
+      pal taps [--json]                             the holds (anyone)
+      pal taps stop|now|undo <hold>                 the owner's (a click)
+      pal taps run                                  carry out what's due (crewd does this each tick)"""
+    import crewtaps
+    import crewhelpers
+    as_json = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+
+    def me():
+        """The helper this run is, its key accepted; a tap is never anyone else's."""
+        p = crewhelpers.presented()
+        if not p:
+            die("that's a trusted helper's: pal --as-helper …")
+        if not p.get("name"):
+            die(f"{p['claim']}: not accepted: {p['why']}")
+        return p["name"]
+
+    try:
+        if cmd == "tap":
+            pos, o = opts(rest, ("relayed",))
+            if len(pos) != 2:
+                die('pal --as-helper tap <ticket> "<choice>" --relayed "what they said"')
+            h = crewtaps.tap(me(), pos[0], pos[1], o.get("relayed"))
+            when = time.strftime("%H:%M:%S", time.localtime(h["run_at"] / 1000))
+            out = {"hold": h["id"], "item": h["item"], "choice": h["choice"], "runs_at": h["run_at"], "class": h["cls"]}
+            print(json.dumps(out) if as_json else
+                  f"held: {h['item']} → {h['choice']} goes through at {when} unless it's stopped (hold {h['id']}). "
+                  f"To take it back: pal --as-helper tap-cancel {h['id']}. It is recorded as tapped by you, relayed from {OWNER}; not as {OWNER}'s click.")
+            return
+        if cmd == "tap-cancel":
+            if len(rest) != 1:
+                die("pal --as-helper tap-cancel <hold>")
+            h = crewtaps.cancel(me(), rest[0])
+            print(f"taken back: {h['item']} → {h['choice']} did not run. It's {OWNER}'s to answer now.")
+            return
+        sub = rest[0] if rest else "ls"
+        if crewhelpers.claimed() and sub == "ls":
+            rows = crewtaps.tickets(me())
+            if as_json:
+                print(json.dumps({"items": rows}, ensure_ascii=False))
+                return
+            for r in rows:
+                print(f"{r['id']} · {r['kind']} · {r['title']}")
+                print("   " + r["text"].replace("\n", "\n   "))
+                print("   " + (f"not tappable: {r['not_tappable']}" if r.get("not_tappable") else
+                               f"ticket {r['ticket']} · choices: {' | '.join(c['label'] for c in r['choices'])} · held {r['hold_seconds']}s before it runs"))
+            if not rows:
+                print("(nothing waits)")
+            return
+        if sub == "run":
+            for h in crewtaps.run_due():
+                print(f"{h['id']} {h['status']}: {h['item']} → {h['choice']}" + (f" ({h['result']})" if h.get("result") else ""))
+            return
+        if sub in ("stop", "now", "undo") and len(rest) == 2:
+            require_owner(f"{sub} a relayed tap")
+            if sub == "stop":
+                h = crewtaps.stop(rest[1])
+                print(f"stopped: {h['item']} → {h['choice']} did not run")
+            elif sub == "now":
+                crewtaps.now_(rest[1])
+                done = [h for h in crewtaps.run_due() if h["id"] == rest[1]]
+                print(f"{done[0]['status']}: {done[0]['item']} → {done[0]['choice']}" if done else f"{rest[1]} is on its way")
+            else:
+                h, x = crewtaps.undo(rest[1])
+                print(f"undone: {h['item']} is open again, for your own answer")
+                print(home_answer_to(herdr_spaces(), x, h["choice"], undone=True))
+            return
+        if sub == "ls" and len(rest) <= 1:
+            crewtaps.run_due()
+            hs = crewtaps.holds()
+            if as_json:
+                print(json.dumps({"holds": hs}, ensure_ascii=False))
+                return
+            for h in hs[-40:]:
+                left = max(0, int((h["run_at"] - now_ms()) / 1000))
+                print(f"{h['id']} · {h['status']}" + (f" ({left}s left)" if h["status"] == "holding" else "") + f" · {h['helper']} → {h['item']}: {h['choice']} · \"{h['relayed']}\"")
+            if not hs:
+                print("(no taps)")
+            return
+        die(cmd_taps.__doc__)
+    except crewtaps.TapError as e:
+        die(f"not tapped: {e}", code=5)
+    except crewhome.HomeError as e:
+        die(str(e))
 
 
 def cmd_helpers(rest):
@@ -2570,6 +2687,17 @@ def cmd_helpers(rest):
         for x in info["helpers"]:
             bad = att.get(x["name"])
             print(bad["text"] if bad else f"{x['name']}: " + ("on, its key works" if x["on"] else "off (your choice)"))
+        return
+    if len(rest) == 4 and rest[1] == "taps":
+        # Relayed taps (T147): may this helper tap questions on Home / approvals that stay on this
+        # computer / outward actions and landing, and how long an outward tap is held. The owner's click.
+        require_owner("changing settings")
+        try:
+            known, sw = crewhelpers.set_taps(rest[0], rest[2], rest[3])
+        except crewhelpers.HelperError as e:
+            die(str(e))
+        print(f"{known}: taps · Home questions {'on' if sw['home'] else 'off'} · approvals on this computer {'on' if sw['local'] else 'off'}"
+              f" · outward and landing {'on' if sw['outward'] else 'off'} (held {sw['hold']} min)")
         return
     if len(rest) == 3 and rest[1] == "limit":
         require_owner("changing settings")
@@ -2939,8 +3067,10 @@ def home_topic(spaces, spec):
         return spec.strip()
 
 
-def home_answer_to(spaces, x, answer):
-    """The owner's answer, as a card from them to whoever asked (held on its desk if it's asleep)."""
+def home_answer_to(spaces, x, answer, tap=None, undone=False):
+    """The owner's answer, as a card from them to whoever asked (held on its desk if it's asleep). A
+    relayed tap's (T147) goes as Project Pals' own card, saying who tapped and what the owner is
+    reported to have said: never as a card from the owner. `undone`: the owner undid that tap."""
     to = x.get("by") or ""
     if not to or "#" not in to and not to.strip():
         return "nobody to tell (it wasn't asked from a topic)"
@@ -2951,11 +3081,23 @@ def home_answer_to(spaces, x, answer):
         return f"{to} isn't open; the answer is on Home"
     except Exception:
         return f"{to} isn't open; the answer is on Home"
-    who = crewdesk.sender(spaces)
-    title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
-    body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
-    card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
-                           via="pal home answer")
+    if undone:
+        title = f"Stop: {OWNER} undid the tap on {x['id']}"[:crewdesk.TITLE_MAX]
+        body = (f"You asked on Home: {x.get('title', '')}\n\nA helper's tap had answered it ({answer}). {OWNER} has undone that: the question is open "
+                f"again and waits for {OWNER}'s own answer. Stop what you started on that answer, and say what you had already done.")
+        card = crewdesk.create("tell", dest, title, body, frm="crew", from_kind="system", proof="pal taps undo", urgency="soon", via="pal taps undo")
+    elif tap:
+        title = f"Re {x['id']}: {answer} (tapped by {tap['helper']}, relayed from {OWNER})"[:crewdesk.TITLE_MAX]
+        body = (f"You asked on Home: {x.get('title', '')}\n\n{tap['helper']} tapped: {answer}\n{OWNER}'s words, as {tap['helper']} reported them: "
+                f"\"{crewdesk.escape_body(tap['relayed'])}\"\n\nThis is a relayed tap, not {OWNER}'s own click. Go ahead on it. A command the approval gate "
+                f"holds still waits for its own approval. If {OWNER} undoes the tap you'll be told to stop.")
+        card = crewdesk.create("tell", dest, title, body, frm="crew", from_kind="system", proof=f"tap {tap['hold']}", via="pal home answer (tap)")
+    else:
+        who = crewdesk.sender(spaces)
+        title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
+        body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
+        card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
+                               via="pal home answer")
     card, _, what = crewdesk.deliver(card, spaces)
     return f"told {dest} ({what}) · card {card['id']}"
 
@@ -3223,12 +3365,13 @@ def cmd_home(spaces, rest):
                 for q in rel["queued"]:
                     print(f"  {q['id']}  {q['text']}")
         elif sub == "ask" and args:
-            pos, o = opts(args, ("topic", "body", "recommend", "why"))
+            pos, o = opts(args, ("topic", "body", "recommend", "why"), ("owner-only",))
             if len(images) > crewhome.IMAGES_MAX:
                 die(f"at most {crewhome.IMAGES_MAX} images")
             imgs = [str(Path(desk_attach(f)).resolve().relative_to(DATA)) for f in images]
             x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")),
-                             does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs)
+                             does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs,
+                             owner_only=bool(o.get("owner-only")))
             print(crewhome.line(x))
         elif sub == "recommend" and len(args) >= 2:
             pos, o = opts(args, ("why",))
@@ -3275,9 +3418,14 @@ def cmd_home(spaces, rest):
             # The owner's pick, from a click in Project Pals (main proved it); never a pal's, never typed.
             if not owner_proven():
                 require_owner("answer a question on Home")
-            x = crewhome.answer(args[0], " ".join(args[1:]), by=OWNER)
+            from crewlib import tap_authority
+            t = tap_authority()
+            x = crewhome.answer(args[0], " ".join(args[1:]), by=acted(), tapped=t)
             print(crewhome.line(x))
-            print(home_answer_to(spaces, x, x["answer"]))
+            print(home_answer_to(spaces, x, x["answer"], tap=t))
+        elif sub == "owner-only" and len(args) == 1:
+            # No helper's tap answers this ask (T147): its asker, the head pal or the owner marks it.
+            print(crewhome.line(crewhome.owner_only(args[0], by=by, role=role)))
         elif sub == "seen":
             if not owner_proven():
                 require_owner("mark Home seen")
@@ -3423,9 +3571,10 @@ def main(argv):
         name = argv[0].partition("=")[2].strip() or os.environ.get("PAL_HELPER") or "Pals"
         os.environ["PAL_HELPER"] = name
         argv = argv[1:]
-        ok = argv[:1] in (["tell"], ["ask"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
-        if not ok or "--click" in argv:
-            die(f"--as-helper is only for tell, ask, task add and desk send; anything that's {OWNER}'s still needs their click in Project Pals")
+        ok = argv[:1] in (["tell"], ["ask"], ["taps"], ["tap"], ["tap-cancel"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
+        if not ok or "--click" in argv or "--tap" in argv:
+            die(f"--as-helper is only for tell, ask, task add, desk send, and taps / tap / tap-cancel; anything else that's {OWNER}'s "
+                f"still needs their click in Project Pals")
     # Strict helpers (T170): a helper that asked for it sends in the owner's name or not at all. Checked
     # here, before a task or a card exists, so nothing half-happens; exit 4 tells the helper apart from
     # any other failure, and the line says why, for it to pass on to the owner.
@@ -3491,6 +3640,8 @@ def main(argv):
         return cmd_owner_step(rest)
     if cmd == "helpers":
         return cmd_helpers(rest)
+    if cmd in ("taps", "tap", "tap-cancel"):
+        return cmd_taps(cmd, rest)
     if cmd == "renamed":
         # A pal got a new name (the app runs this when it sees one): its memory folder and the
         # routines aimed at it follow. The owner's to do: the app passes its click token (Grok review H1).
