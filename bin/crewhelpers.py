@@ -193,14 +193,32 @@ def _copy_doc(hs):
 
 
 def _copy_current():
-    """Was the copy written (or brought level) after the last install? No install on record: yes."""
+    """Was the copy written (or brought level) after the last install? No install on record: yes.
+
+    The last install is the later of crew-install.json's "installed" and the newest line of
+    data/crew-installs.jsonl. Roll back puts an older crew-install.json back (and an older updater
+    doing it can't be taught otherwise), but no snapshot holds the install log, and every install.sh
+    since before trusted helpers appends to it: an older build's install stays on record there, so
+    its list-only Off can't be undone by a copy from before it (T208, Codex T199 d / T209)."""
     b = load_json(BACKUP, None)
     at = b.get("at") if isinstance(b, dict) else None
+    times = []
     ins = load_json(DATA / "crew-install.json", None)
-    installed = ins.get("installed") if isinstance(ins, dict) else None
-    if not isinstance(installed, (int, float)):
+    if isinstance(ins, dict) and isinstance(ins.get("installed"), (int, float)):
+        times.append(ins["installed"] * 1000)
+    try:
+        for line in (DATA / "crew-installs.jsonl").read_text().splitlines():
+            try:
+                t = json.loads(line).get("at")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(t, (int, float)):
+                times.append(t)
+    except OSError:
+        pass
+    if not times:
         return True
-    return isinstance(at, (int, float)) and at >= installed * 1000
+    return isinstance(at, (int, float)) and at >= max(times)
 
 
 def sync_backup():

@@ -190,7 +190,7 @@ def _dropin_ours():
         return None
 
 
-def restore_dropin(snap, log=print):
+def restore_dropin(snap, log=print, ours=None):
     """Put the drop-in back as the snapshot had it: take ours away if it wasn't there, put the old
     text back if it was. Only a file still as an install left it is changed (Project Pals' text now,
     or missing); one edited since stays, and is reported. Snapshots from before T201 don't say, so
@@ -200,7 +200,7 @@ def restore_dropin(snap, log=print):
     was, now, p = snap.get("oomd_dropin"), _dropin_text(), _dropin_path()
     if now == was:
         return []
-    ours = _dropin_ours()
+    ours = ours if ours is not None else _dropin_ours()
     if now is not None and now != ours:
         return [f"left {p} as it is: it was changed since the install"]
     try:
@@ -443,6 +443,9 @@ def rollback(path=None, log=print, wrote=None):
     path = Path(path) if path else (backups()[-1] if backups() else None)
     if not path or not path.exists():
         raise CrewError("no update backup to roll back to")
+    # The drop-in text this build writes, read now: putting an older library back can take
+    # crewmem.py away before restore_dropin asks it (T209: ours was then taken for the owner's).
+    dropin_ours = _dropin_ours()
     if wrote is None:
         wrote = load_json(wrote_file(path), None)
         wrote = wrote if isinstance(wrote, dict) else None
@@ -514,9 +517,14 @@ def rollback(path=None, log=print, wrote=None):
     if isinstance(ins, dict) and ins:
         ins["installed"] = time.time()
         save_json(INSTALL, ins)
-    if snap:
-        for line in restore_config(snap, log=log) + restore_dropin(snap, log=log):
-            log(line)
+    # The drop-in: a snapshot from this version says what it was. One taken by an updater from before
+    # T201 doesn't; when its library has no crewmem.py, the build it puts back is from before the memory
+    # work, which never wrote one, so ours goes (T209). Otherwise it's left as it is.
+    dsnap = dict(snap) if isinstance(snap, dict) else {}
+    if "oomd_dropin" not in dsnap and lib_name in listed and f"{lib_name}/crewmem.py" not in listed:
+        dsnap["oomd_dropin"] = None
+    for line in (restore_config(snap, log=log) if snap else []) + restore_dropin(dsnap, log=log, ours=dropin_ours):
+        log(line)
     # crewd holds its code in memory: restart it when what was put back differs from what it runs.
     if crewd_fingerprint() != crewd_before:
         subprocess.run(["systemctl", "--user", "try-restart", "herdr-crew.service"], capture_output=True)
