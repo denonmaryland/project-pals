@@ -165,3 +165,30 @@ print(json.dumps([crewproposals.get({pid!r})['status'], len(calls)]))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((project / "AGENTS.md").read_text(), staged.read_text())
         self.assertEqual(py(self.env, f"import crewproposals; print(json.dumps(crewproposals.get({pending!r})['status']))"), "accepted")
+
+    def test_no_write_refusals_leave_proposals_pending_for_review(self):
+        project = self.root / "retry-project"
+        project.mkdir()
+        app = Path(self.env["HERDR_APP_HOME"])
+        app.mkdir(exist_ok=True)
+        (app / "shared.json").write_text(json.dumps({"crew": {"bots": [{"name": "Worker", "space": "s1", "folder": str(project)}]}}))
+        (project / "AGENTS.md").write_text("Changed instructions\n")
+        for kind, who in (("agents", "Worker"), ("mission", "Worker"), ("agents", "MissingPal")):
+            with self.subTest(kind=kind, pal=who):
+                pid = py(self.env, f"import crewproposals; print(json.dumps(crewproposals.propose({kind!r}, {who!r}, 'Worker#general', 'Reviewed replacement\\n', file='AGENTS.md', base_sha='old-hash')['id']))")
+                r = owner(self.env, self.data, "proposal", "accept", pid)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertEqual(py(self.env, f"import crewproposals; print(json.dumps(crewproposals.get({pid!r})['status']))"), "pending", r.stderr)
+                self.assertEqual((project / "AGENTS.md").read_text(), "Changed instructions\n")
+                if kind == "agents" and who == "Worker":
+                    staged = self.root / "retry-review.md"
+                    staged.write_text("Reviewed replacement\n")
+                    args = ["agents", "apply", "Worker", "AGENTS.md", "--from", str(staged), "--proposal", pid, "--expect"]
+                    r = owner(self.env, self.data, *args, "old-hash")
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertEqual(py(self.env, f"import crewproposals; print(json.dumps(crewproposals.get({pid!r})['status']))"), "pending")
+                    sha = py(self.env, "import crewagents; print(json.dumps(crewagents.sha('Changed instructions\\n')))")
+                    r = owner(self.env, self.data, *args, sha)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertEqual((project / "AGENTS.md").read_text(), staged.read_text())
+                    (project / "AGENTS.md").write_text("Changed instructions\n")

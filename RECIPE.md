@@ -2115,8 +2115,9 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   rule, including nested commands: any never-tappable rule wins, then outward, then local. The
   approval decision repeats this check under its lock. The normal gate keeps its first-match label.
 - **Reserve a proposal before applying it.** Accept, decline, profile-panel application and expiry
-  share the proposals lock. An accepted write first becomes `applying`, then `accepted`; an
-  application that raises becomes `failed`. A crash may leave `applying`. These states are not
+  share the proposals lock. An accepted write first becomes `applying`, then `accepted`; a
+  pre-write validation refusal stays `pending` for another review. An application that raises
+  becomes `failed`. A crash may leave `applying`. These states are not
   pending or automatically retried: inspect possible partial effects before proposing again.
 - **A shortened preview cannot authorize a longer write.** Clipped items have no ticket and old
   tokens for them are refused at execution. Dream tool/process tasks record the tap actor, not

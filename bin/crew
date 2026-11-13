@@ -2217,6 +2217,7 @@ def cmd_agents(spaces, rest):
             def validate_review(p):
                 if p["kind"] != "agents" or p["pal"] != name or p.get("file") != pos[1] or p["text"] != text:
                     die("the proposal no longer matches this review; open it again")
+                crewagents.validate_apply(folder, pos[1], o["expect"])
             decision = crewproposals.decide(o["proposal"], "accepted", via="profile panel", validate=validate_review, apply=write_review)
             out = decision["result"]
             tell_proposer(spaces, o["proposal"], True)
@@ -2288,6 +2289,19 @@ def cmd_proposals(spaces, rest):
                 crewtaps.validate_snapshot("proposal", p, tap_authority())
             if accepted:
                 crewproposals.check_reviewed(p, o.get("text-sha"))
+                # Refusals before any effects leave the proposal available for a new review.
+                if p["kind"] != "dream":
+                    space, rec, name = pal_of(spaces, p["pal"])
+                    rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+                    if p["kind"] == "mission":
+                        d = crewbrain.brain_dir(name, rec)
+                        if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
+                            die("the mission changed since this was proposed; open it in the profile panel and compare")
+                    elif p["kind"] == "agents":
+                        import crewagents
+                        crewagents.validate_apply(folder_of(space, rec), p["file"], p.get("base") or "none")
+                    else:
+                        die(f"accept {p['kind']} proposals in the Inbox")
 
         def apply(p):
             if p["kind"] == "dream":
