@@ -8,6 +8,7 @@ This is a guard against mistakes and against one pal talking another into someth
 security boundary: a pal with full permissions could still edit these files. Codex and other
 harnesses without a pre-command hook aren't gated."""
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -1428,6 +1429,44 @@ def all_matches(cmd, _depth=0):
     return list(found.values())
 
 
+def all_matches_at(cmd, cwd):
+    """Re-evaluate an approval in its execution directory, never the reviewer's directory."""
+    global HOOK_CWD
+    previous = HOOK_CWD
+    HOOK_CWD = cwd
+    try:
+        return all_matches(cmd)
+    finally:
+        HOOK_CWD = previous
+
+
+def command_context(cmd, cwd, rule=None):
+    """Capture every matched rule with the caller's known execution cwd.
+    A hook without cwd remains unknown: the hook process's own cwd is not execution evidence.
+    Programs asking for themselves may explicitly supply their process cwd.
+    """
+    # Keep the hook's spelling: resolving symlinks can change what a following relative cd means.
+    cwd = cwd if isinstance(cwd, str) and os.path.isabs(cwd) else None
+    rules = {r["name"] for r in all_matches_at(cmd, cwd)}
+    if rule:
+        rules.add(rule)
+    return {"cwd": cwd, "rules": sorted(rules)}
+
+
+def approval_rules(request):
+    """Saved rules plus current rules in the saved cwd; None means context cannot be vouched for.
+    Changing repository or Live settings can add restrictions, never erase an earlier one.
+    """
+    context = request.get("guard_context")
+    if not isinstance(context, dict):
+        return None
+    cwd, rules = context.get("cwd"), context.get("rules")
+    if not isinstance(cwd, str) or not os.path.isabs(cwd) or not os.path.isdir(cwd) \
+            or not isinstance(rules, list) or not rules or not all(isinstance(r, str) and r for r in rules):
+        return None
+    return set(rules) | {r["name"] for r in all_matches_at(request.get("command") or "", cwd)}
+
+
 def _matching_rules(cmd):
     segs = [s for s in commands(cmd) if not _help(s)]
     flat = heredoc_free(cmd)
@@ -1449,8 +1488,11 @@ def _matching_rules(cmd):
             yield rule
 
 
-def key(terminal, cmd):
-    return hashlib.sha1(f"{terminal}\n{' '.join(cmd.split())}".encode()).hexdigest()[:16]
+def key(terminal, cmd, context=None):
+    text = f"{terminal}\n{' '.join(cmd.split())}"
+    if context is not None:
+        text += "\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
 def all_requests():
@@ -1477,11 +1519,12 @@ def check(terminal, bot, channel, cmd, extra=None):
     rule = matches(cmd)
     if not rule:
         return None
-    k = key(terminal, cmd)
+    context = command_context(cmd, HOOK_CWD)
+    k = key(terminal, cmd, context)
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k:
+            if r.get("key") != k or r.get("guard_context") != context:
                 continue
             if r["status"] == "approved":
                 r["status"], r["used"] = "used", now_ms()
@@ -1490,7 +1533,8 @@ def check(terminal, bot, channel, cmd, extra=None):
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {})}
+             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {}),
+             "guard_context": context}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r
@@ -1511,11 +1555,12 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
         raise CrewError(f"no guarded rule called {rule}")
     if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule)):
         return None
-    k = key(terminal, f"{rule}\n{cmd}")
+    context = command_context(cmd, os.getcwd(), rule)
+    k = key(terminal, f"{rule}\n{cmd}", context)
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k:
+            if r.get("key") != k or r.get("guard_context") != context:
                 continue
             if r["status"] == "approved":
                 r["status"], r["used"] = "used", now_ms()
@@ -1524,7 +1569,8 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule, "why": why or named.get("why", ""), "status": "pending", "asked_by": "the program itself"}
+             "command": cmd, "rule": rule, "why": why or named.get("why", ""), "status": "pending", "asked_by": "the program itself",
+             "guard_context": context}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r

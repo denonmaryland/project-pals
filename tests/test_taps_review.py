@@ -79,7 +79,7 @@ print(json.dumps(args + ['--tap', nonce]))
         rid = self.held("printf x > AGENTS.md; echo x > ~/.config/herdr-app/data/crew-clicks/a.json")
         r = pal(self.env, *self.legacy_token("approval", rid, "local", "Approve"))
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("own click", r.stderr)
+        self.assertIn("tap token isn't good", r.stderr)  # refused before entering the decision
         self.assertEqual(self.approval(rid)["status"], "pending")
 
     def test_nested_outward_operation_uses_outward_switch(self):
