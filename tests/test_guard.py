@@ -1070,17 +1070,19 @@ class LiveBranchRefs(unittest.TestCase):
 
     def test_on_stable_landing_by_hand_is_held_and_working_on_main_is_not(self):
         """T136: with the Live channel off, every row that moves main by NAME is still held (it is a
-        landing without the click `pal land` needs); rows that work where main is checked out are free."""
+        landing without the click `pal land` needs). Sequential checked-out work is free; T205's
+        conservative context guard requires the owner for conditional mutation chains."""
         slipped, held_work = [], []
         for layout, where, template in self.MOVERS:
             cmd, held, moved = self.case(layout, where, template, "stable")
             if self.where_checked_out(layout, template):
-                if held:
-                    held_work.append(f"{cmd} -> {held}")
+                expected = "nested-cwd" if " && " in template else None
+                if held != expected:
+                    held_work.append(f"{cmd} -> {held} (expected {expected})")
             elif moved and held not in ("base-branch", "push"):   # (git push . x:main is the push rule's)
                 slipped.append(f"{cmd} -> {held}")
         self.assertEqual(slipped, [], "landed by hand without being held:\n  " + "\n  ".join(slipped))
-        self.assertEqual(held_work, [], "ordinary work on a checked-out main was held:\n  " + "\n  ".join(held_work))
+        self.assertEqual(held_work, [], "checked-out work had the wrong context guard:\n  " + "\n  ".join(held_work))
 
     # A value that lets git carry on, for the options that take one (the sweeps below).
     VALUES = {"jobs": "1", "depth": "1", "deepen": "1", "shallow-since": "2000-01-01", "upload-pack": "git-upload-pack",

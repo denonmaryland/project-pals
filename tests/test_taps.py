@@ -49,7 +49,7 @@ class Taps(Base):
         return json.loads((self.data / "crew-home" / "home.json").read_text())["items"]
 
     def held(self, cmd="git push origin main", term="tH", pal_="Helper", topic="build"):
-        code = f"import crewguard\nr = crewguard.check({term!r}, {pal_!r}, {topic!r}, {cmd!r})\nprint(json.dumps(r['id']))"
+        code = f"import crewguard\ncrewguard.HOOK_CWD = {str(self.root)!r}\nr = crewguard.check({term!r}, {pal_!r}, {topic!r}, {cmd!r})\nprint(json.dumps(r['id']))"
         return py(self.env, code)
 
     def approval(self, rid):
@@ -365,7 +365,7 @@ class Approvals(Taps):
         self.assertIn("not Dee Tester's own click", told)
         self.assertNotIn(f"{OWNER} approved", told)
         # The pal's command then goes through, once, as with any approval.
-        self.assertIsNone(py(self.env, "import crewguard\nprint(json.dumps(crewguard.check('tH', 'Helper', 'build', 'git push origin main')))"))
+        self.assertIsNone(py(self.env, f"import crewguard\ncrewguard.HOOK_CWD = {str(self.root)!r}\nprint(json.dumps(crewguard.check('tH', 'Helper', 'build', 'git push origin main')))"))
         self.assertEqual(self.approval(rid)["status"], "used")
 
     def test_decline_by_tap(self):

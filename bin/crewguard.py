@@ -8,6 +8,7 @@ This is a guard against mistakes and against one pal talking another into someth
 security boundary: a pal with full permissions could still edit these files. Codex and other
 harnesses without a pre-command hook aren't gated."""
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -23,7 +24,8 @@ POLICY = DATA / "crew-policy.json"
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
 # 16: live-branch (T90) and base-branch (T136).
 # 17: tap-write (T147). 16 was the live channel's (crew/live-updates).
-DEFAULTS_VERSION = 17
+# 18: nested-cwd (T205/T210): the flattened parser cannot vouch for nested execution cwd.
+DEFAULTS_VERSION = 18
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -103,6 +105,10 @@ DEFAULT = {
         # base branch (main, master, a topic's base) moved by name is held. `pal land` is the way.
         {"name": "base-branch", "why": "moves a project's base branch by hand (land it instead: pal land)",
          "check": "moves-base-branch", "pattern": r"$^"},
+        # Nested literal runners lose ordering/cwd in the heuristic parse. Hold potentially
+        # affected Git mutations for the owner, even when no other rule happens to match.
+        {"name": "nested-cwd", "why": "uses a command execution context that needs owner review",
+         "check": "nested-cwd", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -133,6 +139,8 @@ HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n.*?\n\s*\2\s*(?=\n|$)
 HEREDOC_BODY = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n(.*?)\n\s*\2\s*(?=\n|$)", re.S)   # HEREDOC, body kept
 heredoc_free = lambda cmd: HEREDOC.sub(lambda m: m.group(1) + m.group(3), cmd)
 SPLIT = re.compile(r"\n|;|&&|\|\||\||\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
+# These flattened delimiters do not guarantee that a cd executes in the outer shell.
+CWD_UNCERTAIN_BOUNDARIES = {"$(", "`", "(", "|", "&&", "||", "then", "do", "else"}
 INNER = re.compile(r"""\b(?:sh|bash|zsh|eval)\s+(?:-\w+\s+)*-c\s+(['"])(.*?)\1""", re.S)
 # (A wrapper with options, `env -i …`, is left for normal_head, which knows them.)
 LEAD = re.compile(r"""^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+(?!-)|\w+=(?:'[^']*'|"[^"]*"|\S)*\s+)*""")
@@ -865,8 +873,8 @@ def _literal(st, span):
     return re.sub(r"\\(.)", lambda m: "\n" if m.group(1) == "n" else m.group(1), body)
 
 
-def run_strings(cmd):
-    """Command lines inside the line: scripts fed to a shell, and strings interpreter code runs."""
+def run_strings(cmd, overflow=None):
+    """Command lines inside the line; optionally report truncated runnable statements."""
     out = [t for w, t in _stdin_text(cmd) if w and w[0] in SHELL_RUNNERS]
     code = [(w[0], t) for w, t in _stdin_text(cmd) if w and INTERP.match(w[0])]
     for seg in commands(cmd):
@@ -895,6 +903,8 @@ def run_strings(cmd):
                     lits += v
             # Each literal, and each run of them to the end: spawn("git", ["push"]) after
             # require("child_process") in one statement is "git push" only from its 2nd literal on.
+            if len(lits) > 40 and overflow is not None:
+                overflow.append("interpreter-literals")
             lits = lits[:40]
             out += lits + [" ".join(lits[k:]) for k in range(len(lits))]
     return [c for c in out if c and c.strip()]
@@ -1396,10 +1406,87 @@ def _help(seg):
     return "--help" in normal_words(seg)[1:]
 
 
+def _nested_commands(cmd, overflow):
+    """Literal execution boundaries, including every shell payload commands() flattens.
+    This is deliberately not an execution-order or shell interpreter.
+    """
+    text = heredoc_free(cmd)
+    masked = mask_quotes(text)
+    out = [m.group(2) for m in list(INNER.finditer(text)) + list(EVAL.finditer(text))
+           if masked[m.start()] != "_"]
+    out += run_strings(cmd, overflow=overflow)
+    shell_stdin = any(w and w[0] in SHELL_RUNNERS for w, _ in _stdin_text(cmd))
+    for seg in commands(cmd):
+        words = normal_words(RUNNER.sub("", seg))
+        if not words:
+            continue
+        if words[0] in SHELL_RUNNERS:
+            # normal_words handles paths and supported wrappers; include combined bash -lc.
+            out += [words[i + 1] for i in range(1, len(words) - 1)
+                    if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", words[i])]
+        elif words[0] == "eval":
+            out.append(" ".join(words[1:]))
+        elif shell_stdin and words[0] in ("echo", "printf"):
+            # The stdin helper joins printf's format and arguments. Inspect literal arguments
+            # too: printf '%s' 'git commit ...' | sh must not hide behind the format word.
+            out += words[1:]
+    return list(dict.fromkeys(s for s in out if s and s.strip() and s != cmd))
+
+
+def _cwd_git_mutation(seg):
+    """Git forms whose branch effect can depend on cwd; known read forms stay free."""
+    sub, args, _folder = _git_words(seg)
+    # Only an unambiguous help flag is free here. A later --help may instead be a
+    # message (-m --help), another option's value, or a path after --.
+    if args and args[0] in ("--help", "-h"):
+        return False
+    if sub in MOVES_HEAD or sub == "fetch":
+        opts, _pos, odd = git_parse(sub, args)
+        return odd or "dry-run" not in opts
+    if sub == "branch":
+        opts, names, odd = _branch_parse(args)
+        if odd or set(opts) & {"delete-merged", "delete", "move", "copy"}:
+            return True
+        return not (set(opts) & BRANCH_QUIET_MODES) and bool(names)
+    if sub == "symbolic-ref":
+        pos = [a for a in args if a not in ("-q", "--quiet", "--short", "--recurse", "--no-recurse")]
+        return len(pos) != 1 or pos[0].startswith("-")
+    if sub == "worktree":
+        return bool(args) and args[0] != "list"
+    return sub in ("update-ref", "switch", "checkout")
+
+
+def nested_cwd(cmd, _depth=0, _seen=None):
+    """Require the owner when nested execution can invalidate Git's parsed cwd.
+    A child cd can pollute an OUTER mutation too, so inspect both sides of the boundary.
+    Explicit nested pushes remain outward; read-only commands within the scan budget stay free.
+    Exhausting a bound requires owner review, never permission for an unchecked tail.
+    """
+    seen = set() if _seen is None else _seen
+    if cmd in seen:
+        return False
+    seen.add(cmd)
+    overflow = []
+    nested = _nested_commands(cmd, overflow)
+    if overflow or len(nested) > 200:
+        return True
+    # commands() also flattens child shells and conditional execution. A child or
+    # skipped cd must not change our view of an outer mutation; share its quote mask.
+    shell_boundary = any(m.group(0) in CWD_UNCERTAIN_BOUNDARIES
+                         for m in SPLIT.finditer(mask_quotes(heredoc_free(cmd))))
+    if not nested and not shell_boundary:
+        return False
+    if any(_cwd_git_mutation(seg) for seg in commands(cmd)) or _depth >= 3:
+        return True
+    return any(any(_cwd_git_mutation(seg) for seg in commands(inner))
+               or nested_cwd(inner, _depth + 1, seen) for inner in nested[:200])
+
+
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
           "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers, "tap-writes": writes_taps,
-          "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
+          "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch,
+          "nested-cwd": nested_cwd}
 
 
 def matches(cmd, _depth=0):
@@ -1428,6 +1515,44 @@ def all_matches(cmd, _depth=0):
     return list(found.values())
 
 
+def all_matches_at(cmd, cwd):
+    """Re-evaluate an approval in its execution directory, never the reviewer's directory."""
+    global HOOK_CWD
+    previous = HOOK_CWD
+    HOOK_CWD = cwd
+    try:
+        return all_matches(cmd)
+    finally:
+        HOOK_CWD = previous
+
+
+def command_context(cmd, cwd, rule=None):
+    """Capture every matched rule with the caller's known execution cwd.
+    A hook without cwd remains unknown: the hook process's own cwd is not execution evidence.
+    Programs asking for themselves may explicitly supply their process cwd.
+    """
+    # Keep the hook's spelling: resolving symlinks can change what a following relative cd means.
+    cwd = cwd if isinstance(cwd, str) and os.path.isabs(cwd) else None
+    rules = {r["name"] for r in all_matches_at(cmd, cwd)}
+    if rule:
+        rules.add(rule)
+    return {"cwd": cwd, "rules": sorted(rules)}
+
+
+def approval_rules(request):
+    """Saved rules plus current rules in the saved cwd; None means context cannot be vouched for.
+    Changing repository or Live settings can add restrictions, never erase an earlier one.
+    """
+    context = request.get("guard_context")
+    if not isinstance(context, dict):
+        return None
+    cwd, rules = context.get("cwd"), context.get("rules")
+    if not isinstance(cwd, str) or not os.path.isabs(cwd) or not os.path.isdir(cwd) \
+            or not isinstance(rules, list) or not rules or not all(isinstance(r, str) and r for r in rules):
+        return None
+    return set(rules) | {r["name"] for r in all_matches_at(request.get("command") or "", cwd)}
+
+
 def _matching_rules(cmd):
     segs = [s for s in commands(cmd) if not _help(s)]
     flat = heredoc_free(cmd)
@@ -1449,8 +1574,11 @@ def _matching_rules(cmd):
             yield rule
 
 
-def key(terminal, cmd):
-    return hashlib.sha1(f"{terminal}\n{' '.join(cmd.split())}".encode()).hexdigest()[:16]
+def key(terminal, cmd, context=None):
+    text = f"{terminal}\n{' '.join(cmd.split())}"
+    if context is not None:
+        text += "\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
 def all_requests():
@@ -1479,11 +1607,12 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
     rule = matches(cmd)
     if not rule:
         return None
-    k = key(terminal, cmd)
+    context = command_context(cmd, HOOK_CWD)
+    k = key(terminal, cmd, context)
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k:
+            if r.get("key") != k or r.get("guard_context") != context:
                 continue
             if r["status"] == "approved":
                 r["status"], r["used"] = "used", now_ms()
@@ -1494,7 +1623,8 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {})}
+             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {}),
+             "guard_context": context}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r
@@ -1518,11 +1648,12 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     # for two minutes on one approval, other versions and notes included).
     if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule, words=normal_words(cmd))):
         return None
-    k = key(terminal, f"{rule}\n{cmd}")
+    context = command_context(cmd, os.getcwd(), rule)
+    k = key(terminal, f"{rule}\n{cmd}", context)
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k:
+            if r.get("key") != k or r.get("guard_context") != context:
                 continue
             if r["status"] == "approved":
                 r["status"], r["used"] = "used", now_ms()
@@ -1532,7 +1663,8 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule, "why": why or named.get("why", ""), "status": "pending", "asked_by": "the program itself"}
+             "command": cmd, "rule": rule, "why": why or named.get("why", ""), "status": "pending", "asked_by": "the program itself",
+             "guard_context": context}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r

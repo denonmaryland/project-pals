@@ -145,7 +145,7 @@ def item_hash(kind, x):
         does = (list(x.get("does") or []) + [""] * len(opts))[:len(opts)]
         return _sha(kind, x["id"], x.get("title"), x.get("body"), opts, does, x.get("by"), x.get("links"))
     fields = {
-        "approval": ("key", "command", "rule", "terminal", "bot", "channel", "edit_hash", "base_hash", "diff"),
+        "approval": ("key", "command", "rule", "terminal", "bot", "channel", "edit_hash", "base_hash", "diff", "guard_context"),
         "proposal": ("kind", "pal", "file", "base", "text", "note", "meta"),
         "draft": ("from", "to", "urgency", "title", "body", "track"),
     }
@@ -166,7 +166,10 @@ def proposal_never(p):
 
 def approval_class(a):
     import crewguard
-    rules = {a.get("rule"), *(r["name"] for r in crewguard.all_matches(a.get("command") or ""))}
+    contextual = crewguard.approval_rules(a)
+    if contextual is None:
+        return "local", f"the approval has no valid execution context: {OWNER}'s own click only"
+    rules = {a.get("rule"), *contextual}
     forbidden = {str(r) for r in rules if rule_class(r) == "never"}
     if forbidden:
         return "local", f"owner-only or unclassified rule {', '.join(sorted(forbidden))}: {OWNER}'s own click only"
@@ -234,7 +237,8 @@ def _approval_items():
             continue
         cls, never = approval_class(a)
         who = f"{a.get('bot') or 'a shell'}" + (f" #{a['channel']}" if a.get("channel") else "")
-        text = f"{who} wants to run a command that {a.get('why') or a.get('rule')}:\n{a.get('command') or ''}" + (f"\n\n{_clip(a.get('diff'), SHOWN_TEXT_MAX)}" if a.get("diff") else "")
+        context = a.get("guard_context") if isinstance(a.get("guard_context"), dict) else {}
+        text = f"{who} wants to run a command that {a.get('why') or a.get('rule')}:\n{a.get('command') or ''}\nWorking directory: {context.get('cwd') or 'not recorded'}" + (f"\n\n{_clip(a.get('diff'), SHOWN_TEXT_MAX)}" if a.get("diff") else "")
         out.append({"kind": "approval", "id": a["id"], "cls": cls, "title": f"{who}: {_clip(a.get('command'), 120)}",
                     "text": text, "by": who, "rule": a.get("rule"),
                     "choices": [{"label": "Approve", "does": "Lets exactly this command run, once"}, {"label": "Decline", "does": "The command is refused"}],
@@ -605,6 +609,14 @@ def take_run_token(argv, nonce):
     try:
         if h.get("cls") not in CLASSES or _may(h["helper"], h["cls"]) or list(argv) != _args(h):
             return None
+        if h.get("kind") == "approval":
+            # Recheck context at token use as well as under the decision lock. A token from an
+            # older build cannot upgrade a local tap after its cwd/rules were lost or changed.
+            import crewguard
+            record = load_json(crewguard.APPROVALS / f"{h.get('item')}.json", {})
+            if not isinstance(record, dict):
+                return None
+            validate_snapshot("approval", record, h)
     except (TapError, KeyError):
         return None
     return {"helper": h["helper"], "relayed": h.get("relayed") or "", "hold": h["id"], "label": label(h["helper"]),
