@@ -6,6 +6,7 @@ are not isolation from code running as the same Linux user. Network work lives i
 one crewd thread and one deadline-limited child, never in crewd.tick().
 """
 import contextlib
+import copy
 import fcntl
 import hashlib
 import json
@@ -38,6 +39,7 @@ STATE_MAX = 4 * 1024 * 1024
 TTL = 86400
 POST_TIMEOUT = 5
 INTERVAL = 2
+SCAN_INTERVAL = 10
 KINDS = {"ask", "login", "approval", "desk", "proposal", "helper-off", "test"}
 OUTCOMES = {"never", "queued", "sent", "retry", "expired", "rejected", "disabled", "configured",
             "credentials-unavailable", "source-unavailable", "state-unavailable", "transport-error",
@@ -244,6 +246,8 @@ def configure(url, key, *, allow_plain=False, privacy="minimal", auth_header="Au
     sealed = _crypt("encrypt", raw) if shutil.which("systemd-creds") else None
     if sealed is not None and _unseal(sealed) != raw:
         sealed = None
+    if sealed is not None and allow_plain:
+        raise NotifyError("User-bound credential sealing is available; run setup without --allow-plain")
     if sealed is None and not allow_plain:
         raise NotifyError("User-bound credential sealing is unavailable; setup needs explicit plaintext-storage consent")
     try:
@@ -434,6 +438,61 @@ def collect_events(data, now=None):
     return [e for e in events if e]
 
 
+def _source_stamp(data):
+    """Cheap metadata checks avoid parsing unchanged source bodies on each tick."""
+    files = [data / "crew-home/home.json", data / "crew-helpers/log.jsonl"]
+    for root, pattern in (("crew-approvals", "*.json"), ("crew-proposals", "*.json"),
+                          ("crew-desk", "*/open/*.md")):
+        files.extend(_files(data / root, pattern))
+    stamps = []
+    for path in sorted(files):
+        if any(parent.is_symlink() for parent in path.parents):
+            raise SourceUnavailable()
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            stamps.append((str(path), None))
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            raise SourceUnavailable()
+        stamps.append((str(path), info.st_dev, info.st_ino, info.st_mtime_ns,
+                       info.st_ctime_ns, info.st_size))
+    return tuple(stamps)
+
+
+def _report_disabled(data, outcome):
+    """Only fixed human-readable text reaches Home/feed, never transport details.
+
+    These APIs use process-global DATA. A caller overriding the worker's data root
+    must inject a reporter, or set CREW_DATA before importing the process modules.
+    Never let a standalone sandbox worker write the real Home/feed by accident.
+    """
+    if Path(data).resolve() != DATA.resolve():
+        return
+    reasons = {
+        "rejected": "The receiver rejected an alert. Check its configuration and sender key.",
+        "redirect-refused": "The receiver redirected an alert. Configure its final HTTPS address.",
+        "protocol-unconfirmed": "The receiver protocol is unavailable in this build.",
+        "tls-error": "The receiver's secure connection could not be verified. Check its TLS configuration.",
+        "credentials-unavailable": "The saved receiver credentials could not be opened. Run phone-alert setup again.",
+    }
+    title = "Phone alerts turned off: " + reasons.get(outcome, "Check the phone-alert settings.")
+    # Each sink is independent: a full Home must not prevent a feed notice.
+    import crewlib
+    import crewhome
+    try:
+        # An open ask stays on Home until acknowledged; ordinary notes only appear
+        # in Today's drawer. No pal authored this system notice or needs a reply.
+        crewhome.add("ask", title, by="", options=("Noted",),
+                     body="Alerts are off and queued alerts were cancelled. After fixing the issue, enable phone alerts in Settings.")
+    except Exception:
+        pass
+    try:
+        crewlib.feed("notify", status="disabled", title=title)
+    except Exception:
+        pass
+
+
 def _trim_seen(s):
     if len(s["seen"]) > SEEN_MAX:
         ordered = sorted(s["seen"].items(), key=lambda pair: pair[1])
@@ -471,16 +530,24 @@ def _post(bundle, payload):
         code = error.code
         error.close()
     except urllib.error.URLError as error:
-        return "tls-error" if isinstance(error.reason, ssl.SSLError) else "retry"
+        return _tls_outcome(error.reason)
+    except ssl.SSLError as error:
+        return _tls_outcome(error)
     except (OSError, ValueError):
         return "retry"
     if 200 <= code < 300:
         return "sent"
     if 300 <= code < 400:
         return "redirect-refused"
-    if code == 429 or 500 <= code < 600:
+    if code in (408, 425, 429) or 500 <= code < 600:
         return "retry"
     return "rejected"
+
+
+def _tls_outcome(error):
+    if isinstance(error, (ssl.SSLEOFError, ssl.SSLZeroReturnError)):
+        return "retry"
+    return "tls-error" if isinstance(error, ssl.SSLError) else "retry"
 
 
 def transport(bundle, payload):
@@ -521,12 +588,16 @@ def _transport_main():
 
 
 class Worker:
-    def __init__(self, data=None, directory=None, *, sender=None, clock=None, jitter=None):
+    def __init__(self, data=None, directory=None, *, sender=None, clock=None, jitter=None, reporter=None):
         self.data = Path(data or DATA)
         self.directory = Path(directory or PRIVATE_DIR)
         self.sender = sender or transport
         self.clock = clock or time.time
         self.jitter = jitter or random.uniform
+        self.reporter = reporter or _report_disabled
+        self._scan_stamp = None
+        self._scan_events = None
+        self._scan_at = 0
         self._stop = threading.Event()
         self._thread = None
 
@@ -552,7 +623,13 @@ class Worker:
             self._stop.wait(INTERVAL)
 
     def scan(self):
-        return collect_events(self.data, self.clock())
+        now = self.clock()
+        stamp = _source_stamp(self.data)
+        if (self._scan_events is None or stamp != self._scan_stamp
+                or not 0 <= now - self._scan_at < SCAN_INTERVAL):
+            events = collect_events(self.data, now)
+            self._scan_events, self._scan_stamp, self._scan_at = events, stamp, now
+        return self._scan_events
 
     def step(self):
         if not (self.directory / "state.json").exists():
@@ -575,12 +652,14 @@ class Worker:
                 s = _state(folder)
                 if not s["configured"]:
                     return
+                previous = copy.deepcopy(s)
                 if s["enabled"]:
                     try:
                         events = self.scan()
                     except Exception:
-                        s.update(last_outcome="source-unavailable", last_at=now)
-                        _write(folder, "state.json", s)
+                        if s["last_outcome"] != "source-unavailable":
+                            s.update(last_outcome="source-unavailable", last_at=now)
+                            _write(folder, "state.json", s)
                         return
                     current = {e["identity"] for e in events}
                     s["queue"] = [q for q in s["queue"] if q["payload"]["kind"] in ("helper-off", "test") or q["identity"] in current]
@@ -606,27 +685,35 @@ class Worker:
                         keep.append(q)
                 s["queue"] = keep
                 due = next((q for q in keep if q["next"] <= now and (s["enabled"] or q["payload"]["kind"] == "test")), None)
-                _write(folder, "state.json", s)  # Persist dedupe/outbox before handing bytes to network.
+                if s != previous:
+                    _write(folder, "state.json", s)  # Persist changed dedupe/outbox before network.
                 if due is None:
                     return
                 generation = s["generation"]
-                try:
-                    bundle = _credentials(folder)
-                except (NotifyError, SourceUnavailable, OSError):
-                    s.update(enabled=False, last_outcome="credentials-unavailable", last_at=now)
-                    _write(folder, "state.json", s)
-                    return
                 payload = {k: due["payload"][k] for k in ("kind", "id")}
                 if s["privacy"] == "detail" and payload["kind"] != "test":
                     payload.update(title=_text(due["payload"].get("title"), 160),
                                    topic=_text(due["payload"].get("topic"), 120))
-            # Network never holds the state lock or the daemon's main-loop thread.
+            # Decryption can take seconds, so it must not stall the owner's controls.
+            outcome = None
             try:
-                outcome = self.sender(bundle, payload)
-            except Exception:
-                outcome = "transport-error"
+                bundle = _credentials(folder)
+            except (NotifyError, SourceUnavailable, OSError):
+                outcome = "credentials-unavailable"
+            with _locked(self.directory) as folder:
+                s = _state(folder)
+                if (s["generation"] != generation
+                        or not any(q["identity"] == due["identity"] for q in s["queue"])):
+                    return  # An owner action during decryption cancels the prepared send.
+            # Network never holds the state lock or the daemon's main-loop thread.
+            if outcome is None:
+                try:
+                    outcome = self.sender(bundle, payload)
+                except Exception:
+                    outcome = "transport-error"
             if outcome not in OUTCOMES:
                 outcome = "transport-error"
+            report = False
             with _locked(self.directory) as folder:
                 s = _state(folder)
                 if s["generation"] != generation:
@@ -637,14 +724,21 @@ class Worker:
                 s.update(last_outcome=outcome, last_at=self.clock())
                 if outcome == "sent":
                     s["queue"].remove(q)
-                elif outcome in ("rejected", "redirect-refused", "protocol-unconfirmed", "tls-error"):
+                elif outcome in ("rejected", "redirect-refused", "protocol-unconfirmed", "tls-error",
+                                 "credentials-unavailable"):
                     s["enabled"] = False
                     s["queue"] = []
+                    report = True
                 else:
                     q["attempts"] += 1
                     delay = (2, 10, 30, 60, 120, 300)[min(q["attempts"] - 1, 5)]
                     q["next"] = self.clock() + delay * self.jitter(0.8, 1.2)
                 _write(folder, "state.json", s)
+            if report:
+                try:
+                    self.reporter(self.data, outcome)
+                except Exception:
+                    pass  # Do not expose reporter exceptions or retry a permanent failure.
         except (OSError, SourceUnavailable):
             return
 

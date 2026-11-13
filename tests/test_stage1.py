@@ -290,7 +290,7 @@ class Installer(unittest.TestCase):
         r = self.install(env, str(root / "backups"))
         self.assertEqual(r.returncode, 0, r.stderr)
         h = json.loads(st.read_text())["hooks"]
-        self.assertEqual(h["PreToolUse"][0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit")
+        self.assertEqual(h["PreToolUse"][0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|Glob")
         self.assertEqual(h["PostToolUse"][0]["hooks"][0]["command"], f"{home}/.local/bin/crew-hook-fast post-tool-use")
         self.assertEqual(h["PostToolUse"][1]["hooks"][0]["command"], "my-own-hook", "the person's own hook stays")
         self.assertEqual(h["Stop"][0]["hooks"][0]["command"], f"{home}/.local/bin/crew-hook-fast stop")

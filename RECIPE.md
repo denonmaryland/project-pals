@@ -543,7 +543,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   `pal notify setup` prompts in an external interactive terminal, never in argv or shared UI state.
   Normal pals/helpers are refused; getpass echo fallback fails closed. User-sealed 0600 credentials
   live under `~/.config/project-pals/notify`, outside data; explicit `--allow-plain` permits a 0600
-  fallback. These gates do not isolate hostile code running as the same Linux user.
+  fallback only when sealing is unavailable (it is refused when sealing works). Read/Grep/Glob
+  hooks refuse private credential scopes, including relative paths and symlink aliases; searching
+  source for a path string remains allowed. These gates do not isolate hostile code running as the same Linux user.
   POST is HTTPS with Authorization: Bearer by default; optional custom X-* header uses the raw key.
   Minimal payload is kind/id; detail mode explicitly allows title/topic off-machine. No bodies,
   commands, diffs, prompts, files, logs or credentials in payload/status. No inbound path or approvals.
@@ -551,6 +553,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   each enable baselines existing items; an enabled restart recovers retained new events during downtime. Stable
   event ids dedupe locally; retries may duplicate after ambiguous network failures. Disable cancels
   queued work, not an already sent request; credential replacement disables/clears pending work.
+  Unchanged ticks do not rewrite state; source metadata controls parsing, with a 10-second refresh.
+  Transient HTTP 408/425/429/5xx and TLS EOF failures retry with backoff. A permanent failure turns
+  alerts off and leaves a fixed-text Home notice to acknowledge plus a readable pal-feed entry.
+  Credential decryption runs outside the state lock; owner changes cancel a prepared send.
   `bin/crewnotify.py` owns state/transport; `crewnotifycli.py` controls owner input; `crew-notify`
   renders safe status only. Tests use fake credentials/receivers. A real phone test is DeNon's setup
   and explicit test click, never an agent's fabricated credential or an automatic setup side effect.

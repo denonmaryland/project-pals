@@ -69,7 +69,7 @@ def install_claude():
     want = {
         "SessionStart": {"matcher": "^(startup|resume|clear|compact)$", "hooks": [{"type": "command", "command": f"{hook} session-start", "timeout": 10}]},
         # Bash for guarded commands; the edit tools so a pal's edit of AGENTS.md / CLAUDE.md is held too.
-        "PreToolUse": {"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": f"{hook} pre-tool-use", "timeout": 10}]},
+        "PreToolUse": {"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|Glob", "hooks": [{"type": "command", "command": f"{hook} pre-tool-use", "timeout": 10}]},
         # Messages from other pals: handed over between tools and as a turn ends, instead of typed in.
         "PostToolUse": {"matcher": ".*", "hooks": [{"type": "command", "command": f"{fast} post-tool-use", "timeout": 10}]},
         "Stop": {"hooks": [{"type": "command", "command": f"{fast} stop", "timeout": 10}]},

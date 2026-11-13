@@ -761,7 +761,69 @@ def touches_notify(cmd):
     edited = _edited(cmd)
     if edited is not None:
         return in_helper_keys(edited) or bool(NOTIFY_PRIVATE.search(edited))
-    return bool(NOTIFY_PRIVATE.search(cmd) or NOTIFY_SECRET_CALL.search(cmd))
+    if NOTIFY_PRIVATE.search(cmd) or NOTIFY_SECRET_CALL.search(cmd):
+        return True
+    # Importing the private delivery module is another ordinary way to unseal it.
+    # Restrict this to executable interpreter input, not a grep pattern in source.
+    for seg in commands(cmd):
+        words = normal_words(seg)
+        if words and re.fullmatch(r"(?:python|pypy)[\d.]*", words[0]) and "-c" in words:
+            import ast
+            try:
+                code = ast.parse(words[words.index("-c") + 1])
+                if any((isinstance(n, ast.ImportFrom) and n.module == "crewnotify") or
+                       (isinstance(n, ast.Import) and any(a.name == "crewnotify" for a in n.names))
+                       for n in ast.walk(code)):
+                    return True
+            except (SyntaxError, IndexError):
+                pass
+        if not words or words[0] not in {"cat", "head", "tail", "less", "more", "cp", "mv", "base64", "xxd", "tar", "cd"}:
+            continue
+        if any(private_file_path(w, HOOK_CWD) for w in words[1:] if not w.startswith("-")):
+            return True
+    return False
+
+
+def private_file_path(path, cwd=None, recursive=False):
+    """Private-store path, including relative paths, symlinks and search ancestors.
+
+    Inspect names/metadata only. Never open a credential, and never treat a Grep
+    content pattern as a path. A wildcard is conservatively checked at its fixed
+    directory prefix; this also works before the credential files exist.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    p = os.path.expanduser(path.strip("'\""))
+    p = p.replace("${HOME}", os.path.expanduser("~")).replace("$HOME", os.path.expanduser("~"))
+    if not os.path.isabs(p):
+        p = os.path.join(cwd or os.getcwd(), p)
+    wildcard = re.search(r"[*?\[]", p)
+    if wildcard:
+        p = os.path.dirname(p[:wildcard.start()])
+        recursive = True
+    p = os.path.normpath(p)
+    if in_helper_keys(p) or NOTIFY_PRIVATE.search(p):
+        return True
+    real = os.path.realpath(p)
+    roots = [os.path.expanduser("~/.config/project-pals"), str(DATA / "crew-helper")]
+    for root in roots:
+        for target in (os.path.normpath(root), os.path.realpath(root)):
+            if real == target or real.startswith(target + os.sep):
+                return True
+            if recursive and (target == real or target.startswith(real.rstrip(os.sep) + os.sep)):
+                return True
+    return False
+
+
+def private_file_read(tool, inp, cwd=None):
+    """Check only file-tool scope; a search for a path string in source is free."""
+    if tool == "Read":
+        return private_file_path(inp.get("file_path"), cwd)
+    scope = inp.get("path") or cwd or os.getcwd()
+    if tool == "Glob":
+        pattern = inp.get("pattern") or "*"
+        return private_file_path(pattern, os.path.join(cwd or os.getcwd(), os.path.expanduser(scope)), recursive=True)
+    return private_file_path(scope, cwd, recursive=True)
 
 
 def _shell_texts(cmd, depth=0):

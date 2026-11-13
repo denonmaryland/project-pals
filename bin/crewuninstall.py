@@ -295,6 +295,11 @@ def purge_notify(run):
                 run.remove(p, "a phone-alert credential, queue or lock file")
     if not run.dry and not any(folder.iterdir()):
         folder.rmdir()
+        # Shared with helper keys: remove only when empty, never recursively.
+        try:
+            folder.parent.rmdir()
+        except OSError:
+            pass
 
 
 def typed_ok(purge):

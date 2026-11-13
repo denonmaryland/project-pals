@@ -189,6 +189,12 @@ def pre_tool_use(event):
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                  "permissionDecisionReason": why[0].upper() + why[1:]}}))
         return
+    if tool in ("Read", "Grep", "Glob"):
+        import crewguard
+        if crewguard.private_file_read(tool, inp, event.get("cwd")) and crew_bot():
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                "permissionDecisionReason": "Project Pals: private phone-alert and helper credentials aren't a pal's to read or search. Ask the owner instead."}}))
+        return
     if tool == "Bash":
         cmd = inp.get("command") or ""
     elif tool in EDIT_TOOLS:
@@ -198,7 +204,10 @@ def pre_tool_use(event):
         path = inp.get("file_path") or inp.get("notebook_path") or ""
         import crewguard
         # (… and of trusted helpers' keys or the list of who's trusted: T116.)
-        if crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper"}) \
+        if crewguard.private_file_path(path, event.get("cwd")):
+            path = os.path.realpath(os.path.join(event.get("cwd") or os.getcwd(), os.path.expanduser(path)))
+            cmd = f"edit {path}"
+        elif crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper"}) \
                 or crewguard.in_helper_keys(path):   # not mods/crew-desk, mods/crew-helpers (T68)
             cmd = f"edit {path}"
         elif os.path.basename(path) in AGENT_FILES:

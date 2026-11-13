@@ -32,9 +32,11 @@ class Notify(unittest.TestCase):
         self.crypto = patch.object(n, "_crypt", return_value=None)
         self.crypto.start()
         self.sent = []
+        self.reports = []
         self.outcome = "sent"
         self.worker = n.Worker(self.data, self.directory, sender=self.sender,
-                               clock=lambda: self.now, jitter=lambda a, b: 1)
+                               clock=lambda: self.now, jitter=lambda a, b: 1,
+                               reporter=lambda data, outcome: self.reports.append((data, outcome)))
 
     def tearDown(self):
         self.crypto.stop()
@@ -107,6 +109,42 @@ class Notify(unittest.TestCase):
             self.assertEqual(n._credentials(self.directory)["key"], "secret")
         self.crypto.start()
 
+    def test_plain_consent_refused_when_sealing_works(self):
+        def crypt(mode, raw):
+            return b"sealed:" + raw if mode == "encrypt" else raw.removeprefix(b"sealed:")
+        with patch.object(n, "_crypt", side_effect=crypt), patch.object(n.shutil, "which", return_value="systemd-creds"):
+            with self.assertRaisesRegex(n.NotifyError, "without --allow-plain"):
+                self.configure()
+        self.assertFalse(self.directory.exists())
+
+    def test_idle_ticks_do_not_reparse_or_rewrite_state(self):
+        self.configure()
+        self.enable()
+        with patch.object(n, "collect_events", wraps=n.collect_events) as scan, \
+                patch.object(n, "_write", wraps=n._write) as write:
+            for _ in range(5):
+                self.worker.step()
+                self.now += n.INTERVAL
+            self.assertEqual(scan.call_count, 1)
+            write.assert_not_called()
+            self.worker.step()  # Refresh ages even when mtimes stay unchanged.
+            self.assertEqual(scan.call_count, 2)
+            write.assert_not_called()
+            self.new()
+            self.worker.step()  # A changed source invalidates the cache immediately.
+            self.assertEqual(scan.call_count, 3)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_source_cache_tracks_in_place_edits_and_added_removed_files(self):
+        self.put("crew-approvals/a-abcdef.json", {"id": "a-abcdef", "status": "pending", "at": self.now*1000})
+        self.assertEqual(len(self.worker.scan()), 1)
+        p = self.put("crew-approvals/a-abcdef.json", {"id": "a-abcdef", "status": "approved", "at": self.now*1000})
+        self.assertEqual(self.worker.scan(), [])
+        p.unlink()
+        self.assertEqual(self.worker.scan(), [])
+        self.put("crew-approvals/a-123456.json", {"id": "a-123456", "status": "pending", "at": self.now*1000})
+        self.assertEqual(self.worker.scan()[0]["id"], "a-123456")
+
     def test_rejects_bad_credentials_with_generic_errors(self):
         for url, key in (("http://secret.invalid", "secret"), ("https://u:secret@example.invalid", "secret"),
                          ("https://example.invalid/#secret", "secret"), ("https://example.invalid:bad", "secret"),
@@ -143,6 +181,8 @@ class Notify(unittest.TestCase):
         self.assertFalse(self.state()["enabled"])
         self.assertEqual(self.state()["last_outcome"], "credentials-unavailable")
         self.assertFalse(self.sent)
+        self.assertFalse(self.state()["queue"])
+        self.assertEqual(self.reports, [(self.data, "credentials-unavailable")])
 
     def test_initial_baseline_restart_dedupe_and_off_to_on(self):
         self.home(self.event("h-111111"))
@@ -236,6 +276,31 @@ class Notify(unittest.TestCase):
         self.assertFalse(self.state()["enabled"])
         self.assertFalse(self.state()["queue"])
         self.assertEqual(self.state()["last_outcome"], "rejected")
+        self.worker.step()
+        self.assertEqual(self.reports, [(self.data, "rejected")])
+
+    def test_each_permanent_failure_reports_once(self):
+        for index, outcome in enumerate(("redirect-refused", "protocol-unconfirmed", "tls-error")):
+            with self.subTest(outcome=outcome):
+                self.configure()
+                self.enable()
+                self.new(f"h-{index:06x}")
+                self.outcome = outcome
+                self.worker.step()
+                self.worker.step()
+                self.assertEqual(self.reports[-1], (self.data, outcome))
+                self.assertFalse(self.state()["enabled"])
+        self.assertEqual(len(self.reports), 3)
+
+    def test_transient_failure_keeps_queue_and_does_not_report_disabled(self):
+        self.configure()
+        self.enable()
+        self.new()
+        self.outcome = "retry"
+        self.worker.step()
+        self.assertTrue(self.state()["enabled"])
+        self.assertEqual(self.state()["queue"][0]["next"], self.now + 2)
+        self.assertEqual(self.reports, [])
 
     def test_queue_and_seen_limits_do_not_repeat_old_items(self):
         self.configure()
@@ -264,6 +329,10 @@ class Notify(unittest.TestCase):
         self.assertEqual(len(self.sent), 1)
         self.assertEqual(len(self.state()["queue"]), 1)
         self.assertEqual(self.state()["last_outcome"], "source-unavailable")
+        with patch.object(n, "_write", wraps=n._write) as write:
+            self.now += 2
+            self.worker.step()
+            write.assert_not_called()
 
     def test_every_source_without_raw_commands_bodies_or_helper_names_in_ids(self):
         self.home(self.event(), self.event("h-123456", "login", command="NEVER LOGIN"))
@@ -297,6 +366,76 @@ class Notify(unittest.TestCase):
         self.assertFalse(self.state()["enabled"])
         self.assertFalse(self.state()["queue"])
         self.assertEqual(self.state()["last_outcome"], "disabled")
+
+    def test_decrypt_does_not_lock_controls_and_owner_change_cancels_send(self):
+        self.configure()
+        self.enable()
+        self.new()
+        started, release, changed = threading.Event(), threading.Event(), threading.Event()
+        credentials = n._credentials
+        def decrypt(folder):
+            started.set()
+            release.wait(3)
+            return credentials(folder)
+        def disable():
+            n.disable(directory=self.directory)
+            changed.set()
+        with patch.object(n, "_credentials", side_effect=decrypt):
+            thread = threading.Thread(target=self.worker.step)
+            thread.start()
+            controls = None
+            try:
+                self.assertTrue(started.wait(2))
+                controls = threading.Thread(target=disable)
+                controls.start()
+                self.assertTrue(changed.wait(1), "owner controls stalled under credential decryption")
+            finally:
+                release.set()
+                thread.join(3)
+                if controls:
+                    controls.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(self.sent)
+        self.assertEqual(self.state()["last_outcome"], "disabled")
+
+    def test_custom_data_reporter_cannot_escape_to_real_home(self):
+        import crewlib
+        import crewhome
+        with patch.object(crewhome, "add") as home, patch.object(crewlib, "feed") as feed:
+            n._report_disabled(self.data, "rejected")
+        home.assert_not_called()
+        feed.assert_not_called()
+
+    def test_auto_disable_notice_reaches_home_and_readable_cli_feed_in_sandbox(self):
+        # Fresh imports bind all stores to the same sandbox, never the real Home.
+        script = '''
+import importlib.machinery, importlib.util
+import crewnotify
+crewnotify._report_disabled(crewnotify.DATA, "rejected")
+loader = importlib.machinery.SourceFileLoader("notify_cli", str(crewnotify.Path(crewnotify.__file__).with_name("crew")))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+module = importlib.util.module_from_spec(spec)
+loader.exec_module(module)
+module.whoami = lambda spaces: (None, "Owner")
+module.cmd_feed([], True, 40)
+'''
+        home = self.base / "home"
+        home.mkdir()
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                                env={"HOME": str(home), "PATH": os.environ["PATH"],
+                                     "CREW_DATA": str(self.data), "PYTHONPATH": str(ROOT / "bin")}, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Phone alerts turned off: The receiver rejected an alert", result.stdout)
+        notice = json.loads((self.data / "crew-home/home.json").read_text())["items"][0]
+        self.assertEqual(notice["kind"], "ask")
+        self.assertEqual(notice["status"], "open")
+        self.assertEqual(notice["options"], ["Noted"])
+        self.assertNotIn("command", notice)
+        self.assertFalse(notice["by"], "a system acknowledgment must not message a pal")
+        self.assertIn("enable phone alerts", notice["body"])
+        feed = json.loads((self.data / "crew-feed.jsonl").read_text())
+        self.assertEqual(feed["status"], "disabled")
+        self.assertNotIn("example.invalid", result.stdout + json.dumps(notice) + json.dumps(feed))
 
     def test_overlapping_workers_do_not_send_twice(self):
         self.configure()
@@ -418,13 +557,21 @@ class Transport(unittest.TestCase):
         self.assertEqual(json.loads(opener.request.data), {"kind": "test", "id": "n-abcdef"})
         self.assertTrue(any(isinstance(x, n._NoRedirect) for x in build.call_args.args))
         self.assertIsNone(n._NoRedirect().redirect_request(None, None, 302, "", {}, "https://evil.invalid"))
-        for code, outcome in ((302, "redirect-refused"), (400, "rejected"), (401, "rejected"), (429, "retry"), (503, "retry")):
+        for code, outcome in ((302, "redirect-refused"), (400, "rejected"), (401, "rejected"),
+                              (408, "retry"), (425, "retry"), (429, "retry"), (500, "retry"), (503, "retry")):
             with patch.object(opener, "open", side_effect=urllib.error.HTTPError(bundle["url"], code, "SECRET", {}, io.BytesIO(b"SECRET"))), \
                     patch.object(n.urllib.request, "build_opener", return_value=opener):
                 self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), outcome)
         with patch.object(opener, "open", side_effect=urllib.error.URLError(ssl.SSLError("SECRET"))), \
                 patch.object(n.urllib.request, "build_opener", return_value=opener):
             self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), "tls-error")
+        for error in (ssl.SSLEOFError("SECRET"), ssl.SSLZeroReturnError("SECRET"),
+                      urllib.error.URLError(ssl.SSLEOFError("SECRET")),
+                      urllib.error.URLError(ssl.SSLZeroReturnError("SECRET"))):
+            with self.subTest(error=type(error).__name__), \
+                    patch.object(opener, "open", side_effect=error), \
+                    patch.object(n.urllib.request, "build_opener", return_value=opener):
+                self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), "retry")
 
 
 if __name__ == "__main__":
