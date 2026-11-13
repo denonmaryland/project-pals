@@ -513,6 +513,58 @@ class HelperKeys(unittest.TestCase):
             crewguard.POLICY.unlink(missing_ok=True)
 
 
+class TapFiles(unittest.TestCase):
+    """T147: a ticket, a hold or a tap token written by hand would be a tap nobody tapped, or one let
+    through early. A pal's writes into data/crew-taps are held like the owner's click tokens; reading
+    the holds (`pal taps`) and working on the feature's own source aren't."""
+    D = "~/.config/herdr-app/data/crew-taps"
+
+    HELD = [
+        f"echo '{{}}' > {D}/run/abababababababababababababababab.json",
+        f"cp /tmp/h.json {D}/holds/t-abc123.json",
+        f"sed -i 's/holding/running/' {D}/holds/t-abc123.json",
+        f"jq '.run_at = 0' {D}/holds/t-abc123.json > /tmp/x && mv /tmp/x {D}/holds/t-abc123.json",
+        'tee "$CREW_DATA/crew-taps/tickets/k-000000000000.json" < /tmp/t.json',
+        "edit /home/x/.config/herdr-app/data/crew-taps/holds/t-abc123.json",
+        "python3 -c \"import json; json.dump({'args': ['approve', 'a-1'], 'at': 0}, open('/d/crew-taps/run/x.json', 'w'))\"",
+        f"rm {D}/holds/t-abc123.json; cp /tmp/forged.json {D}/holds.json",
+    ]
+    FREE = [
+        "pal taps",
+        "pal taps --json",
+        f"cat {D}/holds.json",
+        f"ls {D}/holds",
+        "edit /w/bin/crewtaps.py",
+        "edit /w/tests/test_taps.py",
+        "python3 -m unittest tests.test_taps",
+        "git add bin/crewtaps.py tests/test_taps.py",
+        "grep -rn 'crew-taps' bin tests",
+    ]
+
+    def test_held(self):
+        for cmd in self.HELD:
+            self.assertEqual(rule(cmd), "tap-write", cmd)
+
+    def test_free(self):
+        for cmd in self.FREE:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_a_pal_presenting_as_a_helper_to_tap_is_held_by_the_helper_rule(self):
+        for cmd in ('pal --as-helper tap k-000000000000 Approve --relayed "yes"', "pal --as-helper taps --json",
+                    'PAL_HELPER=Pals pal tap k-000000000000 Approve --relayed "yes"', "env -u HC_TERMINAL_ID pal --as-helper tap-cancel t-abc123"):
+            self.assertEqual(rule(cmd), "helper-key", cmd)
+
+    def test_an_older_policy_gets_the_rule(self):
+        names = sorted(r["name"] for r in crewguard.DEFAULT["guarded"] if r["name"] != "tap-write")
+        old = {**crewguard.DEFAULT, "defaults_version": 16, "defaults_names": names, "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] != "tap-write"]}
+        crewguard.save_json(crewguard.POLICY, old)
+        try:
+            self.assertEqual(rule(self.HELD[0]), "tap-write")
+            self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+
 class DeskSourceIsNotDeskCards(unittest.TestCase):
     """T68 (2026-11-09, a-24cc2d, a-867e72): editing the Desk's mods in a worktree
     (mods/crew-desk/main.js) was held as "writes into the Desk's cards". Only the data folder

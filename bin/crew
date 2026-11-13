@@ -1830,7 +1830,7 @@ def cmd_desk(spaces, rest):
         to, auto = desk_to(spaces, o.get("to") or card.get("to") or "auto")
         task = None
         if card.get("track") == "yes" and to and to != OWNER:
-            task = crewtasks.add(card["title"], spaces, None, OWNER, card.get("body") or None, to, notify_assignee=False)["id"]
+            task = crewtasks.add(card["title"], spaces, None, acted(), card.get("body") or None, to, notify_assignee=False)["id"]
         from crewlib import tap_authority
         card = crewdesk.send_draft(card["id"], to, o.get("urgency"), auto, task, tap=tap_authority())
         card, t, what = crewdesk.deliver(card, spaces) if not auto else (card, None, "sorting it to a pal")

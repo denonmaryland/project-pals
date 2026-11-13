@@ -508,54 +508,88 @@ class ProposalsAndDrafts(Taps):
 
 
 class TheTapToken(Taps):
-    """What a hold runs with: good for exactly its command, once, briefly, for a hold that is running,
-    and only for the handful of commands a tap may stand in for."""
+    """What a hold runs with: good for exactly the command its hold comes to, once, briefly, for a hold
+    that is running, while that helper's tap switch is on; and for nothing but the handful of commands
+    a tap may stand in for. Each case below hand-makes a hold and a token (as a forger would) and
+    changes one thing from a combination that works."""
 
-    def token(self, args, hold_status="running", helper_="Pals", at=None):
+    def setUp(self):
+        super().setUp()
+        self.switch("home")
+        self.iid = self.ask()
+        self.args = ["home", "answer", self.iid, "Recessed"]
+
+    def token(self, args=None, hold_status="running", helper_="Pals", at=None, choice="Recessed", item=None, cls="home"):
         d = self.dir
         (d / "run").mkdir(parents=True, exist_ok=True)
         (d / "holds").mkdir(parents=True, exist_ok=True)
-        (d / "holds" / "t-abc123.json").write_text(json.dumps({"id": "t-abc123", "helper": helper_, "kind": "home", "item": "h-000000", "cls": "home",
-                                                              "choice": "A", "relayed": "x", "status": hold_status, "at": 1, "run_at": 1}))
+        (d / "holds" / "t-abc123.json").write_text(json.dumps({"id": "t-abc123", "helper": helper_, "kind": "home", "item": item or self.iid, "cls": cls,
+                                                              "choice": choice, "relayed": "x", "status": hold_status, "at": 1, "run_at": 1}))
         nonce = "ab" * 16
-        (d / "run" / f"{nonce}.json").write_text(json.dumps({"args": list(args), "at": int(time.time() * 1000) if at is None else at,
+        (d / "run" / f"{nonce}.json").write_text(json.dumps({"args": list(args or self.args), "at": int(time.time() * 1000) if at is None else at,
                                                              "hold": "t-abc123", "helper": "Pals", "relayed": "x"}))
         return nonce
 
-    def test_a_tap_token_is_never_good_for_anything_but_what_a_tap_may_do(self):
+    def test_the_combination_that_works_and_says_it_was_a_tap(self):
+        r = pal(self.env, *self.args, "--tap", self.token())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        x = self.home()[0]
+        self.assertEqual((x["answer"], x["closed_by"], x["tapped"]["by"]), ("Recessed", f"Pals (tapped, relayed from {OWNER})", "Pals"))
+
+    def test_with_the_tap_switch_off_a_token_opens_nothing(self):
+        """Taps are off by default: until the owner turns one on, this door doesn't exist at all."""
+        self.switch("home", "off")
+        self.assertNotEqual(pal(self.env, *self.args, "--tap", self.token()).returncode, 0)
+        self.switch("home")
+        owner(self.env, self.data, "settings", "trust-helper", "Pals", "off")
+        self.assertNotEqual(pal(self.env, *self.args, "--tap", self.token()).returncode, 0, "nor with the helper switched off")
+        self.assertEqual(self.home()[0]["status"], "open")
+
+    def test_a_tap_token_is_never_good_for_anything_but_what_its_hold_comes_to(self):
         before = (self.data / "crew-settings.json").read_text()
         for args in (["settings", "owner", "Mallory"], ["settings", "trust-helper", "Wabi", "on"], ["settings", "trust-helper", "Pals", "taps", "outward", "on"],
                      ["settings", "trust-helper", "Pals", "rotate"], ["home", "seen"], ["taps", "now", "t-abc123"], ["taps", "stop", "t-abc123"],
                      ["update", "apply"], ["renamed", "Worker", "Mallory"], ["mission", "set", "--pal", "Worker", "--file", "/dev/null"],
-                     ["desk", "confirm", "c-000000"], ["desk", "urgency", "c-000000", "now"], ["land", "Worker#general"]):
+                     ["desk", "confirm", "c-000000"], ["desk", "urgency", "c-000000", "now"], ["land", "Worker#general"],
+                     ["approve", "a-000000"], ["home", "answer", self.iid, "Flat"]):
             r = pal(self.env, *args, "--tap", self.token(args))
             self.assertNotEqual(r.returncode, 0, args)
         self.assertEqual((self.data / "crew-settings.json").read_text(), before)
-        self.assertEqual([h["name"] for h in json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"]], ["Pals"])
-
-    def test_a_tap_token_is_for_its_own_command_line_once_soon_and_a_running_hold(self):
-        iid = self.ask()
-        args = ["home", "answer", iid, "Recessed"]
-        cases = {"another choice": (["home", "answer", iid, "Flat"], {}),
-                 "an old token": (args, {"at": int(time.time() * 1000) - 200 * 1000}),
-                 "a hold that isn't running": (args, {"hold_status": "stopped"}),
-                 "a hold that's still waiting": (args, {"hold_status": "holding"}),
-                 "another helper's hold": (args, {"helper_": "Wabi"})}
-        for what, (written_for, kw) in cases.items():
-            nonce = self.token(written_for, **kw)
-            self.assertNotEqual(pal(self.env, *args, "--tap", nonce).returncode, 0, what)
-            self.assertFalse((self.dir / "run" / f"{nonce}.json").exists(), "used up either way")
+        sw = json.loads(pal(self.env, "helpers", "--json").stdout)["helpers"]
+        self.assertEqual(([h["name"] for h in sw], sw[0]["taps"]["outward"]), (["Pals"], False))
         self.assertEqual(self.home()[0]["status"], "open")
-        self.assertNotEqual(pal(self.env, *args, "--tap", "zz" * 16).returncode, 0)
-        self.assertNotEqual(pal(self.env, *args, "--tap", "../" + "ab" * 15).returncode, 0)
-        # Presented by a helper, a token is nothing: a helper is never an owner decision.
-        nonce = self.token(args)
-        self.assertNotEqual(helper(self.env, *args, "--tap", nonce).returncode, 0)
-        self.assertNotEqual(helper(self.env, "--as-helper", *args, "--tap", self.token(args), name="").returncode, 0)
+        code = ("import crewtaps\nprint(json.dumps([list(p) for p in crewtaps.TAPPABLE]))")
+        self.assertEqual(py(self.env, code), [["home", "answer"], ["approve"], ["deny"], ["proposal", "accept"], ["proposal", "decline"], ["desk", "send-draft"]])
+
+    def test_one_thing_wrong_and_it_isnt_good(self):
+        cases = {"written for another choice than its hold's": dict(args=["home", "answer", self.iid, "Flat"]),
+                 "the hold says another choice": dict(choice="Flat"),
+                 "an old token": dict(at=int(time.time() * 1000) - 200 * 1000),
+                 "a hold that isn't running": dict(hold_status="stopped"),
+                 "a hold that's still waiting": dict(hold_status="holding"),
+                 "another helper's hold": dict(helper_="Wabi"),
+                 "a class whose switch is off": dict(cls="outward"),
+                 "a class that doesn't exist": dict(cls="everything")}
+        for what, kw in cases.items():
+            nonce = self.token(**kw)
+            self.assertNotEqual(pal(self.env, *self.args, "--tap", nonce).returncode, 0, what)
+            self.assertFalse((self.dir / "run" / f"{nonce}.json").exists(), "used up either way")
+        self.assertNotEqual(pal(self.env, *self.args, "--tap", "zz" * 16).returncode, 0)
+        self.assertNotEqual(pal(self.env, *self.args, "--tap", "../" + "ab" * 15).returncode, 0)
+        self.assertEqual(self.home()[0]["status"], "open")
+        # Used once: the same token a second time is nothing.
+        nonce = self.token()
+        self.assertEqual(pal(self.env, *self.args, "--tap", nonce).returncode, 0)
+        self.assertNotEqual(pal(self.env, *self.args, "--tap", nonce).returncode, 0)
+
+    def test_presented_by_a_helper_or_beside_a_click(self):
+        # Presented by a helper, a token is nothing: a run that says it's a helper is never an owner decision.
+        self.assertNotEqual(helper(self.env, *self.args, "--tap", self.token()).returncode, 0)
+        self.assertNotEqual(helper(self.env, "--as-helper", *self.args, "--tap", self.token(), name="").returncode, 0)
         self.assertEqual(self.home()[0]["status"], "open")
         # A click and a tap token together: the click is what counts, and it's the owner's.
         from test_desk import click
-        r = pal(self.env, *args, "--click", click(self.data, args), "--tap", self.token(args))
+        r = pal(self.env, *self.args, "--click", click(self.data, self.args), "--tap", self.token())
         self.assertEqual(r.returncode, 0, r.stderr)
         x = self.home()[0]
         self.assertEqual((x["closed_by"], x.get("tapped")), (OWNER, None))

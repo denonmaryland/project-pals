@@ -521,4 +521,12 @@ def take_run_token(argv, nonce):
     h = load_json(HOLDS / f"{tok.get('hold')}.json", None)
     if not isinstance(h, dict) or h.get("status") != "running" or h.get("helper") != tok.get("helper"):
         return None
+    # The token is only as good as the tap behind it: that helper is on with this class of tap
+    # switched on (so with taps off, the default, a tap token opens nothing at all), and the command
+    # is the one this hold's item and choice come to, not merely the one the token file names.
+    try:
+        if h.get("cls") not in CLASSES or _may(h["helper"], h["cls"]) or list(argv) != _args(h):
+            return None
+    except (TapError, KeyError):
+        return None
     return {"helper": h["helper"], "relayed": h.get("relayed") or "", "hold": h["id"], "label": label(h["helper"])}
