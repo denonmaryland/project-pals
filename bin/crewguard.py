@@ -1502,10 +1502,20 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     return r
 
 
-def recently_used(terminal, rule, seconds=120):
-    """Did the owner's approval of a `rule` command from this terminal just go through?"""
+def recently_used(terminal, rule, seconds=120, words=None):
+    """Did the owner's approval of a `rule` command from this terminal just go through? With `words`
+    (["land", "P#t", "--onto", "x"]): only an approval whose command ran exactly that pal subcommand
+    (Codex T180: one approval for `pal land P#t` must not cover `pal land P#t --onto other`)."""
+    def same(cmd):
+        if words is None:
+            return True
+        for seg in commands(cmd or ""):
+            w = normal_words(seg)
+            if len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words):
+                return True
+        return False
     return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
-               and now_ms() - r.get("used", 0) < seconds * 1000 for r in all_requests())
+               and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command")) for r in all_requests())
 
 
 def decide(rid, approve, note=None, via=None):

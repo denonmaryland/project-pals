@@ -208,5 +208,128 @@ class LandBase(unittest.TestCase):
         self.assertEqual(wt["base"], "trunk")
 
 
+    # ── Codex T180 ───────────────────────────────────────────────────────────────────────────
+    def legacy(self, base="crew/parked"):
+        """A topic recorded the old way: cut from crew/parked (its unlanded commit p inside), base not named."""
+        wt = self.topic("x", base)
+        self.commit_in(wt, "x")
+        doc = json.loads((self.app / "shared.json").read_text())
+        rec = doc["crew"]["bots"][0]["worktrees"]["#x"]
+        for k in ("base_named", "cut", "primary"):
+            rec.pop(k, None)
+        (self.app / "shared.json").write_text(json.dumps(doc))
+        return wt
+
+    def as_pal(self):
+        self.env["HC_TERMINAL_ID"] = "test-bot"
+        (self.t / "shims" / "hc").write_text('#!/bin/sh\ncase "$1" in\nget) echo \'{"labels":{"herdr.space":"s1"}}\';;\n'
+                                             'ls) echo \'{"terminals":[]}\';;\n*) exit 1;;\nesac\n')
+
+    def approve_all_pending(self):
+        term = self.env.pop("HC_TERMINAL_ID", None)
+        for f in (self.data / "crew-approvals").glob("*.json"):
+            req = json.loads(f.read_text())
+            if req.get("status") == "pending":
+                r = self.pal("approve", req["id"], click=True)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        if term:
+            self.env["HC_TERMINAL_ID"] = term
+
+    def test_t180_deleted_cut_branch_still_refused(self):
+        self.legacy()
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-D", "crew/parked")
+        r = self.pal("land", "Builder#x", click=True)
+        self.assertNotEqual(r.returncode, 0, "inherited unlanded work is still in the topic after its branch is deleted")
+        self.assertIn("--onto", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t180_rewound_cut_branch_still_refused(self):
+        self.legacy()
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-f", "crew/parked", "main")
+        r = self.pal("land", "Builder#x", click=True)
+        self.assertNotEqual(r.returncode, 0, "rewinding the old branch doesn't take its commit out of the topic")
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t180_new_topic_keeps_its_cut_point(self):
+        """A topic made now records the commit it was cut from; whatever later happens to that branch,
+        what it brings that isn't on the target is counted from there."""
+        wt = self.topic("y", "crew/parked")
+        self.assertEqual(wt.get("cut"), self.parked0)
+        self.commit_in(wt, "y")
+        doc = json.loads((self.app / "shared.json").read_text())
+        doc["crew"]["bots"][0]["worktrees"]["#y"].pop("base_named")
+        (self.app / "shared.json").write_text(json.dumps(doc))
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-D", "crew/parked")
+        r = self.pal("land", "Builder#y", click=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("1 commit", r.stdout + r.stderr)
+
+    def test_t180_a_legacy_topic_cut_from_main_still_lands(self):
+        wt = self.legacy("main")
+        r = self.pal("land", "Builder#x", click=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git("ls-tree", "--name-only", "main").split(), ["a", "x"])
+
+    def test_t180_a_sole_trunk_is_landed_on_after_topics_exist(self):
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-D", "crew/parked")
+        self.git("branch", "-m", "main", "trunk")
+        wt = self.topic("x")
+        self.assertEqual(wt["base"], "trunk")
+        self.commit_in(wt, "x")
+        r = self.pal("diff", "Builder#x", "--json")
+        self.assertEqual(json.loads(r.stdout)["base"], "trunk", "Review agrees")
+        r = self.pal("land", "Builder#x", click=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("landed crew/x on trunk", r.stdout)
+        # And a record from before this (no primary on it) gets the same answer.
+        doc = json.loads((self.app / "shared.json").read_text())
+        doc["crew"]["bots"][0]["worktrees"]["#x"].pop("primary", None)
+        (self.app / "shared.json").write_text(json.dumps(doc))
+        self.assertEqual(json.loads(self.pal("diff", "Builder#x", "--json").stdout)["base"], "trunk")
+
+    def test_t180_an_approval_is_for_its_exact_target(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "x")
+        self.as_pal()
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0)
+        reqs = [json.loads(f.read_text()) for f in (self.data / "crew-approvals").glob("*.json")]
+        self.assertEqual([q["command"] for q in reqs], ["pal land Builder#x"])
+        self.approve_all_pending()
+        r = self.pal("land", "Builder#x", "--onto", "crew/parked")
+        self.assertNotEqual(r.returncode, 0, "the approval was for main")
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
+        reqs = sorted((json.loads(f.read_text()) for f in (self.data / "crew-approvals").glob("*.json")), key=lambda q: q["at"])
+        self.assertEqual(reqs[-1]["command"], "pal land Builder#x --onto crew/parked", "the new request names the target")
+        # The approved one still goes through, once, to main.
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
+        self.assertNotEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t180_the_hooks_approval_counts_only_for_that_command(self):
+        """The Claude Code hook holds the line as typed and lets it through once (status used); land's
+        own check then takes that as approval only when it was for the same land."""
+        wt = self.topic("x")
+        self.commit_in(wt, "x")
+        self.as_pal()
+        sys.path.insert(0, str(BIN))
+        approvals = self.data / "crew-approvals"
+        approvals.mkdir(parents=True, exist_ok=True)
+        now = int(time.time() * 1000)
+        (approvals / "a-hook01.json").write_text(json.dumps({"id": "a-hook01", "terminal": "test-bot", "rule": "land", "status": "used",
+                                                             "used": now, "at": now, "command": "cd /x && pal land Builder#x"}))
+        r = self.pal("land", "Builder#x", "--onto", "crew/parked")
+        self.assertNotEqual(r.returncode, 0, "used for 'pal land Builder#x', not for --onto crew/parked")
+        self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

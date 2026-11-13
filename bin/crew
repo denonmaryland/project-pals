@@ -748,7 +748,8 @@ def make_worktree(space, name, base=None):
     # 10 topics were cut from crew/pet-facelift because the folder was parked on it, and one landed
     # there). A base named with --base is kept, and recorded as named.
     named = bool(base)
-    base = base or main_branch(repo)
+    primary = main_branch(repo)
+    base = base or primary
     branch = f"crew/{slug(name)}"
     existing = git(repo, "branch", "--list", branch)
     n = 2
@@ -758,8 +759,14 @@ def make_worktree(space, name, base=None):
         n += 1
     path = WORKTREES / slug(space["name"]) / branch.split("/", 1)[1]
     path.parent.mkdir(parents=True, exist_ok=True)
-    git(repo, "worktree", "add", "-b", branch, str(path), base)
-    return {"path": str(path), "branch": branch, "base": base, "repo": repo, **({"base_named": True} if named else {})}
+    cut = git(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
+    git(repo, "worktree", "add", "-b", branch, str(path), cut)
+    # primary: the project's main branch as resolved now, so landing resolves it the same way later
+    # (a repo whose only branch was trunk has crew/* branches beside it by then). cut: the commit the
+    # topic started from, so what it carries that isn't on the target is counted from there, whatever
+    # later happens to the branch it was cut from (Codex T180).
+    return {"path": str(path), "branch": branch, "base": base, "repo": repo, "primary": primary, "cut": cut,
+            **({"base_named": True} if named else {})}
 
 
 def main_branch(repo):
@@ -773,7 +780,9 @@ def main_branch(repo):
     for b in ("main", "master"):
         if git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{b}", check=False):
             return b
-    heads = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads", check=False).split()
+    # The one branch that isn't a topic's (crew/*): a repo whose trunk is called trunk.
+    heads = [h for h in git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads", check=False).split()
+             if not h.startswith("crew/")]
     if len(heads) == 1:
         return heads[0]
     raise CrewError(f"{repo} has no main or master branch to land on; say which with --onto")
@@ -783,7 +792,12 @@ def land_target(wt):
     """Where a topic lands: the base it was made with when that was named (--base), else the project's
     main branch. A base that's only on record because the project folder had it checked out when the
     topic was made (before T177) isn't one: those topics land on main."""
-    return wt["base"] if wt.get("base_named") else main_branch(wt["repo"])
+    if wt.get("base_named"):
+        return wt["base"]
+    p = wt.get("primary")
+    if p and git(wt["repo"], "rev-parse", "-q", "--verify", f"refs/heads/{p}", check=False):
+        return p
+    return main_branch(wt["repo"])
 
 
 def worktree_of(space, tab):
@@ -849,9 +863,13 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
     # terminal ID isn't the owner (Grok review H1).
     if ME and is_bot_terminal(ME):
-        if not crewguard.recently_used(ME, "land"):
+        # The approval is for this exact land: its topic and any --onto / --at / --check (Codex T180:
+        # an approved `pal land P#t` went through again with --onto another branch).
+        words = ["land", spec] + [x for k, v in (("--check", check), ("--at", at), ("--onto", onto)) if v for x in (k, v)]
+        line = "pal " + " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
+        if not crewguard.recently_used(ME, "land", words=words):
             s, t = where_of(ME, spaces)
-            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", f"pal land {spec}")
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", line)
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
     else:
@@ -865,16 +883,25 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
     target = onto or land_target(wt)
     if not git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{target}", check=False):
         die(f"{repo} has no branch {target}; nothing changed")
-    # Cut from another branch that isn't on the target yet (another topic's unlanded work, or what
-    # the folder had out when this topic was made): those commits would land too. Only on purpose.
-    cut = wt.get("base")
-    if not onto and cut and cut != target and git(repo, "rev-parse", "-q", "--verify", f"refs/heads/{cut}", check=False):
-        mb = git(repo, "merge-base", f"refs/heads/{cut}", f"refs/heads/{wt['branch']}", check=False)
-        extra = git(repo, "rev-list", "--count", f"refs/heads/{target}..{mb}", check=False) if mb else "0"
-        if extra.isdigit() and int(extra) > 0:
-            die(f"{wt['branch']} was cut from {cut}, which has {extra} commit{'s' if extra != '1' else ''} not on {target}; "
-                f"landing it on {target} would bring those too. Land {cut} first, or on purpose: "
-                f"pal land {space['name']}#{chan(tab)} --onto {target} (or --onto {cut}). Nothing changed.")
+    # What the topic carries that isn't its own and isn't on the target yet (another topic's unlanded
+    # work, or what the folder had out when it was made): those commits would land too. Counted from
+    # the commit it was cut from, recorded when it was made, never from where that branch is now
+    # (Codex T180: deleting or rewinding it hid them). A topic recorded before that, cut from
+    # anything but the target, has no known starting point: it needs the owner to name the target.
+    if not onto:
+        cut = wt.get("cut")
+        if cut and git(repo, "cat-file", "-e", f"{cut}^{{commit}}", check=False) is not None \
+                and git(repo, "rev-parse", "-q", "--verify", f"{cut}^{{commit}}", check=False):
+            extra = git(repo, "rev-list", "--count", f"refs/heads/{target}..{cut}", check=False)
+            if extra.isdigit() and int(extra) > 0:
+                die(f"{wt['branch']} was cut from {wt.get('base')} at {cut[:7]}, which brings {extra} commit{'s' if extra != '1' else ''} "
+                    f"not on {target}; landing it would bring those too. Land {wt.get('base')} first, or on purpose: "
+                    f"pal land {space['name']}#{chan(tab)} --onto {target}. Nothing changed.")
+        elif wt.get("base") and wt["base"] != target:
+            die(f"{wt['branch']} was made from {wt['base']} (before Project Pals recorded where a topic starts), so what "
+                f"else it would bring onto {target} can't be told apart from its own work. Look at it in Review (it shows "
+                f"everything that would land), then land on purpose: pal land {space['name']}#{chan(tab)} --onto {target}. "
+                f"Nothing changed.")
     wt = {**wt, "base": target}
     msg = f"Land {wt['branch']} ({space['name']} #{chan(tab)})"
     # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
