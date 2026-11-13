@@ -576,7 +576,15 @@ def verify(name, key_file=None):
     """(the helper's name, its key's short fingerprint) when `name` may speak in the owner's name right
     now; else raise HelperError saying why. No side effects (but for carrying an older build's helper over, once)."""
     _ready()
-    h = _load()
+    # _ready tolerates recovery I/O failures so status screens can still explain the damage.
+    # Its display fallback may predate an older build's Off; only a recovered primary list
+    # can authorize messages. Refuse before reading any credential.
+    hs = _helpers_in(FILE)
+    if hs is None and not FILE.exists() and not BACKUP.exists():
+        hs = {}   # never configured: retain the ordinary missing-helper refusal
+    if hs is None:
+        raise HelperError("the helper list could not be recovered; no helper authority is available")
+    h = {"helpers": {n: e for n, e in hs.items() if isinstance(e, dict)}}
     known = canonical(name, h)
     if not known:
         raise HelperError(f"there's no helper called {name}")
