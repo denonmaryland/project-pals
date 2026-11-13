@@ -19,9 +19,11 @@ class Followups(Taps):
 import crewtaps, crewguard
 groups = [crewtaps.LOCAL_RULES, getattr(crewtaps, 'OUTWARD_RULES', set()), crewtaps.NEVER_RULES]
 print(json.dumps({'unknown': [crewtaps.rule_class(r) for r in ('notify-key', 'future-rule', None)],
+                  'nested_cwd': crewtaps.rule_class('nested-cwd'),
                   'membership': {r['name']: sum(r['name'] in g for g in groups) for r in crewguard.DEFAULT['guarded']}}))
 ''')
         self.assertEqual(result["unknown"], ["never"] * 3)
+        self.assertEqual(result["nested_cwd"], "never")
         self.assertTrue(all(n == 1 for n in result["membership"].values()), result["membership"])
 
     def test_unknown_approval_has_no_ticket_even_with_outward_on(self):
