@@ -298,14 +298,14 @@ class LandBase(unittest.TestCase):
         r = self.pal("land", "Builder#x")
         self.assertNotEqual(r.returncode, 0)
         reqs = [json.loads(f.read_text()) for f in (self.data / "crew-approvals").glob("*.json")]
-        self.assertEqual([q["command"] for q in reqs], ["pal land Builder#x"])
+        self.assertEqual([q["command"].split("  #")[0] for q in reqs], ["pal land Builder#x"])
         self.approve_all_pending()
         r = self.pal("land", "Builder#x", "--onto", "crew/parked")
         self.assertNotEqual(r.returncode, 0, "the approval was for main")
         self.assertIn("held", r.stdout + r.stderr)
         self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
         reqs = sorted((json.loads(f.read_text()) for f in (self.data / "crew-approvals").glob("*.json")), key=lambda q: q["at"])
-        self.assertEqual(reqs[-1]["command"], "pal land Builder#x --onto crew/parked", "the new request names the target")
+        self.assertEqual(reqs[-1]["command"].split("  #")[0], "pal land Builder#x --onto crew/parked", "the new request names the target")
         # The approved one still goes through, once, to main.
         r = self.pal("land", "Builder#x")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -346,6 +346,53 @@ class LandBase(unittest.TestCase):
         r = self.pal("land", "Builder#x", click=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("landed crew/x on trunk", r.stdout)
+
+
+    # ── T206 (#codex-sol T203, repro-t199-land-handoff) ───────────────────────────────────────
+    def test_t206_one_approval_lands_once(self):
+        """A land the owner approved went through, and a second land of a newer commit went through on
+        the same approval for two minutes, also after the seat was handed to another brain."""
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.approve_all_pending()
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = self.git("rev-parse", "main")
+        self.commit_in(wt, "second")
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0, "a second land needs a second yes")
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), first)
+
+    def test_t206_a_handoff_voids_an_approval_the_gate_just_let_through(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        approvals = self.data / "crew-approvals"
+        approvals.mkdir(parents=True, exist_ok=True)
+        now = int(time.time() * 1000)
+        (approvals / "a-hook02.json").write_text(json.dumps({"id": "a-hook02", "terminal": "test-bot", "rule": "land", "status": "used",
+                                                             "used": now, "at": now, "command": "pal land Builder#x"}))
+        code = f"import sys; sys.path.insert(0, {str(BIN)!r}); import crewhandoff; print(crewhandoff.void_approvals('test-bot'))"
+        r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0, "the brain that was approved isn't the one in the seat now")
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t206_an_approval_is_for_the_commit_it_was_asked_for(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.approve_all_pending()
+        self.commit_in(wt, "not-looked-at")   # a commit made after the owner said yes
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
 
 
 if __name__ == "__main__":

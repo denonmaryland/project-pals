@@ -886,7 +886,14 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
         line = "pal " + " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
         if not crewguard.recently_used(ME, "land", words=words):
             s, t = where_of(ME, spaces)
-            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", line)
+            # The approval is for the commit the topic is at now (T206): one made after the owner said
+            # yes asks again. Shown in the Inbox after the command.
+            try:
+                tip = git(worktree_of(space, tab)["path"], "rev-parse", "--short=12", "HEAD")
+            except CrewError:
+                tip = ""
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?",
+                                   line + (f"  # at {tip}" if tip else ""), claim=True)
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
     else:

@@ -1470,8 +1470,10 @@ def expire_stale():
             feed("approval", id=r["id"], bot=r.get("bot"), channel=r.get("channel"), status="expired")
 
 
-def check(terminal, bot, channel, cmd, extra=None):
-    """None: go ahead. Else the reason it's held."""
+def check(terminal, bot, channel, cmd, extra=None, claim=False):
+    """None: go ahead. Else the reason it's held. claim: the caller is the program itself (pal land's
+    own check), so the approval it uses is spent for good; the hook's use leaves it for the program it
+    let through to claim once (recently_used)."""
     if bot in policy().get("trusted", []):
         return None
     rule = matches(cmd)
@@ -1485,6 +1487,8 @@ def check(terminal, bot, channel, cmd, extra=None):
                 continue
             if r["status"] == "approved":
                 r["status"], r["used"] = "used", now_ms()
+                if claim:
+                    r["claimed"] = r["used"]
                 save_json(APPROVALS / f"{r['id']}.json", r)
                 return None
             if r["status"] == "pending":
@@ -1509,7 +1513,10 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     named = next((r for r in policy().get("guarded", []) if r.get("name") == rule), None)
     if not named:
         raise CrewError(f"no guarded rule called {rule}")
-    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule)):
+    # A pal whose run the hook held and the owner approved isn't asked twice: only when what the hook
+    # let through was this very line, and only once (T206: any release from that terminal went through
+    # for two minutes on one approval, other versions and notes included).
+    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule, words=normal_words(cmd))):
         return None
     k = key(terminal, f"{rule}\n{cmd}")
     with locked("approvals"):
@@ -1519,6 +1526,7 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
                 continue
             if r["status"] == "approved":
                 r["status"], r["used"] = "used", now_ms()
+                r["claimed"] = r["used"]   # spent here: nothing else may count it again
                 save_json(APPROVALS / f"{r['id']}.json", r)
                 return None
             if r["status"] == "pending":
@@ -1530,20 +1538,40 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     return r
 
 
-def recently_used(terminal, rule, seconds=120, words=None):
-    """Did the owner's approval of a `rule` command from this terminal just go through? With `words`
-    (["land", "P#t", "--onto", "x"]): only an approval whose command ran exactly that pal subcommand
-    (Codex T180: one approval for `pal land P#t` must not cover `pal land P#t --onto other`)."""
+HANDOVER_S = 120   # how long after the hook let a command through its program may claim that approval
+
+
+def recently_used(terminal, rule, seconds=HANDOVER_S, words=None):
+    """The hand-over from the gate to the program it let through (T206): the hook held a pal's command,
+    the owner approved it, the hook let it run (status used); the program then asks again itself (pal
+    land's own check, ./release's owner-step) and may count that approval, ONCE, and only when the
+    command the hook let through runs exactly `words`. Claiming it marks it, so a second run (another
+    commit, another version) asks the owner again. A program's own approvals and claimed ones never
+    count here, nor ones a handoff voided (crewhandoff.void_approvals).
+    words: ["land", "P#t", "--onto", "x"] (a pal subcommand: matched after pal / crew / botz / buddy),
+    or a whole command line's normal_words (["release", "9.9.9", "notes"]), compared word for word with
+    the line's segments (spaces inside a quoted argument count as separators: ./release passes $*)."""
+    if words is None:
+        raise CrewError("recently_used needs the exact command it may stand for")
+    want = " ".join(" ".join(words).split())
+
     def same(cmd):
-        if words is None:
-            return True
         for seg in commands(cmd or ""):
             w = normal_words(seg)
+            if " ".join(" ".join(w).split()) == want:
+                return True
             if len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words):
                 return True
         return False
-    return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
-               and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command")) for r in all_requests())
+    with locked("approvals"):
+        for r in all_requests():
+            if (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
+                    and not r.get("claimed") and r.get("asked_by") != "the program itself"
+                    and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command"))):
+                r["claimed"] = now_ms()
+                save_json(APPROVALS / f"{r['id']}.json", r)
+                return True
+    return False
 
 
 def decide(rid, approve, note=None, via=None, tap=None):

@@ -97,16 +97,34 @@ class OwnerStep(unittest.TestCase):
         self.assertEqual((a["terminal"], a["bot"], a["channel"]), ("tW", "Worker", "general"))
         # The hook held the pal's command, the owner approved, and it just went through there.
         d = self.data / "crew-approvals"
-        (d / "a-gate01.json").write_text(json.dumps({"id": "a-gate01", "key": "k", "at": int(time.time() * 1000), "terminal": "tH", "bot": "Helper",
-                                                    "channel": "build", "command": "cd x && ./release 9.9.9 notes", "rule": "release-script",
-                                                    "status": "used", "used": int(time.time() * 1000)}))
-        self.assertEqual(self.step(term="tH").returncode, 0)
+        def gate(rid, command, used_ago=0):
+            (d / f"{rid}.json").write_text(json.dumps({"id": rid, "key": rid, "at": int(time.time() * 1000), "terminal": "tH", "bot": "Helper",
+                                                       "channel": "build", "command": command, "rule": "release-script",
+                                                       "status": "used", "used": int(time.time() * 1000) - used_ago}))
+        gate("a-gate01", 'cd x && ./release 9.9.9 "what changed"')
         self.assertEqual(self.step(term="tD").returncode, 3, "another terminal's approval isn't this one's")
-        # … but not long after, and not for another rule.
-        rec = json.loads((d / "a-gate01.json").read_text())
-        rec["used"] -= 10 * 60 * 1000
-        (d / "a-gate01.json").write_text(json.dumps(rec))
+        self.assertEqual(self.step(term="tH").returncode, 0)
+        # Once (T206: it was good for any release from that terminal for two minutes).
+        self.assertEqual(self.step(term="tH").returncode, 3, "the gate's approval is used up by the run it let through")
+        # Only for the line the owner approved there, not another version or other notes.
+        gate("a-gate02", "./release 9.9.9 notes")
         self.assertEqual(self.step(term="tH").returncode, 3)
+        self.assertEqual(self.step("./release", "9.9.10", "what", "changed", term="tH").returncode, 3)
+        # … and not long after.
+        gate("a-gate03", "./release 9.9.9 what changed", used_ago=10 * 60 * 1000)
+        self.assertEqual(self.step(term="tH").returncode, 3)
+
+    def test_the_owners_approval_is_one_run_of_one_line(self):
+        """T206 (#codex-sol, repro-t199-owner-step): after one approved run, a pal's terminal released
+        other versions with other notes for two minutes, on the strength of that one approval."""
+        self.assertEqual(self.step(term="tW").returncode, 3)
+        a = requests(self.data)[0]
+        self.assertEqual(owner(self.env, self.data, "approve", a["id"], "--inbox").returncode, 0)
+        self.assertEqual(self.step(term="tW").returncode, 0)
+        for version in ("9.9.10", "9.9.11"):
+            self.assertEqual(self.step("./release", version, "different", "notes", term="tW").returncode, 3, version)
+        self.assertEqual(self.step(term="tW").returncode, 3, "nor the same line again")
+        self.assertEqual([r["status"] for r in requests(self.data)], ["used", "pending", "pending", "pending"])
 
     def test_refusals(self):
         self.assertEqual(self.step(rule="no-such-rule").returncode, 1)
