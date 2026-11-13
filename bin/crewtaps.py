@@ -72,7 +72,7 @@ SHOWN_TEXT_MAX = 6000
 # put back. Outward is explicitly enumerated; new/custom rules stay owner-only until classified.
 LOCAL_RULES = {"agents-file", "agents-file-shell", "agents-file-interpreter"}
 OUTWARD_RULES = {"push", "publish", "release", "merge", "post", "deploy", "message", "message-api", "land", "release-script", "live-branch", "base-branch"}
-NEVER_RULES = {"helper-key", "notify-key", "owner-click", "queue-write", "desk-write", "tap-write", "uninstall", "uninstall-indirect"}
+NEVER_RULES = {"helper-key", "notify-key", "owner-click", "queue-write", "desk-write", "tap-write", "uninstall", "uninstall-indirect", "nested-cwd"}
 # The owner's commands a tap token may stand in for (crewlib.owner_gate checks the same list).
 TAPPABLE = (("home", "answer"), ("approve",), ("deny",), ("proposal", "accept"), ("proposal", "decline"), ("desk", "send-draft"))
 
