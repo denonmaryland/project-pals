@@ -413,6 +413,39 @@ class ReadSafety(unittest.TestCase):
         with mock.patch.object(crewboard.os, "getuid", lambda: me + 1):
             self.assertEqual(self.view(f)["rows"], [])
 
+    def test_a_folder_swapped_for_a_symlink_mid_open_is_never_followed(self):
+        """T195 (Codex): the parent folder is checked, then replaced by a symlink to outside the
+        root before (or while) it is opened. Neither reader may read the outside file."""
+        import crewboard
+        from unittest import mock
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "s.jsonl").write_text(bot("SYNTHETIC OUTSIDE ROOT", "2026-11-13T10:00:00.000Z") + "\n")
+        real_open = os.open
+        for reader in ("read_view", "read_line"):
+            for when in ("s.jsonl", "p"):     # swap just before the file's open, or the folder's
+                parent = self.claude / "p"
+                if parent.is_symlink():
+                    parent.unlink()
+                for x in self.claude.iterdir():
+                    if x.name.startswith("parked"):
+                        x.rename(parent) if not parent.exists() else None
+                parent.mkdir(exist_ok=True)
+                f = self.session()
+                done = []
+                def swap(path, flags, *a, **kw):
+                    if not done and os.path.basename(str(path)) == when:
+                        done.append(1)
+                        parent.rename(self.claude / f"parked-{reader}-{when}")
+                        parent.symlink_to(outside, target_is_directory=True)
+                    return real_open(path, flags, *a, **kw)
+                links = {"t1": {"terminal": "t1", "transcript": str(f), "harness": "claude"}}
+                with mock.patch.object(crewboard.os, "open", swap):
+                    out = getattr(crewboard, reader)("t1", "idle", links)
+                self.assertTrue(done, f"{reader}/{when}: the swap happened")
+                self.assertNotIn("SYNTHETIC OUTSIDE ROOT", json.dumps(out), f"{reader}/{when}")
+                parent.unlink()
+
     def test_a_fifo_never_blocks(self):
         fifo = self.claude / "p" / "pipe.jsonl"
         os.mkfifo(fifo)

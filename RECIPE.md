@@ -1559,7 +1559,8 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   1.5 MB of its session file, read-only; re-read only when the file grew (one `stat` every 5 s).
   The file must be the one this terminal's link names, under the harness's own folder
   (`~/.claude/projects`, `~/.gemini/antigravity-cli`) with no symlink below it and no `..`, a
-  regular file this user owns; it is opened non-blocking without following symlinks and read
+  regular file this user owns; each folder below the root is opened from the one above it
+  (never by full path, never through a symlink), the file non-blocking, and it is read
   with a hard byte cap from the size the open file reports. Anything else reads as nothing.
   A message a plugin handed in between turns is shown by its own header (Orca's card as Orca's).
   Ideas from Flockbook (MIT): code and table boxes, chip marks, follow the end.

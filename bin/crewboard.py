@@ -113,20 +113,31 @@ def safe_tail(path, harness, tail):
     parts = _under(root, path) if root else None
     if not parts:
         return None
-    # No symlink in any folder below the root (the root itself may be one: dotfiles setups).
-    cur = Path(root)
-    for part in parts[:-1]:
-        cur = cur / part
-        try:
-            if not statmod.S_ISDIR(os.lstat(cur).st_mode):
-                return None
-        except OSError:
-            return None
-    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    # Walk down from the root one folder at a time, each opened relative to the one above it and
+    # never through a symlink (T195, Codex): a folder checked and then swapped for a symlink can't
+    # redirect the open, because nothing is looked up by its full path again. The root itself may be
+    # a symlink (dotfiles setups); everything below it may not.
+    cloexec = getattr(os, "O_CLOEXEC", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(str(cur / parts[-1]), flags)
+        dfd = os.open(str(root), os.O_RDONLY | os.O_DIRECTORY | cloexec)
     except OSError:
         return None
+    fd = None
+    try:
+        for part in parts[:-1]:
+            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | nofollow | cloexec, dir_fd=dfd)
+            os.close(dfd)
+            dfd = nxt
+            if not statmod.S_ISDIR(os.fstat(dfd).st_mode):
+                return None
+        fd = os.open(parts[-1], os.O_RDONLY | os.O_NONBLOCK | nofollow | cloexec, dir_fd=dfd)
+    except OSError:
+        if fd is not None:
+            os.close(fd)
+        return None
+    finally:
+        os.close(dfd)
     try:
         st = os.fstat(fd)
         if not statmod.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
