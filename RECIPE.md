@@ -102,9 +102,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   AGENTS.md editor, the dashboard), the pal's Computer, the pal board and its Read mode, the
   Routines dialog, the Desk page and the room page with its composer. Git history keeps their code
   for a future app. What they showed stays on disk and in the CLI: memory, notebooks, missions,
-  tasks, Desk cards (`pal desk`), rooms (`pal-room`) and routines (`pal routine`); a pal's pages stay
-  Markdown in its memory folder's `pages/`, and `pal page` still reads and writes them (Full control
-  uses it with `--pal`). The installer sets the deleted
+  tasks, Desk cards (`pal desk`), rooms (`pal-room`) and routines (`pal routine`); pages written with
+  the removed `pal page` stay in the memory folder's `pages/`. The installer sets the deleted
   mods aside (backed up), removes `crewcomputer.py` and `crewboard.py`, and touches no data.
 - **Status → face:**
   - working: the body bobs, the eyes wander, and a symbol cycles overhead (`…✦♪?✧…!`)

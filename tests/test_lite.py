@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GONE_MODS = ["crew-palboard", "crew-computer", "crew-computer-app", "crew-profile", "crew-routines",
              "crew-desk", "crew-room", "crew-room-new", "crew-composer"]
 GONE_VIEWS = ["pal-view", "pc-view", "desk-view", "room-view", "profile", "crew-composer"]
-GONE_MODULES = ["crewboard.py", "crewcomputer.py"]
+GONE_MODULES = ["crewboard.py", "crewcomputer.py", "crewpages.py"]
 GONE_ACTIONS = ["crew-roster.profile", "crew-roster.computer", "crew-roster.board"]
 
 
@@ -59,7 +59,7 @@ class NothingPointsAtAGonePage(unittest.TestCase):
             for n in names:
                 self.assertIsNone(re.search(rf"\b{n}\b", src), f"{path.relative_to(ROOT)} still uses {n}")
         crew = (ROOT / "bin" / "crew").read_text()
-        for f in ("crewboard", "crewcomputer", "def cmd_computer"):   # pal page stays (Full control uses it)
+        for f in ("crewboard", "crewcomputer", "crewpages", "def cmd_computer", "def cmd_page"):
             self.assertNotIn(f, crew)
 
     def test_the_installer(self):

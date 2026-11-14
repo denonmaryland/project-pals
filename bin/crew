@@ -90,8 +90,6 @@ Work
   pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
             | assign T Pal | cancel T | reopen T
   pal task due T <when|none>         when: fri, tomorrow, 2026-11-14, +3d, fri 17:00 (a pal: its own tasks)
-  pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
-                                     a pal's pages (Markdown in its memory folder); a pal writes its own, Full control uses --pal P
   pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
@@ -3288,48 +3286,6 @@ def home_answer_to(spaces, x, answer, tap=None, undone=False):
     return f"told {dest} ({what}) · card {card['id']}"
 
 
-def cmd_page(spaces, rest):
-    """pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
-    A pal's freeform pages (crew-memory/<pal>/pages/*.md, bin/crewpages.py). A pal writes only its
-    own; with Full control a helper writes any (--pal); the owner edits any in that folder."""
-    import crewbrain
-    import crewpages
-    sub, args = (rest[0], rest[1:]) if rest and rest[0] in ("ls", "show", "write", "rm") else ("ls", rest)
-    if sub == "-F":
-        sub = "ls"
-    pos, o = opts(args, ("pal", "file"), ())
-    if sub == "ls":
-        _, _, name = pal_of(spaces, (pos[0] if pos else None) or o.get("pal"))
-        print("\n".join(p["name"] for p in crewpages.pages(name)) or f"(no pages for {name} yet)")
-        return
-    if not pos:
-        die(f'pal page {sub} "<title>"')
-    title = " ".join(pos)
-    if sub == "show":
-        _, _, name = pal_of(spaces, o.get("pal"))
-        path = crewpages.page_path(name, title)
-        if not path.exists():
-            die(f"{name} has no page called '{title}'")
-        print(path.read_text())
-        return
-    space, _ = my_bot(spaces)
-    if delegation_authority() and o.get("pal"):
-        space, _, _ = pal_of(spaces, o["pal"])
-    if not space:
-        die("only a pal writes pages (its own); edit any page in its memory folder's pages/")
-    path = crewpages.page_path(space["name"], title)
-    if sub == "rm":
-        if not path.exists():
-            die(f"no page called '{title}'")
-        path.unlink()
-        print(f"removed {space['name']}'s page '{title}'")
-        return
-    text = file_opt(o)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    crewbrain.write(path.parent, path.name, text if text.endswith("\n") else text + "\n")
-    print(f"wrote {space['name']}'s page '{title}' ({len(text)} characters)")
-
-
 def cmd_popout(spaces, rest):
     """pal popout: a topic's live terminal in its own desktop window (bin/crewpopout.py). Putting a
     window on the owner's desktop, pinning it or closing it is the owner's click; ls is anyone's."""
@@ -3871,8 +3827,6 @@ def main(argv):
                 print("\n".join(f"{f['show']}  ({f['name']})" for f in found) or "no project folders found in the usual places")
         else:
             print(crewwelcome.status(settings()))
-    elif cmd in ("page", "pages"):
-        cmd_page(spaces, rest)
     elif cmd == "popout":
         cmd_popout(spaces, rest)
     elif cmd == "routine":

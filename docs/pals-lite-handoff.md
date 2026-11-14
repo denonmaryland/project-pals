@@ -41,9 +41,9 @@ modules removed, Ctrl+Shift+I/Y removed, a rebound Ctrl+Shift+U kept).
 
 ## After merging main 9c2966a (Full control)
 
-`pal page` stays: Full control lets a trusted helper write a pal's pages (`--pal`), and its test
-uses it. The page helpers moved from the deleted `bin/crewcomputer.py` to `bin/crewpages.py`.
-`pal computer` is still deleted.
+`pal page` is deleted as the plan says (Orca, c-65f04e: nothing shows pages after Lite). Full
+control's page test now writes a named pal's mission (`test_full_writes_a_target_pals_mission`),
+and checks Work only can't. `pal computer` is deleted too.
 
 ## Not done on purpose
 

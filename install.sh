@@ -267,7 +267,7 @@ install -m 644 "$src"/bin/crew*.py "$HOME/.local/lib/herdr-crew/"
 # prompt card).
 rm -f "$HOME/.local/lib/herdr-crew/crewprompt.py"
 # Pals Lite (T217): the Computer's and the board's modules are gone with their pages.
-rm -f "$HOME/.local/lib/herdr-crew/crewcomputer.py" "$HOME/.local/lib/herdr-crew/crewboard.py"
+rm -f "$HOME/.local/lib/herdr-crew/crewcomputer.py" "$HOME/.local/lib/herdr-crew/crewboard.py" "$HOME/.local/lib/herdr-crew/crewpages.py"
 # crewhelper.py (singular) is the helper module of the build that went live unreviewed on 2026-11-10
 # (7692987): its check accepted a request without a key. Nothing imports it now (crewhelpers.py
 # replaced it), but a copy of the installer doesn't remove what an older one placed, so say so.

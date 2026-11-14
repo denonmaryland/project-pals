@@ -5,8 +5,8 @@
 - **Pals Lite: back to the terminal.** The app's full pages are gone, so a pal is its terminals
   again: clicking a pal opens its topic (the head pal still opens Home). Gone: the profile panel
   (Profile, the Vault, Memory, the AGENTS.md editor, the dashboard), a pal's Computer, the pal
-  board, the Routines dialog, the Desk page and the room page with its composer, and their
-  shortcuts (Ctrl+Shift+I, Y and U). What stays: Home, the Inbox and the approval gate, Tasks, the
+  board, the Routines dialog, the Desk page and the room page with its composer, their
+  shortcuts (Ctrl+Shift+I, Y and U), and the `pal computer` and `pal page` commands. What stays: Home, the Inbox and the approval gate, Tasks, the
   quick-drop, Review changes, Hire, New topic, the command bar, Look, updates and the Chief. The
   pals still use Desk cards (`pal desk`), rooms (`pal-room`) and routines (`pal routine`). Where
   things moved: a pal's proposed change to its mission or AGENTS.md opens in a small dialog that
