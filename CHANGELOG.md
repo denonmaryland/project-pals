@@ -127,6 +127,12 @@ herdr-core 0.1.20.
   shell. Now an item is taken off only by whoever put it there, the head pal, or your click, and an
   ask its asker takes back shows as Withdrawn, never as your answer.
 
+- **An approval runs exactly what was approved, once.** When you (or a Full-control helper)
+  approve a held command, that approval now covers one run of that exact command, in the same
+  folder, for the same commit when it lands one. It can't be spent on a changed release, a second
+  land, a different folder, or a seat that changed hands since; a command the gate can't read
+  plainly (a heredoc, a nested shell, a folder it would have to guess) is left for your own click.
+  (From Codex's release reviews.)
 - **Roll back puts everything back, and can't revive a helper you switched off.** Roll back now
   also restores the memory drop-in for Herdr's terminals (or removes the one the install added),
   and a failed install takes away a drop-in it added itself. A helper's backup list is only trusted
