@@ -101,6 +101,13 @@ with its unchanged pocket pets as residents, project house labels, a pale select
 hover inspection. Topics, actions and the main terminal remain. Other themes keep the existing
 look. See [Pixel Village](docs/pixel-village.md) for installation, switch-off and limitations.
 
+Nine more opt-in themes share this scene system: Tide Harbor, Amber Oasis, Neon District,
+Sakura Shrine, Mushroom Grove, Orbital Outpost, Cloud Kingdom, Cinder Forge and Harvest Hollow.
+Each has distinct pixel scenery, a matching palette, native ambient light and its own project
+wording. Pals keep the exact existing pet renderer and saved looks. Hover inspection, navigation,
+paging and local pause work in every world. Only the ten registered theme IDs enable this UI;
+Pixel Village and unrelated themes retain their previous behavior. See [Ten worlds](docs/worlds.md).
+
 ## How it behaves
 
 - **Terminal-forward** (T217; DeNon's decision h-724046, 2026-11-13): the app is terminal-forward. A pal is

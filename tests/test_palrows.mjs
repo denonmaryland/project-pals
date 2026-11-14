@@ -4,6 +4,7 @@
 // that throws fails here; `herdr-app check` only builds the empty roster, never these rows.
 // Run: node tests/test_palrows.mjs
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,7 +104,7 @@ try {
     export const run = (op, a) => { (fixtures.ran ??= []).push([op, a]); }, notify = (x) => { (fixtures.notes ??= []).push(x); }, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => fixtures.known ?? [];
   `);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+  for (const f of ["worlds.js", "crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
   copyFileSync(join(root, "mods/crew-roster/main.js"), join(dir, "roster.js"));
   copyFileSync(join(root, "mods/crew-palstyle/main.js"), join(dir, "palstyle.js"));
 
@@ -796,7 +797,7 @@ try {
     assert.ok(text({ node: chip }).includes("0 working") && chip.kids[0].node.args.bg[0] === d.lineStrong && chip.args.tooltip[0].startsWith("No agent is working"));
     fixtures.agents = keep.agents; fixtures.spaces = keep.spaces; delete fixtures.shared["crew.factories"];
     const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
-    assert.match(src, /child\("Pals"\)\)[\s\S]{0,400}\.child\(this\.workingChip\(d\)\)[\s\S]{0,600}\.child\(this\.treesToggle\(d\)\)/, "it sits in the Pals header, between the title and the buttons");
+    assert.match(src, /child\(village\?\.words.pals \?\? "Pals"\)\)[\s\S]{0,400}\.child\(this\.workingChip\(d\)\)[\s\S]{0,600}\.child\(this\.treesToggle\(d\)\)/, "it sits in the Pals header, between the title and the buttons");
   }
   // ── Pals Lite (T217): no Rooms section in the sidebar (rooms stay for the pals, by command). ──
   {
@@ -1197,6 +1198,101 @@ try {
     delete fixtures.settings;
     gpui.strictWhen(false);
   }
+
+  // Every theme uses the same navigation, inspection, page and pet pipeline.
+  {
+    const { WORLDS } = await import(url("worlds.js"));
+    const at = (tree, id) => ids(tree).find(n => n.args.id?.[0] === id);
+    const before = JSON.stringify(fixtures.shared), normal = crew.ds(t);
+    const rows = fixtures.spaces.map(space => ({space, bot: crew.botOf(space)}));
+    const savedLooks = JSON.stringify(rows.map(({bot}) => crew.petOf(bot)));
+    const asleep = [{id: "world-sleep-a", name: "Sleeper A", folder: "/demo/a"},
+      {id: "world-sleep-b", name: "Sleeper B", folder: "/demo/b"}];
+    for (const world of WORLDS) {
+      fixtures.settings = {theme: world.id};
+      assert.equal(crew.activeWorld(), world);
+      assert.equal(crew.pixelVillageOn(), world.id === "pixel-village");
+      const d = crew.ds(t), r = Object.create(Roster.prototype);
+      r.ops = roster.ops;
+      const clicked = [];
+      r.open = space => clicked.push(["open",space.id]);
+      r.wake = bot => clicked.push(["wake",bot.id]);
+      r.menu = space => clicked.push(["menu",space.id]);
+      for (const width of [180,304,440]) {
+        const art = r.villageArt(rows,t,d,width,asleep);
+        assert.equal(art.node.args.id[0],world.id);
+        assert.ok(text(art).includes(world.name));
+        assert.ok(text(art).includes(`${world.words.pals} 5 · ${world.words.projects} 5`));
+        assert.ok(at(art,"village-fire").calls.includes("loop"));
+        assert.ok(at(art,"village-scene").kids.some(k=>k.node?.arg?.endsWith(world.scene)));
+      }
+      let art = r.villageArt(rows,t,d,304,asleep);
+      const resident = at(art,`village-pal-${rows[0].space.id}`);
+      assert.ok(resident.args.tooltip[0].includes(`${world.words.relation} `));
+      assert.equal(resident.args.accessibility_label[0],resident.args.tooltip[0]);
+      resident.args.on_click[0]({}, {notify(){}});
+      resident.args.on_mouse_down[1]({}, {stop_propagation(){}});
+      assert.deepEqual(clicked,[["open",rows[0].space.id],["menu",rows[0].space.id]]);
+      at(art,"village-prev").args.on_click[0]({}, {notify(){}});
+      art = r.villageArt(rows,t,d,304,asleep);
+      const sleeping = at(art,"village-pal-sleep-world-sleep-b");
+      assert.ok(sleeping,"Prev wraps to last page");
+      sleeping.args.on_click[0]({}, {notify(){}});
+      assert.deepEqual(clicked.at(-1),["wake","world-sleep-b"]);
+      at(art,"village-next").args.on_click[0]({}, {notify(){}});
+      assert.ok(at(r.villageArt(rows,t,d,304,asleep),`village-pal-${rows[0].space.id}`),"Next wraps to first page");
+      r.villageHover("sleep-world-sleep-b",true,{notify(){}});
+      art = r.villageArt(rows,t,d,304,asleep);
+      assert.equal(at(art,"village-pal-sleep-world-sleep-b").args.border_color[0],world.row.outline);
+      assert.ok(text(at(art,"village-inspector")).includes("Sleeper B"));
+      at(art,"village-motion").args.on_click[0]({}, {notify(){}});
+      assert.ok(!at(r.villageArt(rows,t,d,304,asleep),"village-fire").calls.includes("loop"));
+      assert.ok(text(r.villageArt([],t,d,304)).includes(world.words.invite));
+      const row = r.palRow(rows[0],t,d);
+      assert.ok(text(row).includes(world.words.prefix));
+      const node = at(row,`bot-${rows[0].space.id}`);
+      assert.equal(node.args.bg[0],world.row.selected);
+      node.args.on_hover[0](true,{notify(){}});
+      assert.equal(r.villageHovered,rows[0].space.id);
+    }
+    assert.equal(JSON.stringify(rows.map(({bot})=>crew.petOf(bot))),savedLooks,"no world changes the stored pet specification");
+    assert.equal(JSON.stringify(fixtures.shared),before,"world interaction writes no persistent state");
+    for (const theme of ["omarchy","graphite","paper","unknown","constructor"]) {
+      fixtures.settings = {theme};
+      assert.equal(crew.activeWorld(),null);
+      assert.deepEqual(crew.ds(t),normal,"other theme tokens are unchanged");
+    }
+    delete fixtures.settings;
+  }
+
+  const gpuiForBaseline = await import(url("node_modules/gpui-kit/index.js"));
+  // Pixel Village baseline captured from 6aa7b46, before world generalization.
+  {
+    fixtures.settings = { theme: "pixel-village" };
+    const r = Object.create(Roster.prototype);
+    r.ops = {tasks: [], approvals: [], proposals: [], stalled: {}};
+    const rows = Array.from({length: 7}, (_, i) => ({
+      space: {id: `baseline-${i}`, name: `Demo ${i}`, folder: `/demo/project-${i}`, active: i === 0, status: "idle", tabs: []},
+      bot: {id: `baseline-b${i}`, name: `Demo ${i}`, folder: `/demo/project-${i}`, awake: false, harness: "codex"},
+    }));
+    const norm = (p) => {
+      const n = p.node ?? p;
+      if (typeof n === "string") return /^[A-Z][a-z]{2} \d+, \d{4}$/.test(n) ? "<date>" : n;
+      return {kind: n.kind, arg: n.arg, calls: n.calls,
+        args: Object.fromEntries(Object.entries(n.args).filter(([k]) => !["child", "children", "when", "hover"].includes(k))
+          .map(([k,v]) => [k, v.map(x => typeof x === "function" ? "<callback>" : x)])),
+        kids: n.kids.map(norm)};
+    };
+    const vd = crew.ds(t);
+    const trees = [180,304,440].map(w => norm(r.villageArt(rows,t,vd,w)));
+    r.villageStill = true;
+    trees.push(norm(r.villageArt([],t,vd,304)));
+    trees.push(norm(r.villageRow(rows[0].space,rows[0].bot,t,vd,crew.palFacts(rows[0].space,rows[0].bot,vd,[]),gpuiForBaseline.div().id("baseline-row"),crew.palListStyle())));
+    const baseline = {tokens: vd, trees};
+    assert.equal(createHash("sha256").update(JSON.stringify(baseline)).digest("hex"), "6cd2a6bc40e4f85e35329de88ba91ac2374c09f36d50b13325001694d38bff9a", "Pixel Village tokens and complete element trees match 6aa7b46 at three widths, paused/empty, and selected row");
+    delete fixtures.settings;
+  }
+
   console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges; drag to reorder; topic areas; Pixel Village opt-in, pages, hover, motion and art preservation)");
 } finally {
   rmSync(dir, { recursive: true, force: true });

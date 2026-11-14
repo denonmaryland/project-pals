@@ -64,7 +64,7 @@ try {
     export const openOverlay = () => "ov", closeOverlay = (id) => { fx.closed.push(id); };
     export const readTextFile = async (p) => fx.files[p] ?? null, writeTextFile = async (p, v) => { fx.files[p] = v; }, knownAgents = async () => [];
     export const props = () => fx.props, watchFolder = () => new Promise(() => {}), focused = () => null;`);
-  for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js", "helperlog.js"]) {
+  for (const f of ["worlds.js", "crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "machines.js", "helperlog.js"]) {
     try { copyFileSync(join(root, "lib", f), join(dir, f)); } catch { /* not every lib file exists on every branch */ }
   }
   copyFileSync(join(root, "mods", "crew-proposal", "main.js"), join(dir, "crew-proposal.mjs"));

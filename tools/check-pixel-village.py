@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check native village builders without a running app, user state or installation."""
+"""Check all ten native world builders without a running app, user state or installation."""
 from pathlib import Path
 import json
 import os
@@ -29,6 +29,7 @@ import { View, div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { theme } from "herdr";
 import Roster from "./roster.js";
+import { WORLDS } from "./worlds.js";
 import { ds, palFacts, palListStyle } from "./crew.js";
 export default class Fixture extends View {
   render() {
@@ -41,14 +42,18 @@ export default class Fixture extends View {
     // check supplies graphite defaults, ignoring on-disk settings. Selection is covered by
     // test_palrows; call the exact theme-only builders here to validate their native elements.
     const t = theme(), d = ds(t);
-    roster.villageHovered = "s6";
     const root = v_flex();
-    for (const width of [180, 304, 440])
-      root.child(roster.villageArt(rows, t, d, width));
-    roster.villageStill = true;
-    root.child(roster.villageArt([], t, d, 304));
-    root.child(roster.villageRow(rows[0].space, rows[0].bot, t, d,
-      palFacts(rows[0].space, rows[0].bot, d, []), div().id("fixture-row"), palListStyle()));
+    for (const world of WORLDS) {
+      const wd = {...d, ...world.tokens};
+      roster.villageHovered = "s6";
+      roster.villageStill = false;
+      for (const width of [180, 304, 440])
+        root.child(roster.villageArt(rows, t, wd, width, [], world));
+      roster.villageStill = true;
+      root.child(roster.villageArt([], t, wd, 304, [], world));
+      root.child(roster.villageRow(rows[0].space, rows[0].bot, t, wd,
+        palFacts(rows[0].space, rows[0].bot, wd, []), div().id(`fixture-row-${world.id}`), palListStyle(), world));
+    }
     return root;
   }
 }

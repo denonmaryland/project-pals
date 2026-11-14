@@ -6,9 +6,10 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
+import { PIXEL_WORLD } from "./worlds.js";
 import { tapNeed, tapsHolding } from "./helperlog.js";
 import {
-  pixelVillageOn, shortDate, alertSound, crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a, migrateChannelKeys, linkRecords, updateBot, refreshMachines, STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, showTabs, adoptRooms, serveRequests, loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone, applyLayout, rememberWidths, sidebarPref, ds, leadPane, petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor, needsOf, blockedReports, openProposal, appMenuSpec, noteWindowHeight, workingMark, palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, workingEverywhere, anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark, severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf, scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL, toggleChief, withoutChief, isChiefRec, openPalMenu, popOut,
+  activeWorld, shortDate, alertSound, crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a, migrateChannelKeys, linkRecords, updateBot, refreshMachines, STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, showTabs, adoptRooms, serveRequests, loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone, applyLayout, rememberWidths, sidebarPref, ds, leadPane, petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor, needsOf, blockedReports, openProposal, appMenuSpec, noteWindowHeight, workingMark, palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, workingEverywhere, anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark, severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf, scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL, toggleChief, withoutChief, isChiefRec, openPalMenu, popOut,
 } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -46,8 +47,8 @@ export function villageHouse(space, bot) {
   const folder = String(bot.folder || space.folder || "").replace(/\\/g, "/").replace(/\/+$/, "");
   return folder.split("/").pop() || bot.name || space.name || "Village";
 }
-export function villageDescription(space, bot, facts) {
-  return `${bot.name}\nof ${villageHouse(space, bot)}\n${bot.role || (bot.god ? "Head pal" : "Project pal")}\n${facts.word}${facts.tag ? ` · #${facts.tag}` : ""}`;
+export function villageDescription(space, bot, facts, world = activeWorld() ?? PIXEL_WORLD) {
+  return `${bot.name}\n${world.words.relation} ${villageHouse(space, bot)}\n${bot.role || (bot.god ? "Head pal" : "Project pal")}\n${facts.word}${facts.tag ? ` · #${facts.tag}` : ""}`;
 }
 
 export default class CrewRoster extends View {
@@ -614,7 +615,7 @@ export default class CrewRoster extends View {
       .on_size_change((size, cx) => { const k = Number(settings().zoom) || 1, w = size.width / k; noteWindowHeight(size.height / k); if (Math.abs((this.width ?? 0) - w) > 1) { this.width = w; cx.notify(); } });
     // The factory chip: only once there's a second factory.
     if (severalFactories()) root.child(this.factoryChip(d));
-    const village = pixelVillageOn();
+    const village = activeWorld();
     if (village) root.font_family(d.mono);
     if (shown) root.child(this.heroCard(shown, t, d, w, village ? this.villageArt(ordered, t, d, w, asleep) : null));
     else if (village) root.child(this.villageArt([], t, d, w, asleep));
@@ -626,7 +627,7 @@ export default class CrewRoster extends View {
     const scroller = (inner) => scrollArea(d, "crew-list", inner, { fade: "side" }).flex_1().min_h(0);
     if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
-      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
+      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child(village?.words.pals ?? "Pals"))
       // How many agents are working, everywhere (T98: it moved here from the status strip, and now
       // counts every pal, machine and factory, not just what this list shows). Hover: who.
       .child(this.workingChip(d))
@@ -811,7 +812,8 @@ export default class CrewRoster extends View {
     cx.notify();
   }
 
-  villageArt(rows, t, d, width, asleep = []) {
+  villageArt(rows, t, d, width, asleep = [], world = activeWorld() ?? PIXEL_WORLD) {
+    const paint = world.row, ambient = world.ambient;
     const W = Math.max(160, Math.round(width - 1)), H = Math.round(W * 200 / 320);
     const all = [...rows, ...asleep.map((bot) => ({ bot: { ...bot, awake: false },
       space: { id: `sleep-${bot.id}`, name: bot.name, folder: bot.folder, tabs: [], active: false }, sleeping: true }))];
@@ -829,35 +831,37 @@ export default class CrewRoster extends View {
       Math.max(0, this.villagePage ?? (chosen ? Math.floor(all.indexOf(chosen) / 4) : 0)));
     const shown = all.slice(page * 4, page * 4 + 4);
     const line = (text, color = d.fg2, size = 10.5) => div().min_w(0).truncate().font_family(d.mono).text_size(size).line_height("15px").text_color(color).child(text);
-    const root = v_flex().id("pixel-village").flex_none().font_family(d.mono).bg(d.bg1);
+    const root = v_flex().id(world.id).flex_none().font_family(d.mono).bg(d.bg1);
     const projects = new Set(all.map(({space, bot}) => villageProjectKey(space, bot))).size;
     root.child(v_flex().px(12).pt(10).pb(6).gap(2)
-      .child(h_flex().items_center().justify_between().child(line("Pixel Village", d.fg1, 13))
+      .child(h_flex().items_center().justify_between().child(line(world.name, d.fg1, 13))
         .child(div().id("village-motion").cursor_pointer().text_size(10).text_color(d.fg2)
-          .tooltip(this.villageStill ? "Animate campfire" : "Pause campfire")
+          .tooltip(`${this.villageStill ? "Animate" : "Pause"} ${ambient.label}`)
           .on_click((_e, cx) => { this.villageStill = !this.villageStill; cx.notify(); })
           .child(this.villageStill ? "[play]" : "[pause]")))
       .child(line(`${shortDate(Date.now())}, ${new Date().getFullYear()}`))
-      .child(line(`Pals ${all.length} · Projects ${projects}`, "#e6ad72")));
+      .child(line(`${world.words.pals} ${all.length} · ${world.words.projects} ${projects}`, paint.accent)));
     const scene = div().id("village-scene").relative().w(W).h(H).flex_none().overflow_hidden()
-      .child(image(`${ICON}/pixel-village.svg`).w(W).h(H));
-    scene.child(div().id("village-fire").absolute().left(W * .48).top(H * .43).w(12).h(20)
-      .when(!this.villageStill, (x) => x.loop("opacity", { from: .2, to: .8, period: 1700 }))
-      .child(image(`${ICON}/pixel-village-embers.svg`).w(12).h(20)));
-    const coords = [[.12,.29],[.68,.29],[.12,.72],[.68,.72]];
+      .child(image(`${ICON}/${world.scene}`).w(W).h(H));
+    const aw = ambient.scale ? W * ambient.width / 320 : ambient.width;
+    const ah = ambient.scale ? H * ambient.height / 200 : ambient.height;
+    scene.child(div().id("village-fire").absolute().left(W * ambient.x).top(H * ambient.y).w(aw).h(ah)
+      .when(!this.villageStill, (x) => x.loop("opacity", { from: ambient.from, to: ambient.to, period: ambient.period }))
+      .child(image(`${ICON}/${ambient.asset}`).w(aw).h(ah)));
+    const coords = world.residents;
     const pw = Math.max(34, Math.min(60, W * .195)), ph = Math.round(pw * 108 / 138);
     for (let i = 0; i < shown.length; i++) {
       const {space, bot, sleeping} = shown[i], selected = chosen?.space.id === space.id;
       const f = sleeping ? sleeperFacts(bot, d, this.ops.tasks) : palFacts(space, bot, d, this.ops.tasks);
       scene.child(div().id(`village-pal-${space.id}`).absolute().left(W * coords[i][0]).top(H * coords[i][1])
-        .w(pw + 4).h(ph + 4).border_1().border_color(selected ? "#e8edf6" : "#00000000")
-        .cursor_pointer().hover((x) => x.border_color("#e8edf6"))
+        .w(pw + 4).h(ph + 4).border_1().border_color(selected ? paint.outline : "#00000000")
+        .cursor_pointer().hover((x) => x.border_color(paint.outline))
         .on_hover((h, cx) => this.villageHover(space.id, h, cx))
         .on_click((_e, cx) => { sleeping ? this.wake(bot) : this.open(space); cx.notify(); })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation();
           if (sleeping) openOverlay({ mod: "crew-menu", kind: "popup", width: 260, props: { what: "sleeper", rec: bot.id } });
           else this.menu(space); })
-        .tooltip(villageDescription(space, bot, f)).accessibility_label(villageDescription(space, bot, f))
+        .tooltip(villageDescription(space, bot, f, world)).accessibility_label(villageDescription(space, bot, f, world))
         .child(palPet(bot, mood(palStatus(space), bot.awake || bot.starting), pw, t)));
     }
     root.child(scene);
@@ -869,15 +873,15 @@ export default class CrewRoster extends View {
         .on_click((_e, cx) => { this.villagePage = (page + 1) % count; this.villageHovered = null; cx.notify(); })));
     // A reserved inspection slot avoids moving the roster or covering a terminal on hover.
     const tip = v_flex().id("village-inspector").mx(8).mt(4).px(8).py(5).h(74).flex_none()
-      .border_1().border_color("#8a8f9a").bg("#08121e");
+      .border_1().border_color(paint.cardBorder).bg(d.bg1);
     if (chosen) {
       const {space, bot, sleeping} = chosen;
       const f = sleeping ? sleeperFacts(bot, d, this.ops.tasks) : palFacts(space, bot, d, this.ops.tasks);
       tip.child(line(bot.name, d.fg1, 12))
-        .child(line(`of ${villageHouse(space, bot)}`, "#d48cad"))
+        .child(line(`${world.words.relation} ${villageHouse(space, bot)}`, paint.label))
         .child(line(bot.role || (bot.god ? "Head pal" : "Project pal")))
-        .child(line(`${f.word}${f.tag ? ` · #${f.tag}` : ""}`, "#e6ad72"));
-    } else tip.child(line("A quiet village.", d.fg1)).child(line("Hire a pal to light the first house."));
+        .child(line(`${f.word}${f.tag ? ` · #${f.tag}` : ""}`, paint.accent));
+    } else tip.child(line(world.words.empty, d.fg1)).child(line(world.words.invite));
     return root.child(tip);
   }
 
@@ -1150,21 +1154,22 @@ export default class CrewRoster extends View {
       .on_click((_e, cx) => { saveUiSettings({ palTrees: !on }); cx.notify(); })
       .child(svg(`${ICON}/${on ? "ds-tree" : "ds-tree-folded"}.svg`).size(13).text_color(d.iconDim));
   }
-  villageRow(space, bot, t, d, f, el, look) {
+  villageRow(space, bot, t, d, f, el, look, world = activeWorld() ?? PIXEL_WORLD) {
+    const paint = world.row;
     const selected = Boolean(space.active);
-    const fg = selected ? "#08121e" : d.fg1;
+    const fg = selected ? paint.foreground : d.fg1;
     el.flex().items_center().gap(8).px(6).h(52).rounded(0).border_1()
-      .border_color(selected ? "#e8edf6" : "#00000000").bg(selected ? "#cbd6ef" : d.bg1)
-      .cursor_pointer().hover((x) => x.border_color("#e8edf6"))
+      .border_color(selected ? paint.outline : "#00000000").bg(selected ? paint.selected : d.bg1)
+      .cursor_pointer().hover((x) => x.border_color(paint.outline))
       .on_hover((h, cx) => this.villageHover(space.id, h, cx))
-      .tooltip(villageDescription(space, bot, f)).accessibility_label(villageDescription(space, bot, f))
+      .tooltip(villageDescription(space, bot, f, world)).accessibility_label(villageDescription(space, bot, f, world))
       // Use the exact existing pet pipeline and stored look. No palette override.
       .child(palPet(bot, mood(palStatus(space), bot.awake || bot.starting), 60, t))
       .child(v_flex().flex_1().min_w(0)
         .child(div().truncate().text_size(12).text_color(fg).child(bot.name))
-        .child(div().truncate().text_size(10.5).text_color(selected ? "#283c55" : d.fg2).child(`${f.word}${f.tag ? ` · #${f.tag}` : ""}`)));
+        .child(div().truncate().text_size(10.5).text_color(selected ? paint.detail : d.fg2).child(`${f.word}${f.tag ? ` · #${f.tag}` : ""}`)));
     return v_flex().flex_none().pt(5)
-      .child(div().pl(8).pb(3).truncate().font_family(d.mono).text_size(11).text_color("#d48cad").child(villageHouse(space, bot)))
+      .child(div().pl(8).pb(3).truncate().font_family(d.mono).text_size(11).text_color(paint.label).child(`${world.words.prefix}${villageHouse(space, bot)}`))
       .child(el).when(Boolean(palTreesOn()), (x) => {
         const tree = palLookTree(d, { ...look, pet: 60 }, f, `bot-${space.id}`,
           (tab, cx) => { this.go(space, tab); cx.notify(); },
@@ -1189,7 +1194,7 @@ export default class CrewRoster extends View {
       .when(Boolean(over), (x) => x.child(div().absolute().left(6).right(6).h(2).rounded(1).bg(d.info).when(over.after, (y) => y.bottom(0)).when(!over.after, (y) => y.top(0))))
       .on_click((_e, cx) => { if (this.drag?.active) return; this.open(space); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); });
-    if (pixelVillageOn()) return this.villageRow(space, bot, t, d, f, el, look);
+    if (activeWorld()) return this.villageRow(space, bot, t, d, f, el, look);
     const row = palLookRow(d, look, f, palPet(bot, mood(palStatus(space), awake), look.pet, t), el);
     // Trees (on unless turned off): its live topics under it; a click opens that topic, right-click its menu.
     const tree = palLookTree(d, look, f, `bot-${space.id}`, (tab, cx) => { this.go(space, tab); cx.notify(); },

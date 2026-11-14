@@ -229,7 +229,7 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
       export const theme = () => ({ background: "#0B0B0C" }), home = () => "/h", appHome = () => "/h/.config/herdr-app", props = () => ({ overlay: "ov1" });
       export const notify = (n) => fx.toasts.push(n), closeOverlay = () => { fx.closed++; }, openOverlay = () => "ov2", run = () => {}, hc = exec;
       export const readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [], nextCommand = () => new Promise(() => {});`);
-    for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
+    for (const f of ["worlds.js", "crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
     copyFileSync(join(root, "mods", "crew-helpers", "main.js"), join(dir, "crew-helpers.mjs"));
     const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
     const { clicks, texts } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);

@@ -1,5 +1,9 @@
 # Pixel Village
 
+Pixel Village is now one of [ten opt-in worlds](worlds.md). Its original scene assets,
+colors, layout and interaction behavior remain unchanged. See that guide for the registry,
+the other themes, reduced-motion limitations and the expanded checker.
+
 Pixel Village is an opt-in night palette and small village in the existing sidebar. The
 terminal remains the main workspace. Every resident uses the existing `palPet` pipeline,
 including the person's species, accessories, eyes and saved colors. Pet source and assets
@@ -47,9 +51,10 @@ pins, topics, saved layout preferences, or terminal selection. No migration is n
 
 ## Implementation and checks
 
-`lib/crew.js:pixelVillageOn` reads Herdr's resolved `settings().theme`, including appearance
-maps, and only the exact `pixel-village` theme enables the extra tokens and roster treatment.
-Other themes retain the existing design-system tokens. `mods/crew-roster/main.js` draws the
+`lib/crew.js:activeWorld` reads Herdr's resolved `settings().theme`, including appearance
+maps. Only exact registered world names enable world tokens and roster treatment;
+`pixelVillageOn` still identifies Pixel Village alone. Unrelated themes retain the existing
+design-system tokens. `mods/crew-roster/main.js` draws the
 scene and inspection card. `mods/crew-roster/icons/pixel-village.svg` is the static tile scene.
 Herdr theme JSON cannot contain CSS, HTML or scripted layout; the optional palette is in
 `themes/pixel-village.json`.
@@ -66,7 +71,7 @@ Run the native check without installing or contacting a running app:
 python3 tools/check-pixel-village.py
 ```
 
-The checker uses a fresh home and synthetic residents. Herdr's `check` supplies default
+The checker now covers all ten worlds using a fresh home and synthetic residents. Herdr's `check` supplies default
 graphite settings, so the fixture invokes the theme-only scene and row builders directly;
 opt-in/out is covered separately by the JavaScript test. It checks 180, 304 and 440 px
 sidebar scenes, an empty village and paused motion. No live pixels are captured.

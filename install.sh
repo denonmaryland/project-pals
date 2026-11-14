@@ -120,12 +120,13 @@ for dir in "$src"/mods/crew-*; do
   cmp -s "$src/lib/pallook.js" "$dest/pallook.js" || { cp "$src/lib/pallook.js" "$dest/pallook.js"; changed=1; }
   cmp -s "$src/lib/factories.js" "$dest/factories.js" || { cp "$src/lib/factories.js" "$dest/factories.js"; changed=1; }
   cmp -s "$src/lib/helperlog.js" "$dest/helperlog.js" || { cp "$src/lib/helperlog.js" "$dest/helperlog.js"; changed=1; }
+  cmp -s "$src/lib/worlds.js" "$dest/worlds.js" || { cp "$src/lib/worlds.js" "$dest/worlds.js"; changed=1; }
   cmp -s "$src/lib/crew.js" "$dest/crew.js" || { cp "$src/lib/crew.js" "$dest/crew.js"; changed=1; }
   # The folder mascots are retired (2026-11-08): no mod needs mascot-art.js any more.
   rm -f "$dest/mascot-art.js"
   # By content (--checksum), not by time: an export's files are all new, and a file that's the same
   # isn't touched at all (no -t), so Herdr sees nothing to reload. -i lists what was changed.
-  moved="$(rsync -rlpD --checksum -i --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/helperlog.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/")"
+  moved="$(rsync -rlpD --checksum -i --delete --exclude 'jsconfig.json' --exclude '*.d.ts' --exclude '/worlds.js' --exclude '/crew.js' --exclude '/pets.js' --exclude '/palstyles.js' --exclude '/pallook.js' --exclude '/factories.js' --exclude '/helperlog.js' --exclude '/machines.js' --exclude '/main.js' "$dir/" "$dest/")"
   [[ -n "$(grep -v '^\.' <<<"$moved" || true)" ]] && changed=1
   if [[ $changed -eq 1 ]] || ! cmp -s "$dir/main.js" "$dest/main.js"; then
     cp "$dir/main.js" "$dest/main.js.new" && mv -f "$dest/main.js.new" "$dest/main.js"
