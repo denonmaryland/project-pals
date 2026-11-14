@@ -344,15 +344,21 @@ class FullGuardContext(Base):
         self.assertNotEqual(r.returncode,0)
         self.assertIn('execution context',r.stderr)
 
-    def test_full_cannot_decide_a_heredoc_that_expands_unseen_code(self):
-        """#codex-sol T212 round 7: an unquoted heredoc's body runs $( … ) when the line runs, but the
-        rules read the line with bodies dropped, so a push plus a click-evidence write in a heredoc
-        body showed only the push. Such a line, or a << with no readable body, is the owner's alone."""
+    def test_full_never_decides_a_line_with_heredoc_or_here_string(self):
+        """#codex-sol T212 rounds 7 and 8: an unquoted heredoc body runs $( … ) unseen by the rules, and
+        each way of reading bodies (a quoted lookalike marker, an indented or <<- false terminator) was
+        bypassed. Now no body is read: a line with `<<` anywhere is the owner's to decide, never Full's."""
         target = 'data/' + 'crew-clicks' + '/fake.json'
-        bodies = ['$(echo fake > ' + target + ')', '`echo fake > ' + target + '`', '${x:=$(echo fake > ' + target + ')}']
-        unvouched = ['git push origin main; cat <<DOC > notes.txt\n' + b + '\nDOC' for b in bodies]
-        unvouched.append('git push origin main; cat <<DOC > notes.txt\nno end marker')
-        for command in unvouched:
+        write = '$(echo fake > ' + target + ')'
+        owner_only = [
+            'git push origin main; cat <<DOC > notes.txt\n' + write + '\nDOC',                     # plain
+            "git push origin main; cat <<DOC > notes.txt\necho '<<DOC'\n" + write + '\nDOC',      # quoted lookalike marker
+            'git push origin main; cat <<DOC > notes.txt\n  DOC\n' + write + '\nDOC',             # indented false terminator
+            'git push origin main; cat <<-DOC > notes.txt\n\tDOC\n' + write + '\nDOC',          # <<- false terminator
+            'git push origin main; cat <<< "' + write + '"',                                       # here-string
+            "git push origin main; cat <<'DOC' > notes.txt\nplain text\nDOC",                      # even a quoted one
+        ]
+        for command in owner_only:
             with self.subTest(command=command):
                 request = self.request(command)
                 self.assertIsNotNone(request)
@@ -360,16 +366,14 @@ class FullGuardContext(Base):
                 self.assertNotEqual(r.returncode,0)
                 self.assertIn('trust or audit',r.stderr)
                 self.assertEqual(self.record(request['id'])['status'],'pending')
-        # The consumption side reads the same boundary: a stamped record of such a line isn't current.
-        self.assertEqual(py(self.env, f'import crewguard; print(json.dumps([crewguard.delegation_allowed(c,"push") for c in {unvouched!r}]))'),
-                         [False] * len(unvouched))
-        # Controls: a quoted heredoc's body is text, and a plain heredoc without expansions stays ordinary.
-        for command in ["git push origin main; cat <<'DOC' > notes.txt\n" + bodies[0] + "\nDOC",
-                        'git push origin main; cat <<DOC > notes.txt\nplain text, $HOME is fine\nDOC']:
-            with self.subTest(control=command):
-                request = self.request(command)
-                r = helper(self.env,'approve',request['id'])
-                self.assertEqual(r.returncode,0,r.stderr)
+        # The reuse side reads the same check: a stamped record of such a line is never current.
+        self.assertEqual(py(self.env, f'import crewguard; print(json.dumps([crewguard.delegation_allowed(c,"push") for c in {owner_only!r}]))'),
+                         [False] * len(owner_only))
+        # Control: the same push without << is still Full's to approve.
+        request = self.request('git push origin main; echo done > notes.txt')
+        r = helper(self.env,'approve',request['id'])
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(self.record(request['id'])['delegated']['helper'],'Pals')
 
     def test_saved_protected_rules_cannot_disappear_before_full_decision(self):
         request = self.request('git push origin main')
