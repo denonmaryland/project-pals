@@ -78,9 +78,9 @@ herdr-core 0.1.20.
   Trusted helpers. Switch a helper on by name and it gets a key; from then on what it sends with
   `PAL_HELPER=<name> pal tell`, `ask`, `task add --for` or `desk send` arrives headed "from you via
   <name>, a trusted helper: normal work only", and your pals do it as if you'd asked. One click
-  switches it off, gives it a new key or removes it. It is never your click: approvals, push,
-  publish, deploy, release, merge, messaging people, settings, missions, AGENTS.md and everything
-  waiting on Home refuse it, and each try is recorded. Home shows what helpers sent in your name
+  switches it off, gives it a new key or removes it. At Work only it is never your click: approvals,
+  push, publish, deploy, release, merge, messaging people, settings, missions, AGENTS.md and
+  everything waiting on Home refuse it, and each try is recorded. Home shows what helpers sent in your name
   and what they tried (Today, and a new In your name tab). At most 20 messages an hour per helper;
   past that they arrive as "not verified". Pals can't use a helper's key: the approval gate holds
   the attempt and `pal` refuses a key from inside Herdr. Keys are kept outside Project Pals'
@@ -91,19 +91,17 @@ herdr-core 0.1.20.
   over switched **off**, and its old key is deleted. That build accepted a request without any key
   and could be used by a pal, so turn Pals on again in Trusted helpers when you want it; your
   assistant's `pal --as-helper …` line keeps working after that.
-- **Relayed taps: your trusted helper can tap what waits on you, from your chat with it.** Away
-  from the app, your assistant shows you the exact thing that's waiting (a question on Home, a
-  held push or release, a proposal, a draft), you answer in chat, and it taps for you. Three
-  switches per helper in Trusted helpers, all off until you turn them on: Home questions,
-  approvals that stay on this computer, and push / release / land. A tap is held before it runs
-  (a minute; five for outward ones, your setting), shows first on Home with **Stop** and **Let it
-  go now**, and is recorded everywhere as "tapped by <helper>, relayed from you", never as your
-  click. A tapped answer on Home can be undone. At most 5 outward taps a day; three refused taps
-  switch tapping off. Settings, the trust and tap switches, updates and uninstall can never be
-  tapped, and you (or the asker) can mark a question "your click only".
-  **What to know before turning the outward switch on:** your helper's tap is then the approval.
-  Anything that can act as your helper could push, release or land in your name after the hold.
-  The hold, the limits and the record make that slow and visible; they can't prove it was you.
+- **Full control: a helper you choose can make decisions for you.** Each helper in Trusted helpers
+  has one level: **Off**, **Work only** (normal work, as above) or **Full control**. With Full
+  control, that helper makes app decisions on its own: it can approve what waits on you, including
+  a pal's held command (once, exactly as held), pushes, releases and landings, with no prompt and no
+  waiting period. Only your own click in Trusted helpers sets a level or changes a key; a helper
+  can't raise itself or another helper. New and existing helpers start at Work only, and no update
+  turns Full control on. Home → Helper activity shows each "acted under Full control" and how it
+  ended, with **Revoke**: the helper goes Off and its queued actions and unused approvals stop
+  working (finished work isn't undone). Decisions are always recorded as the helper's, never as
+  your click. Read docs/full-control.md before you turn it on: anything that can act as that helper
+  can then push and release in your name.
 
 - **A trusted helper stays as you left it, and you're told if it stops working.** Only your click
   turns a helper on or off: installs, updates and Roll back never touch its switch or its key. If
@@ -112,13 +110,20 @@ herdr-core 0.1.20.
   and `pal feed` says so. The hourly limit is now a setting in Trusted helpers. A helper can ask to
   be strict (`PAL_HELPER_STRICT=1`): then a message that wouldn't go in your name isn't sent at
   all, and the helper gets a clear error to pass on to you.
-- **Releases need your click from any terminal.** `./release` used to be held only when a pal ran
-  it. Now the script itself asks: a request in your Inbox, then the same command once more after
-  you approve. `./release X.Y.Z --dry-run` runs every check and changes nothing.
+- **Releases need your approval from any terminal.** `./release` used to be held only when a pal
+  ran it. Now the script itself asks: a request in your Inbox, then the same command once more
+  after it's approved (by you, or by a helper you gave Full control). `./release X.Y.Z --dry-run` runs every check and changes nothing.
 - **Only you answer what's on Home.** `pal home done`, `drop` and `park` used to work from any
   shell. Now an item is taken off only by whoever put it there, the head pal, or your click, and an
   ask its asker takes back shows as Withdrawn, never as your answer.
 
+- **Roll back puts everything back, and can't revive a helper you switched off.** Roll back now
+  also restores the memory drop-in for Herdr's terminals (or removes the one the install added),
+  and a failed install takes away a drop-in it added itself. A helper's backup list is only trusted
+  when it's newer than the last install on record, and the install log a roll back can't rewind
+  now counts too, so a helper you switched off with another build doesn't come back on. A helper
+  whose list can't be read safely is refused instead of guessed at, and credentials can't be used
+  from inside a pal's own memory scope. (From Codex's release reviews.)
 - **Memory: one hungry pal can't take down the crew.** Herdr keeps every terminal in one systemd
   unit, so when memory ran out, the out-of-memory killer took that unit and every pal with it. Now
   each pal's agent starts in a scope of its own (with a systemd user session, on this computer), so

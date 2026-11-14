@@ -324,7 +324,8 @@ at most, and every 10 minutes while About or the update dialog is open.
 - Updates come only from this repo's GitHub releases, and must match the release's
   `SHA256SUMS`.
 - Updates replace only Project Pals's own files. Your pals, rooms, memory, routines and tasks
-  are never touched. Herdr reloads the mods by itself; nothing restarts.
+  are never touched. Herdr reloads the mods by itself; your pals and their agents keep running.
+  Project Pals' helper (crewd) restarts only when its own code changed.
 - The previous version is kept for **Roll back** (in the update dialog after an update, and in
   Project Pals settings). If an install fails, the previous version goes back by itself.
 
