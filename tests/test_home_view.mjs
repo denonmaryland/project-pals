@@ -26,7 +26,7 @@ try {
   // Elements: every builder call returns an element; children and .when callbacks run, so the whole
   // tree is built (handlers are kept so the test can click them).
   mod("gpui-kit", `
-    export const clicks = new Map();
+    export const clicks = new Map(), texts = [];
     const el = () => {
       const p = new Proxy(function () {}, {
         get: (t, k) => {
@@ -34,6 +34,7 @@ try {
           if (k === "when") return (c, f) => (c ? f(p) : p);
           if (k === "map") return (f) => f(p);
           if (k === "id") return (id) => { p.__id = id; return p; };
+          if (k === "child") return (c) => { if (typeof c === "string") texts.push(c); return p; };
           if (k === "on_click") return (f) => { if (p.__id) clicks.set(p.__id, f); return p; };
           if (k === "__id") return t.__id;
           return () => p;
@@ -73,7 +74,7 @@ try {
   cpSync(join(root, "mods", "crew-home", "main.js"), join(dir, "crew-home.mjs"));
   for (const f of ["welcome.js", "welcome-text.js"]) copyFileSync(join(root, "mods", "crew-home", f), join(dir, f));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
-  const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
+  const { clicks, texts } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
   const crewjs = await import(pathToFileURL(join(dir, "crew.js")).href);
 
   // A fixed clock at noon, so "today" (since midnight) holds every fixture whenever this runs.
@@ -235,6 +236,38 @@ try {
   assert.ok(clicks.has("drawer-tab-name") && clicks.has("name-open"));
   clicks.get("name-open")();
   assert.deepEqual(fx.overlays.at(-1), { mod: "crew-helpers", kind: "dialog", width: 560 }, "its link opens the Trusted helpers dialog");
+  // Full-control actions show the actor and outcome once, with an owner's Revoke beside it.
+  const priorLog = fx.helperLog;
+  const delegatedAction = { at: now - 3 * min, kind: "action", helper: "Pals", id: "d-1", grant: "g-1", action: "release", target: "project-pals 0.5.0", status: "done" };
+  fx.helperLog += "\n" + JSON.stringify({ ...delegatedAction, at: now - 4 * min, status: "started" }) + "\n" + JSON.stringify(delegatedAction);
+  await run((cx) => v.reload(cx));
+  texts.length = 0; clicks.clear();
+  await run((cx) => draw(v, cx));
+  assert.ok(texts.includes("Helper activity"));
+  assert.equal(texts.filter((t) => t === "Pals acted under Full control").length, 1);
+  assert.ok(texts.includes("release · project-pals 0.5.0 · done"));
+  assert.ok(texts.some((t) => t.includes("1 Full control action")));
+  assert.ok(clicks.has("name-revoke-0"));
+  const beforeRevoke = fx.calls.length;
+  await run((cx) => clicks.get("name-revoke-0")(null, cx));
+  const revoke = fx.calls.slice(beforeRevoke).find((c) => c[0] === "pal" && c[1] === "settings");
+  assert.deepEqual(revoke.slice(1, 6), ["settings", "trust-helper", "Pals", "level", "off"]);
+  assert.ok(revoke.includes("--click"), "revocation carries the owner's click, not helper authority");
+  fx.helperLog = priorLog;
+  await run((cx) => v.reload(cx));
+  // A delegated Home answer never claims a direct owner answer or inflates their count.
+  const savedHome = v.home;
+  const delegated = { ...tapped, tapped: undefined, delegated: { helper: "Pals", grant: "g-1" } };
+  v.home = { ...v.home, items: [delegated] };
+  const d = crewjs.ds(crewjs.tone({ background: "#0B0B0C" }));
+  texts.length = 0;
+  v.sinceRow(d, { kind: "answered", x: delegated, at: now - 2 * min }, 0);
+  assert.ok(texts.includes("Pals answered") && texts.some((t) => t.endsWith(" · Full control")));
+  assert.ok(!texts.includes("You answered"));
+  texts.length = 0;
+  v.caughtUp(d, crewjs.tone({ background: "#0B0B0C" }));
+  assert.ok(!texts.some((t) => t.includes("decision answered today")));
+  v.home = savedHome;
   v.openDrawer("today");
   await run((cx) => draw(v, cx));
   v.drawer = null;

@@ -49,7 +49,7 @@ import { welcomeView, welcomeKey } from "./welcome.js";
 const ICON = "mods/crew-roster/icons";
 const CARD = 76, ROW = 36, PROW = 48, AGE_W = 52, DRAWER_W = 420;
 // ("name": what trusted helpers sent in your name and tried, T116; shown once there's anything.)
-const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"], ["name", "In your name"]];
+const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"], ["name", "Helper activity"]];
 const hhmm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`; };
 const midnight = (now = Date.now()) => { const t = new Date(now); t.setHours(0, 0, 0, 0); return t.getTime(); };
 const short = (name) => String(name ?? "").split(" - ")[0];
@@ -383,7 +383,7 @@ export default class CrewHome extends View {
 
   // Nothing waiting: the head pal's pet, "All caught up", one quiet line.
   caughtUp(d, t) {
-    const answered = this.home.items.filter((x) => x.status === "answered" && !x.tapped && (x.answered_at ?? 0) >= midnight()).length;   // yours, not a helper's taps
+    const answered = this.home.items.filter((x) => x.status === "answered" && !x.tapped && !x.delegated && (x.answered_at ?? 0) >= midnight()).length;   // yours, not helper decisions
     const head = this.who();
     return v_flex().id("caught-up").flex_1().min_h(0).items_center().justify_center().gap(10)
       .child(this.face(head, "idle", 120, t))
@@ -447,7 +447,7 @@ export default class CrewHome extends View {
     const seen = this.home.seen || 0;
     const nNew = since.filter((r) => r.at > seen).length;
     const nPark = this.home.items.filter((x) => x.status === "parked").length;
-    const nName = this.helperLog.filter((e) => e.kind !== "switch" && (e.at ?? 0) > seen).length;
+    const nName = helperRows(this.helperLog, seen).filter((e) => e.kind !== "switch").length;
     const count = { today: nNew || null, working: prog.rows.length || null, releases: null, parked: nPark || null, name: nName || null };
     const tabs = h_flex().h(40).flex_none().items_end().gap(2).px(10).border_b_1().border_color(d.line)
       .children(TABS.filter(([k]) => k !== "name" || this.helperLog.length > 0).map(([k, label]) => {
@@ -523,8 +523,10 @@ export default class CrewHome extends View {
     } else if (r.kind === "note") {
       icon = svg(`${ICON}/ds-notebook.svg`).size(11).text_color(d.fg2); bold = short(r.x.by); rest = r.x.title; right = "note";
     } else if (r.kind === "answered") {
-      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = r.x.tapped ? `Tapped by ${r.x.tapped.by}` : "You answered"; rest = `${r.x.title} → ${r.x.answer}${r.x.tapped ? " · relayed, not your click" : ""}`; right = short(r.x.by);
-      if (r.x.tapped) icon = dot("#B79CF7");
+      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok);
+      bold = r.x.delegated ? `${r.x.delegated.helper} answered` : r.x.tapped ? `Tapped by ${r.x.tapped.by}` : "You answered";
+      rest = `${r.x.title} → ${r.x.answer}${r.x.delegated ? " · Full control" : r.x.tapped ? " · relayed, not your click" : ""}`; right = short(r.x.by);
+      if (r.x.tapped || r.x.delegated) icon = dot("#B79CF7");
     } else if (r.kind === "closed") {
       icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(r.x.withdrawn ? d.warn : d.ok); bold = r.x.withdrawn ? "Withdrawn" : "Done";
       rest = `${r.x.title}${r.x.result ? ` · ${r.x.result}` : ""}`; right = short(r.x.closed_by ?? r.x.by);
@@ -613,13 +615,29 @@ export default class CrewHome extends View {
       .child(div().h(28).flex_none().px(14).flex().items_center().border_t_1().border_color(d.line).text_size(11).text_color(d.fg4).child(checked));
   }
 
-  // In your name (T116): everything trusted helpers sent as you, what they tried that was refused,
-  // and your own switches, newest first; the dialog (About → Trusted helpers) turns one off.
+  // A delegated action stays attributed to the helper. Revocation is an owner's click, right in
+  // the record, and never promises to undo a completed external action.
+  helperActionRow(d, e, i) {
+    const h = logRow(e), key = `revoke-helper-${e.helper}`;
+    return v_flex().id(`name-${i}`).h(52).flex_none().px(14).py(5).gap(3)
+      .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
+      .child(h_flex().items_center().gap(8)
+        .child(div().flex_1().min_w(0).truncate().text_size(12).font_weight(500).text_color(d.fg1).child(h.bold))
+        .child(pebble(d, { id: `name-revoke-${i}`, label: "Revoke", disabled: Boolean(this.busy[key]),
+          tooltip: `Revoke ${e.helper}'s access; completed actions are not undone`,
+          onClick: (cx) => this.act(key, ["settings", "trust-helper", e.helper, "level", "off"], `${e.helper}'s access revoked`, cx) })))
+      .child(h_flex().items_center().gap(8)
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(h.tone === "warn" ? d.warnText : d.fg2).child(h.rest))
+        .child(div().w(40).flex_none().text_right().text_size(11).text_color(d.fg4).child(homeAge(e.at))));
+  }
+
+  // Helper activity: messages, decisions, outcomes and owner trust changes, newest first.
   nameBody(d) {
     const rows = helperRows(this.helperLog).slice(0, 200);
     const today = helperToday(this.helperLog);
     const open = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
     const list = v_flex().children(rows.map((e, i) => {
+      if (e.kind === "action" && e.helper) return this.helperActionRow(d, e, i);
       const h = logRow(e);
       return h_flex().id(`name-${i}`).h(ROW).flex_none().items_center().gap(10).pl(14).pr(12)
         .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))

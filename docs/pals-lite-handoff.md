@@ -7,7 +7,7 @@ worktree `crew-worktrees/project-pals-herdr-mod/pals-lite`. Not landed, not push
 ## Done (commit by commit)
 
 1. **80927d2** Board, Read, Computer: `mods/crew-palboard`, `crew-computer`, `crew-computer-app`,
-   `bin/crewboard.py`, `bin/crewcomputer.py`, `pal computer`, `pal page`, Ctrl+Shift+Y/U, the
+   `bin/crewboard.py`, `bin/crewcomputer.py`, `pal computer`, Ctrl+Shift+Y/U, the
    palClick setting, crewd's "working" feed events. A pal click opens its terminal again.
    Task-due and feed tests moved to `tests/test_task_due.py`; the plugin-message test to
    `tests/test_messaging.py`.
@@ -38,6 +38,12 @@ modules removed, Ctrl+Shift+I/Y removed, a rebound Ctrl+Shift+U kept).
 2. A Codex review; focus: `mods/crew-proposal`, Home's draft actions, install.sh's keys.json edit.
 3. Rebase onto main once Full control lands there (Orca's note), rerun targeted tests.
 4. One Home ask to land and install. Not seen drawn in a window yet.
+
+## After merging main 9c2966a (Full control)
+
+`pal page` stays: Full control lets a trusted helper write a pal's pages (`--pal`), and its test
+uses it. The page helpers moved from the deleted `bin/crewcomputer.py` to `bin/crewpages.py`.
+`pal computer` is still deleted.
 
 ## Not done on purpose
 

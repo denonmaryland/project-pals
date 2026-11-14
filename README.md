@@ -172,27 +172,30 @@ Claude Code and Antigravity CLI pals ask you before they push, publish, make a G
 merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
 moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
-tokens or the Desk's cards. The command waits in your Inbox until you click Approve.
+tokens or the Desk's cards. The command waits in your Inbox for approval. You can approve it
+yourself, or delegate ordinary app decisions to a helper with Full control. Trust and audit
+protections remain under your own click.
 
 - It looks at the command as it runs: behind `npx`, a full path or `env`; inside `sh -c`, a heredoc
   fed to a shell, or a string that Python, Node, Perl, Ruby or PHP runs; file writes from those
   languages and from editors. A command that's only mentioned (a grep pattern, a quoted string,
   `--help`) isn't held. If the gate itself fails, the command is stopped, not let through.
-- Settings, updates, roll back, uninstall, landing and renaming need your click in Project Pals too, and only
-  your click sends a message as you.
-- `./release` asks for your click from any terminal, not only a pal's, and only whoever put
-  something on Home, the head pal or your click takes it off.
-- **Relayed taps** (off by default, per helper): a trusted helper can also tap what waits on you
-  when you've answered it in chat, with a hold before anything runs, Stop on Home, and a record
-  that always says it was a tap. If you turn on taps for push, release and land, the helper's tap
-  is the approval: read the note in Trusted helpers first.
-- **Trusted helpers** (About → Settings): you can let one of your own assistants send normal work
-  to your pals in your name (`PAL_HELPER=<name> pal tell …`). It's off until you switch a helper
-  on, one click turns it off or gives it a new key, and Home shows everything it sent and tried. It
-  is never your click: approvals, push, release, merge, messaging people, settings and what's
-  waiting on Home still need you. Its key is a file on your computer, so anything running as you
-  that reads it can do the same, and an assistant that's been tricked by something it read will
-  pass the trick on with your name on it. That's why it covers only work that's safe to undo.
+- Settings, updates, roll back, uninstall, landing and renaming need your click or a helper's
+  authenticated Full control grant. Only your own click sends a message as you.
+- **One level per helper** (About → Settings → **Trusted helpers**): **Off** grants no helper
+  authority; **Work only** sends normal work to your pals; **Full control** lets that helper make
+  app decisions autonomously, including pushes and releases. Full control has no per-action
+  prompts or hold period. The helper can also approve a pal's exact held command once.
+- Only your actual app click sets helper trust or changes keys. Helpers cannot promote themselves
+  or other helpers. New helpers start at Work only when you add them; existing on helpers migrate
+  to Work only. No update or migration turns Full control on.
+- **Home → Helper activity** says “Pals acted under Full control”, shows outcomes, and offers
+  **Revoke**. Revoke switches that helper off and invalidates queued actions and unused approvals
+  under its old grant. It does not undo completed work. Helper decisions are always attributed to
+  the helper, never described as your own click.
+- **Relayed taps are retired.** The three tap switches and delay settings are replaced by the
+  trust level. No new taps run; old queued holds are cancelled and history remains visible.
+  See [Full control](docs/full-control.md) for setup, commands and what revocation means.
 - **It catches mistakes, not a pal set on getting around it.** Pals run as you: a determined one
   could build a command from pieces or write a script and run it later. Antigravity CLI pals are
   gated on shell commands only: their own file-edit tools aren't checked yet.
