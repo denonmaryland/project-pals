@@ -127,20 +127,6 @@
                   }
                 },
                 {
-                  "id": "room-view",
-                  "type": "block",
-                  "content": {
-                    "mod": "crew-room"
-                  }
-                },
-                {
-                  "id": "desk-view",
-                  "type": "block",
-                  "content": {
-                    "mod": "crew-desk"
-                  }
-                },
-                {
                   "id": "home-view",
                   "type": "block",
                   "content": {
@@ -148,17 +134,6 @@
                   }
                 }
               ]
-            },
-            {
-              "id": "crew-composer",
-              "type": "block",
-              "size": {
-                "px": 96
-              },
-              "content": {
-                "mod": "crew-composer"
-              },
-              "hidden": true
             }
           ]
         }

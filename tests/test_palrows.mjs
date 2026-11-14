@@ -768,37 +768,10 @@ try {
     const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
     assert.match(src, /child\("Pals"\)\)[\s\S]{0,400}\.child\(this\.workingChip\(d\)\)[\s\S]{0,600}\.child\(this\.treesToggle\(d\)\)/, "it sits in the Pals header, between the title and the buttons");
   }
-  // ── The Rooms section folds (T99, DeNon 2026-11-09): a chevron on its header, the state
-  // remembered in the settings ("roomsFolded", like the Topics list), a count, and a dot while a
-  // room is busy. ──────────────────────────────────────────────────────────────────────────────
+  // ── Pals Lite (T217): no Rooms section in the sidebar (rooms stay for the pals, by command). ──
   {
-    const rs = [{ id: "r1", name: "launch", members: [] }, { id: "r2", name: "design", members: [] }];
-    fixtures.shared["crew.settings"] = {};
-    assert.equal(crew.roomsFolded(), false, "open unless folded");
-    let h = roster.roomsHeader(rs, d).node;
-    assert.equal(h.args.id[0], "rooms-head");
-    assert.ok(text({ node: h }).includes("Rooms") && text({ node: h }).includes("2"), "the title and how many");
-    const chevron = (n) => ids({ node: n }).length >= 0 && JSON.stringify(n.kids.at(-1).node.kids.map((k) => k.node.arg));
-    assert.match(chevron(h), /chevron-down\.svg/);
-    assert.equal(h.args.tooltip[0], "Fold rooms");
-    // A click folds it and saves the setting; the header then shows the other chevron.
-    const before = fixtures.shared["crew.uiwrite"]?.at ?? 0;
-    let notes = 0;
-    h.args.on_click[0]({}, { notify() { notes++; } });
-    assert.ok((fixtures.shared["crew.uiwrite"]?.at ?? 0) >= before && fixtures.shared["crew.uiwrite"]?.busy === true, "the setting is being saved (saveUiSettings, as the Topics fold does)");
-    assert.equal(notes, 1);
-    fixtures.shared["crew.settings"] = { roomsFolded: true };
-    assert.equal(crew.roomsFolded(), true);
-    h = roster.roomsHeader(rs, d).node;
-    assert.match(chevron(h), /chevron-right\.svg/);
-    assert.equal(h.args.tooltip[0], "Show rooms");
-    assert.ok(text({ node: h }).includes("2"), "folded: still the count");
-    // The list draws the rows only while unfolded; the keyboard command flips the same setting.
     const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
-    assert.match(src, /list\.child\(this\.roomsHeader\(rs, d\)\);\s*if \(!roomsFolded\(\)\) list\.children\(rs\.map/, "folded: the header alone");
-    assert.match(src, /c === "rooms-fold"\) \{ saveUiSettings\(\{ roomsFolded: !roomsFolded\(\) \}\); cx\.notify\(\); \}/, "crew-roster.rooms-fold does it from the keyboard");
-    assert.ok(!ids({ node: h }).some((n) => n.args.id?.[0] === "rooms-dot"), "quiet rooms: no dot");
-    fixtures.shared["crew.settings"] = {};
+    assert.ok(!/roomsHeader|roomList|rooms-fold|showRoom|crew-room-new/.test(src), "the sidebar draws no rooms and opens no room page");
   }
   // ── A working pal rocks; its dot is steady (T102, DeNon 2026-11-10: this replaced T100's pulsing
   // dot). Wherever the sprite is drawn (petEl), boxed or open, big or a small head. ─────────────
@@ -894,33 +867,6 @@ try {
       assert.ok(img && /-rest-s\.svg$/.test(img.arg), `the pal's own small head (${img?.arg})`);
       fixtures.shared["crew.pets"] = keep;
     }
-    // The sidebar's room rows, drawn for real (open and folded): the heads, the name, no "#", no count.
-    {
-      const { el: mkEl } = await import(url("node_modules/gpui-kit/index.js"));
-      const keepCrew = fixtures.shared.crew;
-      fixtures.shared.crew = { ...keepCrew, rooms: [{ id: "r1", name: "launch", members: [{ space: "s1", tab: "t1" }, { space: "s2", tab: "t5" }] }, { id: "r2", name: "empty-room", members: [] }] };
-      fixtures.shared["crew.settings"] = {};
-      const list = mkEl("div");
-      roster.extras(list, [], 0, d);
-      const rowsDrawn = ids(list).filter((n) => /^room-r\d$/.test(n.args.id?.[0] ?? ""));
-      assert.equal(rowsDrawn.length, 2, "both rooms draw");
-      const launch = rowsDrawn[0];
-      assert.ok(text({ node: launch }).includes("launch") && !text({ node: launch }).includes("#"), "the name, and no #");
-      const icon = launch.kids[0].node;
-      assert.ok(icon.args.tooltip[0].includes("Project Pals - Herdr Mod #indicators") && icon.args.tooltip[0].includes("Orca #general"), `its members on hover (${icon.args.tooltip[0]})`);
-      assert.equal(icon.kids.length, 2, "two members: two heads");
-      assert.equal(launch.kids.length, 2, "the icon and the name: no count");
-      fixtures.shared["crew.settings"] = { roomsFolded: true };
-      const folded = mkEl("div");
-      roster.extras(folded, [], 0, d);
-      assert.equal(ids(folded).filter((n) => /^room-r\d$/.test(n.args.id?.[0] ?? "")).length, 0, "folded: no room rows");
-      assert.ok(ids(folded).some((n) => n.args.id?.[0] === "rooms-head"), "folded: the header stays");
-      fixtures.shared.crew = keepCrew; fixtures.shared["crew.settings"] = {};
-    }
-    // And in the source: no "#", no count.
-    const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
-    const rowSrc = src.slice(src.indexOf("if (!roomsFolded()) list.children(rs.map"), src.indexOf("if (!roomsFolded()) list.children(rs.map") + 900);
-    assert.ok(rowSrc.includes("roomHeads(d, roomMembers(room)") && !rowSrc.includes('child("#")') && !rowSrc.includes("roomMembers(room).length"), "room rows: heads, no # and no count");
   }
   // ── No hard edges (T103, DeNon 2026-11-10): the hero's floor glow ends inside its image and the
   // image ends with the art; scroll areas fade at an end while there is more beyond it. ─────────
