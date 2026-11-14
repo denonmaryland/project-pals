@@ -12,21 +12,23 @@ Gemini CLI, opencode, Hermes and more.
 without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
 
 Each Herdr space is a pal (a project with a brain), and each of its tabs is a topic. Pals can
-work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. On top of that you get:
+work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. The app
+is terminal-forward: you work in the pals' terminals, and around them are a sidebar, Home, an
+Inbox and small dialogs. On top of that you get:
 
 - **Pocket pets:** every pal is a little LED critter whose pose shows what it's doing (working,
   needs you, done, PR open, merged, stuck, asleep). Pick its species, colour, what it wears and its
   eyes.
-- **Terminal-first:** a topic is its agent's own terminal. Split it right or down, and answer the
-  agent's questions right there.
+- **Terminal-first:** a topic is its agent's own terminal. Click a pal and you're in it. Split it
+  right or down, pop it out into a window of its own, and answer the agent's questions right there.
 - **A sidebar built for scanning:** the shown pal up top with its topics and quick actions, then
   every pal with its state in colour. Group pals into folders ("Personal", "Business"), pin them,
   and drag them into any order. Pin and reorder topics too.
-- **Profiles:** a panel per pal with its mission, brain, memory, topics and tasks.
-- **The Vault:** each pal's notes, with a live Home note: mission, focus, what's running, tasks,
-  today's journal and the week, updating as work lands.
 - **Tasks:** give a pal a task (with screenshots attached); it lands on its desk as a card.
-  Routines run on a schedule.
+  Routines run on a schedule (`pal routine`).
+- **Missions and proposals:** each pal can have a mission and a brain (decisions, a change log).
+  When a pal proposes a change to its mission or to a project's AGENTS.md, you see it as a diff
+  in a small dialog and accept or decline it.
 - **Sleep (keep topics, free RAM):** a pal's agents stop while its topics' tabs and room seats
   stay; **Wake (resume topics)** starts them again where they were, resuming each topic's session.
   It never stops a pal that's working, asking you something, being typed to, or still running work
@@ -41,9 +43,9 @@ Everything sent to a pal (a message, a question, a task, the answer to something
 card with a status: queued, seen, working, done, held or needs you. You see when a pal actually
 got it and what it did with it, instead of guessing from its screen.
 
-- The header's **Desk** button shows every desk at once: what waits on you, what has no pal yet,
-  what's held and why, then each pal and its topics. Move, raise, lower, close or cancel a card.
-- **Ctrl+Shift+D** drops a card from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
+- Cards that wait on you show on Home and are counted on the Inbox. `pal desk ls --all` lists every
+  desk: what has no pal yet, what's held and why, each pal and its topics.
+- The header's **Drop** button (or **Ctrl+Shift+D**) drops a card from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
   model (Claude Haiku) picks one for you, and a card it isn't sure about waits for you to place it.
 - Claude Code pals get cards mid-step or when idle without anything typed into their box, so a
   half-written prompt stays put. Antigravity CLI pals get them between steps through hooks; Codex
@@ -98,7 +100,7 @@ Before waking many topics at once, check `pal ram`'s available figure against th
 An optional pal to think out loud with. Hire it from the hire dialog (Idea partner) or with
 `pal hire --partner`, then riff in its #ideas topic: half-formed ideas, screenshots. It asks sharp
 questions and turns what you settle on into card drafts with the right pal suggested. Nothing goes
-out until you click **Send** in the Desk's Drafts; then it's your own card. MUSE runs on Claude
+out until you click **Send** on its draft on Home (or **Edit…** it first); then it's your own card. MUSE runs on Claude
 Code (Sonnet).
 
 ## Harnesses
@@ -140,8 +142,8 @@ is skipped, messages are typed in directly, and routines and callbacks don't run
    pal tell Tryout "Say hello and suggest one tiny project we could make here. Do not change files yet."
    ```
 
-   Watch its topic and pet, then check the header's **Desk** for the card's delivery state.
-   If it waits, open the topic for a prompt and check the Desk for a held reason.
+   Watch its topic and pet, then run `pal desk ls --all` for the card's delivery state.
+   If it waits, open the topic for a prompt and check `pal desk ls --held` for a held reason.
 4. Tell us what worked or where you got stuck. Run `pal report`, review the output, then
    paste it into a [bug, install problem or harness report](https://github.com/denonmaryland/project-pals/issues/new/choose).
    Include what you tried, what you expected, and what happened. A successful first run is
@@ -240,7 +242,7 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
 
 - **Layout, mods and commands:** `~/.config/herdr-app/layouts/pals.json`, `mods/crew-*`, and
   `~/.local/bin/pal` and friends (`crew` is an alias).
-- **Shortcuts:** Ctrl+Shift+I (profile), Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
+- **Shortcuts:** Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
   card) and Ctrl+Shift+H (Home) go into Herdr's `keys.json`, backed up first, and only where the
   key and the action are free.
 - **Helpers (skip all with `--no-helpers`, or skip one harness's hooks with `--no-claude-hooks` / `--no-agy-hooks`):**

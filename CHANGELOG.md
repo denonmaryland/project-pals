@@ -2,11 +2,21 @@
 
 ## Unreleased
 
-- **Read a topic as a page.** On a pal's board, a topic's **Read** (or O) shows its conversation in
-  place of the columns: its replies as Markdown with code and table boxes, each stretch of tool
-  calls folded into one chip you can open (done, running or failed), notes from other pals with who
-  sent them, and how long each turn took. Reply in the box under it; Esc goes to the terminal to
-  type live. It only reads: it never types into a terminal or answers a prompt.
+- **Pals Lite: back to the terminal.** The app's full pages are gone, so a pal is its terminals
+  again: clicking a pal opens its topic (the head pal still opens Home). Gone: the profile panel
+  (Profile, the Vault, Memory, the AGENTS.md editor, the dashboard), a pal's Computer, the pal
+  board, the Routines dialog, the Desk page and the room page with its composer, and their
+  shortcuts (Ctrl+Shift+I, Y and U). What stays: Home, the Inbox and the approval gate, Tasks, the
+  quick-drop, Review changes, Hire, New topic, the command bar, Look, updates and the Chief. The
+  pals still use Desk cards (`pal desk`), rooms (`pal-room`) and routines (`pal routine`). Where
+  things moved: a pal's proposed change to its mission or AGENTS.md opens in a small dialog that
+  shows it as a diff, with Decline and Accept; the idea partner's drafts are on Home, with Send,
+  Edit… and Discard; Change machine… is in the pal menu (click the pal's name); the sidebar's
+  buttons are Inbox, Tasks, Pop out (the topic's terminal in its own window) and Close pal (Home
+  on the head pal); and the header's button is now **Drop**, which drops a card. Nothing you made is touched: memory,
+  notebooks, missions, tasks, cards, rooms, routines and pages stay on disk. The installer backs up
+  the old mods before setting them aside, and takes the three old shortcuts out of `keys.json` only
+  where they still point at Project Pals.
 
 - **Land always goes to main.** A topic's branch now lands on the project's main branch (or a base
   you named when making it), never on whatever branch the project folder happens to have out, and
