@@ -146,9 +146,7 @@
                   "content": {
                     "mod": "crew-home"
                   }
-                },
-            { "id": "pc-view", "type": "block", "content": { "mod": "crew-computer" } },
-            { "id": "pal-view", "type": "block", "content": { "mod": "crew-palboard" } }
+                }
               ]
             },
             {

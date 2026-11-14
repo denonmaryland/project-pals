@@ -19,7 +19,7 @@ import { alertSound,
   anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
   severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
   scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
-  toggleChief, withoutChief, isChiefRec, toggleComputer, showBoard, toggleBoard, hasBoard, boardMode, boardPal, palClickOpens } from "./crew.js";
+  toggleChief, withoutChief, isChiefRec } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles show their names from this sidebar width up (each pebble
@@ -157,9 +157,6 @@ export default class CrewRoster extends View {
         else if (c === "chief") toggleChief();
         // Ctrl+Shift+G: the factory switcher.
         else if (c === "factory" || c === "factories") openFactoryMenu();
-        // Ctrl+Shift+Y: the shown pal's Computer (again: back to the topic).
-        else if (c === "computer") toggleComputer();
-        else if (c === "board") toggleBoard();
         cx.notify();
       }
     });
@@ -632,12 +629,10 @@ export default class CrewRoster extends View {
   leadTab(space) { return palLeadTab(space); }
   // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
   // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
-  // Clicking any other pal opens its board (DeNon's pick G, T108): what it's doing and what it needs
-  // before any terminal. The pal whose board is up: its terminal (they swap). Topics and keys still
-  // go straight to terminals, and Settings → palClick "terminal" brings the old click back.
+  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); any other pal, its terminal
+  // (Pals Lite, T217: the board and the Computer are gone).
   open(space) {
     if (runsHome(space) && hasHome()) { showHome(); return; }
-    if (palClickOpens() === "board" && hasBoard() && !(boardMode() && boardPal() === space.name)) { showBoard(space); return; }
     this.go(space, this.leadTab(space));
   }
 
