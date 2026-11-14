@@ -313,7 +313,7 @@ export default class CrewHome extends View {
       acts = [B("go", `Open #${clip(channelName(n.tab), 18)}`, () => this.openTopic(`${n.space.name}#${channelName(n.tab)}`), { primary: true })];
     } else if (n.kind === "desk") {
       const c = n.c;
-      tag = this.tag(d, "Desk", d.warnText);
+      tag = this.tag(d, "Message", d.warnText);
       title = c.title || "(no title)";
       sub = `${c.id} · ${c.kind ?? "card"} · from ${c.from_kind === "owner" ? own : c.from ?? "?"}${c.result ? ` · ${clip(c.result, 80)}` : ""}`;
       acts = [B("done", "Done", (cx) => this.act(n.key, ["desk", "done", c.id, "closed on Home"], "Closed", cx), { primary: true })];
@@ -477,7 +477,7 @@ export default class CrewHome extends View {
       const pb = v_flex().children(prog.rows.map((r, i) => this.progressRow(d, t, r, i)));
       if (prog.desk.length) {
         pb.child(h_flex().h(28).flex_none().items_center().px(14).border_t_1().border_color(d.line)
-          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`On ${this.who()}'s desk · ${prog.desk.length}`)));
+          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`Waiting with ${this.who()} · ${prog.desk.length}`)));
         pb.children(prog.desk.map((c, i) => this.deskRow(d, c, i)));
       }
       body = prog.rows.length || prog.desk.length ? scrollArea(d, "home-prog", pb).flex_1().min_h(0)
@@ -714,7 +714,7 @@ export default class CrewHome extends View {
     }
     if (n.kind === "desk") {
       const c = n.c, r = recs[c.id];
-      return { tag: ["Desk", this.d.warnText], who: c.from_kind === "owner" ? null : c.from, topic: topicOf(c.from), sub: `${c.id} · ${c.kind ?? "card"} · ${homeAge(n.at)} ago`,
+      return { tag: ["Message", this.d.warnText], who: c.from_kind === "owner" ? null : c.from, topic: topicOf(c.from), sub: `${c.id} · ${c.kind ?? "card"} · ${homeAge(n.at)} ago`,
         title: c.title || "(no title)", body: [c.body, c.result ? `Result: ${c.result}` : null].filter(Boolean).join("\n\n"), images: c.attachments,
         rec: r && r.option === "done" ? { option: "Done", why: r.why, by: r.by } : null,
         options: [o("Done", "Closes the card; the sender sees it", owner(["desk", "done", c.id, "closed on Home"], "Closed"))] };

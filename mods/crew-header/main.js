@@ -7,8 +7,8 @@
 // 2026-11-08 (channels switch from the hero's list; "no agent" shows there).
 // Under it is the channel's terminal (terminal-first, DeNon 2026-11-08).
 // keys.json / herdr-app do: crew-header.search opens the command bar from anywhere.
-// The Drop button on the right (Pals Lite, T217; it was the Desk page's button) and
-// crew-header.drop (Ctrl+Shift+D) open the quick-drop composer. The header is always shown, so it's the one place
+// crew-header.drop (Ctrl+Shift+D) opens the quick-drop, "Send to a pal" (no header button since
+// 0.4.4: nothing in the app says Desk). The header is always shown, so it's the one place
 // that reads the desk's counts (`pal desk ls --all --json`, when data/crew-desk changes, else every
 // 10 s) and publishes them as shared("crew.desk") = { counts, pals, triage, at } for the other mods
 // (pals: open / held per pal folder and topic, for the sidebar; triage: "auto" | "off"). It also
@@ -86,19 +86,6 @@ export default class CrewHeader extends View {
     });
   }
 
-  // The Drop button (Pals Lite, T217: the Desk page is gone): the quick-drop, which sends a card to
-  // any pal; amber while any card is held (Home shows held work).
-  dropButton(d) {
-    const held = shared("crew.desk")?.counts?.held ?? 0;
-    const hint = keyHint("crew-header.drop");
-    return div().id("drop-btn").h(26).flex().flex_none().items_center().gap(6).px(8).rounded(d.r.sm).cursor_pointer()
-      .border_1().border_color("#00000000").hover((s) => s.bg(d.hover))
-      .tooltip(`Drop a card on any pal${hint ? ` (${hint})` : ""}${held ? ` · ${held} held, on Home` : ""}`)
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); openDrop(); cx.notify(); })
-      .child(svg("mods/crew-roster/icons/ds-send.svg").size(13).text_color(held ? d.warnText : d.fg2))
-      .child(div().text_size(12).font_weight(500).text_color(d.fg2).child("Drop"));
-  }
-
   fieldW() { return Math.max(200, Math.min(FIELD_MAX, this.w - 2 * (SIDE + 16))); }
 
   // Where the field is in the window: from a press on it, else from the header's last known
@@ -135,7 +122,6 @@ export default class CrewHeader extends View {
       .child(h_flex().flex_1().flex_basis(0).min_w(0))
       .child(commandField(d, { w: this.fieldW(), onOpen: (e) => this.open(e) }))
       .child(h_flex().flex_1().flex_basis(0).min_w(0).justify_end().items_center().gap(8)
-        .child(this.dropButton(d))
         .child(space && tab && !homeMode() ? splitButtons(d) : div()));
   }
 }

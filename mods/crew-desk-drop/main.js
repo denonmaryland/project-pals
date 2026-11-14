@@ -1,21 +1,21 @@
-// The quick-drop (docs/desk/design.md §11.2): one card onto any desk, from anywhere. Ctrl+Shift+D
-// (crew-header.drop), the command bar's "Drop a card…", the Desk view's Drop button.
+// Send to a pal (the quick-drop; docs/desk/design.md §11.2): a message to any pal, from anywhere.
+// Ctrl+Shift+D (crew-header.drop), "Send to a pal…" in the gear menu and the command bar. Since 0.4.4
+// (T222) nothing in the app says Desk; the message is still a Desk card underneath (pal desk).
 //
 // - The text: multi-line, 3 rows growing to 10 (the Tasks composer). Its first line is the card's
 //   title. Images by pasting, dropping files on the dialog, or the paperclip (crew-attach): each is
 //   copied into data/crew-attachments (images only, 10 MB at most, 6 a card) and sent with --attach.
 // - To: Auto (crewd's triage, a cheap model, picks the pal and topic: `pal desk send auto`), To route
-//   (it waits there and you pick), a pal (its pal tray: the rules pick the topic), or Pal#topic, with a
-//   filter field (typeahead over spaces()). Auto is hidden while triage is off (shared crew.desk.triage,
-//   published by crew-header) or there are no pals; To route is the default then.
+//   (it waits there and you pick), a pal (the rules pick the topic), or Pal#topic, with a filter
+//   field. Auto is hidden while triage is off (shared crew.desk.triage) or there are no pals.
 // - Urgency: Low · Normal · Soon · Now (Now only here: the owner's interrupt).
 // - Track on the board: on by default once the text has more than one line (--task makes a T-n).
-// Enter drops, Shift+Enter is a new line. The card goes as the owner's, with a click token
-// (ownerCli: `pal desk send … --click`); a toast says where it landed ("Dropped on Pal #topic · c-7f3a",
-// "Dropped · sorting it to a pal · c-7f3a", "Waiting in To route · c-7f3a", or "Held · …" with why).
-// props: { to?, text?, urgency?, task?, fromDraft?, drafter? }. Edit on an idea partner's draft (the Desk
-// view) opens it prefilled with the draft (`fromDraft`: its id); the title says "Edit MUSE's draft", and
-// Drop sends the edited text as the owner's card with --from-draft, which retires the draft.
+// Enter sends, Shift+Enter is a new line. It goes as the owner's, with a click token (ownerCli:
+// `pal desk send … --click`); a toast says where it went ("Sent to Pal #topic · c-7f3a", "Sent · a
+// pal is being picked · c-7f3a", "Waiting in To route · c-7f3a", or "Held · …" with why).
+// props: { to?, text?, urgency?, task?, fromDraft?, drafter? }. Edit on an idea partner's draft (on
+// Home) opens it prefilled (`fromDraft`: its id); Send sends the edited text as the owner's card with
+// --from-draft, which retires the draft.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, InputState, Input } from "gpui-base";
@@ -99,7 +99,7 @@ export default class CrewDeskDrop extends View {
       for (const src of paths) {
         const name = src.split("/").pop();
         if (this.files.length >= MAX_FILES) { notify({ title: `${MAX_FILES} images at most`, level: "info", timeout: 2500 }); break; }
-        if (!IMAGE.test(name)) { notify({ title: `${name} isn't an image`, body: "Cards take images (png, jpg, gif, webp, bmp).", level: "info", timeout: 3000 }); continue; }
+        if (!IMAGE.test(name)) { notify({ title: `${name} isn't an image`, body: "Only images can be attached (png, jpg, gif, webp, bmp).", level: "info", timeout: 3000 }); continue; }
         try {
           const out = await attachCli(["copy", src, dir]);
           if (out.code === 4) { notify({ title: `${name} is over 10 MB`, level: "info", timeout: 3000 }); continue; }
@@ -147,14 +147,14 @@ export default class CrewDeskDrop extends View {
         const id = res.card?.id ?? "";
         const where = res.card?.to ?? this.to;
         const what = String(res.what ?? "queued");
-        if (to === AUTO && !what.startsWith("held")) notify({ title: `Dropped · sorting it to a pal · ${id}`, body: track ? "Tracked on the board too." : null, level: "success", timeout: 3000 });
+        if (to === AUTO && !what.startsWith("held")) notify({ title: `Sent · a pal is being picked · ${id}`, body: track ? "Tracked on the board too." : null, level: "success", timeout: 3000 });
         else if (what.startsWith("held")) notify({ title: `Held · ${id}`, body: what.replace(/^held:\s*/, ""), level: "warning", timeout: 5000 });
         else if (what.startsWith("waiting")) notify({ title: `${what[0].toUpperCase()}${what.slice(1)} · ${id}`, level: "success", timeout: 3000 });
-        else notify({ title: `Dropped on ${where.replace("#", " #")} · ${id}`, body: track ? "Tracked on the board too." : null, level: "success", timeout: 3000 });
+        else notify({ title: `Sent to ${where.replace("#", " #")} · ${id}`, body: track ? "Tracked on the board too." : null, level: "success", timeout: 3000 });
         this.busy = false;
         this.close();
       } catch (e) {
-        notify({ title: "Couldn't drop the card", body: String(e.message ?? e).slice(0, 200), level: "warning" });
+        notify({ title: "Couldn't send it", body: String(e.message ?? e).slice(0, 200), level: "warning" });
         if (!this.input.value()) this.input.set_value(text);
         if (!this.files.length) this.files = files;
         this.busy = false;
@@ -195,8 +195,8 @@ export default class CrewDeskDrop extends View {
 
     return sheet(d, "crew-desk-drop", this.handle, (e, cx) => { if (e.key === "escape") { if (this.toOpen) { this.toOpen = false; cx.notify(); } else this.close(); cx.stop_propagation(); } })
       .on_drop((e, cx) => this.attach(e.paths ?? [], cx))
-      .child(sheetHeader(d, { id: "dd", title: this.fromDraft ? `Edit ${this.drafter ?? "the idea partner"}'s draft` : "Drop a card", onClose: () => this.close(),
-        sub: this.fromDraft ? "Dropping sends it as yours and retires the draft." : "It lands on a desk with a status and receipts; the Desk view follows it." }))
+      .child(sheetHeader(d, { id: "dd", title: this.fromDraft ? `Edit ${this.drafter ?? "the idea partner"}'s draft` : "Send to a pal", onClose: () => this.close(),
+        sub: this.fromDraft ? "Sending sends it as yours and retires the draft." : "It goes as yours. The pal gets it between two of its steps, and Home shows you when it's done." }))
       .child(sheetBody()
         .child(v_flex().id("dd-compose").rounded(6).bg(d.inset).border_1().border_color(d.lineMid)
           .on_key_down((e, cx) => { if (e.key === "enter" && !e.modifiers?.shift && !this.toOpen) this.drop(cx); })
@@ -223,7 +223,7 @@ export default class CrewDeskDrop extends View {
           .child(urg)
           .child(sheetToggle(d, "dd-track", { label: "Track on the board", on: track, onClick: () => { this.track = !track; } })))
         .when(this.toOpen, (el) => el.child(toPanel())))
-      .child(sheetFooter(d, { id: "dd", hint: "Enter drops · Shift+Enter new line · Esc closes", onCancel: () => this.close(), ready,
-        primary: this.busy ? "Dropping…" : "Drop", onPrimary: (cx) => this.drop(cx) }));
+      .child(sheetFooter(d, { id: "dd", hint: "Enter sends · Shift+Enter new line · Esc closes", onCancel: () => this.close(), ready,
+        primary: this.busy ? "Sending…" : "Send", onPrimary: (cx) => this.drop(cx) }));
   }
 }

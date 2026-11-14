@@ -17,7 +17,11 @@ herdr-core 0.1.20.
   shows it as a diff, with Decline and Accept; the idea partner's drafts are on Home, with Send,
   Edit… and Discard; Change machine… is in the pal menu (click the pal's name); the sidebar's
   buttons are Inbox, Tasks, Pop out (the topic's terminal in its own window) and Close pal (Home
-  on the head pal); and the header's button is now **Drop**, which drops a card. Nothing you made is touched: memory,
+  on the head pal); and sending a pal a message from the app is **Send to a pal…** (Ctrl+Shift+D or the
+  gear menu). Nothing in the app says Desk any more: the header's button and the Desk settings dialog
+  are gone too, and waiting messages on Home are tagged Message. The Desk's settings (triage, the check-in's
+  timings, archiving, whether MUSE sends as itself) keep their values; to change one, ask your trusted
+  helper on Full control, or edit the "desk" section of `crew-settings.json`. Nothing you made is touched: memory,
   notebooks, missions, tasks, cards, rooms, routines and pages stay on disk. The installer backs up
   the old mods before setting them aside, and takes the three old shortcuts out of `keys.json` only
   where they still point at Project Pals.

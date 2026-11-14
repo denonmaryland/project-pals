@@ -135,8 +135,9 @@ done
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
 # Pals Lite (T217, DeNon's h-724046) deleted the full pages: the pal board, the Computer, the profile
 # panel, the Routines dialog, the Desk page, the room page and its composer. (The Desk's cards, in
-# data/, are the pals' messages and are never touched.)
-for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines crew-desk crew-room crew-room-new crew-composer; do
+# data/, are the pals' messages and are never touched.) 0.4.4 (T222): the Desk settings dialog too;
+# its settings stay in crew-settings.json (a Full control helper, or the owner by hand, changes them).
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines crew-desk crew-room crew-room-new crew-composer crew-desk-settings; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi

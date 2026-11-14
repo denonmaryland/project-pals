@@ -216,7 +216,7 @@ export default class CrewAbout extends View {
     else if (this.busy === "update") { title = `Updating to ${st.latest}…`; sub = "Downloading, backing up, installing, checking each mod"; }
     else if (this.busy === "rollback") { title = "Putting the previous version back…"; sub = ""; }
     else if (this.busy === "uninstall") { title = "Uninstalling Project Pals…"; sub = "Herdr switches to its main layout when it's done"; }
-    else if (this.confirmUninstall) { title = "Uninstall Project Pals?"; sub = "Takes out its layout, mods, commands, Claude Code and Antigravity hooks, shortcuts and crewd. Your own settings go back to how they were; your pals' data (pals, memory, the Desk, tasks) stays."; color = t.blocked; }
+    else if (this.confirmUninstall) { title = "Uninstall Project Pals?"; sub = "Takes out its layout, mods, commands, Claude Code and Antigravity hooks, shortcuts and crewd. Your own settings go back to how they were; your pals' data (pals, memory, messages, tasks) stays."; color = t.blocked; }
     else if (this.confirmStable) { title = `Go back to release ${st.latest ?? ""}?`.replace(" ?", "?"); sub = `Puts the newest release back over ${buildName(ins.build) ?? "this build"} and stops following main. Everything landed since that release goes with it until it's released; Roll back brings this build back.`; color = t.blocked; }
     else if (this.error) { title = "That didn't work"; sub = this.error; color = t.blocked; }
     // A trial, then the Live channel: what's running and what last went live (T90).
@@ -336,13 +336,6 @@ export default class CrewAbout extends View {
           .child(div().text_size(12.5).text_color(helpersOn.length ? t.accent : t.muted).child(helpersOn.length ? `${helpersOn.map(([n]) => n).join(", ")} on` : "None on"))
           .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
         () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 }); }))
-      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
-      // The Desk: triage, its cap, the check-in's flags, archiving, MUSE (its own dialog, crew-desk-settings).
-      .child(row("set-desk", "Desk", "How cards are placed, flagged and kept",
-        h_flex().items_center().gap(8)
-          .child(div().text_size(12.5).text_color(t.muted).child(shared("crew.desk")?.triage === "off" ? "Triage off" : "Triage on"))
-          .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(t.dim)),
-        () => { closeOverlay(props().overlay); openOverlay({ mod: "crew-desk-settings", kind: "dialog", width: 520 }); }))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // How the sidebar lists the pals: its own dialog, the looks beside a live preview (crew-palstyle).
       .child(row("set-pallist", "Pal list style", "How the sidebar lists your pals",

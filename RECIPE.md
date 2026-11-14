@@ -996,13 +996,15 @@ still travels through crewd's queue, carrying the card's id.
   `working` / `later` / `blocked` / `needs you` / `done` with `pal desk take|later|block|done|reply`.
   `held` (with `draft`, `asleep` or `gone`) when it's due but can't go out; crewd tries held and
   queued cards again every minute. Callbacks are closed as soon as they're delivered.
-- **No Desk page** (T217: the Desk view, `desk-view`, is gone, and so is the header's Desk
-  button). Cards that need you are on Home and in the Inbox, the header's **Drop** button opens the
-  quick-drop, and `pal desk` lists, opens and moves cards (`pal desk ls --all`, `open`, `done` …).
-- **Quick-drop** (`crew-desk-drop`, the header's **Drop** button, Ctrl+Shift+D, or "Drop a card…"
-  in the command bar and the gear menu): a 560 px dialog with To (Auto = To route until triage ships, a pal, or a topic),
-  Low · Normal · Soon · Now, images, and "Track on the board" (on for multi-line text). Enter
-  drops; the toast names the card ("Dropped on Helper #build · c-7f3a9e").
+- **Nothing in the app says Desk** (T217 took out the Desk page; 0.4.4, T222, the header's button and
+  the Desk settings dialog). Cards are the pals' messages underneath: cards that need you are on
+  Home (tagged **Message**) and counted on the Inbox, and `pal desk` lists, opens and moves them
+  (`pal desk ls --all`, `open`, `done` …).
+- **Send to a pal** (the quick-drop, `crew-desk-drop`: Ctrl+Shift+D, or "Send to a pal…" in the
+  command bar and the gear menu; no header button): a 560 px dialog with To (Auto, To route, a pal,
+  or a topic), Low · Normal · Soon · Now, images, and "Track on the board" (on for multi-line text).
+  Enter sends, as the owner's card with a click token; the toast names it ("Sent to Helper #build ·
+  c-7f3a9e").
 - **Triage:** a card dropped with **Auto** waits in To route (`route: auto`) while crewd asks a cheap
   model (`run_headless`: `claude -p --model haiku`, else agy) which pal and topic should take it. It
   goes there with a "routed #topic · triage · why" receipt, or stays in To route as needs you
@@ -1027,13 +1029,13 @@ still travels through crewd's queue, carrying the card's id.
   each with Read it on Home and Done (a click), and they count in the status bar's "N need you" as
   "Card: <title> · <sender>". The header publishes them (`shared("crew.desk").needs`, via
   `needsYouCards`); Home uses the same filter, so the three agree.
-- **Settings → Desk** (About → Settings → Desk, `crew-desk-settings`, 520 px): today's numbers on
-  top (open, held, needs you, drafts; triage calls against the cap; the last check-in), then Triage
-  (Auto / Off), −/+ steppers for the triage cap, pals' soon cards per topic an hour, the check-in's
-  held and quiet minutes and the archive days, and "MUSE sends as itself". Each change saves at once
-  with `pal settings desk.<key> <value>` and the owner's one-time click token (`ownerCli`; validated).
-  Without the token every setting change is refused: a pal, an unknown terminal, a plain shell
-  (Grok review H1). Reading settings needs nothing.
+- **The Desk's settings** have no dialog since 0.4.4 (T222): triage (auto / off) and its daily cap,
+  pals' soon cards per topic an hour, the check-in's held and quiet minutes, the archive days, and
+  "MUSE sends as itself" keep their values in `crew-settings.json` ("desk"; defaults in
+  `crewdesk.DEFAULTS`). `pal settings desk.<key> <value>` changes one only with owner authority: a
+  trusted helper on Full control (on the owner's word), since no app click offers it any more; a
+  plain shell or a pal is refused (Grok review H1). The owner can also edit the "desk" section of
+  `crew-settings.json` by hand; crewd reads it on its next pass. Reading needs nothing.
 - **The head pal's check-in:** at most every 15 minutes, when something's stuck, crewd puts one low
   `checkin` card on the head pal's desk: cards held over 10 minutes (with the reason) and cards seen
   with no receipt from their pal for 30, titles only. A card is listed again only after two hours.
@@ -1175,7 +1177,7 @@ shows, the header hides the split buttons.
   finished, one row each with its turns; your answers; links (click opens); notes; things closed on
   Home; cards the head pal closed. "N new since you last looked" and **Mark all seen**, your click),
   **Working** (48 px rows, longest first: pet, the working indicator, pal, #topic, its terminal
-  title, how long; held and stuck in amber; then "On <head>'s desk · N" and its open cards),
+  title, how long; held and stuck in amber; then "Waiting with <head> · N" and its open cards),
   **Releases** (three 64 px cells, Public · GitHub / Installed here with the build / Next, then
   queued items and pending deploys, and when GitHub was checked), **Parked** (title, Unpark ·
   Drop, when).
@@ -1350,7 +1352,7 @@ Inbox stays everyone's, so a switch never hides an approval.
 
 **Home follows the factory.** With several, Home (Ctrl+Shift+H) is the shown factory's: its Home
 items, its pals' questions, approvals, cards and stuck topics, its pals' work in progress, and its
-foreman's desk ("On <foreman>'s desk", Talk to <foreman>). A small tag by "Needs you" names the
+foreman's cards ("Waiting with <foreman>", Talk to <foreman>). A small tag by "Needs you" names the
 factory. A Home item belongs to the factory of the pal it's about (`topic`, else who added it),
 stamped as `factory` when added; an older item without the stamp goes by the same rule. Installs
 and the release track are the default factory's. A factory with no foreman yet has nobody's desk.
@@ -1513,7 +1515,7 @@ implementation details below, not the current permission model.
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`),
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`, `crew-update` (props `check`),
     `crew-attach`, `crew-tasks` (props `space`), `crew-proposal` (props `id`), `crew-machine`,
-    `crew-desk-drop`, `crew-desk-settings`. The installer retires the old `crew-tell`.
+    `crew-desk-drop`. The installer retires the old `crew-tell`.
   - Removed in T217: `crew-profile`, `crew-computer`, `crew-computer-app`,
     `crew-palboard`, `crew-routines`, `crew-desk`, `crew-room`, `crew-room-new` and
     `crew-composer`. The installer sets installed copies aside, backed up, like Pro's.

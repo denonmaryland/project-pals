@@ -84,7 +84,6 @@ try {
   const src = (f) => readFileSync(join(root, f), "utf8").split("\n");
   const sites = [
     ["mods/crew-update/main.js", "child(h.detail)"],                              // release-note highlights
-    ["mods/crew-desk-settings/main.js", "text_color(d.fg3).child(sub)"],          // what a Desk setting does
     ["mods/crew-home/main.js", "child(sp.sub ?? \"\")"],                          // the review's who line
     ["mods/crew-home/main.js", "${rec.why}"],                                    // the recommendation's why
     ["mods/crew-home/main.js", "The asker didn't pick one"],
@@ -102,7 +101,6 @@ try {
   const home = readFileSync(join(root, "mods/crew-home/main.js"), "utf8");
   for (const box of ['id(`need-${n.key}`).min_h(CARD)', 'id("rv-rec").min_h(52)', 'id(`rv-o-${j}`).min_h(40)', 'min_w(0).min_h(72)'])
     assert.ok(home.includes(box), `crew-home: ${box}`);
-  assert.ok(readFileSync(join(root, "mods/crew-desk-settings/main.js"), "utf8").includes("flex().min_h(48)"), "Desk settings rows grow");
   console.log("test_wrap: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

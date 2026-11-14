@@ -45,7 +45,7 @@ got it and what it did with it, instead of guessing from its screen.
 
 - Cards that wait on you show on Home and are counted on the Inbox. `pal desk ls --all` lists every
   desk: what has no pal yet, what's held and why, each pal and its topics.
-- The header's **Drop** button (or **Ctrl+Shift+D**) drops a card from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
+- **Send to a pal** (**Ctrl+Shift+D**, or the gear menu) sends a message from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
   model (Claude Haiku) picks one for you, and a card it isn't sure about waits for you to place it.
 - Claude Code pals get cards mid-step or when idle without anything typed into their box, so a
   half-written prompt stays put. Antigravity CLI pals get them between steps through hooks; Codex
