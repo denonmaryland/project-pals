@@ -403,7 +403,10 @@ def begin_delegation(argv):
     authority = crewhelpers.full_authority()
     if not authority:
         return None
-    if "--click" in argv or "--tap" in argv:
+    # pal's own options end at the first `--`; after it the words are another program's (T212 round 7,
+    # as bin/crew's owner_args): a release note "--click" isn't a click token.
+    head = list(argv)[:list(argv).index("--")] if "--" in argv else list(argv)
+    if "--click" in head or "--tap" in head:
         raise CrewError("a helper acts under its own grant, never a human click or tap token")
     _delegation = authority
     # Log action names and a fingerprint, not message text, prompts, secrets or file contents.
@@ -512,7 +515,7 @@ def owner_gate(argv, click=None, what="this", tap=None, allow_delegate=True):
         if tok and tok.get("args") == argv and now_ms() - tok.get("at", 0) < CLICK_TTL * 1000:
             return "the app"
         die(f"that click expired or was for something else; click again in Project Pals")
-    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (the Inbox or the profile panel)")
+    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (Home, the Inbox, or the proposal dialog)")
 
 
 def is_bot_terminal(terminal):

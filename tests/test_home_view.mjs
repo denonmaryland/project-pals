@@ -372,8 +372,9 @@ try {
   clicks.get("open-terminal")(null, { notify() {} });
   assert.ok(fx.calls.some((c) => c[1] === "pane.focus" && c[2].includes('"terminal":"tg"')), "Talk to Orca opens its terminal, focused");
   for (const id of ["ap-a-111111-ok", "ap-a-111111-no", "h-h-aaaaaa-o0", "h-h-aaaaaa-o1", "h-h-aaaaaa-park", "h-h-bbbbbb-go", "h-h-cccccc-copy", "h-h-cccccc-go",
-    "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "what-happened"])
+    "q-tb2-go", "c-c-owner1-done", "what-happened"])
     assert.ok(clicks.has(id), `has a ${id} button`);
+  assert.ok(!clicks.has("c-c-owner1-desk"), "no Open in Desk (Pals Lite, T217: the Desk page is gone)");
   // Inbox zero: the page is the list; the rest is in the drawer, closed until asked for.
   assert.equal(v.drawer, null, "the drawer starts closed");
   clicks.clear();
@@ -448,6 +449,35 @@ try {
   const keep = fx.layout; fx.layout = { id: "root", children: [{ id: "center", type: "stack", active: "tab-view", children: [] }] };
   assert.equal(crewjs.showHome(), false);
   fx.layout = keep;
+
+  // A card the idea partner drafted (Pals Lite, T217): on Home, sent only on your click.
+  {
+    const keepDesk = fx.desk;
+    fx.desk = { counts: {}, cards: [{ id: "c-draft1", kind: "tell", status: "draft", tray: "_drafts", from: "MUSE#ideas", from_kind: "pal", to: "Herdr Mod#site",
+      title: "Try a warmer empty state", body: "Two lines of copy for the empty Home.", created: iso(3) }] };
+    const h2 = new Home();
+    await run((cx) => h2.init({}, cx));
+    await run((cx) => draw(h2, cx));
+    await run((cx) => draw(h2, cx));
+    assert.ok(h2.needs().some((n) => n.kind === "draft" && n.c.id === "c-draft1"), "the draft is something to decide");
+    h2.mode = "list";
+    clicks.clear();
+    await run((cx) => draw(h2, cx));
+    for (const id of ["dr-c-draft1-send", "dr-c-draft1-edit", "dr-c-draft1-discard"]) assert.ok(clicks.has(id), `has a ${id} button`);
+    fx.calls.length = 0;
+    await run((cx) => clicks.get("dr-c-draft1-send")(null, cx));
+    const sent = fx.calls.filter((c) => c[0] === "pal" && c[1] === "desk" && c[2] === "send-draft").at(-1);
+    assert.deepEqual(sent.slice(1, 6), ["desk", "send-draft", "c-draft1", "--to", "Herdr Mod#site"], "Send goes where it suggests");
+    assert.ok(sent.includes("--click"), "sending a draft is the owner's click");
+    await run((cx) => clicks.get("dr-c-draft1-discard")(null, cx));
+    const dropped = fx.calls.filter((c) => c[0] === "pal" && c[1] === "desk" && c[2] === "discard").at(-1);
+    assert.deepEqual(dropped.slice(1, 4), ["desk", "discard", "c-draft1"]);
+    assert.ok(dropped.includes("--click"));
+    clicks.get("dr-c-draft1-edit")(null, { notify() {} });
+    assert.equal((fx.overlays ?? []).at(-1).mod, "crew-desk-drop", "Edit opens it in the quick-drop");
+    assert.equal((fx.overlays ?? []).at(-1).props.fromDraft, "c-draft1");
+    fx.desk = keepDesk;
+  }
 
   // All clear: nothing waiting, nothing new, nobody working.
   fx.approvals = ""; fx.shared["crew.needs"] = { items: [] }; fx.agents = []; fx.feed = ""; fx.desk = { counts: {}, cards: [] };

@@ -81,7 +81,7 @@ try {
   // No window height known yet: the old box (it scrolls). Known: everything, or what the window holds.
   delete fx.shared["crew.window"];
   assert.deepEqual(crew.appMenuSpec(), { width: 252, height: 438 });
-  for (const [win, want] of [[1100, needs], [needs + 16, needs], [needs + 15, needs - 1], [700, Math.min(needs, 684)], [500, 484], [360, 344], [90, 120]]) {
+  for (const [win, want] of [[1100, needs], [needs + 16, needs], [needs + 15, needs - 1], [700, Math.min(needs, 684)], [500, Math.min(needs, 484)], [360, Math.min(needs, 344)], [90, 120]]) {
     fx.shared["crew.window"] = { h: win };
     const spec = crew.appMenuSpec();
     assert.equal(spec.height, want, `a ${win} px window: the menu is ${want} px`);

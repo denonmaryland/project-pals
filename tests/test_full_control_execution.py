@@ -19,7 +19,10 @@ class FullExecution(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def held(self, command='git push origin main', terminal='tW', extra=None):
-        return py(self.env, f'import crewguard; print(json.dumps(crewguard.check({terminal!r}, "Worker", "general", {command!r}, extra={extra!r})))')
+        # The hook's folder (T205, card c-ddd208): a Full grant decides only requests whose execution
+        # context the gate saved; one without it waits for the owner.
+        return py(self.env, f'import crewguard; crewguard.HOOK_CWD = {str(self.root)!r}; '
+                  f'print(json.dumps(crewguard.check({terminal!r}, "Worker", "general", {command!r}, extra={extra!r})))')
 
     def approval(self, rid):
         return json.loads((self.data / 'crew-approvals' / (rid + '.json')).read_text())
@@ -54,7 +57,8 @@ class FullExecution(Base):
         third = self.held()
         self.assertNotEqual(second['id'], third['id'])
         self.assertEqual(self.approval(second['id'])['status'], 'expired')
-        self.assertFalse(py(self.env, 'import crewguard; print(json.dumps(crewguard.recently_used("tW", "push")))'))
+        self.assertFalse(py(self.env, f'import crewguard; print(json.dumps(crewguard.recently_used("tW", "push", '
+                            f'words=["git", "push", "origin", "main"], cwd={str(self.root)!r})))'))
 
     def test_mutating_approved_request_invalidates_saved_authority(self):
         r = self.held(extra={'diff': 'reviewed patch'})
@@ -71,6 +75,22 @@ class FullExecution(Base):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('trust or audit', result.stderr)
         self.assertEqual(self.approval(r['id'])['status'], 'pending')
+
+    def test_a_click_word_after_the_separator_is_the_programs_not_a_token(self):
+        """#codex-sol T212 round 7: Full authentication refused any argv holding --click / --tap, even
+        a release's own notes after owner-step's --. Before the -- a token still gains no authority:
+        the run falls back to no grant and the owner is asked (main's fail-closed dispatch)."""
+        for opt in ('--click', '--tap'):
+            with self.subTest(opt=opt):
+                r = helper(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'notes', opt, 'word')
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertFalse(list((self.data / 'crew-approvals').glob('*.json')))
+                r = helper(self.env, 'owner-step', 'release-script', opt, 'ab' * 16, '--', './release', '9.9.9', 'notes')
+                self.assertEqual(r.returncode, 3, r.stderr)
+                held = [json.loads(f.read_text()) for f in (self.data / 'crew-approvals').glob('*.json')]
+                self.assertEqual([(h['status'], h.get('delegated')) for h in held], [('pending', None)])
+                for f in (self.data / 'crew-approvals').glob('*.json'):
+                    f.unlink()
 
     def test_owner_step_uses_full_grant_but_work_and_governance_do_not(self):
         r = helper(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'example')

@@ -41,11 +41,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, agents, shared, run, notify, exec, appHome, home as homeDir, readTextFile, settings, openOverlay, closeOverlay, nextCommand } from "herdr";
 import {
-  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli, memoryLow, memoryLine,
-  loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
-  openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
-  severalFactories, currentFactory, inFactory, homeItemShown,
-  withoutChief, welcomePending,
+  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli, memoryLow, memoryLine, loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, openProposal, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE, severalFactories, currentFactory, inFactory, homeItemShown, withoutChief, welcomePending, openDrop, editProps, draftTarget, targetLabel, PARTNER_NAME,
 } from "./crew.js";
 import { logRow, helperRows, helperToday, helperNeed, tapNeed, tapsHolding, tapUndoable } from "./helperlog.js";
 import { welcomeView, welcomeKey } from "./welcome.js";
@@ -180,6 +176,8 @@ export default class CrewHome extends View {
     for (const c of this.cards) {
       if (["done", "cancelled", "expired"].includes(c.status)) continue;
       if (c.status === "needs you" || c.tray === "_owner") out.push({ key: `c-${c.id}`, kind: "desk", at: Date.parse(c.created ?? "") || 0, pal: (c.from ?? "").split("#")[0], c });
+      // A card the idea partner drafted for you (Pals Lite, T217: Home, since the Desk page is gone).
+      else if (c.tray === "_drafts" && c.status === "draft") out.push({ key: `dr-${c.id}`, kind: "draft", at: Date.parse(c.created ?? "") || 0, pal: (c.from ?? PARTNER_NAME).split("#")[0], c });
     }
     for (const p of this.ops.proposals ?? []) out.push({ key: `p-${p.id}`, kind: "proposal", at: p.at, pal: p.pal ?? p.by, p });
     for (const [term, st] of Object.entries(this.ops.stalled ?? {})) out.push({ key: `s-${term}`, kind: "stuck", at: st.since, pal: st.bot, st });
@@ -318,15 +316,23 @@ export default class CrewHome extends View {
       tag = this.tag(d, "Desk", d.warnText);
       title = c.title || "(no title)";
       sub = `${c.id} · ${c.kind ?? "card"} · from ${c.from_kind === "owner" ? own : c.from ?? "?"}${c.result ? ` · ${clip(c.result, 80)}` : ""}`;
-      acts = [B("desk", "Open in Desk", () => showDesk("needs")),
-        B("done", "Done", (cx) => this.act(n.key, ["desk", "done", c.id, "closed on Home"], "Closed", cx), { primary: true })];
+      acts = [B("done", "Done", (cx) => this.act(n.key, ["desk", "done", c.id, "closed on Home"], "Closed", cx), { primary: true })];
+    } else if (n.kind === "draft") {
+      // A draft goes out only on your Send, as your card; Edit opens it in the quick-drop first.
+      const c = n.c;
+      tag = this.tag(d, "Draft", d.infoText);
+      title = c.title || "(no title)";
+      sub = `${String(c.from ?? PARTNER_NAME).split("#")[0]} drafted it · for ${targetLabel(draftTarget(c.to))} · ${c.id}`;
+      acts = [B("discard", "Discard", (cx) => this.act(n.key, ["desk", "discard", c.id], "Discarded", cx)), div().w(10).flex_none(),
+        B("edit", "Edit…", () => openDrop(editProps(c))),
+        B("send", "Send", (cx) => this.act(n.key, ["desk", "send-draft", c.id, "--to", draftTarget(c.to), "--json"], "Sent as yours", cx), { primary: true })];
     } else if (n.kind === "proposal") {
       const p = n.p;
       tag = this.tag(d, "Proposal", "#B79CF7");
       title = `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`;
       sub = `${p.id}${p.note ? ` · ${clip(p.note, 120)}` : ""}`;
       acts = [B("no", "Decline", (cx) => this.act(n.key, ["proposal", "decline", p.id], "Declined", cx)), div().w(10).flex_none(),
-        B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { primary: true })];
+        B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposal(p); }, { primary: true })];
     } else if (n.kind === "tap") {
       const h = n.h, tn = tapNeed(h);
       tag = this.tag(d, tn.outward ? "Outward tap" : "Tap", tn.outward ? d.err : "#B79CF7");
@@ -710,15 +716,23 @@ export default class CrewHome extends View {
       const c = n.c, r = recs[c.id];
       return { tag: ["Desk", this.d.warnText], who: c.from_kind === "owner" ? null : c.from, topic: topicOf(c.from), sub: `${c.id} · ${c.kind ?? "card"} · ${homeAge(n.at)} ago`,
         title: c.title || "(no title)", body: [c.body, c.result ? `Result: ${c.result}` : null].filter(Boolean).join("\n\n"), images: c.attachments,
-        rec: r ? { option: r.option === "done" ? "Done" : "Open in Desk", why: r.why, by: r.by } : null,
-        options: [o("Done", "Closes the card; the sender sees it", owner(["desk", "done", c.id, "closed on Home"], "Closed")), o("Open in Desk", "Shows it with its receipts", () => showDesk("needs"))] };
+        rec: r && r.option === "done" ? { option: "Done", why: r.why, by: r.by } : null,
+        options: [o("Done", "Closes the card; the sender sees it", owner(["desk", "done", c.id, "closed on Home"], "Closed"))] };
+    }
+    if (n.kind === "draft") {
+      const c = n.c;
+      return { tag: ["Draft", this.d.infoText], who: String(c.from ?? PARTNER_NAME).split("#")[0], topic: null, sub: `${c.id} · for ${targetLabel(draftTarget(c.to))} · ${homeAge(n.at)} ago`,
+        title: c.title || "(no title)", body: c.body ?? "", images: c.attachments,
+        options: [o("Send", "Goes out as your card, to where it suggests", owner(["desk", "send-draft", c.id, "--to", draftTarget(c.to), "--json"], "Sent as yours")),
+          o("Edit…", "Opens it in the quick-drop to change first", () => openDrop(editProps(c))),
+          o("Discard", "Drops the draft; nothing is sent", owner(["desk", "discard", c.id], "Discarded"), { gapBefore: true })] };
     }
     if (n.kind === "proposal") {
       const p = n.p;
       return { tag: ["Proposal", "#B79CF7"], who: p.by, topic: topicOf(p.by), sub: `${p.id} · ${homeAge(n.at)} ago`,
         title: `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`, body: p.note,
         options: [o("Decline", "The pal is told", owner(["proposal", "decline", p.id], "Declined")),
-          o("View", "Opens the change in the profile panel", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { gapBefore: true })] };
+          o("View", "Shows the change, to accept or decline", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposal(p); }, { gapBefore: true })] };
     }
     if (n.kind === "tap") {
       const h = n.h, tn = tapNeed(h);

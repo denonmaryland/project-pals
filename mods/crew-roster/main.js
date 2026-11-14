@@ -7,19 +7,9 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import { tapNeed, tapsHolding } from "./helperlog.js";
-import { alertSound,
-  crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a,
-  migrateChannelKeys, linkRecords, updateBot, refreshMachines,
-  STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, shownRoom, showRoom, showTabs, adoptRooms, serveRequests,
-  loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone,
-  applyLayout, rememberWidths, sidebarPref, ds, leadPane,
-  petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor,
-  togglePanel, panelOpen, panelTab, needsOf, blockedReports, openProposalPanel, appMenuSpec, noteWindowHeight, workingMark,
-  palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, roomsFolded, workingEverywhere, roomHeads, deskMode,
-  anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark,
-  severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf,
-  scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showDesk, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL,
-  toggleChief, withoutChief, isChiefRec, toggleComputer, showBoard, toggleBoard, hasBoard, boardMode, boardPal, palClickOpens } from "./crew.js";
+import {
+  alertSound, crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a, migrateChannelKeys, linkRecords, updateBot, refreshMachines, STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, showTabs, adoptRooms, serveRequests, loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone, applyLayout, rememberWidths, sidebarPref, ds, leadPane, petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor, needsOf, blockedReports, openProposal, appMenuSpec, noteWindowHeight, workingMark, palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, workingEverywhere, anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark, severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf, scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL, toggleChief, withoutChief, isChiefRec, openPalMenu, popOut,
+} from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 // The hero's Inbox / Tasks / Desk pebbles show their names from this sidebar width up (each pebble
@@ -137,29 +127,21 @@ export default class CrewRoster extends View {
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
     this.chShownKey = null;
-    // keys.json / herdr-app do: crew-roster.hire, crew-roster.routines, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals,
-    // crew-roster.profile (the profile panel; Ctrl+Shift+I).
+    // keys.json / herdr-app do: crew-roster.hire, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals.
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
         if (c === "hire") this.hire();
-        else if (c === "routines") this.routines();
-        // Fold or show the sidebar's Rooms section (T99; bind a key to crew-roster.rooms-fold).
-        else if (c === "rooms-fold") { saveUiSettings({ roomsFolded: !roomsFolded() }); cx.notify(); }
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
         else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
         else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
-        else if (c === "profile") togglePanel(panelTab());
         // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
         else if (c === "home") toggleHome();
         // Ctrl+Shift+J: the Chief's pop-up (again: closes it).
         else if (c === "chief") toggleChief();
         // Ctrl+Shift+G: the factory switcher.
         else if (c === "factory" || c === "factories") openFactoryMenu();
-        // Ctrl+Shift+Y: the shown pal's Computer (again: back to the topic).
-        else if (c === "computer") toggleComputer();
-        else if (c === "board") toggleBoard();
         cx.notify();
       }
     });
@@ -177,7 +159,7 @@ export default class CrewRoster extends View {
     return withoutChief().flatMap((space) => space.tabs.filter((tb) => askingYou(tb)).map((tab) => ({ space, tab })));
   }
 
-  view() { const v = shared("crew.view"); return v === "you" || v === "rooms" || v === "tasks" ? v : "bots"; }
+  view() { const v = shared("crew.view"); return v === "you" || v === "tasks" ? v : "bots"; }
 
   addTask(cx) {
     const raw = this.taskInput.value().trim();
@@ -215,7 +197,7 @@ export default class CrewRoster extends View {
           .child(div().truncate().text_size(12).text_color(t.dim).child(`${why} · ${c.id}`))))
       .child(h_flex().gap(8).justify_between()
         .child(div().id(`dc-open-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-          .on_click((_e, cx) => { showDesk("needs"); cx.notify(); }).child(div().text_size(12.5).text_color(t.foreground).child("Open in Desk")))
+          .on_click((_e, cx) => { showHome(); cx.notify(); }).child(div().text_size(12.5).text_color(t.foreground).child("Read it on Home")))
         .child(div().id(`dc-done-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
           .on_click((_e, cx) => this.cardDone(c, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Done"))));
   }
@@ -276,7 +258,6 @@ export default class CrewRoster extends View {
 
   look(space) { openOverlay({ mod: "crew-look", kind: "dialog", width: 520, props: { space: space.id } }); }
   menu(space) { openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "pal", space: space.id } }); }
-  routines() { openOverlay({ mod: "crew-routines", kind: "dialog", width: 520 }); }
   hire() { openOverlay({ mod: "crew-hire", kind: "dialog", width: 520, modal: true }); }
   duplicate(bot) { openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: bot.space } }); }
 
@@ -377,7 +358,6 @@ export default class CrewRoster extends View {
     };
     return h_flex().p(2).gap(2).rounded(4).border_1().border_color(a(t.foreground, "14"))
       .child(seg("bots", first, bots, false))
-      .child(seg("rooms", "Rooms", rooms().length, false))
       .child(seg("tasks", "Tasks", this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)).length, false))
       .child(seg("you", "Inbox", waiting.length + extra, asked ? t.blocked : waiting.length + extra ? t.done : null));
   }
@@ -444,7 +424,7 @@ export default class CrewRoster extends View {
             .on_click((_e, cx) => cx.spawn(async (cx) => { try { await ownerCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
             .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
           .child(div().id(`pr-view-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
-            .on_click(() => { if (f) this.go(f.space, null); openProposalPanel(pr); })
+            .on_click(() => { if (f) this.go(f.space, null); openProposal(pr); })
             .child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("View")))));
     }
     // Channels that have been "working" with an unchanged screen for a while.
@@ -591,39 +571,6 @@ export default class CrewRoster extends View {
     return list;
   }
 
-  roomList(t) {
-    const shown = shownRoom();
-    const list = v_flex().gap(4);
-    for (const room of rooms()) {
-      const members = roomMembers(room);
-      const on = shown?.id === room.id;
-      const busy = members.some((m) => m.status === "working");
-      const up = members.filter((m) => m.agent).length;
-      list.child(v_flex().id(`room-${room.id}`).gap(8).px(12).py(11).rounded(8).cursor_pointer()
-        .when(!up && members.length > 0, (el) => el.opacity(0.55))
-        .when(on, (el) => el.bg(a(t.accent, "1f")).border_1().border_color(a(t.accent, "2e")))
-        .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "08"))))
-        .on_click(() => showRoom(room.id))
-        // Right-click: open, sleep/wake its pals, or close it.
-        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "crew-menu", kind: "popup", width: 236, props: { what: "room", room: room.id } }); })
-        .child(h_flex().items_center().justify_between()
-          .child(h_flex().items_baseline().gap(3)
-            .child(div().text_size(15).text_color(on ? t.accent : t.dim).child("#"))
-            .child(div().text_size(15).when(on, (el) => el.font_medium()).text_color(t.foreground).child(room.name)))
-          .when(busy, (el) => el.child(svg(WAVE).w(26).h(8).text_color(t.working))))
-        .child(h_flex().items_center().gap(8)
-          .child(h_flex().gap(3).children(members.slice(0, 6).map((m) => mascotEl(m.bot, mood(m.status, m.agent), 18, t))))
-          .child(div().truncate().text_size(12).text_color(t.dim)
-            .child(!members.length ? "0 topics" : up ? `${up} of ${members.length} awake` : "all asleep · zzz")))
-        .when(Boolean(room.goal), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(room.goal))));
-    }
-    if (!rooms().length) list.child(div().px(10).pb(6).text_size(13).text_color(t.dim).child("Rooms put topics from different pals together, so they can hand each other work."));
-    list.child(h_flex().id("room-new").items_center().gap(8).px(12).py(10).cursor_pointer().hover((s) => s.opacity(0.8))
-      .on_click(() => openOverlay({ mod: "crew-room-new", kind: "dialog", width: 520, modal: true }))
-      .child(svg(`${ICON}/plus.svg`).size(12).text_color(t.accent))
-      .child(div().text_size(12.5).text_color(t.accent).child("New room")));
-    return list;
-  }
 
   // ── Drawn to the Paper board "MODE · Focus (default)", then reworked with DeNon ─────────────
 
@@ -632,12 +579,10 @@ export default class CrewRoster extends View {
   leadTab(space) { return palLeadTab(space); }
   // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
   // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
-  // Clicking any other pal opens its board (DeNon's pick G, T108): what it's doing and what it needs
-  // before any terminal. The pal whose board is up: its terminal (they swap). Topics and keys still
-  // go straight to terminals, and Settings → palClick "terminal" brings the old click back.
+  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); any other pal, its terminal
+  // (Pals Lite, T217: the board and the Computer are gone).
   open(space) {
     if (runsHome(space) && hasHome()) { showHome(); return; }
-    if (palClickOpens() === "board" && hasBoard() && !(boardMode() && boardPal() === space.name)) { showBoard(space); return; }
     this.go(space, this.leadTab(space));
   }
 
@@ -735,18 +680,7 @@ export default class CrewRoster extends View {
         .child(div().flex_1().text_size(13).text_color(d.body).child(this.ops.approvals.length ? "Inbox · waiting for your OK" : "Inbox"))
         .child(div().text_size(12).text_color(d.warnText).child(String(waiting.length + extra))));
     }
-    const rs = rooms();
-    if (rs.length) {
-      list.child(this.roomsHeader(rs, d));
-      if (!roomsFolded()) list.children(rs.map((room) => h_flex().id(`room-${room.id}`).h(32).flex_none().items_center().gap(8).px(8).rounded(d.r.md).cursor_pointer()
-        .when(shownRoom()?.id === room.id, (el) => el.bg(d.sel))
-        .hover((s) => s.bg(d.hover))
-        .on_click((_e, cx) => { showRoom(room.id); cx.notify(); })
-        // No "#" (that's a topic's): the members' heads, overlapping, say it's a group (T101). They
-        // stand in for the member count too.
-        .child(roomHeads(d, roomMembers(room), shownRoom()?.id === room.id ? d.sel : d.bg1))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(shownRoom()?.id === room.id ? d.fg1 : d.body).child(room.name))));
-    }
+    // (Pals Lite, T217: no Rooms rows; the pals keep their rooms with pal-room.)
   }
 
   // Inbox, Tasks or Rooms (from crew-roster.you / .tasks keys and the Inbox row), with a way back.
@@ -755,12 +689,11 @@ export default class CrewRoster extends View {
     list.child(h_flex().id("back-to-pals").h(28).flex_none().items_center().gap(6).px(6).cursor_pointer()
       .on_click((_e, cx) => { setShared("crew.view", "bots"); cx.notify(); })
       .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(d.fg3))
-      .child(div().text_size(12).font_weight(500).text_color(d.fg3).child({ you: "Inbox", tasks: "Tasks", rooms: "Rooms" }[view] ?? "Pals"))
+      .child(div().text_size(12).font_weight(500).text_color(d.fg3).child({ you: "Inbox", tasks: "Tasks" }[view] ?? "Pals"))
       .child(div().flex_1())
       .child(div().text_size(11).text_color(d.fg4).child("back to pals")));
     if (view === "you") list.child(this.inbox(waiting, t));
     else if (view === "tasks") list.child(this.taskList(rows, t));
-    else if (view === "rooms") list.child(this.roomList(t));
     return list;
   }
 
@@ -810,13 +743,13 @@ export default class CrewRoster extends View {
     // crowns reach the sprite's top edge, so text over the sprite would sit on dots).
     art.child(h_flex().absolute().left(16).top(10).w(W - 32).items_center().gap(7)
       .when(Boolean(dot), (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot)))
-      // The name opens the pal's profile panel (again: closes it); the rest of the art shows the pal.
+      // The name opens the pal menu (Pals Lite, T217: the profile panel is gone); the rest of the art shows the pal.
       .child(div().flex_1().min_w(0).child(div().id("hero-name").text_size(16).line_height("20px").font_weight(600).text_color(d.fg1)
         .cursor_pointer().hover((s) => s.underline())
-        .on_click((_e, cx) => { cx.stop_propagation(); togglePanel("profile"); cx.notify(); })
+        .on_click((_e, cx) => { cx.stop_propagation(); openPalMenu(space.id); cx.notify(); })
         .child(bot.name)))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
-      .tooltip(`${bot.name} · ${label} · click the name for its profile`));
+      .tooltip(`${bot.name} · ${label} · click the name for its menu`));
     // The tools are five raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look; the
     // recessed strip that replaced them for a day went back out, T109, 2026-11-10: "go back to them
     // looking like this, just laid out in a more uniform way"). One rule for the layout: all five
@@ -845,14 +778,9 @@ export default class CrewRoster extends View {
         // be two buttons, Tell and Tasks (DeNon: a Tell is really a task). A dialog, so never "open".
         .child(tool("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
           mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
-        // Desk: this pal's open cards (every topic and its pal tray), amber while any is held; opens
-        // the Desk view on this pal. The head pal's Desk is its Home (Orca's call, 2026-11-08): there
-        // the pebble opens Home, and the last pebble is the one that shows Home as open.
-        .child(tool("hero-desk", "ds-tell", "Desk", () => (bot.god && hasHome() ? showHome() : showDesk(`pal:${deskSlug(space.name)}`)), desk?.open ?? 0,
-          desk?.open ? `Desk: ${desk.open} open card${desk.open === 1 ? "" : "s"}${desk.held ? `, ${desk.held} held` : ""}` : "Desk: nothing waiting",
-          { extraColor: desk?.held ? d.warnText : null, primary: deskMode() && !(bot.god && hasHome()) }))
-        // Profile: the right-side profile panel (again: closes it); the name above opens it too.
-        .child(tool("hero-profile", "ds-user", null, () => togglePanel("profile"), 0, "Profile (Ctrl+Shift+I)", { primary: panelOpen() }))
+        // (Pals Lite, T217: the Desk pebble is gone; cards that need you are counted on Inbox and shown on Home.)
+        // Pop out (Pals Lite, T217, in Profile's old slot): the shown topic's terminal in its own window.
+        .child(tool("hero-popout", "ds-expand", null, () => { const tab = space.tabs.find((x) => x.active); if (tab) popOut(space, tab); }, 0, "Pop out this topic's terminal"))
         // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head
         // pal, which never sleeps (its menu has no Sleep either). There it's Home (a terminal icon
         // while Home shows: back to the topic), in the same place, so the row is the same for every
@@ -1123,24 +1051,6 @@ export default class CrewRoster extends View {
       .child(div().size(6).flex_none().rounded(3).bg(w.count ? d.info : d.lineStrong))
       .child(div().truncate().text_size(11).line_height("14px").text_color(w.count ? d.fg2 : d.fg4).child(`${w.count} working`));
   }
-  // The Rooms header (T99): "Rooms", how many, a dot while a room is busy (blue: a topic in it is
-  // working; amber: one asks you), and a 22 px chevron that folds the rooms away or shows them
-  // (the same button as the Topics list's, the same kind of remembered setting: "roomsFolded").
-  // The whole header takes the click; crew-roster.rooms-fold does it from the keyboard.
-  roomsHeader(rs, d) {
-    const folded = roomsFolded();
-    const members = rs.flatMap((room) => roomMembers(room));
-    const dot = members.some((m) => m.status === "blocked") ? d.warn : members.some((m) => m.status === "working") ? d.info : null;
-    return h_flex().id("rooms-head").h(28).mt(8).flex_none().items_center().gap(6).pl(8).pr(2).rounded(d.r.sm).cursor_pointer()
-      .hover((s) => s.bg(d.hover)).tooltip(folded ? "Show rooms" : "Fold rooms")
-      .on_click((_e, cx) => { saveUiSettings({ roomsFolded: !folded }); cx.notify(); })
-      .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Rooms"))
-      .child(div().flex_none().text_size(11).line_height("14px").text_color(d.fg4).child(String(rs.length)))
-      .when(Boolean(dot), (el) => el.child(div().id("rooms-dot").size(6).flex_none().rounded(3).bg(dot)))
-      .child(div().flex_1())
-      .child(div().size(22).flex_none().flex().items_center().justify_center()
-        .child(svg(`${ICON}/${folded ? "chevron-right" : "chevron-down"}.svg`).size(12).text_color(d.fg3)));
-  }
   // The Pals header's fold-all / unfold-all button: unfolded shows the tree, folded a plain list.
   treesToggle(d) {
     const on = palTreesOn();
@@ -1201,7 +1111,6 @@ export default class CrewRoster extends View {
         .child(div().text_size(13).text_color(t.muted).child("Hire a pal")))
       .child(h_flex().items_center().gap(2)
         .child(icon("crew-machines", "server", () => run("mod.open", { name: "machine-add" })))
-        .child(icon("crew-routines", "clock", () => this.routines()))
         .child(div().relative()
           .child(icon("crew-about", "info", () => openOverlay({ mod: "crew-about", kind: "dialog", width: 480 })))
           .when(Boolean(this.ops.update?.available), (el) => el.child(div().absolute().top(4).right(4).size(7).rounded_full().bg(t.accent))))

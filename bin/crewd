@@ -307,9 +307,6 @@ class Crewd:
             if first:
                 continue
             bot, ch = split_where(t.get("where"))
-            if now == "working" and before != "working":
-                # A turn starting: with "finished" it bounds a work block (the pal Computer's calendar).
-                feed("working", terminal=addr, bot=bot, channel=ch)
             if before == "working" and now != "working" and now != "blocked":
                 feed("finished", terminal=addr, bot=bot, channel=ch, turn=t.get("turn"))
                 self.callbacks(addr, t, "finished")

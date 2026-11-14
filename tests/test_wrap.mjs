@@ -85,8 +85,6 @@ try {
   const sites = [
     ["mods/crew-update/main.js", "child(h.detail)"],                              // release-note highlights
     ["mods/crew-desk-settings/main.js", "text_color(d.fg3).child(sub)"],          // what a Desk setting does
-    ["mods/crew-routines/main.js", "text_color(t.dim).child(sub)"],               // the routines dialog's subtitle
-    ["mods/crew-routines/main.js", "Skipped while the pal is busy"],
     ["mods/crew-home/main.js", "child(sp.sub ?? \"\")"],                          // the review's who line
     ["mods/crew-home/main.js", "${rec.why}"],                                    // the recommendation's why
     ["mods/crew-home/main.js", "The asker didn't pick one"],

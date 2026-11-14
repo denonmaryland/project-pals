@@ -14,14 +14,13 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, agents, theme, props, closeOverlay, openOverlay, run, setShared } from "herdr";
 import {
   botOf, ds, tone, crew, taskFor, loadOps, palMenuItems, appMenuItems, sleepers, wakePal, mascotEl, mood, channelName, statusWord,
-  showTabs, openPanel, taskTitle, channelOrder, SEARCH_HINT, recessedField, keyCap, COMMAND_PAD,
+  showTabs, taskTitle, channelOrder, SEARCH_HINT, recessedField, keyCap, COMMAND_PAD,
   withoutChief, isChiefRec,
 } from "./crew.js";
 import { search, pieces } from "./search.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 30;
-const VAULT = [["home", "Home"], ["mission", "Mission"], ["notebook", "Journal"], ["brain", "Brain"]];
 const OPEN = ["open", "claimed", "blocked"];
 
 export default class CrewCommand extends View {
@@ -109,16 +108,10 @@ export default class CrewCommand extends View {
         sub: who ? String(who).split("#")[0] : "nobody", hint: t.status, words: [t.body ?? ""],
         go: () => home && openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: home.id } }) });
     }
-    // The Vault's notes: the shown pal's first, then every other open pal's (showing that pal first).
-    const vaultOf = (s, b) => VAULT.forEach(([note, label]) => items.push({ group: "Vault", id: `vault-${s.id}-${note}`, icon: "ds-notebook",
-      label, sub: s.id === space?.id ? "Vault" : `Vault · ${s.name}`, words: ["vault", s.name, b?.name ?? ""],
-      go: () => { if (s.id !== space?.id) CrewCommand.go(s, null); openPanel("vault", { note }); } }));
-    if (space) vaultOf(space, bot);
-    for (const s of all) if (s.id !== space?.id) vaultOf(s, botOf(s));
     // Commands: the pal menu's, New channel, and every row of the gear menu.
     if (space && bot) {
       for (const [, id, icon, label, hint, go] of palMenuItems(space, bot)) {
-        items.push({ group: "Commands", id: `cmd-${id}`, icon, label, sub: bot.name, keyHint: id === "profile" ? hint : null, hint: id === "review" ? hint : null, go });
+        items.push({ group: "Commands", id: `cmd-${id}`, icon, label, sub: bot.name, keyHint: null, hint: id === "review" ? hint : null, go });
       }
       items.push({ group: "Commands", id: "cmd-new-channel", icon: "ds-plus", label: "New topic", sub: bot.name, words: ["add topic", "new channel", "tab"],
         go: () => openOverlay({ mod: "crew-duplicate", kind: "dialog", width: 500, props: { space: space.id } }) });

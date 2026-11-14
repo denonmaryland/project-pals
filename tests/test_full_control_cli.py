@@ -65,12 +65,18 @@ class FullControlCLI(Base):
             r = helper(self.env, 'settings', 'bypass', 'on')
             self.assertNotEqual(r.returncode, 0)
 
-    def test_full_writes_target_pal_page(self):
-        text = self.root / 'page.md'; text.write_text('A helpful note\n')
-        r = helper(self.env, 'page', 'write', 'A note', '--pal', 'Worker', '--file', str(text))
+    def test_full_writes_a_target_pals_mission(self):
+        # Pals Lite (T217) deleted pal page, this test's old target; a pal's mission is the owner's
+        # to write, so it shows Full control acting on a named pal.
+        text = self.root / 'mission.md'; text.write_text('# Mission\n\nA helpful aim\n')
+        r = helper(self.env, '--as-helper', 'mission', 'set', '--pal', 'Worker', '--file', str(text), name='')
         self.assertEqual(r.returncode, 0, r.stderr)
-        r = helper(self.env, 'page', 'rm', 'A note', '--pal', 'Worker')
+        r = pal(self.env, 'mission', 'show', 'Worker')
+        self.assertIn('A helpful aim', r.stdout)
+        r = owner(self.env, self.data, 'helpers', 'Pals', 'level', 'work')
         self.assertEqual(r.returncode, 0, r.stderr)
+        r = helper(self.env, '--as-helper', 'mission', 'set', '--pal', 'Worker', '--file', str(text), name='')
+        self.assertNotEqual(r.returncode, 0, 'Work only: not the owner\'s write')
 
     def test_room_uses_one_action_receipt_and_helper_attribution(self):
         rooms = self.data / 'crew-rooms'; rooms.mkdir()

@@ -90,10 +90,6 @@ Work
   pal task ls [--all] | ready | show T | claim T | note T "…" | block T "why" | done T ["result"]
             | assign T Pal | cancel T | reopen T
   pal task due T <when|none>         when: fri, tomorrow, 2026-11-14, +3d, fri 17:00 (a pal: its own tasks)
-  pal computer [Pal] [today|todo|calendar|journal|pages] [--json] [--start D] [--days N]
-                                     what a pal's Computer shows (read-only)
-  pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
-                                     its Computer's Notes; a pal writes its own, Full control uses --pal P
   pal routine add <Pal> "<when>" "<prompt>" [--name N] [--topic routines]
                                      when: weekdays 09:00, every 2h 10:00-20:00, mon,fri 4pm, or cron
   pal routine ls | log [-n 20] | run ID | pause ID | resume ID | rm ID
@@ -103,7 +99,7 @@ Work
                                      merge a worktree topic's branch into its project's main branch (or the
                                      base named when it was made; --onto: another, on purpose; needs the owner)
 
-Mission, brain and agent files (the profile panel shows them all)
+Mission, brain and agent files (a pal proposes a change; DeNon accepts it in the proposal dialog)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
   pal mission focus "…" | tick "goal" [--undo]          keep your focus current, tick a goal
   pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to the Inbox
@@ -129,7 +125,7 @@ Dream loop (the crew learns from its notebooks; proposals only, the owner approv
 
 Memory and skills
   pal remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about the owner)
-  pal memory [Pal] [--json]         what's remembered (--json: what a session starts with, for the profile panel)
+  pal memory [Pal] [--json]         what's remembered (--json: what a session starts with)
   pal skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
 
 Settings
@@ -896,6 +892,10 @@ def base_checkout(repo, base):
 
 def cmd_land(spaces, spec, check=None, at=None, onto=None):
     space, tab = find(spec, spaces)
+    # A commit id (SHA-1 or SHA-256, abbreviated or full), checked before any approval is asked for
+    # or used (T212 round 2: a 64-hex tip failed a 7..40 check after the approval was spent).
+    if at and not re.fullmatch(r"[0-9a-f]{7,64}", at):
+        die(f"--at takes a commit id (hexadecimal), not {at!r}; nothing changed")
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
     # terminal ID isn't the owner (Grok review H1).
@@ -904,11 +904,24 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
         # an approved `pal land P#t` went through again with --onto another branch).
         words = ["land", spec] + [x for k, v in (("--check", check), ("--at", at), ("--onto", onto)) if v for x in (k, v)]
         line = "pal " + " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
-        if not crewguard.recently_used(ME, "land", words=words):
+        try:
+            tip = git(worktree_of(space, tab)["path"], "rev-parse", "HEAD")
+        except CrewError:
+            tip = ""
+        # What the hook let through is claimed only for the commit it was approved at (T212), and that
+        # commit is what lands: --at pins it, so a commit made in between is refused below.
+        handed = crewguard.recently_used(ME, "land", words=words, tip=tip or None, cwd=os.getcwd()) if tip else None
+        if handed:
+            at = at or handed["land_tip"]
+        else:
             s, t = where_of(ME, spaces)
-            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", line)
+            # The approval is for the commit the topic is at now (T206): one made after the owner said
+            # yes asks again. Shown in the Inbox after the command.
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?",
+                                   line + (f"  # at {tip[:12]}" if tip else ""), claim=True)
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+            at = at or tip or None
     else:
         require_owner("landing a branch")
     wt = worktree_of(space, tab)
@@ -944,7 +957,7 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
     # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
     # since isn't what the owner looked at, so it doesn't land on that click.
     tip_now = git(repo, "rev-parse", "--verify", f"refs/heads/{wt['branch']}")
-    if at and not (re.fullmatch(r"[0-9a-f]{7,40}", at) and tip_now.startswith(at)):
+    if at and not tip_now.startswith(at):
         die(f"{wt['branch']} has moved since ({tip_now[:7]} now, {at[:7]} then), so it wasn't landed: look at it again (Review → Try it live) first")
 
     def conflicted(text):
@@ -2081,10 +2094,18 @@ def cmd_memory(spaces, args):
 ARGV = []   # this run's arguments, as the owner's click token must match them (owner_gate)
 
 
+def _global_part():
+    """ARGV up to its first `--`: only there are --click / --tap pal's own. After `--` the words are
+    another program's, kept exactly (T212 round 6: owner-step's release arguments may hold a literal
+    --click)."""
+    return ARGV[:ARGV.index("--")] if "--" in ARGV else list(ARGV)
+
+
 def owner_args():
-    """ARGV without the --click token itself."""
+    """ARGV without the --click token itself (and --tap), before any `--`; the rest unchanged."""
+    head = _global_part()
     out, skip = [], False
-    for a in ARGV:
+    for a in head:
         if skip:
             skip = False
             continue
@@ -2092,12 +2113,13 @@ def owner_args():
             skip = True
             continue
         out.append(a)
-    return out
+    return out + ARGV[len(head):]
 
 
 def tap_of():
     """The one-time token of a relayed tap being carried out (crewtaps.run_due), if this run has one."""
-    return ARGV[ARGV.index("--tap") + 1] if "--tap" in ARGV and ARGV.index("--tap") + 1 < len(ARGV) else None
+    head = _global_part()
+    return head[head.index("--tap") + 1] if "--tap" in head and head.index("--tap") + 1 < len(head) else None
 
 
 def acted():
@@ -2110,7 +2132,8 @@ def acted():
 
 
 def click_of():
-    return ARGV[ARGV.index("--click") + 1] if "--click" in ARGV and ARGV.index("--click") + 1 < len(ARGV) else None
+    head = _global_part()
+    return head[head.index("--click") + 1] if "--click" in head and head.index("--click") + 1 < len(head) else None
 
 
 def require_owner(what, allow_delegate=True):
@@ -2165,7 +2188,7 @@ def cmd_mission(spaces, rest):
         if o.get("json"):
             print(json.dumps({"pal": name, "dir": str(d), "text": text, "sha": crewbrain.sha(text), **crewbrain.parse_mission(text)}))
         else:
-            print(text or f"(no mission yet for {name}: {OWNER} writes it in the profile panel, or a pal proposes one with pal mission propose --file F)")
+            print(text or f"(no mission yet for {name}: a pal proposes one with pal mission propose --file F, and {OWNER} accepts it from Home)")
         return
     space, rec, name = pal_of(spaces, o.get("pal") or (pos[0] if sub == "set" and pos else None))
     rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
@@ -2382,6 +2405,30 @@ def tell_proposer(spaces, pid, accepted, why=None):
         pass
 
 
+def proposal_current(spaces, p):
+    """What a mission or AGENTS.md proposal would replace, for the review dialog: {current, diff}
+    (a unified diff, current → proposed). Read-only; {} for other kinds or when it can't be read."""
+    import difflib
+    import crewbrain
+    try:
+        space, rec, name = pal_of(spaces, p["pal"])
+        rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+        if p["kind"] == "mission":
+            cur = crewbrain.read(crewbrain.brain_dir(name, rec), "mission.md") or ""
+            label = "mission.md"
+        elif p["kind"] == "agents":
+            f = Path(folder_of(space, rec)) / p["file"]
+            cur = f.read_text() if f.is_file() else ""
+            label = p["file"]
+        else:
+            return {}
+    except (CrewError, OSError, KeyError, SystemExit):
+        return {}
+    new = p.get("text") or ""
+    diff = "".join(difflib.unified_diff(cur.splitlines(True), new.splitlines(True), f"{label} now", f"{label} proposed", n=2))
+    return {"current": cur, "diff": diff}
+
+
 def cmd_proposals(spaces, rest):
     import crewproposals, crewbrain
     sub = rest[0] if rest else "ls"
@@ -2391,7 +2438,7 @@ def cmd_proposals(spaces, rest):
         print(json.dumps(ps) if o.get("json") else "\n".join(f"{p['id']} {p['kind']} {p['pal']}: {p.get('file') or ''} from {p['by']}" for p in ps) or "(no proposals waiting)")
     elif sub == "show" and pos:
         p = crewproposals.get(pos[0])
-        print(json.dumps({**p, "text_sha": crewproposals.text_sha(p)}))
+        print(json.dumps({**p, "text_sha": crewproposals.text_sha(p), **proposal_current(spaces, p)}))
     elif sub in ("accept", "decline") and pos:
         require_owner("Decide a proposal")
         from crewlib import tap_authority
@@ -2411,7 +2458,7 @@ def cmd_proposals(spaces, rest):
                     if p["kind"] == "mission":
                         d = crewbrain.brain_dir(name, rec)
                         if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
-                            die("the mission changed since this was proposed; open it in the profile panel and compare")
+                            die("the mission changed since this was proposed; the pal can propose it again against the current one")
                     elif p["kind"] == "agents":
                         import crewagents
                         crewagents.validate_apply(folder_of(space, rec), p["file"], p.get("base") or "none")
@@ -2426,7 +2473,7 @@ def cmd_proposals(spaces, rest):
             if p["kind"] == "mission":
                 d = crewbrain.brain_dir(name, rec)
                 if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
-                    die("the mission changed since this was proposed; open it in the profile panel and compare")
+                    die("the mission changed since this was proposed; the pal can propose it again against the current one")
                 crewbrain.write(d, "mission.md", p["text"])
                 brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=acted())
             elif p["kind"] == "agents":
@@ -2667,7 +2714,12 @@ def cmd_owner_step(rest):
     if len(rest) < 3 or rest[1] != "--" or not " ".join(rest[2:]).strip():
         die("pal owner-step <rule> -- <the command line>")
     from crewlib import SHELL_NAME
-    rule, cmd = rest[0], " ".join(rest[2:]).strip()
+    # Everything after -- is the program's own argv, kept as a list (T212 round 5: the hand-over
+    # compares lists, so `--dry-run notes` as one argument isn't `--dry-run` and `notes`). Shown and
+    # keyed quoted, so different lists never read or key the same. One joined string (an older
+    # ./release) is one argument, which no approved command's list matches: no hand-over.
+    rule, argv = rest[0], [a for a in rest[2:]]
+    cmd = shlex.join(argv) if len(argv) > 1 else argv[0].strip()
     bot, channel = SHELL_NAME, None
     if ME:
         try:
@@ -2676,7 +2728,7 @@ def cmd_owner_step(rest):
             s = t = None
         bot, channel = (s["name"], chan(t)) if s else (f"terminal {ME}", None)
     try:
-        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule)
+        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule, argv=argv)
     except CrewError as e:
         die(str(e))
     if not held:
@@ -3266,191 +3318,6 @@ def home_answer_to(spaces, x, answer, tap=None, undone=False):
     return f"told {dest} ({what}) · card {card['id']}"
 
 
-def board_data(today, space, rec, name, tasks, cards):
-    """Read what the board adds to Today (bin/crewboard.py): the feed, held approvals, Home asks, each
-    topic's line from its session file, its branch, crewd's stalled marks and blocked topics' questions."""
-    import datetime
-    import crewboard
-    import crewchat
-    import crewcomputer
-    links = crewchat.links()
-    wts = rec.get("worktrees") or {}
-    lines, branches, msgs = {}, {}, {}
-    for t in today["topics"]:
-        tab = next((x for x in space.get("tabs", []) if chan(x) == t["topic"]), None)
-        if t.get("terminal") and t["state"] not in ("shell",):
-            lines[t["topic"]] = crewboard.read_line(t["terminal"], t["state"], links)
-        wt = (wts.get(tab["name"]) or wts.get("#" + t["topic"])) if tab else None
-        # Branch facts cost two git calls each: only for topics with a pal running in them.
-        if wt and t["state"] not in ("shell", "asleep"):
-            branches[t["topic"]] = crewboard.branch_facts(wt)
-        if t["state"] == "blocked" and t.get("terminal"):
-            msgs[t["terminal"]] = ((term_info(t["terminal"]) or {}).get("status") or {}).get("msg") or ""
-    desk = []
-    for c in cards:
-        try:
-            at = int(datetime.datetime.fromisoformat(str(c.get("updated") or c.get("created") or "")).timestamp() * 1000)
-        except ValueError:
-            at = 0
-        desk.append({**c, "at_ms": at})
-    return crewboard.board_view(today, tasks=tasks, cards=desk, feed=crewcomputer.read_feed(3),
-                                approvals=crewguard.all_requests(), asks=crewhome.load()["items"], lines=lines,
-                                branches=branches, stalled=load_json(DATA / "crew-health.json", {}).get("stalled") or {},
-                                msgs=msgs, now_ms=now_ms())
-
-
-def cmd_computer(spaces, rest):
-    """pal computer [Pal] [today|board|read|todo|calendar|journal|pages] [--json] [--start YYYY-MM-DD] [--days 7]
-    [--topic T] (read: one topic's recent conversation as rows, from its session file, read-only)
-    What a pal's Computer shows (crew-boards/pal-computer/design.md), and its board (`board`: Today
-    grown with what each topic waits for, its line, branch and what it needs from the owner;
-    crew-boards/pal-page/design.md). Read-only: it's a view."""
-    import crewbrain
-    import crewcomputer
-    import crewdesk
-    import crewnotebook
-    import crewroutines
-    import crewsleep
-    import crewtasks
-    views = ("today", "board", "read", "todo", "calendar", "journal", "pages")
-    pos, o = opts(rest, ("start", "days", "topic"), ("json",))
-    view = next((p for p in pos if p in views), "today")
-    who = [p for p in pos if p not in views]
-    space, rec, name = pal_of(spaces, " ".join(who) if who else None)
-    tasks = crewtasks.load()["tasks"]
-    cards = [c for _, c in crewdesk.mine(name)]
-    if view == "read":
-        import crewboard
-        import crewchat
-        want = (o.get("topic") or "").lstrip("#")
-        if not want:
-            die("pal computer <Pal> read --topic <topic>")
-        live = hc_terminals()
-        tops = crewcomputer.topics_now(space, live, tasks)
-        t = next((x for x in tops if x["topic"].lower() == want.lower()), None)
-        if not t:
-            die(f"{name} has no topic #{want}")
-        out = {"pal": name, "topic": t["topic"], "state": t["state"], "task": t["task"],
-               **crewboard.read_view(t.get("terminal"), t["state"], crewchat.links())}
-    elif view in ("today", "todo", "board"):
-        if view == "todo":
-            out = crewcomputer.todo(name, tasks, cards)
-        else:
-            d = crewbrain.brain_dir(name, {**rec, "folder": rec.get("folder") or space.get("folder")})
-            mission = crewbrain.parse_mission(crewbrain.read(d, "mission.md"))
-            live = hc_terminals()
-            asleep = {t.get("terminal") for t in space.get("tabs", []) for t in t.get("terminals", []) if t
-                      and crewsleep.slept(t.get("terminal"))}
-            out = crewcomputer.today_view(name, space, live, tasks, cards, mission, asleep)
-            if view == "board":
-                out = board_data(out, space, rec, name, tasks, cards)
-    elif view == "calendar":
-        import datetime
-        try:
-            start = datetime.date.fromisoformat(o["start"]) if o.get("start") else None
-        except ValueError:
-            die("--start takes a date: 2026-11-09")
-        today = datetime.date.today()
-        start = start or today - datetime.timedelta(days=today.weekday())
-        days = max(1, min(42, int(o.get("days") or 7)))
-        s_ms = int(datetime.datetime.combine(start, datetime.time()).timestamp() * 1000)
-        e_ms = s_ms + days * crewcomputer.DAY_MS
-        routines = crewroutines.load()
-        runs = {r["id"]: crewcomputer.routine_runs(r, s_ms, e_ms) for r in routines if crewcomputer.norm(r.get("bot") or "") == crewcomputer.norm(name)}
-        feed_days = max(8, (today - start).days + 2)
-        out = crewcomputer.calendar(name, crewcomputer.read_feed(feed_days), tasks, routines, start, days, next_runs=runs)
-    elif view == "journal":
-        out = {"pal": name, "days": crewnotebook.days(name, int(o.get("days") or 7)), "week": crewnotebook.week(name)}
-    else:
-        out = {"pal": name, "pages": crewcomputer.pages(name), "folder": str(crewcomputer.pages_dir(name))}
-    if o.get("json"):
-        print(json.dumps(out, ensure_ascii=False))
-        return
-    # A short human read; the desktop and the Chief use --json.
-    if view == "read":
-        for r in out["rows"]:
-            text = r.get("text") or ""
-            print(f"{r['k']:<7} " + (f"{r['from']}: " if r.get("from") else "") + " ".join(text.split())[:160])
-        if not out["path"]:
-            print("(no session file to read: read it in its terminal)")
-        return
-    if view == "board":
-        for n in out["needs"]:
-            print(f"needs you  {n['kind']:<9} {('#' + n['topic']) if n['topic'] else name:<16} {n['title']}")
-        for t in out["topics"]:
-            print(f"  #{t['topic']:<14} {t['state']:<8} waits for {t['waits_for']:<8} " + ((t.get('line') or {}).get('text') or ''))
-        for r in out["up_next"]:
-            print(f"  up next: {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
-    elif view == "today":
-        print(f"{name}'s computer · today" + (f"\nfocus: {out['focus']}" if out["focus"] else ""))
-        for t in out["topics"]:
-            print(f"  #{t['topic']:<14} {t['state']:<8} " + (f"{t['task']['id']} {t['task']['title']}" if t["task"] else ""))
-        for r in out["next"]:
-            print(f"  next: {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
-        print(f"  desk: {out['desk']['open']} open" + (f", {out['desk']['needs_you']} need you" if out["desk"]["needs_you"] else ""))
-    elif view == "todo":
-        for k in ("doing", "next", "blocked", "done_today"):
-            for r in out[k]:
-                print(f"{k.replace('_', ' '):<10} {r['id']} {r['title']}" + (f" · {r['due_label']}" if r["due_label"] else ""))
-        for c in out["cards"]:
-            print(f"card       {c['id']} [{c['status']}] {c['title']}")
-    elif view == "calendar":
-        for e in sorted(out["events"], key=lambda e: e.get("start") or e.get("at") or 0):
-            if e["kind"] == "work":
-                print(f"{time.strftime('%a %H:%M', time.localtime(e['start'] / 1000))}-{time.strftime('%H:%M', time.localtime(e['end'] / 1000))} #{e['topic']} worked")
-            elif e["kind"] == "due":
-                print(f"{e['day']} {e['task']} due: {e['title']}")
-            else:
-                print(f"{time.strftime('%a %H:%M', time.localtime(e['at'] / 1000))} {e['kind']} {e.get('task') or e.get('name') or e.get('routine') or ''}")
-    elif view == "journal":
-        for d in out["days"]:
-            print(f"{d['day']}: {len(d['entries'])} entries")
-    else:
-        print("\n".join(p["name"] for p in out["pages"]) or f"(no pages yet: {out['folder']})")
-
-
-def cmd_page(spaces, rest):
-    """pal page ls [Pal] | show "<title>" [--pal P] | write "<title>" -F file|- | rm "<title>"
-    A pal's freeform pages (crew-memory/<pal>/pages/*.md), shown in its Computer's Notes. A pal writes
-    only its own; the owner edits any in Notes' folder (Obsidian or an editor)."""
-    import crewbrain
-    import crewcomputer
-    sub, args = (rest[0], rest[1:]) if rest and rest[0] in ("ls", "show", "write", "rm") else ("ls", rest)
-    if sub == "-F":
-        sub = "ls"
-    pos, o = opts(args, ("pal", "file"), ())
-    if sub == "ls":
-        _, _, name = pal_of(spaces, (pos[0] if pos else None) or o.get("pal"))
-        print("\n".join(p["name"] for p in crewcomputer.pages(name)) or f"(no pages for {name} yet)")
-        return
-    if not pos:
-        die(f'pal page {sub} "<title>"')
-    title = " ".join(pos)
-    if sub == "show":
-        _, _, name = pal_of(spaces, o.get("pal"))
-        path = crewcomputer.page_path(name, title)
-        if not path.exists():
-            die(f"{name} has no page called '{title}'")
-        print(path.read_text())
-        return
-    space, _ = my_bot(spaces)
-    if delegation_authority() and o.get("pal"):
-        space, _, _ = pal_of(spaces, o["pal"])
-    if not space:
-        die("only a pal writes pages (its own); edit any page in its Computer's Notes folder")
-    path = crewcomputer.page_path(space["name"], title)
-    if sub == "rm":
-        if not path.exists():
-            die(f"no page called '{title}'")
-        path.unlink()
-        print(f"removed {space['name']}'s page '{title}'")
-        return
-    text = file_opt(o)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    crewbrain.write(path.parent, path.name, text if text.endswith("\n") else text + "\n")
-    print(f"wrote {space['name']}'s page '{title}' ({len(text)} characters)")
-
-
 def cmd_popout(spaces, rest):
     """pal popout: a topic's live terminal in its own desktop window (bin/crewpopout.py). Putting a
     window on the owner's desktop, pinning it or closing it is the owner's click; ls is anyone's."""
@@ -3786,7 +3653,10 @@ def main(argv):
     if not argv:
         argv = ["bots"]
     # -F is --file (pal mission propose -F draft.md).
-    argv = ["--file" if a == "-F" else a for a in argv]
+    # -F is --file's short form for pal's own options, but owner-step's argument list after -- is the
+    # program's, kept exactly as given (T212 round 5: ./release -F notes.md must stay -F).
+    if argv[:1] != ["owner-step"]:
+        argv = ["--file" if a == "-F" else a for a in argv]
     ARGV = list(argv)
     argv = owner_args()   # the click token is checked by require_owner, not parsed as an option
     cmd, rest = argv[0], argv[1:]
@@ -3994,10 +3864,6 @@ def main(argv):
             print(crewwelcome.status(settings()))
     elif cmd == "popout":
         cmd_popout(spaces, rest)
-    elif cmd == "computer":
-        cmd_computer(spaces, rest)
-    elif cmd in ("page", "pages"):
-        cmd_page(spaces, rest)
     elif cmd == "routine":
         cmd_routine(spaces, rest)
     elif cmd == "mission":
