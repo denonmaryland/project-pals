@@ -3649,7 +3649,9 @@ def main(argv):
             pass
     if as_helper:
         ok = argv[:1] in (["tell"], ["ask"], ["taps"], ["tap"], ["tap-cancel"]) or argv[:2] in (["task", "add"], ["desk", "send"], ["helpers", "check"])
-        if (not ok and not delegation_authority()) or "--click" in argv or "--tap" in argv:
+        # Match begin_delegation and owner_args: after -- these are the program's literal arguments (T224).
+        head = argv[:argv.index("--")] if "--" in argv else argv
+        if (not ok and not delegation_authority()) or "--click" in head or "--tap" in head:
             die(f"--as-helper is only for tell, ask, task add, desk send, and taps / tap / tap-cancel; anything else that's {OWNER}'s "
                 f"still needs their click in Project Pals")
     # Strict helpers (T170): a helper that asked for it sends in the owner's name or not at all. Checked

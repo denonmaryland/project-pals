@@ -101,6 +101,44 @@ class FullExecution(Base):
         self.level('work')
         self.assertNotEqual(helper(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'example').returncode, 0)
 
+    def test_explicit_helper_keeps_payload_flags_after_the_separator(self):
+        """T224: both explicit helper spellings must preserve the program's arguments like PAL_HELPER."""
+        observe = '''import json, crewguard
+original = crewguard.owner_step
+def observed(*args, **kwargs):
+    print(json.dumps(kwargs['argv']))
+    return original(*args, **kwargs)
+crewguard.owner_step = observed'''
+        for prefix in ('--as-helper', '--as-helper=Pals'):
+            for opt in ('--click', '--tap'):
+                payload = ['./release', '9.9.9', '-F', 'notes  public.md', opt, 'literal', '--', '--tap']
+                with self.subTest(prefix=prefix, opt=opt):
+                    r = helper(self.env, prefix, 'owner-step', 'release-script', '--', *payload, name='', pre=observe)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertEqual(json.loads(r.stdout), payload)
+                    self.assertFalse(list((self.data / 'crew-approvals').glob('*.json')))
+
+    def test_explicit_helper_still_refuses_click_or_tap_before_the_separator(self):
+        for prefix in ('--as-helper', '--as-helper=Pals'):
+            for opt in ('--click', '--tap'):
+                with self.subTest(prefix=prefix, opt=opt):
+                    r = helper(self.env, prefix, 'owner-step', 'release-script', opt, 'ab' * 16,
+                               '--', './release', '9.9.9', 'notes', name='')
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertIn('--as-helper is only for', r.stderr)
+                    self.assertFalse(list((self.data / 'crew-approvals').glob('*.json')))
+
+    def test_explicit_payload_flags_do_not_give_work_or_off_helpers_full_authority(self):
+        for level in ('work', 'off'):
+            self.level(level)
+            for prefix in ('--as-helper', '--as-helper=Pals'):
+                with self.subTest(level=level, prefix=prefix):
+                    r = helper(self.env, prefix, 'owner-step', 'release-script', '--',
+                               './release', '9.9.9', '--click', 'notes', '--tap', name='')
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertIn('--as-helper is only for', r.stderr)
+                    self.assertFalse(list((self.data / 'crew-approvals').glob('*.json')))
+
     def test_full_card_is_stamped_and_revoked_queued_work_is_cancelled(self):
         r = helper(self.env, 'tell', 'Worker', 'Proceed with this work')
         self.assertEqual(r.returncode, 0, r.stderr)
