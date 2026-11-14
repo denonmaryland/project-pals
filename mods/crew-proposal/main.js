@@ -11,7 +11,6 @@ import { theme, props, closeOverlay, notify, spaces } from "herdr";
 import { ds, tone, crewCli, ownerCli, botOf, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter, scrollArea } from "./crew.js";
 
 const clip = (s, n) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
-const MAX_LINES = 400;
 
 export default class CrewProposal extends View {
   init(_props, cx) {
@@ -60,11 +59,14 @@ export default class CrewProposal extends View {
     } else {
       if (p.note) body.child(div().text_size(12.5).line_height("18px").text_color(d.body).child(`Why: ${clip(p.note, 600)}`));
       if (!pending) body.child(div().text_size(12.5).text_color(d.warnText).child(`Already ${p.status}.`));
-      // The diff when there is one (mission, AGENTS.md); else the proposed text itself.
-      const lines = String(p.diff || p.text || "").split("\n").slice(0, MAX_LINES);
+      // The diff when there is one (mission, AGENTS.md); else the proposed text itself. All of it,
+      // never cut (Codex, Pals Lite review): Accept takes the whole proposal's sha, so every line it
+      // covers is in the box, which scrolls.
+      const lines = String(p.diff || p.text || "").split("\n");
       const ink = (l) => (l.startsWith("+") && !l.startsWith("+++") ? d.okHi : l.startsWith("-") && !l.startsWith("---") ? d.err : l.startsWith("@@") ? d.infoText : d.body);
       const list = v_flex().py(8).px(10).children(lines.map((l) =>
         div().text_size(12).line_height("18px").font_family(d.mono).text_color(ink(l)).child(l.replace(/^ +/, (m) => " ".repeat(m.length)) || " ")));
+      body.child(div().text_size(11.5).text_color(d.fg3).child(`${lines.length} line${lines.length === 1 ? "" : "s"}${lines.length > 18 ? ", all here: scroll to read them" : ""}`));
       body.child(div().h(360).rounded(d.r.md).bg(d.inset).border_1().border_color(d.lineMid).overflow_hidden()
         .child(scrollArea(d, "pr-diff", list).size_full()));
       if (!p.diff && (p.kind === "mission" || p.kind === "agents")) body.child(div().text_size(11.5).text_color(d.fg3).child("The whole proposed text (the current one couldn't be read to compare)."));
