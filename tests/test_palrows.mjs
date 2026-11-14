@@ -27,6 +27,8 @@ try {
   // drawing with "element `div` was already added to a parent"; herdr-app check never drew it).
   mod("gpui-kit", `
     const OK = new Set(${JSON.stringify(METHODS)});
+    let requireWhenReturn = false;
+    export function strictWhen(on) { requireWhenReturn = on; }
     export function el(kind, arg) {
       const node = { kind, arg, calls: [], args: {}, kids: [] };
       const p = new Proxy(node, { get(t, k) {
@@ -41,7 +43,7 @@ try {
           t.args[k] = a;
           if (k === "child") { if (a[0] != null) t.kids.push(a[0]); }
           else if (k === "children") t.kids.push(...a[0].filter((x) => x != null));
-          else if (k === "when") { if (a[0]) a[1](p); }
+          else if (k === "when") { if (a[0]) { const out = a[1](p); if (requireWhenReturn && out !== p) throw new Error("when(...) must return the element"); } }
           else if (k === "hover") a[0](el("style"));
           return p;
         };
@@ -95,7 +97,7 @@ try {
     export const shared = (k) => fixtures.shared[k], setShared = (k, v) => { fixtures.shared[k] = v; };
     export const theme = () => ({ background: "#0E0E0F", foreground: "#EDEDED", ansi4: "#4C8DFF" });
     export const home = () => "/home/denon", appHome = () => "/home/denon/.config/herdr-app";
-    export const settings = () => ({ zoom: 1 }), layout = () => fixtures.layout ?? null, props = () => ({}), keys = () => ({});
+    export const settings = () => ({ zoom: 1, ...fixtures.settings }), layout = () => fixtures.layout ?? null, props = () => ({}), keys = () => ({});
     export const machines = () => [], terminals = () => [];
     const nop = () => {}, later = async () => ({ stdout: "", stderr: "", code: 0 });
     export const run = (op, a) => { (fixtures.ran ??= []).push([op, a]); }, notify = (x) => { (fixtures.notes ??= []).push(x); }, openOverlay = nop, closeOverlay = nop, nextCommand = () => new Promise(() => {});
@@ -1142,7 +1144,60 @@ try {
     if (keep.areas === undefined) delete fixtures.shared["crew.areas"]; else fixtures.shared["crew.areas"] = keep.areas;
     roster.areaView = {}; roster.areaX = {};
   }
-  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges; drag to reorder; topic areas)");
+  // Pixel Village is selected by name only; leaving it restores the exact default tokens.
+  {
+    const gpui = await import(url("node_modules/gpui-kit/index.js"));
+    gpui.strictWhen(true);
+    const normal = crew.ds(t);
+    fixtures.settings = { theme: "omarchy" };
+    assert.equal(crew.pixelVillageOn(), false);
+    assert.deepEqual(crew.ds(t), normal);
+    fixtures.settings = { theme: { light: "paper", dark: "pixel-village" }, dark: false };
+    assert.equal(crew.pixelVillageOn(), false, "inactive appearance must not activate the village");
+    fixtures.settings.dark = true;
+    assert.equal(crew.pixelVillageOn(), true);
+    fixtures.settings = { theme: "pixel-village" };
+    const vd = crew.ds(t);
+    assert.equal(vd.bg1, "#08121e");
+    assert.equal(vd.ui, vd.mono);
+    const rows = fixtures.spaces.map((space) => ({ space, bot: crew.botOf(space) }));
+    const before = JSON.stringify(fixtures.shared);
+    const petBefore = JSON.stringify(rows.map(({bot}) => crew.petOf(bot)));
+    roster.villagePage = undefined; roster.villageHovered = null;
+    const asleep = [{ id: "sleep1", name: "Sleeping", folder: "/h/sleep", harness: "codex" },
+      { id: "sleep2", name: "More", folder: "/h/more", harness: "codex" }];
+    const at = (tree, id) => ids(tree).find((n) => n.args.id?.[0] === id);
+    for (const width of [180, 304, 440]) {
+      const art = roster.villageArt(rows, t, vd, width, asleep);
+      assert.ok(text(art).includes("Pals 5 · Projects 5"));
+      assert.equal(ids(art).filter((n) => n.args.id?.[0]?.startsWith("village-pal-")).length, 4);
+      assert.ok(at(art, "village-fire").calls.includes("loop"), "native motion, no timer");
+    }
+    let art = roster.villageArt(rows, t, vd, 304, asleep);
+    at(art, "village-next").args.on_click[0]({}, {notify() {}});
+    art = roster.villageArt(rows, t, vd, 304, asleep);
+    assert.ok(at(art, "village-pal-sleep-sleep2"), "every resident has a paged home");
+    roster.villageHover(rows[0].space.id, true, {notify() {}});
+    art = roster.villageArt(rows, t, vd, 304, asleep);
+    assert.equal(at(art, `village-pal-${rows[0].space.id}`).args.border_color[0], "#e8edf6", "roster hover brings the resident's page and highlight");
+    assert.ok(text(at(art, "village-inspector")).includes(rows[0].bot.name));
+    roster.villageHover("stale-exit", false, {notify() {}});
+    assert.equal(roster.villageHovered, rows[0].space.id, "late exit must not clear a newer hover");
+    roster.villageHover(rows[0].space.id, false, {notify() {}});
+    assert.equal(roster.villageHovered, null);
+    at(art, "village-motion").args.on_click[0]({}, {notify() {}});
+    assert.ok(!at(roster.villageArt(rows, t, vd, 304), "village-fire").calls.includes("loop"));
+    assert.ok(text(roster.villageArt([], t, vd, 180)).includes("A quiet village"));
+    const row = roster.palRow(rows[0], t, vd);
+    assert.ok(at(row, `bot-${rows[0].space.id}`).calls.includes("on_hover"));
+    assert.equal(JSON.stringify(rows.map(({bot}) => crew.petOf(bot))), petBefore, "theme never changes pet identity or art");
+    assert.equal(JSON.stringify(fixtures.shared), before, "render and hover do not persist anything");
+    fixtures.settings = { theme: "omarchy" };
+    assert.deepEqual(crew.ds(t), normal, "switch off restores the existing design system");
+    delete fixtures.settings;
+    gpui.strictWhen(false);
+  }
+  console.log("palrows: ok (10 looks x Trees on/off drawn; the hero is a fixed size; working count; Rooms fold; working pals rock; room heads; soft edges; drag to reorder; topic areas; Pixel Village opt-in, pages, hover, motion and art preservation)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

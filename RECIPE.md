@@ -94,6 +94,13 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     a rounded card, settings as one-line rows in a bordered list, and a footer with a quiet note,
     Cancel, and a filled pill button that's disabled until the form is ready.
 
+## Optional Pixel Village theme
+
+Selecting Herdr's `pixel-village` theme adds a snowy glyph village to the existing sidebar,
+with its unchanged pocket pets as residents, project house labels, a pale selected row and
+hover inspection. Topics, actions and the main terminal remain. Other themes keep the existing
+look. See [Pixel Village](docs/pixel-village.md) for installation, switch-off and limitations.
+
 ## How it behaves
 
 - **Terminal-forward** (T217; DeNon's decision h-724046, 2026-11-13): the app is terminal-forward. A pal is
