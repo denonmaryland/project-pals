@@ -606,6 +606,17 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
                     "python3 -c \"open(f'{D}/crew-desk/helper/open/a.md','w').write('x')\""]:
             self.assertEqual(rule(cmd), "desk-write", cmd)
 
+    def test_the_held_command_itself_now_passes_and_real_card_writes_stay_held(self):
+        """T218, Orca's check: the exact text of a-4d41c0 (kept verbatim in fixtures), and real
+        writes into the data folder's crew-desk/<pal>/… still held."""
+        held = (Path(__file__).resolve().parent / "fixtures" / "held-a-4d41c0.txt").read_text()
+        self.assertIn("git rm -q -r mods/crew-desk", held)
+        self.assertIsNone(rule(held))
+        for cmd in ["printf x > ~/.config/herdr-app/data/crew-desk/Orca/open/a.md",
+                    f"printf x > {Q}/crew-desk/Orca/open/a.md",
+                    "python3 -c \"import os; open(os.path.expanduser('~/.config/herdr-app/data/crew-desk/Orca/open/a.md'),'w').write('x')\""]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
+
     def test_the_cards_are_still_held(self):
         for cmd in [
             f"edit {Q}/crew-desk/helper/open/a.md",
