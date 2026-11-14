@@ -1636,7 +1636,7 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
 SHELL = "shell"   # the "terminal" of a request that comes from no Herdr terminal (a plain shell)
 
 
-def owner_step(terminal, bot, channel, cmd, rule, why=None):
+def owner_step(terminal, bot, channel, cmd, rule, why=None, argv=None):
     """A program asking for the owner's go itself, wherever it runs (T110: on 2026-11-10 ./release ran
     from a plain shell and nothing asked the owner, because the hook only sees pals' terminals).
     None: go ahead, once. Either the owner approved exactly this command (used up now), or the gate
@@ -1649,8 +1649,13 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     # A pal whose run the hook held and the owner approved isn't asked twice: only when what the hook
     # let through was this very line, and only once (T206: any release from that terminal went through
     # for two minutes on one approval, other versions and notes included).
-    if terminal != SHELL and (bot in policy().get("trusted", []) or (handover_words(cmd) is not None
-                                                                         and recently_used(terminal, rule, words=handover_words(cmd), cwd=os.getcwd()))):
+    # argv: the program's own argument list (pal owner-step passes it as given). Without it, `cmd` is
+    # read as a quoted command line by the hand-over's own scanner, which keeps quoted arguments whole;
+    # a line it can't read means no hand-over. Compared as a list either way (T212 round 5).
+    if argv is None:
+        argv = handover_words(cmd)
+    if terminal != SHELL and (bot in policy().get("trusted", []) or (argv is not None
+                                                                         and recently_used(terminal, rule, words=list(argv), cwd=os.getcwd()))):
         return None
     context = command_context(cmd, os.getcwd(), rule)
     k = key(terminal, f"{rule}\n{cmd}", context)
@@ -1738,13 +1743,16 @@ def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=
     unchanged. Returns the claimed record (its land_tip is what may land), else None."""
     if words is None:
         raise CrewError("recently_used needs the exact command it may stand for")
-    want = " ".join(" ".join(words).split())
+    want = list(words)
 
     def hit(approved):
+        """The approved command's argument list equals the program's, element for element (round 5:
+        never joined, so "--dry-run notes" isn't --dry-run and notes); or, for a pal subcommand,
+        its arguments after pal / crew / botz / buddy."""
         if approved is None:
             return False
-        return " ".join(" ".join(approved).split()) == want or (
-            len(approved) >= 2 and os.path.basename(approved[0]) in ("pal", "crew", "botz", "buddy") and approved[1:] == list(words))
+        return approved == want or (
+            len(approved) >= 2 and os.path.basename(approved[0]) in ("pal", "crew", "botz", "buddy") and approved[1:] == want)
 
     def eligible(r):
         return (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"

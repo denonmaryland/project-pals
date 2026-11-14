@@ -2657,7 +2657,12 @@ def cmd_owner_step(rest):
     if len(rest) < 3 or rest[1] != "--" or not " ".join(rest[2:]).strip():
         die("pal owner-step <rule> -- <the command line>")
     from crewlib import SHELL_NAME
-    rule, cmd = rest[0], " ".join(rest[2:]).strip()
+    # Everything after -- is the program's own argv, kept as a list (T212 round 5: the hand-over
+    # compares lists, so `--dry-run notes` as one argument isn't `--dry-run` and `notes`). Shown and
+    # keyed quoted, so different lists never read or key the same. One joined string (an older
+    # ./release) is one argument, which no approved command's list matches: no hand-over.
+    rule, argv = rest[0], [a for a in rest[2:]]
+    cmd = shlex.join(argv) if len(argv) > 1 else argv[0].strip()
     bot, channel = SHELL_NAME, None
     if ME:
         try:
@@ -2666,7 +2671,7 @@ def cmd_owner_step(rest):
             s = t = None
         bot, channel = (s["name"], chan(t)) if s else (f"terminal {ME}", None)
     try:
-        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule)
+        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule, argv=argv)
     except CrewError as e:
         die(str(e))
     if not held:
@@ -3719,7 +3724,10 @@ def main(argv):
     if not argv:
         argv = ["bots"]
     # -F is --file (pal mission propose -F draft.md).
-    argv = ["--file" if a == "-F" else a for a in argv]
+    # -F is --file's short form for pal's own options, but owner-step's argument list after -- is the
+    # program's, kept exactly as given (T212 round 5: ./release -F notes.md must stay -F).
+    if argv[:1] != ["owner-step"]:
+        argv = ["--file" if a == "-F" else a for a in argv]
     ARGV = list(argv)
     argv = owner_args()   # the click token is checked by require_owner, not parsed as an option
     cmd, rest = argv[0], argv[1:]

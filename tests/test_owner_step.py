@@ -105,7 +105,7 @@ class OwnerStep(unittest.TestCase):
                                                        "channel": "build", "command": command, "rule": "release-script",
                                                        "status": "used", "used": int(time.time() * 1000) - used_ago,
                                                        "guard_context": {"cwd": here, "rules": ["release-script"]}}))
-        gate("a-gate01", './release 9.9.9 "what changed"')
+        gate("a-gate01", "./release 9.9.9 what changed")   # the same four words step() passes
         self.assertEqual(self.step(term="tD").returncode, 3, "another terminal's approval isn't this one's")
         self.assertEqual(self.step(term="tH").returncode, 0)
         # Once (T206: it was good for any release from that terminal for two minutes).
@@ -115,7 +115,7 @@ class OwnerStep(unittest.TestCase):
         self.assertEqual(self.step(term="tH").returncode, 3)
         self.assertEqual(self.step("./release", "9.9.10", "what", "changed", term="tH").returncode, 3)
         # … and not long after.
-        gate("a-gate03", './release 9.9.9 "what changed"', used_ago=10 * 60 * 1000)
+        gate("a-gate03", "./release 9.9.9 what changed", used_ago=10 * 60 * 1000)
         self.assertEqual(self.step(term="tH").returncode, 3)
 
     def test_the_owners_approval_is_one_run_of_one_line(self):
@@ -298,6 +298,56 @@ print(json.dumps(bool(crewguard.recently_used('tW', 'release-script', words=['./
             answers.append(json.loads(out))
         self.assertEqual(sorted(answers), [False, True])
         self.assertTrue(json.loads((self.data / "crew-approvals" / f"{rid}.json").read_text()).get("claimed"))
+
+    def test_t212r5_the_hand_over_compares_the_argument_list_not_the_joined_line(self):
+        """#codex-sol T212 round 5: ./release passed "$*", and the hand-over compared joined words, so a
+        dry run's approval (--dry-run and notes, two arguments) was claimed by a real release whose one
+        argument was "--dry-run notes", and a quoted "-F notes.md" (literal notes) by -F notes.md (a
+        file's contents). Now release passes its argv and the lists are compared as lists."""
+        a = self.root / "repo-a"
+        a.mkdir()
+        bin_ = str(REPO / "bin")
+        def run(code):
+            r = subprocess.run([sys.executable, "-c", "import sys, json, os\nsys.path.insert(0, %r)\nimport crewguard\n" % bin_ + code],
+                               env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return json.loads(r.stdout.strip().splitlines()[-1])
+        def approve(line):
+            return run(f"""crewguard.HOOK_CWD = {str(a)!r}
+r = crewguard.check('tW', 'Worker', 'general', {line!r})
+crewguard.decide(r['id'], True, via='test')
+print(json.dumps([r['id'], crewguard.check('tW', 'Worker', 'general', {line!r}) is None]))""")
+        def program(argv, rid):
+            # As ./release asks now: `pal owner-step release-script -- ./release "$@"`.
+            r = subprocess.run([sys.executable, str(REPO / "bin" / "crew"), "owner-step", "release-script", "--", *argv],
+                               env={**self.env, "HC_TERMINAL_ID": "tW"}, cwd=str(a), capture_output=True, text=True)
+            rec = run(f"print(json.dumps(next(r for r in crewguard.all_requests() if r['id'] == {rid!r})))")
+            return [r.returncode == 0, bool(rec.get("claimed"))]
+        # Each case its own version: an approval left unclaimed by one case must not answer the next.
+        rid, ok = approve("./release 9.9.1 --dry-run notes")
+        self.assertTrue(ok)
+        self.assertEqual(program(["./release", "9.9.1", "--dry-run notes"], rid), [False, False], "a real release isn't the dry run")
+        rid, ok = approve('./release 9.9.2 "-F notes.md"')
+        self.assertEqual(program(["./release", "9.9.2", "-F", "notes.md"], rid), [False, False], "a file's contents aren't the literal notes")
+        rid, ok = approve("./release 9.9.3 -F notes.md")
+        self.assertEqual(program(["./release", "9.9.3", "-F notes.md"], rid), [False, False])
+        # The same list: claimed once.
+        rid, ok = approve("./release 9.9.4 --dry-run notes")
+        self.assertEqual(program(["./release", "9.9.4", "--dry-run", "notes"], rid), [True, True])
+        self.assertEqual(program(["./release", "9.9.4", "--dry-run", "notes"], rid)[0], False, "once")
+        rid, ok = approve('./release 9.9.5 "what changed"')
+        self.assertEqual(program(["./release", "9.9.5", "what changed"], rid), [True, True])
+        rid, ok = approve("./release 9.9.6 -F notes.md")
+        self.assertEqual(program(["./release", "9.9.6", "-F", "notes.md"], rid), [True, True], "-F stays -F")
+        # An older ./release that still passes one joined string: no hand-over (its boundaries are gone).
+        rid, ok = approve("./release 9.9.9 notes")
+        self.assertEqual(program(["./release 9.9.9 notes"], rid), [False, False])
+
+    def test_release_passes_its_argv(self):
+        text = (REPO / "release").read_text()
+        self.assertIn('argv=(./release "$@")', text)
+        self.assertIn('pal owner-step release-script -- "${argv[@]}"', text)
+        self.assertNotIn("asked=", text)
 
     # #trusted-helper's T215 regressions (t215-handover-regressions.txt), the owner half: the Full
     # (delegated helper) half belongs to its full-delegation branch and is kept there for its rebase.
