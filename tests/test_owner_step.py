@@ -98,24 +98,24 @@ class OwnerStep(unittest.TestCase):
         # The hook held the pal's command, the owner approved, and it just went through there.
         d = self.data / "crew-approvals"
         # As the hook records it since T205: the folder it ran in and its rules. The pal command here
-        # runs where this test runs, so the approved line runs ./release there too (via cd).
+        # runs where this test runs: the approved line ran there too.
         here = os.getcwd()
         def gate(rid, command, used_ago=0):
             (d / f"{rid}.json").write_text(json.dumps({"id": rid, "key": rid, "at": int(time.time() * 1000), "terminal": "tH", "bot": "Helper",
                                                        "channel": "build", "command": command, "rule": "release-script",
                                                        "status": "used", "used": int(time.time() * 1000) - used_ago,
-                                                       "guard_context": {"cwd": os.path.dirname(here), "rules": ["release-script"]}}))
-        gate("a-gate01", f'cd {os.path.basename(here)} && ./release 9.9.9 "what changed"')
+                                                       "guard_context": {"cwd": here, "rules": ["release-script"]}}))
+        gate("a-gate01", './release 9.9.9 "what changed"')
         self.assertEqual(self.step(term="tD").returncode, 3, "another terminal's approval isn't this one's")
         self.assertEqual(self.step(term="tH").returncode, 0)
         # Once (T206: it was good for any release from that terminal for two minutes).
         self.assertEqual(self.step(term="tH").returncode, 3, "the gate's approval is used up by the run it let through")
         # Only for the line the owner approved there, not another version or other notes.
-        gate("a-gate02", f"cd {os.path.basename(here)} && ./release 9.9.9 notes")
+        gate("a-gate02", "./release 9.9.9 notes")
         self.assertEqual(self.step(term="tH").returncode, 3)
         self.assertEqual(self.step("./release", "9.9.10", "what", "changed", term="tH").returncode, 3)
         # … and not long after.
-        gate("a-gate03", f'cd {os.path.basename(here)} && ./release 9.9.9 "what changed"', used_ago=10 * 60 * 1000)
+        gate("a-gate03", './release 9.9.9 "what changed"', used_ago=10 * 60 * 1000)
         self.assertEqual(self.step(term="tH").returncode, 3)
 
     def test_the_owners_approval_is_one_run_of_one_line(self):
@@ -155,10 +155,10 @@ print(json.dumps(crewguard.owner_step('tW', 'Worker', 'general', './release 9.9.
         self.assertFalse(step(str(b)), "another folder's release isn't the approved one")
         self.assertTrue(step(str(a)), "the folder it was approved in claims it, once")
         self.assertFalse(step(str(a)))
-        # cd before it: the program runs in the folder the line moved to.
+        # cd before it: no hand-over anywhere (T212 round 4: only one plain command is handed over).
         self.assertTrue(approve("cd sub && ./release 9.9.9 notes", str(a)))
-        self.assertFalse(step(str(a)), "the line ran it in sub, not here")
-        self.assertTrue(step(str(a / "sub")))
+        self.assertFalse(step(str(a)))
+        self.assertFalse(step(str(a / "sub")))
         # Where the hook didn't know the folder, nothing can be claimed.
         self.assertTrue(approve("./release 9.9.9 notes", None))
         self.assertFalse(step(str(a)))
@@ -212,11 +212,27 @@ print(json.dumps([held is None, bool(rec.get('claimed'))]))""")
             self.assertTrue(ok, line)
             self.assertEqual(step(wrong, rid), [False, False], f"no hand-over: {line}")
             self.assertEqual(step(a, rid), [False, False], line)
-        # Plain cd with a literal path, joined by ; or &&, is followed.
-        for line, right in ((f"cd {b} && ./release 9.9.9 notes", b), (f"cd {a}; cd ../repo-b; ./release 9.9.9 notes", b)):
+        # T212 round 4: no working out of folders at all. One plain command, run where the hook saw
+        # it, is handed over; anything else (a cd of any kind, ; && |, a wrapper, VAR=value) isn't.
+        for line, wrong in ((f"cd {b} && ./release 9.9.9 notes", b), (f"cd {a}; cd ../repo-b; ./release 9.9.9 notes", b),
+                            (f"cd {a} && ./release 9.9.9 notes", a),
+                            (f"env -C {b} ./release 9.9.9 notes", b), (f"env -C {b} ./release 9.9.9 notes", a),
+                            ("env ./release 9.9.9 notes", a), ("command ./release 9.9.9 notes", a), ("exec ./release 9.9.9 notes", a),
+                            ("nice ./release 9.9.9 notes", a), ("nohup ./release 9.9.9 notes", a), ("time ./release 9.9.9 notes", a),
+                            ("sudo ./release 9.9.9 notes", a), ("FOO=1 ./release 9.9.9 notes", a),
+                            ("./release 9.9.9 notes | cat", a), ("./release 9.9.9 notes; true", a)):
             rid, ok = approve(line)
-            self.assertEqual(step(a, rid), [False, False], line)
-            self.assertEqual(step(right, rid), [True, True], line)
+            self.assertTrue(ok, line)
+            self.assertEqual(step(wrong, rid), [False, False], f"no hand-over: {line}")
+        # CDPATH: `cd repo-b` may go somewhere else entirely; cd lines are never handed over.
+        rid, ok = approve("cd repo-b; ./release 9.9.9 notes")
+        for where in (a, b):
+            self.assertEqual(step(where, rid), [False, False])
+        # The one shape that is: the plain command, claimed in exactly the folder it was approved in, once.
+        rid, ok = approve("./release 9.9.9 notes")
+        self.assertEqual(step(b, rid), [False, False])
+        self.assertEqual(step(a / "~", rid), [False, False], "not a folder under it either")
+        self.assertEqual(step(a, rid), [True, True])
 
     def test_t212r3_a_line_outside_the_handover_language_is_refused_quickly(self):
         """T212 round 3: the hand-over's recogniser backtracked for seconds on a short unsupported tail,
@@ -227,14 +243,61 @@ print(json.dumps([held is None, bool(rec.get('claimed'))]))""")
         for tail in tails:
             line = "./release 9.9.9 notes; " + tail
             t0 = time.monotonic()
-            self.assertIsNone(crewguard.handover_segments(line))
+            self.assertIsNone(crewguard.handover_words(line))
             self.assertLess(time.monotonic() - t0, 0.05, f"slow on a {len(tail)}-character tail")
         long = "./release 9.9.9 notes; " + "cd a; " * 2000
         t0 = time.monotonic()
-        self.assertIsNone(crewguard.handover_segments(long), "longer than the hand-over language allows")
+        self.assertIsNone(crewguard.handover_words(long), "longer than the hand-over language allows")
         self.assertLess(time.monotonic() - t0, 0.05)
-        ok = crewguard.handover_segments('cd /x/y && ./release 9.9.9 "what changed"; cd z')
-        self.assertEqual([w for _r, w in ok], [["cd", "/x/y"], ["./release", "9.9.9", "what changed"], ["cd", "z"]])
+        self.assertEqual(crewguard.handover_words('./release 9.9.9 "what changed"'), ["./release", "9.9.9", "what changed"])
+        for line in ('cd /x/y && ./release 9.9.9 notes', "./release a; b", "env ./release", "X=1 ./release", ""):
+            self.assertIsNone(crewguard.handover_words(line), line)
+
+    def test_t212r4_two_programs_racing_claim_once(self):
+        """Sol's repro-concurrent-claim, kept as a test after round 4 (which matches the approved line
+        by its literal words, ./release rather than release): both parse before the lock, one claims."""
+        a = self.root / "repo-a"
+        a.mkdir()
+        bin_ = str(REPO / "bin")
+        setup = f"""import sys, json, os
+sys.path.insert(0, {bin_!r})
+import crewguard
+os.chdir({str(a)!r}); crewguard.HOOK_CWD = {str(a)!r}
+line = './release 9.9.9 notes'
+r = crewguard.check('tW', 'Worker', 'general', line)
+crewguard.decide(r['id'], True, via='test')
+assert crewguard.check('tW', 'Worker', 'general', line) is None
+print(json.dumps(r['id']))"""
+        r = subprocess.run([sys.executable, "-c", setup], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rid = json.loads(r.stdout)
+        ready = [self.root / "ready0", self.root / "ready1"]
+        kids = []
+        for k in (0, 1):
+            code = f"""import sys, json, contextlib, time
+from pathlib import Path
+sys.path.insert(0, {bin_!r})
+import crewguard
+real = crewguard.locked
+@contextlib.contextmanager
+def barrier(name):
+    Path({str(ready[k])!r}).write_text('parsed')
+    until = time.monotonic() + 5
+    while not all(Path(p).exists() for p in {[str(y) for y in ready]!r}):
+        assert time.monotonic() < until
+        time.sleep(0.005)
+    with real(name):
+        yield
+crewguard.locked = barrier
+print(json.dumps(bool(crewguard.recently_used('tW', 'release-script', words=['./release', '9.9.9', 'notes'], cwd={str(a)!r}))))"""
+            kids.append(subprocess.Popen([sys.executable, "-c", code], env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+        answers = []
+        for kid in kids:
+            out, err = kid.communicate(timeout=20)
+            self.assertEqual(kid.returncode, 0, err)
+            answers.append(json.loads(out))
+        self.assertEqual(sorted(answers), [False, True])
+        self.assertTrue(json.loads((self.data / "crew-approvals" / f"{rid}.json").read_text()).get("claimed"))
 
     # #trusted-helper's T215 regressions (t215-handover-regressions.txt), the owner half: the Full
     # (delegated helper) half belongs to its full-delegation branch and is kept there for its rebase.

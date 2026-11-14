@@ -85,7 +85,9 @@ class LandBase(unittest.TestCase):
             nonce = os.urandom(16).hex()
             (d / f"{nonce}.json").write_text(json.dumps({"args": args, "at": int(time.time() * 1000)}))
             args += ["--click", nonce]
-        return subprocess.run([sys.executable, str(BIN / "crew"), *args], capture_output=True, text=True, env=self.env, timeout=60)
+        # Run where the hook saw the line (hook_check): a hand-over is claimed only in that folder (T212 r4).
+        return subprocess.run([sys.executable, str(BIN / "crew"), *args], capture_output=True, text=True, env=self.env, timeout=60,
+                              cwd=str(self.repo))
 
     def topic(self, name, base=None):
         """A worktree topic as `pal topic … --worktree` makes it (bin/crew make_worktree), recorded in shared.json."""
@@ -324,7 +326,7 @@ class LandBase(unittest.TestCase):
         now = int(time.time() * 1000)
         # As the hook records it since T205 / T212: the folder it ran in, its rules, the commit it's for.
         (approvals / "a-hook01.json").write_text(json.dumps({"id": "a-hook01", "terminal": "test-bot", "rule": "land", "status": "used",
-                                                             "used": now, "at": now, "command": f"cd {wt['path']} && pal land Builder#x",
+                                                             "used": now, "at": now, "command": "pal land Builder#x",
                                                              "guard_context": {"cwd": str(self.repo), "rules": ["land"]},
                                                              "land_tip": self.git("rev-parse", "HEAD", at=wt["path"])}))
         r = self.pal("land", "Builder#x", "--onto", "crew/parked")
@@ -413,7 +415,7 @@ class LandBase(unittest.TestCase):
             now = int(time.time() * 1000)
             (approvals / f"{rid}.json").write_text(json.dumps({"id": rid, "terminal": "test-bot", "rule": "land", "status": "used",
                                                               "used": now - ago_s * 1000, "at": now - ago_s * 1000, "command": "pal land Builder#x",
-                                                              "guard_context": {"cwd": wt["path"], "rules": ["land"]},
+                                                              "guard_context": {"cwd": str(self.repo), "rules": ["land"]},
                                                               "land_tip": self.git("rev-parse", "HEAD", at=wt["path"])}))
 
         def handoff():
@@ -444,7 +446,7 @@ class LandBase(unittest.TestCase):
 
     # ── T212 (#codex-sol): the hook's hand-over carries the commit that was approved ──────────────
     def hook_check(self, wt, command="pal land Builder#x"):
-        code = (f"import sys, json; sys.path.insert(0, {str(BIN)!r}); import crewguard; crewguard.HOOK_CWD = {wt['path']!r}; "
+        code = (f"import sys, json; sys.path.insert(0, {str(BIN)!r}); import crewguard; crewguard.HOOK_CWD = {str(self.repo)!r}; "
                 f"print(json.dumps(crewguard.check('test-bot', 'Builder', 'x', {command!r})))")
         r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)

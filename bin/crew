@@ -894,7 +894,7 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
             tip = ""
         # What the hook let through is claimed only for the commit it was approved at (T212), and that
         # commit is what lands: --at pins it, so a commit made in between is refused below.
-        handed = crewguard.recently_used(ME, "land", words=words, tip=tip or None) if tip else None
+        handed = crewguard.recently_used(ME, "land", words=words, tip=tip or None, cwd=os.getcwd()) if tip else None
         if handed:
             at = at or handed["land_tip"]
         else:

@@ -395,6 +395,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
   Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
+  When the hook lets an approved line through and the program it runs asks again itself (`pal land`'s
+  own check, `./release`'s owner-step), that program may count the approval once, and only when the
+  approved line was one plain command (no cd, no `;` `&&` `|` or subshell, no wrapper such as env,
+  command, exec, nice or sudo, no leading `VAR=value`), the same words, the same rules re-checked in
+  the folder the hook recorded, the program running in exactly that folder, and for a land the same
+  commit. Anything else asks the owner again (T206, T212, T215).
   Landing by hand is held too (`base-branch`, T136, always on, every project): a base branch
   (`main`, `master`, the branch Live follows, any base a worktree topic was cut from) moved by its
   name: `git update-ref refs/heads/main <commit>`, `git branch -f main crew/x`, `-M` / `-C` onto

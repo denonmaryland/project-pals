@@ -1649,7 +1649,8 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     # A pal whose run the hook held and the owner approved isn't asked twice: only when what the hook
     # let through was this very line, and only once (T206: any release from that terminal went through
     # for two minutes on one approval, other versions and notes included).
-    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule, words=normal_words(cmd), cwd=os.getcwd())):
+    if terminal != SHELL and (bot in policy().get("trusted", []) or (handover_words(cmd) is not None
+                                                                         and recently_used(terminal, rule, words=handover_words(cmd), cwd=os.getcwd()))):
         return None
     context = command_context(cmd, os.getcwd(), rule)
     k = key(terminal, f"{rule}\n{cmd}", context)
@@ -1674,71 +1675,52 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
 
 
 HANDOVER_S = 120   # how long after the hook let a command through its program may claim that approval
-# The hand-over's language (T212 rounds 2 and 3): a literal path for cd (no quotes, ~, $ …, and never
-# starting with "-": `cd -` is OLDPWD, `cd --` / `-P` / `-L` go home), and the words of a line: unquoted
-# literal atoms, or quoted strings with nothing in them a shell would expand. Recognised by a linear
-# scan, character by character (round 3: a nested regex backtracked for seconds on a short tail),
-# with the line's length capped, and before the approvals lock is taken.
-HANDOVER_PATH = re.compile(r"[A-Za-z0-9_./:@%+=,][A-Za-z0-9_./:@%+=,-]*")
+# The hand-over's language (T212 round 4): one plain command and nothing else. No cd, no ; && | or
+# subshell, no wrapper (env, command, exec, nice, sudo …), no leading VAR=value; words are literal
+# atoms or quoted strings without expansion characters. The program claiming it must run in exactly
+# the folder the hook recorded. Four rounds of working out where a line runs (case, env -C, CDPATH,
+# cd options …) each found another gap, so no folder is worked out at all: anything else means no
+# hand-over, and the owner is asked again. Recognised by one linear scan, the line capped, before
+# the approvals lock is taken (round 3).
 HANDOVER_MAX = 2048
 _HO_ATOM_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:@%+=,#-")
 _HO_QUOTED_BANNED = frozenset("$`\\!\n")
+HANDOVER_NOT_FIRST = {"cd", "pushd", "popd", "env", "command", "builtin", "exec", "nice", "ionice", "nohup", "time",
+                      "timeout", "sudo", "doas", "su", "chrt", "taskset", "stdbuf", "setsid", "unbuffer", "script",
+                      "xargs", "eval", "source", ".", "sh", "bash", "zsh", "dash", "ksh", "fish", "chroot", "flock",
+                      "systemd-run", "runuser", "nsenter", "unshare", "firejail", "proot", "watch", "then", "do", "!"}
 
 
-def handover_segments(cmd):
-    """[(raw segment, its words)] for a line in the hand-over language, else None. One pass over the
-    line: words are runs of atom characters and quoted strings; segments split on ; and &&; anything
-    else (|, &, (, ), <, >, $, `, ~, \\, !, a newline, an unclosed quote, an empty segment) is None."""
+def handover_words(cmd):
+    """The words of a line that is one plain command in the hand-over language, else None."""
     if not isinstance(cmd, str) or not cmd.strip() or len(cmd) > HANDOVER_MAX:
         return None
-    segs, raw, words, word, in_word, i, n = [], [], [], [], False, 0, len(cmd)
-
-    def end_word():
-        nonlocal word, in_word
-        if in_word:
-            words.append("".join(word))
-        word, in_word = [], False
-
-    def end_seg():
-        end_word()
-        text = "".join(raw).strip()
-        if not words or not text:
-            return False
-        segs.append((text, list(words)))
-        raw.clear()
-        words.clear()
-        return True
+    words, word, in_word, i, n = [], [], False, 0, len(cmd)
     while i < n:
         c = cmd[i]
         if c in (" ", "\t"):
-            end_word()
-            raw.append(c)
+            if in_word:
+                words.append("".join(word))
+            word, in_word = [], False
             i += 1
-        elif c == ";" or (c == "&" and cmd[i + 1:i + 2] == "&"):
-            if not end_seg():
-                return None
-            i += 1 if c == ";" else 2
         elif c in ("'", '"'):
             j = cmd.find(c, i + 1)
-            if j < 0:
+            if j < 0 or any(ch in _HO_QUOTED_BANNED for ch in cmd[i + 1:j]):
                 return None
-            inner = cmd[i + 1:j]
-            if any(ch in _HO_QUOTED_BANNED for ch in inner):
-                return None
-            word.append(inner)
+            word.append(cmd[i + 1:j])
             in_word = True
-            raw.append(cmd[i:j + 1])
             i = j + 1
         elif c in _HO_ATOM_CHARS:
             word.append(c)
             in_word = True
-            raw.append(c)
             i += 1
         else:
-            return None
-    if not end_seg():
+            return None   # ; & | ( ) < > $ ` ~ \ ! newline …: not one plain command
+    if in_word:
+        words.append("".join(word))
+    if not words or os.path.basename(words[0]) in HANDOVER_NOT_FIRST or "=" in words[0] or words[0].startswith("-"):
         return None
-    return segs
+    return words
 
 
 def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=None):
@@ -1746,70 +1728,38 @@ def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=
     the owner approved it, the hook let it run (status used); the program then asks again itself (pal
     land's own check, ./release's owner-step) and may count that approval ONCE, and only for exactly
     what was approved (T212, T215):
-      - the same command: `words` (a pal subcommand after pal / crew / botz / buddy, or a whole line's
-        normal_words) matches one of the approved line's segments;
-      - the same context: the record carries T205's guard_context, the rules the line meets now in that
-        cwd add none to it, and with `cwd` the program runs in the folder the approved line ran that
-        segment in (its cwd followed through plain `cd` before it; a line whose cd can't be followed,
-        a subshell, a pipe, ||, a nested shell, means no hand-over: the owner is asked again);
-      - the same commit, with `tip`: the land_tip the hook recorded.
-    The program's own approvals, claimed ones and ones a handoff voided never count. Returns the
-    claimed record (its land_tip is what may land), else None."""
+      - the approved line is one plain command (handover_words), and it is the one asked about:
+        `words` (a pal subcommand after pal / crew / botz / buddy, or the whole line's words);
+      - the context: the record carries T205's guard_context, re-checked in its cwd now it adds no
+        rule, and the program's own cwd is exactly that cwd;
+      - with `tip`, the commit the hook recorded (land_tip).
+    The program's own approvals, claimed ones and ones a handoff voided never count. Everything is
+    checked before the approvals lock is taken; under it, a candidate is re-read and claimed only if
+    unchanged. Returns the claimed record (its land_tip is what may land), else None."""
     if words is None:
         raise CrewError("recently_used needs the exact command it may stand for")
     want = " ".join(" ".join(words).split())
 
-    def hit(seg):
-        w = normal_words(seg)
-        return " ".join(" ".join(w).split()) == want or (
-            len(w) >= 2 and os.path.basename(w[0]) in ("pal", "crew", "botz", "buddy") and w[1:] == list(words))
-
-    def ran_in(r):
-        """The folder the approved line runs the matching segment in, or None if it can't be vouched
-        for (T212 round 2). An allowlist, not a parser: the line must be segments joined by ; or &&,
-        every segment before the command a plain `cd <literal path>` (no quotes, ~, variables, env,
-        case or any other wrapper or syntax), and the command a literal one (quoted words allowed,
-        never an expansion). Anything else means no hand-over: the owner is asked again."""
-        ctx = r.get("guard_context")
-        if not isinstance(ctx, dict) or not isinstance(ctx.get("cwd"), str) or not os.path.isabs(ctx["cwd"]):
-            return None
-        segs = handover_segments(r.get("command") or "")
-        if segs is None:
-            return None
-        here = ctx["cwd"]
-        for raw, words in segs:
-            if hit(raw):
-                return here
-            # A plain cd: exactly `cd <path>`, the path unquoted and literal, never an option (-, --, -P, -L)
-            # and never missing (a bare cd goes home).
-            if len(words) == 2 and words[0] == "cd" and raw.split() == words and HANDOVER_PATH.fullmatch(words[1]):
-                here = os.path.normpath(os.path.join(here, words[1]))
-                continue
-            return None   # something before the command that isn't a plain cd
-        return None
-
-    def same_place(a, b):
-        try:
-            return os.path.realpath(a) == os.path.realpath(b)
-        except OSError:
+    def hit(approved):
+        if approved is None:
             return False
+        return " ".join(" ".join(approved).split()) == want or (
+            len(approved) >= 2 and os.path.basename(approved[0]) in ("pal", "crew", "botz", "buddy") and approved[1:] == list(words))
+
     def eligible(r):
         return (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
                 and not r.get("claimed") and r.get("asked_by") != "the program itself"
                 and now_ms() - r.get("used", 0) < seconds * 1000)
-    # All the parsing and re-checking first, without the approvals lock (T212 round 3: a slow
-    # rejection there held up every other approval); then, locked, claim the first that's unchanged.
     good = []
     for r in all_requests():
-        if not eligible(r) or not handover_segments(r.get("command") or "") \
-                or not any(hit(raw) for raw, _w in handover_segments(r["command"])):
+        if not eligible(r) or not hit(handover_words(r.get("command") or "")):
             continue
         ctx = r.get("guard_context")
         allowed = approval_rules(r)
         if not isinstance(ctx, dict) or allowed is None or not allowed <= set(ctx.get("rules") or []):
             continue
-        where = ran_in(r)
-        if where is None or (cwd is not None and not same_place(where, cwd)):
+        # Exactly the folder the hook recorded: no symlink resolving, no working out.
+        if not isinstance(ctx.get("cwd"), str) or not os.path.isabs(ctx["cwd"]) or cwd is None or cwd != ctx["cwd"]:
             continue
         if tip is not None and not (r.get("land_tip") and (tip.startswith(r["land_tip"]) or r["land_tip"].startswith(tip))):
             continue
