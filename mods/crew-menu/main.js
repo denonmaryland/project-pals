@@ -16,7 +16,7 @@ import {
   botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
   areasOf, areaOfTopic, fileTopic,
   canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
-  crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview,
+  crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, worktreeOf, openReview,
   powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL, HANDOFF_BRAINS, topicBrain, seatHolders, handOff, brainLogo, ds,
   factories, severalFactories, currentFactory, factoryOf, factoryNeeds, switchFactory, removeFactory, movePalToFactory, setForeman, templateOf } from "./crew.js";
 
@@ -221,10 +221,6 @@ export default class CrewMenu extends View {
     const pinned = palPinned(bot);
     return root
       .child(title(bot.name))
-      // Its profile: the right-side panel (DeNon 2026-11-08).
-      .child(item("m-profile", "ds-user", "Profile", () => togglePanel("profile")))
-      .child(item("m-mission", "ds-mission", "Mission", () => togglePanel("mission")))
-      .child(line())
       .when(!bot.god, (el) => el.child(item("m-pin", "pin", pinned ? "Unpin from the top" : "Pin to the top", () => pinPal(bot, !pinned)))
         .child(moves("m-move", (dir) => canMovePal(space, dir), (dir) => movePal(space, dir))))
       // Herdr asks for the name; the roster then moves its memory and routines to the new name.

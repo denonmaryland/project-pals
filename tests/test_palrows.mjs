@@ -254,8 +254,8 @@ try {
   const outline = (p) => shape(p).replace(/h\[(30|120|90|60)\]/g, "h[list]");
   assert.equal(outline(heroOf(many, true)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(),
     outline(heroOf(one, false)).split("|").filter((x) => /flex_grow|w\[18\]/.test(x)).join(), "the quick actions keep their widths and the Tasks count slot");
-  // The tools are five pebbles of one size (T109): each shares the row equally, whatever it shows.
-  assert.equal(shape(heroOf(one, false)).split("|").filter((x) => /flex_grow/.test(x)).length, 5, "five equal pebbles, with or without counts");
+  // The tools are pebbles of one size (T109; four since Pals Lite, T217): each shares the row equally, whatever it shows.
+  assert.equal(shape(heroOf(one, false)).split("|").filter((x) => /flex_grow/.test(x)).length, 4, "four equal pebbles, with or without counts");
   // Inbox took "+ Channel"'s place (DeNon, 2026-11-08): the needs-you count in a fixed slot, amber
   // when something waits, and the same widths with or without it. New topic stays in the list.
   const pebbleOf = (h, id) => ids(h).find((n) => n.args.id?.[0] === id);
@@ -272,7 +272,7 @@ try {
     const row = ids(h304).find((n) => n.args.id?.[0] === "hero-tools");
     assert.ok(row.args.px[0] === 8 && row.args.gap[0] === 6, "the row: 8 px in (the well's edges), 6 px between");
     const pebs = row.kids.map((k) => k.node);
-    assert.deepEqual(pebs.map((n) => n.args.id[0]), ["hero-inbox", "hero-tasks", "hero-desk", "hero-profile", "hero-sleep"], "the five tools, in order, and nothing else in the row");
+    assert.deepEqual(pebs.map((n) => n.args.id[0]), ["hero-inbox", "hero-tasks", "hero-popout", "hero-sleep"], "the four tools (Pals Lite, T217), in order, and nothing else in the row");
     for (const n of pebs) {
       assert.ok(n.args.flex_grow?.[0] === 1 && n.args.flex_basis?.[0] === 0 && !n.args.w, `${n.args.id[0]}: an equal share of the row, no fixed width`);
       assert.ok(n.args.h[0] === 28 && n.args.rounded[0] === 7 && n.args.bg[0] === "#1B1B1E" && n.calls.includes("shadow_xs"), `${n.args.id[0]}: the same raised pebble (28 px, r7, one face)`);
@@ -283,9 +283,9 @@ try {
       assert.ok(!inner.kids.some((k) => k.node.args.w?.[0] === 18), `${n.args.id[0]}: no empty count slot`);
     }
     const wide = roster.heroCard({ space: one, bot: crew.botOf(one) }, t, d, 440);
-    for (const [id, name] of [["hero-inbox", "Inbox"], ["hero-tasks", "Tasks"], ["hero-desk", "Desk"]]) assert.ok(text(pebbleOf(wide, id)).includes(name), `${id} shows its name with room`);
-    assert.equal(text(pebbleOf(wide, "hero-profile")).trim(), "", "Profile stays an icon");
-    assert.ok(ids(wide).find((n) => n.args.id?.[0] === "hero-tools").kids.every((k) => k.node.args.flex_grow?.[0] === 1), "still five equal pebbles with names");
+    for (const [id, name] of [["hero-inbox", "Inbox"], ["hero-tasks", "Tasks"]]) assert.ok(text(pebbleOf(wide, id)).includes(name), `${id} shows its name with room`);
+    assert.equal(text(pebbleOf(wide, "hero-popout")).trim(), "", "Pop out stays an icon");
+    assert.ok(ids(wide).find((n) => n.args.id?.[0] === "hero-tools").kids.every((k) => k.node.args.flex_grow?.[0] === 1), "still equal pebbles with names");
     // The open view's pebble is the lit one (the pebble's own primary face); the rest are plain.
     const lit = (n) => n.args.bg?.[0] !== "#1B1B1E";
     assert.ok(pebs.every((n) => !lit(n)), "nothing open: all plain");
@@ -293,11 +293,8 @@ try {
     const open = roster.heroCard({ space: one, bot: crew.botOf(one) }, t, d, 304);
     assert.ok(lit(pebbleOf(open, "hero-inbox")) && !lit(pebbleOf(open, "hero-tasks")), "Inbox open: its pebble is lit");
     delete fixtures.shared["crew.view"];
-    fixtures.layout = { id: "root", children: [{ id: "profile", hidden: false }, { id: "center", type: "stack", active: "desk-view", children: [{ id: "tab-view" }, { id: "desk-view" }] }] };
-    const other0 = fixtures.spaces.find((sp) => !crew.botOf(sp).god);
-    const two = roster.heroCard({ space: other0, bot: crew.botOf(other0) }, t, d, 304);
-    assert.ok(lit(pebbleOf(two, "hero-desk")) && lit(pebbleOf(two, "hero-profile")), "the Desk view and the profile panel open: both lit");
-    fixtures.layout = null;
+    // Pals Lite (T217): no Desk or Profile pebble; Pop out opens the shown topic in its own window.
+    assert.ok(!pebbleOf(open, "hero-desk") && !pebbleOf(open, "hero-profile"), "no Desk or Profile pebble");
     // A count sits beside the icon, in the same centred group, and doesn't change the pebble's share.
     const src = readFileSync(join(root, "mods/crew-roster/main.js"), "utf8");
     assert.ok(!/toolStrip/.test(src) && !/toolStrip|"strip"/.test(readFileSync(join(root, "lib/crew.js"), "utf8")), "the recessed strip is gone");
@@ -312,11 +309,11 @@ try {
   assert.ok(head && other, "the fixtures have a head pal and another");
   assert.ok(pebbleOf(heroAt(head, 281), "hero-home") && !pebbleOf(heroAt(head, 281), "hero-sleep"), "the head pal's hero: Home in the moon's place");
   assert.ok(!pebbleOf(heroAt(other, 281), "hero-home") && pebbleOf(heroAt(other, 281), "hero-sleep"), "other pals keep the moon");
-  assert.equal(outline(heroAt(head, 281)).split("|").filter((x) => /flex_grow/.test(x)).length, 5);
-  assert.equal(outline(heroAt(other, 281)).split("|").filter((x) => /flex_grow/.test(x)).length, 5, "the same five slots for the head pal and the rest");
+  assert.equal(outline(heroAt(head, 281)).split("|").filter((x) => /flex_grow/.test(x)).length, 4);
+  assert.equal(outline(heroAt(other, 281)).split("|").filter((x) => /flex_grow/.test(x)).length, 4, "the same four slots for the head pal and the rest");
   // On the head pal with Home showing, the last slot is raised (and Desk, which opens Home there, isn't).
   fixtures.layout = { id: "root", children: [{ id: "center", type: "stack", active: "home-view", children: [{ id: "tab-view" }, { id: "home-view" }] }] };
-  { const h = heroAt(head, 304); assert.ok(pebbleOf(h, "hero-home").args.bg?.[0] !== "#1B1B1E" && pebbleOf(h, "hero-desk").args.bg?.[0] === "#1B1B1E", "Home showing: the Home pebble is the lit one"); }
+  { const h = heroAt(head, 304); assert.ok(pebbleOf(h, "hero-home").args.bg?.[0] !== "#1B1B1E" && pebbleOf(h, "hero-tasks").args.bg?.[0] === "#1B1B1E", "Home showing: the Home pebble is the lit one"); }
   fixtures.layout = null;
   assert.ok(text(calm).includes("New topic"), "New topic is still the list's last row");
   fixtures.shared["crew.needs"] = { count: 3 };

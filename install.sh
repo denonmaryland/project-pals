@@ -132,8 +132,8 @@ for dir in "$src"/mods/crew-*; do
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-# Pals Lite (T217, DeNon's h-724046) deleted the full pages: the pal board and the Computer.
-for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard; do
+# Pals Lite (T217, DeNon's h-724046) deleted the full pages: the pal board, the Computer, the profile panel, the Routines dialog.
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
@@ -173,8 +173,7 @@ if isinstance(g, dict) and g.get("ctrl-shift-m") == "crew-roster.mode":
     print("removed the old Focus/Pro shortcut (ctrl-shift-m) from keys.json (backup in the install's .crew-backups folder)")
 PY
 fi
-# Project Pals' shortcuts in keys.json's global map: ctrl-shift-i → crew-roster.profile (the profile
-# panel, 2026-11-08), ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
+# Project Pals' shortcuts in keys.json's global map: ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
 # it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
 # crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
 # crew-roster.home (Home, the head pal's page; free in both too) and ctrl-shift-j → crew-roster.chief
@@ -183,7 +182,7 @@ fi
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-i crew-roster.profile the profile panel" "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher"; do
+for pair in "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
@@ -206,12 +205,12 @@ PY2
 done
 # Keys for pages Pals Lite deleted (T217): take out exactly these pairs, only where keys.json still
 # maps the key to our action; a key the person rebound is left alone. Backed up first.
-if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && grep -q -E '"crew-roster\.(computer|board)"' "$home/keys.json"; then
+if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && grep -q -E '"crew-roster\.(computer|board|profile)"' "$home/keys.json"; then
   mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
   python3 - "$home/keys.json" <<'PY3' || echo "left keys.json as it was (couldn't read it)"
 import json, os, sys
 path = sys.argv[1]
-gone = {"ctrl-shift-y": "crew-roster.computer", "ctrl-shift-u": "crew-roster.board"}
+gone = {"ctrl-shift-y": "crew-roster.computer", "ctrl-shift-u": "crew-roster.board", "ctrl-shift-i": "crew-roster.profile"}
 keys = json.load(open(path))
 g = keys.get("global") if isinstance(keys.get("global"), dict) else {}
 out = [k for k, a in gone.items() if g.get(k) == a]

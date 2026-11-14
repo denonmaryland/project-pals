@@ -99,7 +99,7 @@ Work
                                      merge a worktree topic's branch into its project's main branch (or the
                                      base named when it was made; --onto: another, on purpose; needs the owner)
 
-Mission, brain and agent files (the profile panel shows them all)
+Mission, brain and agent files (a pal proposes a change; DeNon accepts it in the proposal dialog)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
   pal mission focus "…" | tick "goal" [--undo]          keep your focus current, tick a goal
   pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to the Inbox
@@ -125,7 +125,7 @@ Dream loop (the crew learns from its notebooks; proposals only, the owner approv
 
 Memory and skills
   pal remember "<fact>" [--user]    save a durable fact for your future sessions (--user: about the owner)
-  pal memory [Pal] [--json]         what's remembered (--json: what a session starts with, for the profile panel)
+  pal memory [Pal] [--json]         what's remembered (--json: what a session starts with)
   pal skill ls | show NAME | save NAME --description "…" [--file F, else stdin] | archive NAME
 
 Settings
@@ -2134,7 +2134,7 @@ def cmd_mission(spaces, rest):
         if o.get("json"):
             print(json.dumps({"pal": name, "dir": str(d), "text": text, "sha": crewbrain.sha(text), **crewbrain.parse_mission(text)}))
         else:
-            print(text or f"(no mission yet for {name}: {OWNER} writes it in the profile panel, or a pal proposes one with pal mission propose --file F)")
+            print(text or f"(no mission yet for {name}: a pal proposes one with pal mission propose --file F, and {OWNER} accepts it from Home)")
         return
     space, rec, name = pal_of(spaces, o.get("pal") or (pos[0] if sub == "set" and pos else None))
     rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
@@ -2351,6 +2351,30 @@ def tell_proposer(spaces, pid, accepted, why=None):
         pass
 
 
+def proposal_current(spaces, p):
+    """What a mission or AGENTS.md proposal would replace, for the review dialog: {current, diff}
+    (a unified diff, current → proposed). Read-only; {} for other kinds or when it can't be read."""
+    import difflib
+    import crewbrain
+    try:
+        space, rec, name = pal_of(spaces, p["pal"])
+        rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
+        if p["kind"] == "mission":
+            cur = crewbrain.read(crewbrain.brain_dir(name, rec), "mission.md") or ""
+            label = "mission.md"
+        elif p["kind"] == "agents":
+            f = Path(folder_of(space, rec)) / p["file"]
+            cur = f.read_text() if f.is_file() else ""
+            label = p["file"]
+        else:
+            return {}
+    except (CrewError, OSError, KeyError, SystemExit):
+        return {}
+    new = p.get("text") or ""
+    diff = "".join(difflib.unified_diff(cur.splitlines(True), new.splitlines(True), f"{label} now", f"{label} proposed", n=2))
+    return {"current": cur, "diff": diff}
+
+
 def cmd_proposals(spaces, rest):
     import crewproposals, crewbrain
     sub = rest[0] if rest else "ls"
@@ -2360,7 +2384,7 @@ def cmd_proposals(spaces, rest):
         print(json.dumps(ps) if o.get("json") else "\n".join(f"{p['id']} {p['kind']} {p['pal']}: {p.get('file') or ''} from {p['by']}" for p in ps) or "(no proposals waiting)")
     elif sub == "show" and pos:
         p = crewproposals.get(pos[0])
-        print(json.dumps({**p, "text_sha": crewproposals.text_sha(p)}))
+        print(json.dumps({**p, "text_sha": crewproposals.text_sha(p), **proposal_current(spaces, p)}))
     elif sub in ("accept", "decline") and pos:
         require_owner("Decide a proposal")
         from crewlib import tap_authority
@@ -2380,7 +2404,7 @@ def cmd_proposals(spaces, rest):
                     if p["kind"] == "mission":
                         d = crewbrain.brain_dir(name, rec)
                         if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
-                            die("the mission changed since this was proposed; open it in the profile panel and compare")
+                            die("the mission changed since this was proposed; the pal can propose it again against the current one")
                     elif p["kind"] == "agents":
                         import crewagents
                         crewagents.validate_apply(folder_of(space, rec), p["file"], p.get("base") or "none")
@@ -2395,7 +2419,7 @@ def cmd_proposals(spaces, rest):
             if p["kind"] == "mission":
                 d = crewbrain.brain_dir(name, rec)
                 if crewbrain.sha(crewbrain.read(d, "mission.md")) != p.get("base"):
-                    die("the mission changed since this was proposed; open it in the profile panel and compare")
+                    die("the mission changed since this was proposed; the pal can propose it again against the current one")
                 crewbrain.write(d, "mission.md", p["text"])
                 brain_log(space, rec, name, f"mission updated from {p['by']}'s proposal", by=acted())
             elif p["kind"] == "agents":

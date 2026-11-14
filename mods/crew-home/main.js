@@ -43,7 +43,7 @@ import { theme, spaces, agents, shared, run, notify, exec, appHome, home as home
 import {
   ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli, memoryLow, memoryLine,
   loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
-  openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
+  openProposal, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
   severalFactories, currentFactory, inFactory, homeItemShown,
   withoutChief, welcomePending,
 } from "./crew.js";
@@ -326,7 +326,7 @@ export default class CrewHome extends View {
       title = `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`;
       sub = `${p.id}${p.note ? ` · ${clip(p.note, 120)}` : ""}`;
       acts = [B("no", "Decline", (cx) => this.act(n.key, ["proposal", "decline", p.id], "Declined", cx)), div().w(10).flex_none(),
-        B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { primary: true })];
+        B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposal(p); }, { primary: true })];
     } else if (n.kind === "tap") {
       const h = n.h, tn = tapNeed(h);
       tag = this.tag(d, tn.outward ? "Outward tap" : "Tap", tn.outward ? d.err : "#B79CF7");
@@ -700,7 +700,7 @@ export default class CrewHome extends View {
       return { tag: ["Proposal", "#B79CF7"], who: p.by, topic: topicOf(p.by), sub: `${p.id} · ${homeAge(n.at)} ago`,
         title: `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`, body: p.note,
         options: [o("Decline", "The pal is told", owner(["proposal", "decline", p.id], "Declined")),
-          o("View", "Opens the change in the profile panel", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { gapBefore: true })] };
+          o("View", "Shows the change, to accept or decline", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposal(p); }, { gapBefore: true })] };
     }
     if (n.kind === "tap") {
       const h = n.h, tn = tapNeed(h);

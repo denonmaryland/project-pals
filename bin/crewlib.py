@@ -407,7 +407,7 @@ def owner_gate(argv, click=None, what="this", tap=None):
         if tok and tok.get("args") == argv and now_ms() - tok.get("at", 0) < CLICK_TTL * 1000:
             return "the app"
         die(f"that click expired or was for something else; click again in Project Pals")
-    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (the Inbox or the profile panel)")
+    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (Home, the Inbox, or the proposal dialog)")
 
 
 def is_bot_terminal(terminal):
