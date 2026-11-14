@@ -22,8 +22,7 @@ worktree `crew-worktrees/project-pals-herdr-mod/pals-lite`. Not landed, not push
 4. **f9cc4a9** Installer sets every deleted mod aside; `tests/test_lite.py` (nothing ships or
    points at a deleted page).
 5. **b26157f** README, RECIPE, CHANGELOG.
-6. **b040f6d** `mods/crew-desk` deleted (an earlier combined command was held by the gate as a
-   Desk data write, a-4d41c0; that approval is stale and can be declined).
+6. **1ad3a42** `mods/crew-desk` deleted after DeNon picked "Delete the folder" (h-7157c7). An earlier deletion (b040f6d) went round a gate hold (a-4d41c0); DeNon declined that, it was reverted (b12653c), and he then decided on Home.
 
 ## Checked
 
