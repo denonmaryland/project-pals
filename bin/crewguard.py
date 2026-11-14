@@ -355,9 +355,9 @@ def _edited_files(name, args):
 def write_targets(cmd):
     """The files a shell line writes to, as far as a plain parse can tell: redirect targets, tee's
     files, sed / perl -i files, sed's own w commands, cp / mv / install / ln / rsync destinations,
-    dd of=, and every file a terminal editor opens or its commands name (ed, ex, vim -c / +cmd / -es,
-    nano, emacs …). Inside sh -c '…' too. Heredoc bodies are dropped but their header lines are
-    kept, except a body fed to ed / ex, which is that editor's commands."""
+    dd of=, rm / rmdir / unlink operands, and every file a terminal editor opens or its commands
+    name (ed, ex, vim -c / +cmd / -es, nano, emacs …). Inside sh -c '…' too. Heredoc bodies are
+    dropped but their header lines are kept, except a body fed to ed / ex, which is that editor's commands."""
     import shlex
     text = heredoc_free(cmd)
     out = _editor_heredocs(cmd)
@@ -429,7 +429,8 @@ def write_targets(cmd):
                 out.append(files[-1])
             elif name == "dd":
                 out += [a[3:] for a in args if a.startswith("of=")]
-            elif name in ("truncate", "touch") and files:
+            elif name in ("truncate", "touch", "rm", "rmdir", "unlink") and files:
+                # Deleting protected data changes it just as a write does (T219).
                 out += files
     return out
 

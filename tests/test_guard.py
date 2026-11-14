@@ -571,6 +571,29 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
     (data/crew-desk, or anywhere that resolves into it through a link) is the cards."""
     WT = "/home/x/.config/herdr-app/data/crew-worktrees/pp/t63"
 
+    def test_deleting_cards_is_held_like_writing_them(self):
+        """T219: removing a card or its folder changes the Desk's data too."""
+        for cmd in [
+            "rm -r ~/.config/herdr-app/data/crew-desk/helper",
+            "rm -f -- data/crew-desk/helper/open/a.md",
+            "rm ordinary.txt data/crew-desk/helper/open/a.md",
+            "env /usr/bin/rm -rf \"$CREW_DATA/crew-desk/helper\"",
+            "sh -c 'rm -r data/crew-desk/helper'",
+            "rmdir -p data/crew-desk/helper/open",
+            "unlink data/crew-desk/helper/open/a.md",
+        ]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
+        for cmd in ["rm -r mods/crew-desk", "rmdir mods/crew-desk", "unlink mods/crew-desk/main.js",
+                    "rm ordinary.txt", "ls data/crew-desk/helper", "echo rm data/crew-desk/helper"]:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_deleting_other_guarded_files_uses_their_existing_rules(self):
+        for path, expected in [("AGENTS.md", "agents-file-shell"), ("CLAUDE.md", "agents-file-shell"),
+                               ("data/crew-clicks/a.json", "owner-click"), ("data/crew-queue/t1", "queue-write"),
+                               ("data/crew-taps/holds/a.json", "tap-write"), ("data/crew-helpers/log.jsonl", "helper-key")]:
+            for program in ("rm -f", "unlink"):
+                self.assertEqual(rule(f"{program} {path}"), expected, (program, path))
+
     def test_the_desk_mods_are_code(self):
         for cmd in [
             f"edit {self.WT}/mods/crew-desk/main.js",
@@ -639,6 +662,8 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         (wt / "mods" / "notes").symlink_to(real)
         self.assertEqual(rule(f"edit {wt}/mods/crew-desk/helper/open/a.md"), "desk-write")
         self.assertEqual(rule(f"echo x > {wt}/mods/notes/helper/open/a.md"), "desk-write")
+        self.assertEqual(rule(f"rm -r {wt}/mods/crew-desk/helper"), "desk-write")
+        self.assertEqual(rule(f"unlink {wt}/mods/notes/helper/open/a.md"), "desk-write")
         self.assertIsNone(rule(f"echo x > {wt}/mods/other.txt"))
 
     def test_the_hook_asks_the_same_question_for_edits(self):
