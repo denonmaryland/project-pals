@@ -892,6 +892,10 @@ def base_checkout(repo, base):
 
 def cmd_land(spaces, spec, check=None, at=None, onto=None):
     space, tab = find(spec, spaces)
+    # A commit id (SHA-1 or SHA-256, abbreviated or full), checked before any approval is asked for
+    # or used (T212 round 2: a 64-hex tip failed a 7..40 check after the approval was spent).
+    if at and not re.fullmatch(r"[0-9a-f]{7,64}", at):
+        die(f"--at takes a commit id (hexadecimal), not {at!r}; nothing changed")
     # A pal asking: the owner approves first (Claude pals are held by the hook; this covers the rest).
     # Anyone else is the owner only with a click in Project Pals (Review's Land): a missing or unknown
     # terminal ID isn't the owner (Grok review H1).
@@ -900,11 +904,24 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
         # an approved `pal land P#t` went through again with --onto another branch).
         words = ["land", spec] + [x for k, v in (("--check", check), ("--at", at), ("--onto", onto)) if v for x in (k, v)]
         line = "pal " + " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
-        if not crewguard.recently_used(ME, "land", words=words):
+        try:
+            tip = git(worktree_of(space, tab)["path"], "rev-parse", "HEAD")
+        except CrewError:
+            tip = ""
+        # What the hook let through is claimed only for the commit it was approved at (T212), and that
+        # commit is what lands: --at pins it, so a commit made in between is refused below.
+        handed = crewguard.recently_used(ME, "land", words=words, tip=tip or None, cwd=os.getcwd()) if tip else None
+        if handed:
+            at = at or handed["land_tip"]
+        else:
             s, t = where_of(ME, spaces)
-            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?", line)
+            # The approval is for the commit the topic is at now (T206): one made after the owner said
+            # yes asks again. Shown in the Inbox after the command.
+            held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?",
+                                   line + (f"  # at {tip[:12]}" if tip else ""), claim=True)
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
+            at = at or tip or None
     else:
         require_owner("landing a branch")
     wt = worktree_of(space, tab)
@@ -940,7 +957,7 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
     # --at <commit> (the trial strip's Land): only the commit that was tried. A branch that moved
     # since isn't what the owner looked at, so it doesn't land on that click.
     tip_now = git(repo, "rev-parse", "--verify", f"refs/heads/{wt['branch']}")
-    if at and not (re.fullmatch(r"[0-9a-f]{7,40}", at) and tip_now.startswith(at)):
+    if at and not tip_now.startswith(at):
         die(f"{wt['branch']} has moved since ({tip_now[:7]} now, {at[:7]} then), so it wasn't landed: look at it again (Review → Try it live) first")
 
     def conflicted(text):
@@ -2077,10 +2094,18 @@ def cmd_memory(spaces, args):
 ARGV = []   # this run's arguments, as the owner's click token must match them (owner_gate)
 
 
+def _global_part():
+    """ARGV up to its first `--`: only there are --click / --tap pal's own. After `--` the words are
+    another program's, kept exactly (T212 round 6: owner-step's release arguments may hold a literal
+    --click)."""
+    return ARGV[:ARGV.index("--")] if "--" in ARGV else list(ARGV)
+
+
 def owner_args():
-    """ARGV without the --click token itself."""
+    """ARGV without the --click token itself (and --tap), before any `--`; the rest unchanged."""
+    head = _global_part()
     out, skip = [], False
-    for a in ARGV:
+    for a in head:
         if skip:
             skip = False
             continue
@@ -2088,12 +2113,13 @@ def owner_args():
             skip = True
             continue
         out.append(a)
-    return out
+    return out + ARGV[len(head):]
 
 
 def tap_of():
     """The one-time token of a relayed tap being carried out (crewtaps.run_due), if this run has one."""
-    return ARGV[ARGV.index("--tap") + 1] if "--tap" in ARGV and ARGV.index("--tap") + 1 < len(ARGV) else None
+    head = _global_part()
+    return head[head.index("--tap") + 1] if "--tap" in head and head.index("--tap") + 1 < len(head) else None
 
 
 def acted():
@@ -2106,7 +2132,8 @@ def acted():
 
 
 def click_of():
-    return ARGV[ARGV.index("--click") + 1] if "--click" in ARGV and ARGV.index("--click") + 1 < len(ARGV) else None
+    head = _global_part()
+    return head[head.index("--click") + 1] if "--click" in head and head.index("--click") + 1 < len(head) else None
 
 
 def require_owner(what, allow_delegate=True):
@@ -2687,7 +2714,12 @@ def cmd_owner_step(rest):
     if len(rest) < 3 or rest[1] != "--" or not " ".join(rest[2:]).strip():
         die("pal owner-step <rule> -- <the command line>")
     from crewlib import SHELL_NAME
-    rule, cmd = rest[0], " ".join(rest[2:]).strip()
+    # Everything after -- is the program's own argv, kept as a list (T212 round 5: the hand-over
+    # compares lists, so `--dry-run notes` as one argument isn't `--dry-run` and `notes`). Shown and
+    # keyed quoted, so different lists never read or key the same. One joined string (an older
+    # ./release) is one argument, which no approved command's list matches: no hand-over.
+    rule, argv = rest[0], [a for a in rest[2:]]
+    cmd = shlex.join(argv) if len(argv) > 1 else argv[0].strip()
     bot, channel = SHELL_NAME, None
     if ME:
         try:
@@ -2696,7 +2728,7 @@ def cmd_owner_step(rest):
             s = t = None
         bot, channel = (s["name"], chan(t)) if s else (f"terminal {ME}", None)
     try:
-        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule)
+        held = crewguard.owner_step(ME or None, bot, channel, cmd, rule, argv=argv)
     except CrewError as e:
         die(str(e))
     if not held:
@@ -3621,7 +3653,10 @@ def main(argv):
     if not argv:
         argv = ["bots"]
     # -F is --file (pal mission propose -F draft.md).
-    argv = ["--file" if a == "-F" else a for a in argv]
+    # -F is --file's short form for pal's own options, but owner-step's argument list after -- is the
+    # program's, kept exactly as given (T212 round 5: ./release -F notes.md must stay -F).
+    if argv[:1] != ["owner-step"]:
+        argv = ["--file" if a == "-F" else a for a in argv]
     ARGV = list(argv)
     argv = owner_args()   # the click token is checked by require_owner, not parsed as an option
     cmd, rest = argv[0], argv[1:]

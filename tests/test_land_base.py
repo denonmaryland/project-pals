@@ -85,7 +85,9 @@ class LandBase(unittest.TestCase):
             nonce = os.urandom(16).hex()
             (d / f"{nonce}.json").write_text(json.dumps({"args": args, "at": int(time.time() * 1000)}))
             args += ["--click", nonce]
-        return subprocess.run([sys.executable, str(BIN / "crew"), *args], capture_output=True, text=True, env=self.env, timeout=60)
+        # Run where the hook saw the line (hook_check): a hand-over is claimed only in that folder (T212 r4).
+        return subprocess.run([sys.executable, str(BIN / "crew"), *args], capture_output=True, text=True, env=self.env, timeout=60,
+                              cwd=str(self.repo))
 
     def topic(self, name, base=None):
         """A worktree topic as `pal topic … --worktree` makes it (bin/crew make_worktree), recorded in shared.json."""
@@ -298,14 +300,14 @@ class LandBase(unittest.TestCase):
         r = self.pal("land", "Builder#x")
         self.assertNotEqual(r.returncode, 0)
         reqs = [json.loads(f.read_text()) for f in (self.data / "crew-approvals").glob("*.json")]
-        self.assertEqual([q["command"] for q in reqs], ["pal land Builder#x"])
+        self.assertEqual([q["command"].split("  #")[0] for q in reqs], ["pal land Builder#x"])
         self.approve_all_pending()
         r = self.pal("land", "Builder#x", "--onto", "crew/parked")
         self.assertNotEqual(r.returncode, 0, "the approval was for main")
         self.assertIn("held", r.stdout + r.stderr)
         self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
         reqs = sorted((json.loads(f.read_text()) for f in (self.data / "crew-approvals").glob("*.json")), key=lambda q: q["at"])
-        self.assertEqual(reqs[-1]["command"], "pal land Builder#x --onto crew/parked", "the new request names the target")
+        self.assertEqual(reqs[-1]["command"].split("  #")[0], "pal land Builder#x --onto crew/parked", "the new request names the target")
         # The approved one still goes through, once, to main.
         r = self.pal("land", "Builder#x")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -322,8 +324,11 @@ class LandBase(unittest.TestCase):
         approvals = self.data / "crew-approvals"
         approvals.mkdir(parents=True, exist_ok=True)
         now = int(time.time() * 1000)
+        # As the hook records it since T205 / T212: the folder it ran in, its rules, the commit it's for.
         (approvals / "a-hook01.json").write_text(json.dumps({"id": "a-hook01", "terminal": "test-bot", "rule": "land", "status": "used",
-                                                             "used": now, "at": now, "command": "cd /x && pal land Builder#x"}))
+                                                             "used": now, "at": now, "command": "pal land Builder#x",
+                                                             "guard_context": {"cwd": str(self.repo), "rules": ["land"]},
+                                                             "land_tip": self.git("rev-parse", "HEAD", at=wt["path"])}))
         r = self.pal("land", "Builder#x", "--onto", "crew/parked")
         self.assertNotEqual(r.returncode, 0, "used for 'pal land Builder#x', not for --onto crew/parked")
         self.assertEqual(self.git("rev-parse", "crew/parked"), self.parked0)
@@ -346,6 +351,185 @@ class LandBase(unittest.TestCase):
         r = self.pal("land", "Builder#x", click=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("landed crew/x on trunk", r.stdout)
+
+
+    # ── T206 (#codex-sol T203, repro-t199-land-handoff) ───────────────────────────────────────
+    def test_t206_one_approval_lands_once(self):
+        """A land the owner approved went through, and a second land of a newer commit went through on
+        the same approval for two minutes, also after the seat was handed to another brain."""
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.approve_all_pending()
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        first = self.git("rev-parse", "main")
+        self.commit_in(wt, "second")
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0, "a second land needs a second yes")
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), first)
+
+    def test_t206_a_handoff_voids_an_approval_the_gate_just_let_through(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        approvals = self.data / "crew-approvals"
+        approvals.mkdir(parents=True, exist_ok=True)
+        now = int(time.time() * 1000)
+        (approvals / "a-hook02.json").write_text(json.dumps({"id": "a-hook02", "terminal": "test-bot", "rule": "land", "status": "used",
+                                                             "used": now, "at": now, "command": "pal land Builder#x"}))
+        code = f"import sys; sys.path.insert(0, {str(BIN)!r}); import crewhandoff; print(crewhandoff.void_approvals('test-bot'))"
+        r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0, "the brain that was approved isn't the one in the seat now")
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t206_an_approval_is_for_the_commit_it_was_asked_for(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.approve_all_pending()
+        self.commit_in(wt, "not-looked-at")   # a commit made after the owner said yes
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+
+    def test_t206_no_used_approval_is_left_to_replay_after_a_handoff(self):
+        """The boundary #codex-sol asked about: a handoff voids an unclaimed hand-over only inside the
+        two-minute window, because outside it nothing counts a used approval at all (recently_used
+        reads only used, unclaimed ones younger than HANDOVER_S; check() and owner_step match only
+        approved and pending ones). So an older one is inert with or without the handoff."""
+        wt = self.topic("x")
+        self.commit_in(wt, "first")
+        self.as_pal()
+        approvals = self.data / "crew-approvals"
+        approvals.mkdir(parents=True, exist_ok=True)
+
+        def used(rid, ago_s):
+            now = int(time.time() * 1000)
+            (approvals / f"{rid}.json").write_text(json.dumps({"id": rid, "terminal": "test-bot", "rule": "land", "status": "used",
+                                                              "used": now - ago_s * 1000, "at": now - ago_s * 1000, "command": "pal land Builder#x",
+                                                              "guard_context": {"cwd": str(self.repo), "rules": ["land"]},
+                                                              "land_tip": self.git("rev-parse", "HEAD", at=wt["path"])}))
+
+        def handoff():
+            code = f"import sys; sys.path.insert(0, {str(BIN)!r}); import crewhandoff; print(crewhandoff.void_approvals('test-bot'))"
+            r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout
+        # Older than the window: nothing to void, and land doesn't count it either way.
+        used("a-old001", 125)
+        self.assertNotIn("Builder#x", handoff())
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0, "an old used approval lets nothing through")
+        self.assertIn("held", r.stdout + r.stderr)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+        # Just inside the window: the handoff voids it, so the new brain's land is held.
+        used("a-new001", 100)
+        self.assertIn("Builder#x", handoff())
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+        # Control: inside the window and no handoff, the program it was let through for may claim it once.
+        used("a-new002", 100)
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotEqual(self.git("rev-parse", "main"), self.main0)
+        self.commit_in(wt, "second")
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0, "and only once")
+
+
+    # ── T212 (#codex-sol): the hook's hand-over carries the commit that was approved ──────────────
+    def hook_check(self, wt, command="pal land Builder#x"):
+        code = (f"import sys, json; sys.path.insert(0, {str(BIN)!r}); import crewguard; crewguard.HOOK_CWD = {str(self.repo)!r}; "
+                f"print(json.dumps(crewguard.check('test-bot', 'Builder', 'x', {command!r})))")
+        r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_t212_a_hook_approval_lands_only_the_commit_it_was_given_for(self):
+        wt = self.topic("x")
+        tip_a = self.commit_in(wt, "approved-tip")
+        self.as_pal()
+        req = self.hook_check(wt)
+        self.assertEqual(req["status"], "pending")
+        self.assertTrue(tip_a.startswith(req.get("land_tip", "-")), "the hook's request names the commit")
+        self.approve_all_pending()
+        tip_b = self.commit_in(wt, "unreviewed-new-tip")
+        held = self.hook_check(wt)
+        self.assertIsNotNone(held, "the hook asks again for the new commit")
+        self.assertNotEqual(held["id"], req["id"])
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.assertNotEqual(subprocess.run(["git", "-C", str(self.repo), "merge-base", "--is-ancestor", tip_b, "main"]).returncode, 0)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t212_a_claimed_hand_over_merges_the_approved_commit_not_a_later_one(self):
+        """The hook let `pal land` through at A; before land reads the branch it moves to B: refused."""
+        wt = self.topic("x")
+        tip_a = self.commit_in(wt, "approved-tip")
+        self.as_pal()
+        self.hook_check(wt)
+        self.approve_all_pending()
+        self.assertIsNone(self.hook_check(wt), "approved: the hook lets it through")
+        self.commit_in(wt, "slipped-in")
+        r = self.pal("land", "Builder#x")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.git("rev-parse", "main"), self.main0)
+
+    def test_t212_the_approved_commit_is_what_lands(self):
+        wt = self.topic("x")
+        tip_a = self.commit_in(wt, "approved-tip")
+        self.as_pal()
+        self.hook_check(wt)
+        self.approve_all_pending()
+        self.assertIsNone(self.hook_check(wt))
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git("log", "-1", "--format=%P", "main").split(), [self.main0, tip_a])
+
+
+    def test_t212r2_a_sha256_repository_lands(self):
+        """#codex-sol T212 round 2: in a SHA-256 repository the 64-hex tip failed the 7..40 check, so
+        a plain approved land was spent and then refused as 'moved'. Both object formats land, and a
+        bad --at is refused before any approval is used."""
+        import shutil
+        shutil.rmtree(self.repo)
+        self.repo.mkdir()
+        self.git("init", "-q", "--object-format=sha256", "-b", "main")
+        self.write("a", "one\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "A")
+        self.main0 = self.git("rev-parse", "main")
+        self.assertEqual(len(self.main0), 64)
+        wt = self.topic("x")
+        tip = self.commit_in(wt, "x")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x").returncode, 0)
+        self.approve_all_pending()
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git("log", "-1", "--format=%P", "main").split(), [self.main0, tip])
+        # The hook's hand-over too.
+        self.commit_in(wt, "y")
+        req = self.hook_check(wt)
+        self.assertEqual(len(req.get("land_tip", "")), 64)
+        self.approve_all_pending()
+        self.assertIsNone(self.hook_check(wt))
+        r = self.pal("land", "Builder#x")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_t212r2_a_bad_at_spends_no_approval(self):
+        wt = self.topic("x")
+        self.commit_in(wt, "x")
+        self.as_pal()
+        self.assertNotEqual(self.pal("land", "Builder#x", "--at", "not-a-commit").returncode, 0)
+        self.assertFalse((self.data / "crew-approvals").exists() and list((self.data / "crew-approvals").glob("*.json")),
+                         "refused before asking or using anything")
 
 
 if __name__ == "__main__":

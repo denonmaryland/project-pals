@@ -13,8 +13,10 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# What was asked for, word for word: the owner approves exactly this line (owner_go).
-asked="./release $*"
+# What was asked for, argument by argument: the owner approves exactly this command (owner_go). Its
+# argv is kept as a list (T212 round 5: joining it made one argument "--dry-run notes" and the two
+# arguments --dry-run and notes the same line).
+argv=(./release "$@")
 dry=""; rest=()
 for a in "$@"; do if [[ "$a" == "--dry-run" ]]; then dry=1; else rest+=("$a"); fi; done
 set -- "${rest[@]}"
@@ -33,7 +35,7 @@ if [[ "${1:-}" == "-F" ]]; then notes="$(cat "$2")"; else notes="${1:-}"; fi
 # program that runs git push and gh release by hand (protect the branch and tags on GitHub for that).
 owner_go() {
   if command -v pal >/dev/null 2>&1 && pal owner-step --probe >/dev/null 2>&1; then
-    pal owner-step release-script -- "$asked"
+    pal owner-step release-script -- "${argv[@]}"
     return $?
   fi
   if ! { : >/dev/tty; } 2>/dev/null; then
