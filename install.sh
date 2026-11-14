@@ -132,8 +132,10 @@ for dir in "$src"/mods/crew-*; do
 done
 
 # Mods Project Pals no longer ships: set aside (backed up like the rest), so nothing stale lingers.
-# Pals Lite (T217, DeNon's h-724046) deleted the full pages: the pal board, the Computer, the profile panel, the Routines dialog.
-for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines; do
+# Pals Lite (T217, DeNon's h-724046) deleted the full pages: the pal board, the Computer, the profile
+# panel, the Routines dialog, the Desk page, the room page and its composer. (The Desk's cards, in
+# data/, are the pals' messages and are never touched.)
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines crew-desk crew-room crew-room-new crew-composer; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
