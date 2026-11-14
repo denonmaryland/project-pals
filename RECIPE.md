@@ -1653,6 +1653,20 @@ Never put keys or raw command payloads in the activity log. The migration from t
 - **The installer** adds `hc-hold-.service.d/00-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
   unless a drop-in there already sets that (DeNon's own `10-oomd-avoid.conf` is left alone), and says
   which in its output; `--no-oomd-dropin` skips it, uninstall removes only Project Pals' file.
+  An update's snapshot records the drop-in's text (or that there was none), and Roll back puts that
+  back and runs `daemon-reload`, unless the file was changed since (then it stays, and Roll back
+  says so). A failed install takes away a drop-in it added itself, because the updater that rolls
+  it back may be an older build that doesn't know the file (T201, Codex T198). A snapshot taken by an
+  older updater doesn't record the drop-in; when its library has no `crewmem.py`, the build it puts
+  back predates the memory work and ours goes. Roll back reads Project Pals' drop-in text before it
+  swaps the library, which can take `crewmem.py` away (T209).
+  **Watch out:** an older build's own updater, rolling back after an install that passed its checks
+  (its runtime verification), can't be taught any of this: the drop-in stays with the older build.
+  Installing this version or later again makes it right (the drop-in belongs with per-pal scopes).
+  To take it away while the older build stays, delete
+  `~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf` by hand and run
+  `systemctl --user daemon-reload`. An older build's `pal uninstall` may not know the file; this
+  version's uninstaller removes it (with the rest of Project Pals).
 - **Low memory:** crewd writes `data/crew-memory.json` each minute (`available`, `total`, `floor`,
   `low`, `low_since`, `scope`, `scope_flags`). The floor is `"memory_floor_mb"`, else the larger of
   1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line
@@ -2102,7 +2116,11 @@ implementation details below, not the current permission model.
   with no run of this version in between, the copy can't be vouched for: helpers then come back
   by name with their keys, switched **off**, with a Helper card ("came back from a copy that
   another build may have made out of date", Turn on). A helper wrongly off costs a click; one
-  wrongly on speaks in the owner's name.
+  wrongly on speaks in the owner's name. "When the last install happened" is the later of
+  `crew-install.json`'s `installed` and the newest line of `data/crew-installs.jsonl`: Roll back puts
+  an older `crew-install.json` back (and an older build's updater can't be taught to stamp it), but
+  no snapshot holds the install log, so an older build's install stays on record there (T208, Codex
+  T199 d / T209). This version's Roll back also stamps `installed` with the time it put a build back.
 - **Bring the list into shape before judging it.** `check()` starts with the restore and the
   carry-over; run before them, the first health check after a carry-over said "off (your choice)".
 - **A helper's send and the owner's switch never interleave.** The owner's changes (on, off,

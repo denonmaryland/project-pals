@@ -33,6 +33,7 @@ helpers=1
 claude_hooks=1
 agy_hooks=1
 oomd_dropin=1
+oomd_added=0   # this run wrote the hc-hold drop-in: a failed install takes it away again (T201)
 from="local"
 keep_crewd=0
 uninstall=0
@@ -267,7 +268,7 @@ if [[ $helpers -eq 1 ]]; then
     if [[ $oomd_dropin -eq 1 ]]; then
       got="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewmem; print(crewmem.install_dropin())' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo failed)"
       case "$got" in
-        added) systemctl --user daemon-reload
+        added) systemctl --user daemon-reload; oomd_added=1
                echo "memory: Herdr's terminal holder is oomd's last pick now (~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf; skip with --no-oomd-dropin)" ;;
         ours)  echo "memory: Herdr's terminal holder is oomd's last pick (Project Pals' drop-in, already there)" ;;
         theirs) echo "memory: Herdr's terminal holder already has your own oomd drop-in (hc-hold-.service.d); left as it is" ;;
@@ -516,5 +517,13 @@ if command -v herdr-app >/dev/null; then
     if ! out="$(herdr-app check "$dir" 2>&1)"; then echo "check failed: $(basename "$dir")"; echo "$out"; fail=1; fi
   done
   [[ $fail -eq 0 ]] && echo "all Project Pals mods pass herdr-app check"
+  # A failed install is rolled back by whichever updater ran it, which may be an older build that
+  # doesn't know the drop-in (T201, Codex T198): take away the one this run added.
+  if [[ $fail -ne 0 && $oomd_added -eq 1 ]]; then
+    dropin="$HOME/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf"
+    rm -f "$dropin"; rmdir "$(dirname "$dropin")" 2>/dev/null || true
+    systemctl --user daemon-reload 2>/dev/null || true
+    echo "memory: took the hc-hold oomd drop-in away again (this install failed)"
+  fi
   exit $fail
 fi
