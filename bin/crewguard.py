@@ -650,7 +650,11 @@ def _place(names):
     """For one of Project Pals' own data folders: (a quoted path into it in code, a path argument into it).
     A folder of that name right under mods/ is a mod's source code (mods/crew-desk), not the data (T68)."""
     alt = "|".join(re.escape(n) for n in names)
-    return (re.compile(r"""['"][^'"`\n]*(?<!\bmods/)\b(?:""" + alt + r""")(?![\w.-])[^'"`\n]*['"]"""),
+    # In quoted code the name counts only as a path component (T218: a quoted list of mod names,
+    # "crew-routines crew-desk crew-room", was taken for a path into the cards): the whole string or
+    # right after a "/", and followed by "/" or the closing quote. 'crew-desk', 'crew-desk/a.md',
+    # f'{D}/crew-desk/x' and os.path.join(D, 'crew-desk') are paths; 'the crew-desk mod' isn't.
+    return (re.compile(r"""['"](?:[^'"`\n]*/)?(?<!\bmods/)(?:""" + alt + r""")(?=/|['"])[^'"`\n]*['"]"""),
             re.compile(r"(?:^|(?<!\bmods)/)(?:" + alt + r")(?:/|$)"))
 
 

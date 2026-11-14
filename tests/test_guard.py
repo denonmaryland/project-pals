@@ -584,6 +584,28 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         ]:
             self.assertIsNone(rule(cmd), cmd)
 
+    def test_a_name_in_a_list_of_words_is_not_a_path(self):
+        """T218 (a-4d41c0): a pal removing the Desk's mods ran `git rm -r mods/crew-desk …` and then a
+        Python heredoc that edited install.sh, replacing one string with a list of mod names
+        ("… crew-routines crew-desk crew-room …") and saving the file. The quoted list was taken for
+        a path into the cards. A data folder in quoted code is a path component: the whole string,
+        or after a "/", and followed by "/" or the closing quote."""
+        heredoc = ("cd ~/x/pals-lite && git rm -q -r mods/crew-desk mods/crew-room && python3 - <<'PYEOF'\n"
+                   "from pathlib import Path\n"
+                   "p = Path(\"install.sh\"); s = p.read_text()\n"
+                   "s = s.replace(\"crew-profile crew-routines; do\", \"crew-profile crew-routines crew-desk crew-room; do\")\n"
+                   "p.write_text(s)\nPYEOF")
+        for cmd in [heredoc,
+                    "git rm -q -r mods/crew-desk mods/crew-room",
+                    "python3 -c \"open('notes.txt','w').write('the crew-desk mod is gone')\"",
+                    "python3 -c \"open('install.sh','w').write('for m in crew-desk crew-room; do')\""]:
+            self.assertIsNone(rule(cmd), cmd)
+        for cmd in ["python3 -c \"import os; open(os.path.join(D, 'crew-desk', 'a.md'), 'w').write('x')\"",
+                    "python3 -c \"open('crew-desk/a.md','w').write('x')\"",
+                    "python3 -c \"from pathlib import Path; (Path(D) / 'crew-desk' / 'a.md').write_text('x')\"",
+                    "python3 -c \"open(f'{D}/crew-desk/helper/open/a.md','w').write('x')\""]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
+
     def test_the_cards_are_still_held(self):
         for cmd in [
             f"edit {Q}/crew-desk/helper/open/a.md",
