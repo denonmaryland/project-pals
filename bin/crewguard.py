@@ -1592,10 +1592,26 @@ EXPIRE_MIN = 30   # an approval not used within this long lapses; running the co
 OWNER_CONTROL_RULES = {"helper-key", "notify-key", "owner-click", "queue-write", "desk-write", "tap-write"}
 
 
+def heredoc_unvouched(cmd):
+    """True when a heredoc in the line may run something the rules never saw (T212 round 7): the rules
+    read a line with heredoc bodies dropped, but an unquoted heredoc's body still expands $( … ),
+    `…` and ${ … } when it runs. Such a body, or a << the scanner can't pair with a body, can't be
+    vouched for."""
+    cmd = cmd or ""
+    for m in HEREDOC_BODY.finditer(cmd):
+        quoted = "'" in m.group(1) or '"' in m.group(1)
+        if not quoted and any(x in m.group(4) for x in ("$(", "`", "${")):
+            return True
+    # Every paired heredoc gone, marker included: a << left over has no body the scanner could read.
+    rest = mask_quotes(HEREDOC.sub(lambda m: m.group(3), cmd))
+    return re.search(r"(?<!<)<<(?!<)", rest) is not None
+
+
 def delegation_allowed(command, rule=None):
     """A standing grant covers ordinary operations, never editing its own trust or audit trail.
-    Inspect every matching rule: a push followed by a credential write is not just a push."""
-    return rule not in OWNER_CONTROL_RULES and not any(
+    Inspect every matching rule: a push followed by a credential write is not just a push. A line
+    whose heredoc could expand unseen code is the owner's alone (round 7)."""
+    return rule not in OWNER_CONTROL_RULES and not heredoc_unvouched(command) and not any(
         r.get("name") in OWNER_CONTROL_RULES for r in _matching_rules(command or ""))
 
 

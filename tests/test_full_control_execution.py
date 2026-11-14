@@ -76,6 +76,22 @@ class FullExecution(Base):
         self.assertIn('trust or audit', result.stderr)
         self.assertEqual(self.approval(r['id'])['status'], 'pending')
 
+    def test_a_click_word_after_the_separator_is_the_programs_not_a_token(self):
+        """#codex-sol T212 round 7: Full authentication refused any argv holding --click / --tap, even
+        a release's own notes after owner-step's --. Before the -- a token still gains no authority:
+        the run falls back to no grant and the owner is asked (main's fail-closed dispatch)."""
+        for opt in ('--click', '--tap'):
+            with self.subTest(opt=opt):
+                r = helper(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'notes', opt, 'word')
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertFalse(list((self.data / 'crew-approvals').glob('*.json')))
+                r = helper(self.env, 'owner-step', 'release-script', opt, 'ab' * 16, '--', './release', '9.9.9', 'notes')
+                self.assertEqual(r.returncode, 3, r.stderr)
+                held = [json.loads(f.read_text()) for f in (self.data / 'crew-approvals').glob('*.json')]
+                self.assertEqual([(h['status'], h.get('delegated')) for h in held], [('pending', None)])
+                for f in (self.data / 'crew-approvals').glob('*.json'):
+                    f.unlink()
+
     def test_owner_step_uses_full_grant_but_work_and_governance_do_not(self):
         r = helper(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'example')
         self.assertEqual(r.returncode, 0, r.stderr)

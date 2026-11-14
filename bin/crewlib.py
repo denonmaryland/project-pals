@@ -403,7 +403,10 @@ def begin_delegation(argv):
     authority = crewhelpers.full_authority()
     if not authority:
         return None
-    if "--click" in argv or "--tap" in argv:
+    # pal's own options end at the first `--`; after it the words are another program's (T212 round 7,
+    # as bin/crew's owner_args): a release note "--click" isn't a click token.
+    head = list(argv)[:list(argv).index("--")] if "--" in argv else list(argv)
+    if "--click" in head or "--tap" in head:
         raise CrewError("a helper acts under its own grant, never a human click or tap token")
     _delegation = authority
     # Log action names and a fingerprint, not message text, prompts, secrets or file contents.
