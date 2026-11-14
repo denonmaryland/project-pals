@@ -611,13 +611,18 @@ def _ppid(proc, pid):
 def inside_herdr(proc="/proc", pid=None, env=None):
     """Why this process counts as running in a Herdr terminal (a pal's, or one a pal started), else
     None. Its own HC_TERMINAL_ID; a parent's, however far up (a pal that drops the variable first, as
-    with `env -u`); or herdr-core's process group, which a child keeps even after it detaches from
-    its parents. A helper runs outside Herdr, so none of these is true for it."""
+    with `env -u`); or the terminal holder's or per-pal cgroup, which a child keeps even after it
+    detaches from its parents. A helper runs outside Herdr, so none of these is true for it."""
     env = os.environ if env is None else env
     if env.get("HC_TERMINAL_ID"):
         return f"terminal {env['HC_TERMINAL_ID']}"
     pid = pid or os.getpid()
-    if b"hc-hold-" in _read(f"{proc}/{pid}/cgroup"):
+    groups = _read(f"{proc}/{pid}/cgroup").splitlines()
+    # crewmem.unit_name / crew.js scoped() move agents out of hc-hold-* into pal scopes.
+    # Match a whole generated unit component, including processes in its descendant cgroups.
+    if any(b"hc-hold-" in group or
+           re.search(rb"(?:^|/)pal-[a-z0-9][a-z0-9-]*-[a-z0-9]+\.scope(?:/|$)", group)
+           for group in groups):
         return "it runs inside a Herdr terminal"
     seen, p = set(), _ppid(proc, pid)
     while p > 1 and p not in seen:
