@@ -538,6 +538,8 @@ def apply(log=print, version=None):
                 args.append("--no-claude-hooks")
             if not ins_now.get("agy_hooks", True):
                 args.append("--no-agy-hooks")
+        from crewlib import delegation_authority
+        delegation_authority()   # check after downloading/preparing, before the install starts
         try:
             r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
         except BaseException as e:
@@ -936,6 +938,8 @@ def install_tree(root, source, log=print):
             args.append("--no-claude-hooks")
         if not ins.get("agy_hooks", True):
             args.append("--no-agy-hooks")
+    from crewlib import delegation_authority
+    delegation_authority()   # a refusal before mutation must not invoke rollback
     try:
         r = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=600)
     except BaseException as e:

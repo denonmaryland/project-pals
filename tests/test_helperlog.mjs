@@ -4,7 +4,7 @@
 // Run: node tests/test_helperlog.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperNeed, tapNeed, tapsHolding, tapUndoable, TAP_SWITCHES } from "../lib/helperlog.js";
+import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperNeed, tapNeed, tapsHolding, tapUndoable, TAP_SWITCHES, helperLevel, HELPER_LEVELS } from "../lib/helperlog.js";
 
 const root = new URL("..", import.meta.url).pathname;
 const read = (p) => readFileSync(root + p, "utf8");
@@ -21,6 +21,16 @@ assert.match(helperSub({ ...pals, sent_hour: 20 }, NOW), /at this hour's limit$/
 assert.match(helperSub({ ...pals, key_there: false }, NOW), /key file is missing: Rotate key makes a new one/);
 assert.match(helperSub({ name: "Wabi", on: false, key: null }, NOW), /No key yet/);
 assert.match(helperSub({ name: "Pals", on: false, key: null, carried_over: true }, NOW), /Carried over from the earlier build, switched off/);
+
+// Legacy trust and tap flags never imply Full control; unknown levels fail closed.
+assert.deepEqual(HELPER_LEVELS.map(([key]) => key), ["off", "work", "full"]);
+assert.equal(helperLevel(pals), "work");
+assert.equal(helperLevel({ ...pals, taps: { outward: true, home: true, local: true } }), "work");
+assert.equal(helperLevel({ ...pals, level: "full" }), "full");
+assert.equal(helperLevel({ ...pals, level: "full", on: false }), "off");
+assert.equal(helperLevel({ ...pals, level: "unknown" }), "off");
+assert.equal(helperLevel(null), "off");
+assert.ok(!helperSub({ ...pals, level: "full", sent_hour: 500 }, NOW).includes("hour's limit"));
 
 // The line a helper is given never has a key in it, and a name with a space is quoted for a shell.
 assert.equal(helperLine("Pals"), 'PAL_HELPER=Pals pal tell "<Pal>" "…"');
@@ -52,6 +62,22 @@ assert.equal(logRow({ kind: "switch", helper: "Pals", action: "on" }).tone, "qui
 // A long title or command is cut, never the whole row lost.
 assert.ok(logRow({ ...sent, title: "x".repeat(400) }).rest.length <= 120);
 assert.ok(logRow({ ...refused, command: "pal " + "y".repeat(400) }).bold.length < 80);
+
+// Full-control actions retain helper attribution even if a misleading label is present.
+const action = { kind: "action", id: "d-1", helper: "Pals", grant: "g-1", label: "DeNon clicked", at: NOW - MIN,
+  action: "release", target: "project-pals 0.5.0", status: "done" };
+assert.deepEqual(logRow(action), { bold: "Pals acted under Full control", rest: "release · project-pals 0.5.0 · done", tone: "sent", card: null });
+assert.equal(logRow({ ...action, status: "started" }).tone, "quiet");
+assert.equal(logRow({ ...action, status: "failed" }).tone, "warn");
+assert.match(logRow({ ...action, status: "unrecognized" }).rest, /outcome unknown$/);
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "level full" }).bold, "You gave Pals Full control");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "level off" }).bold, "You revoked Pals's access");
+const started = { ...action, at: NOW - 2 * MIN, status: "started" };
+assert.deepEqual(helperRows([started, action]), [action], "one displayed outcome per operation");
+assert.equal(helperToday([started, action], NOW), "1 Full control action", "start and outcome count once");
+assert.equal(helperToday([{ ...action, status: "failed" }, { ...action, id: "d-2", status: "started" }], NOW), "1 failed · 1 awaiting outcome");
+assert.equal(helperRows([action, { ...action, helper: "Other" }, { ...action, grant: "g-2" }]).length, 3, "ids are scoped to helper and grant");
+assert.equal(helperRows([started, { ...action, at: started.at }])[0].status, "done", "same-millisecond receipts use file order");
 
 // ── a helper that isn't working (T170): the record's line, and Home's card ──
 assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "no-key", text: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key." }),
@@ -139,7 +165,7 @@ for (const [name, src] of [["crew-helpers", dialog], ["crew-about", about], ["cr
 assert.ok(dialog.includes('"Remove it"') && dialog.includes("this.confirm = h.name"));
 // About's row opens the dialog; Home's rows and its tab do too.
 assert.ok(about.includes('row("set-helpers", "Trusted helpers"') && about.includes('openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 })'));
-assert.ok(home.includes('["name", "In your name"]') && home.includes("nameBody(d)"));
+assert.ok(home.includes('["name", "Helper activity"]') && home.includes("nameBody(d)"));
 assert.ok(home.includes('out.push({ kind: "helper", at: e.at, e })'), "what a helper sent or tried is in Today");
 assert.ok(home.includes('k !== "name" || this.helperLog.length > 0'), "the tab shows once there's anything to show");
 assert.deepEqual(JSON.parse(read("mods/crew-helpers/mod.json")).overlay, { kind: "dialog", width: 560 });
@@ -168,12 +194,18 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
         const p = new Proxy(function () {}, {
           get: (t, k) => {
             if (k === "then") return undefined;
+            if (k === "__attached") return t.__attached;
             if (k === "when") return (c, f) => (c ? f(p) : p);
             if (k === "id") return (id) => { p.__id = id; return p; };
             if (k === "on_click") return (f) => { if (p.__id) clicks.set(p.__id, f); return p; };
-            if (k === "child") return (c) => { if (typeof c === "string") texts.push(c); return p; };
+            if (k === "child") return (c) => {
+              if (t.__attached) throw new Error("element changed after attachment");
+              if (typeof c === "string") texts.push(c);
+              else if (c && typeof c === "function") c.__attached = true;
+              return p;
+            };
             if (k === "__id") return t.__id;
-            return () => p;
+            return () => { if (t.__attached) throw new Error("element changed after attachment"); return p; };
           },
           set: (t, k, v) => { t[k] = v; return true; },
         });
@@ -214,7 +246,7 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
     await run((cx) => v.init({}, cx));
     await draw(v);
     assert.ok(texts.some((t) => t.startsWith("No trusted helpers.")));
-    assert.ok(texts.some((t) => t.includes("It can never approve, push, release, merge")), "what it never is, before any switch");
+    assert.ok(texts.some((t) => t.includes("Full control lets it decide and act autonomously")), "the full delegation is explained before choosing it");
     assert.ok(clicks.has("th-add") && !clicks.has("th-sw-0"));
     // Add one: nothing happens for a bad name; a good one is your click.
     v.name.set_value("../x");
@@ -224,47 +256,42 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
     fx.info = { helpers: [pals, { name: "Wabi", on: false, key: null, key_there: false, sent: 0, refused: 0 }], log: [refused, sent], max: 8 };
     await run((cx) => v.add(cx));
     const add = palCalls().at(-1);
-    assert.deepEqual(add.slice(1, 5), ["settings", "trust-helper", "Pals", "on"]);
+    assert.deepEqual(add.slice(1, 6), ["settings", "trust-helper", "Pals", "level", "work"], "new helpers start with Work only");
     assert.ok(add.includes("--click"), "with the click's token");
     assert.equal(v.shown, "Pals");
     // Two helpers and a record: rows, the line to give the helper, the record with its refused try.
     await draw(v);
-    for (const id of ["th-sw-0", "th-rot-0", "th-sw-1", "th-rm-1", "th-copy", "th-add", "th-x", "th-cancel"]) assert.ok(clicks.has(id), `has ${id}`);
+    for (const id of ["th-level-work-0", "th-level-full-0", "th-level-off-0", "th-revoke-0", "th-rot-0", "th-level-off-1", "th-rm-1", "th-copy", "th-add", "th-x", "th-cancel"]) assert.ok(clicks.has(id), `has ${id}`);
     assert.ok(!clicks.has("th-rm-0"), "a helper that's on is switched off before it's removed");
     assert.ok(texts.includes('PAL_HELPER=Pals pal tell "<Pal>" "…"'));
     assert.ok(texts.includes("Pals tried: home answer h-e8c822 Release today") && texts.includes("Pals told Orca#ops"));
     assert.ok(!texts.some((t) => /palkey_/.test(t)));
-    // Relayed taps: three switches under a helper that's on. Home and local turn on with one click; the
-    // outward one asks once more in place, and says what it means.
-    for (const id of ["th-tap-sw-home-0", "th-tap-sw-local-0", "th-tap-sw-outward-0"]) assert.ok(clicks.has(id), `has ${id}`);
-    assert.ok(!clicks.has("th-tap-sw-home-1"), "a helper that's off has no tap switches");
-    assert.ok(!clicks.has("th-hold-up-0"), "the hold shows once outward taps are on");
-    await run((cx) => clicks.get("th-tap-sw-home-0")(null, cx));
-    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "home", "on"]);
+    // One level selector replaces all tap switches. Rendering never grants anything.
+    assert.ok(![...clicks.keys()].some((id) => id.startsWith("th-tap-") || id.startsWith("th-hold-")));
+    const nLevel = palCalls().length;
+    await draw(v);
+    assert.equal(palCalls().length, nLevel);
+    await run((cx) => clicks.get("th-level-work-0")(null, cx));
+    assert.equal(palCalls().length, nLevel, "clicking the current level doesn't write again");
+    await run((cx) => clicks.get("th-level-full-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 6), ["settings", "trust-helper", "Pals", "level", "full"]);
+    assert.equal(palCalls().length, nLevel + 1, "one owner click grants Full control, no second confirmation");
     assert.ok(palCalls().at(-1).includes("--click"));
-    await draw(v);
-    const nTap = palCalls().length;
-    await run((cx) => clicks.get("th-tap-sw-outward-0")(null, cx));
-    assert.equal(palCalls().length, nTap, "the first click on outward only asks");
-    await draw(v);
-    assert.ok(clicks.has("th-tap-yes-0") && clicks.has("th-tap-no-0") && !clicks.has("th-tap-sw-outward-0"));
-    assert.ok(texts.some((t) => t.includes("Pals's tap is the approval") && t.includes("without your click")));
-    await run((cx) => clicks.get("th-tap-no-0")(null, cx));
-    await draw(v);
-    assert.equal(palCalls().length, nTap, "Keep it off: nothing ran");
-    await run((cx) => clicks.get("th-tap-sw-outward-0")(null, cx));
-    await draw(v);
-    await run((cx) => clicks.get("th-tap-yes-0")(null, cx));
-    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "outward", "on"]);
-    fx.info = { ...fx.info, helpers: [{ ...pals, taps: { home: true, local: false, outward: true, hold: 5 } }, fx.info.helpers[1]] };
+    fx.info = { ...fx.info, helpers: [{ ...pals, level: "full", sent_hour: 500 }, fx.info.helpers[1]], log: [action, started, refused, sent] };
     await run((cx) => v.load(cx));
     await draw(v);
-    assert.ok(texts.includes("held 5m") && clicks.has("th-hold-up-0") && clicks.has("th-hold-dn-0"));
-    await run((cx) => clicks.get("th-hold-up-0")(null, cx));
-    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "hold", "6"]);
+    assert.ok(texts.includes("Full control"));
+    assert.ok(texts.some((t) => t.includes("No further approval prompts or waiting period")));
+    assert.ok(texts.includes("Pals acted under Full control"));
+    assert.ok(!clicks.has("th-lim-up-0") && !clicks.has("th-lim-dn-0"), "Full control has no hourly quota control");
+    await run((cx) => clicks.get("th-revoke-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 6), ["settings", "trust-helper", "Pals", "level", "off"]);
+    fx.info = { ...fx.info, helpers: [{ ...pals, level: "off", on: false }, fx.info.helpers[1]] };
+    await run((cx) => v.load(cx));
     await draw(v);
-    await run((cx) => clicks.get("th-tap-sw-outward-0")(null, cx));   // turning it off needs no second click
-    assert.deepEqual(palCalls().at(-1).slice(1, 7), ["settings", "trust-helper", "Pals", "taps", "outward", "off"]);
+    assert.ok(!clicks.has("th-revoke-0") && !clicks.has("th-rot-0"));
+    await run((cx) => clicks.get("th-level-work-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 6), ["settings", "trust-helper", "Pals", "level", "work"], "resuming from Off is an explicit selected level");
     fx.info = { helpers: [pals, { name: "Wabi", on: false, key: null, key_there: false, sent: 0, refused: 0 }], log: [refused, sent], max: 8 };
     await run((cx) => v.load(cx));
     await draw(v);
@@ -283,8 +310,8 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
     await run((cx) => v.load(cx));
     await draw(v);
     // Off, rotate: one click each.
-    await run((cx) => clicks.get("th-sw-0")(null, cx));
-    assert.deepEqual(palCalls().at(-1).slice(1, 5), ["settings", "trust-helper", "Pals", "off"]);
+    await run((cx) => clicks.get("th-revoke-0")(null, cx));
+    assert.deepEqual(palCalls().at(-1).slice(1, 6), ["settings", "trust-helper", "Pals", "level", "off"]);
     await draw(v);
     await run((cx) => clicks.get("th-rot-0")(null, cx));
     assert.deepEqual(palCalls().at(-1).slice(1, 5), ["settings", "trust-helper", "Pals", "rotate"]);
@@ -302,7 +329,7 @@ assert.ok(ins.includes("--exclude '/helperlog.js'"), "and keeps it through the r
     fx.fail = "changing settings: only DeNon decides this";
     fx.toasts.length = 0;
     await draw(v);
-    await run((cx) => clicks.get("th-sw-0")(null, cx));
+    await run((cx) => clicks.get("th-revoke-0")(null, cx));
     assert.equal(fx.toasts.at(-1)?.level, "warning");
     // At the cap there's no Add; Close closes.
     fx.fail = null;

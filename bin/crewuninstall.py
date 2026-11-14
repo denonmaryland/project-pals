@@ -306,6 +306,17 @@ def authorize(purge, click=None, args=None):
     """Raise NotAllowed unless the owner asked: their click for exactly `args`, or (no click) typed
     confirmation at a real terminal. A wrong or used click is refused, never downgraded."""
     args = list(args) if args is not None else ["uninstall"] + (["--purge"] if purge else [])
+    if os.environ.get("PAL_HELPER"):
+        import crewhelpers
+        try:
+            if crewhelpers.DATA.resolve() != DATA.resolve():
+                raise NotAllowed("the helper grant belongs to a different app data folder")
+            delegated = crewhelpers.full_authority()
+            if delegated:
+                return crewhelpers.recheck_full(delegated)
+        except crewhelpers.HelperError as e:
+            raise NotAllowed(str(e)) from e
+        raise NotAllowed("uninstalling needs Full control; Work only is not an owner decision")
     if click:
         if click_ok(click, args):
             return "click"
@@ -627,10 +638,57 @@ def ours_mod(d):
         return False
 
 
+def _delegated_uninstall_receipt(authority, purge, status):
+    """Minimal owner receipt survives --purge; no chat, key, or copied private runtime data."""
+    path = DATA / "owner-action-receipts.jsonl"
+    if unsafe(path) or path.is_symlink():
+        raise NotAllowed("cannot preserve the delegated uninstall receipt safely")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "a") as f:
+        f.write(json.dumps({"at": int(time.time() * 1000), "helper": authority["helper"],
+                            "grant": authority["grant"], "label": authority["label"],
+                            "action": "uninstall", "purge": bool(purge), "status": status}) + "\n")
+
+
+def _preserve_helper_audit():
+    """Append the existing audit to an owner-held file outside the crew-* purge set.
+    A delegated uninstall cannot use --purge to erase its own earlier actions. Do not copy keys,
+    trust-store records, or other runtime files. Refuse removal if preserving this log fails.
+    """
+    source = DATA / "crew-helpers" / "log.jsonl"
+    archive = DATA / "owner-helper-audit.jsonl"
+    if unsafe(source) or source.is_symlink() or unsafe(archive) or archive.is_symlink():
+        raise NotAllowed("cannot preserve the helper audit safely; nothing at that audit path was removed")
+    if not source.exists():
+        return None
+    if not source.is_file() or (archive.exists() and not archive.is_file()):
+        raise NotAllowed("the helper audit and its archive must be regular files")
+    fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as f:
+        content = f.read()
+    if not content:
+        return None
+    fd = os.open(archive, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "ab") as f:
+        f.write(content + (b"" if content.endswith(b"\n") else b"\n"))
+        f.flush()
+        os.fsync(f.fileno())
+    return archive
+
+
 def uninstall(purge=False, dry=False, log=print, click=None, args=None):
     """Take Project Pals out. Not a dry run: only for the owner (authorize), whoever calls this."""
+    delegated = None
     if not dry:
-        authorize(purge, click, args)
+        authority = authorize(purge, click, args)
+        if isinstance(authority, dict):
+            delegated = authority
+            import crewhelpers
+            _delegated_uninstall_receipt(delegated, purge, "started")
+            crewhelpers.invalidate_all_for_uninstall(delegated)
+            from crewlib import suppress_delegation_finish
+            suppress_delegation_finish()   # the durable lifecycle receipt replaces the removed log
     run = Run(dry, log)
     if run.installed is None:
         run.notes.append("this install is older than its list of installed files: each one was checked for Project Pals' own content instead")
@@ -757,6 +815,11 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
                 run.notes.append(f"kept {d}: it holds git worktrees (remove them with git worktree remove)")
                 continue
             if d.name not in BOOKKEEPING:
+                if delegated and d.name == "crew-helpers":
+                    audit = _preserve_helper_audit()
+                    if audit:
+                        run.kept.append(str(audit))
+                        run.notes.append("kept the helper action audit in owner-helper-audit.jsonl")
                 run.remove(d)
         run.remove(DATA / "agy-models.json")
         run.remove(USER / ".cache" / "project-pals")
@@ -792,6 +855,10 @@ def uninstall(purge=False, dry=False, log=print, click=None, args=None):
         run.notes.append(f"kept your pals' data in {DATA} (crew-*) and backups in {APP / '.crew-backups'}; "
                          "pal uninstall --purge removes those too")
     run.notes.append("agents already running in pal spaces keep the old hooks until they restart")
+    if delegated:
+        _delegated_uninstall_receipt(delegated, purge, "done")
+        run.kept.append(str(DATA / "owner-action-receipts.jsonl"))
+        run.notes.append("kept the delegated uninstall receipt; all app-issued helper grants were revoked before removal")
     return {"ok": True, "dry_run": dry, "purge": purge, "removed": run.removed, "restored": run.restored,
             "kept": sorted(set(run.kept)), "notes": run.notes}
 

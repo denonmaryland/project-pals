@@ -8,6 +8,7 @@ This is a guard against mistakes and against one pal talking another into someth
 security boundary: a pal with full permissions could still edit these files. Codex and other
 harnesses without a pre-command hook aren't gated."""
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -715,7 +716,8 @@ def _writes_into(cmd, names, place):
 
 
 # ─── Trusted helpers' keys (T116) ───────────────────────────────────────────────────────────────
-HELPER_DATA = {"crew-helpers", "crew-helper"}   # (crew-helper: where build 7692987 kept its key and receipts, until carried over)
+HELPER_DATA = {"crew-helpers", "crew-helper", "owner-helper-audit.jsonl", "owner-action-receipts.jsonl"}
+# The owner-held uninstall archives survive --purge and remain audit evidence, not helper-editable data.
 HELPERS_PLACE = _place(sorted(HELPER_DATA))
 # ~/.config/project-pals/helpers, however it's written; and the older build's key inside the data folder.
 # The folder above the keys counts too: a search pointed at ~/.config/project-pals reads them (T122).
@@ -1459,12 +1461,47 @@ def all_requests():
 
 EXPIRE_MIN = 30   # an approval not used within this long lapses; running the command again asks again
 
+# These protect who may act and the evidence of it, rather than ordinary app operations.
+OWNER_CONTROL_RULES = {"helper-key", "notify-key", "owner-click", "queue-write", "desk-write", "tap-write"}
+
+
+def delegation_allowed(command, rule=None):
+    """A standing grant covers ordinary operations, never editing its own trust or audit trail.
+    Inspect every matching rule: a push followed by a credential write is not just a push."""
+    return rule not in OWNER_CONTROL_RULES and not any(
+        r.get("name") in OWNER_CONTROL_RULES for r in _matching_rules(command or ""))
+
+
+def _delegation_current(request, command=None):
+    authority = request.get("delegated")
+    if not authority:
+        return True
+    import crewhelpers
+    try:
+        crewhelpers.validate_grant(authority)
+        if request.get("delegated_snapshot") != _delegated_snapshot(request):
+            return False
+        if command is not None and request.get("command") != command:
+            return False
+        return delegation_allowed(request.get("command"), request.get("rule"))
+    except CrewError:
+        return False
+
+
+def _delegated_snapshot(request):
+    """Pin the operation that was approved, including reviewed diff/extra metadata.
+    Decision bookkeeping is excluded; changing the executable request invalidates the stamp."""
+    bookkeeping = {"status", "decided", "decided_via", "note", "attempts", "used", "expired", "delegated", "delegated_snapshot"}
+    return hashlib.sha256(json.dumps({k: v for k, v in request.items() if k not in bookkeeping},
+                                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
 
 def expire_stale():
     """Approved but never used for EXPIRE_MIN: mark it expired, so an old yes can't be cashed in later.
     Call it holding the approvals lock."""
     for r in all_requests():
-        if r.get("status") == "approved" and now_ms() - r.get("decided", r.get("at", 0)) > EXPIRE_MIN * 60 * 1000:
+        if r.get("status") == "approved" and (not _delegation_current(r) or
+                now_ms() - r.get("decided", r.get("at", 0)) > EXPIRE_MIN * 60 * 1000):
             r["status"], r["expired"] = "expired", now_ms()
             save_json(APPROVALS / f"{r['id']}.json", r)
             feed("approval", id=r["id"], bot=r.get("bot"), channel=r.get("channel"), status="expired")
@@ -1483,7 +1520,7 @@ def check(terminal, bot, channel, cmd, extra=None):
         for r in all_requests():
             if r.get("key") != k:
                 continue
-            if r["status"] == "approved":
+            if r["status"] == "approved" and _delegation_current(r, cmd):
                 r["status"], r["used"] = "used", now_ms()
                 save_json(APPROVALS / f"{r['id']}.json", r)
                 return None
@@ -1509,6 +1546,14 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     named = next((r for r in policy().get("guarded", []) if r.get("name") == rule), None)
     if not named:
         raise CrewError(f"no guarded rule called {rule}")
+    from crewlib import delegation_authority
+    delegated = delegation_authority()
+    if delegated:
+        import crewhelpers
+        crewhelpers.recheck_full(delegated)
+        if not delegation_allowed(cmd, rule):
+            raise CrewError("a helper cannot authorize a command that changes trust or audit evidence")
+        return None
     if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule)):
         return None
     k = key(terminal, f"{rule}\n{cmd}")
@@ -1517,7 +1562,7 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
         for r in all_requests():
             if r.get("key") != k:
                 continue
-            if r["status"] == "approved":
+            if r["status"] == "approved" and _delegation_current(r, cmd):
                 r["status"], r["used"] = "used", now_ms()
                 save_json(APPROVALS / f"{r['id']}.json", r)
                 return None
@@ -1543,12 +1588,15 @@ def recently_used(terminal, rule, seconds=120, words=None):
                 return True
         return False
     return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
-               and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command")) for r in all_requests())
+               and now_ms() - r.get("used", 0) < seconds * 1000 and same(r.get("command"))
+               and _delegation_current(r) for r in all_requests())
 
 
-def decide(rid, approve, note=None, via=None, tap=None):
+def decide(rid, approve, note=None, via=None, tap=None, delegated=None):
     """The owner's answer. `via` says where it came from (the Inbox, a terminal), kept on the record
     with every attempt, so a click that seems not to have counted can be traced afterwards."""
+    from crewlib import delegation_authority
+    delegated = delegated or delegation_authority()
     with locked("approvals"):
         f = APPROVALS / f"{rid}.json"
         r = load_json(f, None)
@@ -1564,6 +1612,14 @@ def decide(rid, approve, note=None, via=None, tap=None):
         if tap:
             import crewtaps
             crewtaps.validate_snapshot("approval", r, tap)
+        if delegated:
+            import crewhelpers
+            delegated = crewhelpers.recheck_full(delegated)
+            if not delegation_allowed(r.get("command"), r.get("rule")):
+                raise CrewError("a helper cannot decide a command that changes trust or audit evidence")
+            r["delegated"] = delegated
+            r["delegated_snapshot"] = _delegated_snapshot(r)
+            via = delegated["label"]
         r["status"] = "approved" if approve else "denied"
         r["decided"] = now_ms()
         r["decided_via"] = via
@@ -1571,7 +1627,10 @@ def decide(rid, approve, note=None, via=None, tap=None):
             r["note"] = note
         save_json(f, r)
     feed("approval", id=rid, bot=r["bot"], channel=r["channel"], status=r["status"])
-    if tap:
+    if delegated:
+        msg = (f"[pal] {delegated['label']}: {'approved' if approve else 'declined'}: {r['command']}"
+               + ("\nRun that exact command again; its standing grant is checked when used." if approve else ""))
+    elif tap:
         # A relayed tap (T147): the pal hears who tapped, never "<owner> approved".
         who = f"{tap['helper']} tapped, relaying {OWNER} (not {OWNER}'s own click)"
         msg = (f"[pal] {who}: approved: {r['command']}\nRun that exact command again now; it'll go through once." if approve else
@@ -1583,7 +1642,7 @@ def decide(rid, approve, note=None, via=None, tap=None):
     if r.get("terminal") == SHELL:
         return r   # nobody to tell: whoever ran it from a plain shell runs it again (owner_step)
     try:
-        enqueue(r["terminal"], msg, sender=f"{OWNER}", kind="approval")
+        enqueue(r["terminal"], msg, sender=delegated["helper"] if delegated else f"{OWNER}", kind="approval")
     except CrewError:
         pass
     return r
