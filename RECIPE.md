@@ -71,7 +71,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
       - `tab-view`: the topic's terminal (padding 0/24, pane radius 12).
       - `home-view`: Home, the head pal's page (below).
       - (The room page `room-view`, the Desk page `desk-view`, the Computer `pc-view` and the pal
-        board `pal-view` were deleted with Pals Lite, 2026-11-13.)
+        board `pal-view` were deleted on 2026-11-13 (T217).)
       - (A `chat-view`, the topic read as a chat, was removed on 2026-11-08: Project Pals is
         terminal-first, and a real chat belongs to the native app.)
       - **Prompt card** (a floating block over `center`, bottom, centred): when the shown topic
@@ -96,7 +96,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 
 ## How it behaves
 
-- **Pals Lite** (T217; DeNon's decision h-724046, 2026-11-13): the app is terminal-forward. A pal is
+- **Terminal-forward** (T217; DeNon's decision h-724046, 2026-11-13): the app is terminal-forward. A pal is
   its topics' terminals, and the app around them is the sidebar, the header, Home, the Inbox and
   small dialogs. The full pages were deleted: the profile panel (Profile, Vault, Memory, the
   AGENTS.md editor, the dashboard), the pal's Computer, the pal board and its Read mode, the
@@ -281,7 +281,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     delay (1.5s + 45ms per character, capped at 9s).
   - After 12 pal messages in a row, room messages stop being delivered until the owner posts.
   - Inviting an asleep pal wakes it in a new `#room` topic.
-  - Rooms are the pals' (`pal-room`): since Pals Lite the app has no room page, sidebar section or
+  - Rooms are the pals' (`pal-room`): since 2026-11-13 the app has no room page, sidebar section or
     New room dialog.
 - **Sleep (keep topics, free RAM) and Wake (resume topics), in place** (PR #4, goodboimax; 0.4.1):
   - `pal sleep <Pal|Pal#topic|#topic>` or `--idle` stops the agent in a topic and keeps its shell,
@@ -720,7 +720,7 @@ rectangular segments and tags.
     Topics well's left edge to its right (8px in); each one's icon and count sit centred
     together (6px in), and the count appears only when there is one, so a count or a pal switch
     never changes a width and there is no empty slot. Inbox, Tasks, Pop out, and Close pal
-    (Home on the head pal); Pals Lite took out Desk and Profile, and Pop out took Profile's slot.
+    (Home on the head pal); T217 took out Desk and Profile, and Pop out took Profile's slot.
     The open view's pebble is the lit (primary) one: Inbox while the sidebar shows it, Home
     while Home shows. Names (Inbox, Tasks) show from a 430px sidebar; under that they are
     in the tooltips. The pebbles:
@@ -757,7 +757,7 @@ rectangular segments and tags.
   roster publishes the machines as shared `crew.machines` every 20 s (`hc machine ls --json`,
   plus this computer's host name and laptop-or-desktop from its battery). A machine's icon goes by
   its kind: a saved `machineKinds[<name>]`, else from its name, else server.
-  **Change machine…** (the pal menu's row since Pals Lite; it was in the profile panel; a 560 px
+  **Change machine…** (the pal menu's row since T217; it was in the profile panel; a 560 px
   sheet): this computer, then every added machine (icon, name,
   host · connection · target, the state dot and word, "new topics start here", "N running");
   Add machine… (`hc machine add <target> --name <name> --json`, or Herdr's Machines settings);
@@ -809,12 +809,12 @@ rectangular segments and tags.
   declined rests 30 days unless it doubles; a proposal that expires reopens its pattern. It never
   writes DJM OS's Learning Ledger: `pal dream intake` drafts a sanitized note in
   `data/crew-dream/intake/` for the owner to file. (The Dreams view in the Vault went with Pals
-  Lite; `pal dream ls` lists the patterns and their states.)
+  T217; `pal dream ls` lists the patterns and their states.)
 - **Proposals** (`bin/crewproposals.py`, `data/crew-proposals/<id>.json` + `.md`): a pal's
   `pal mission propose` or `pal agents propose <file>` becomes a card on Home and in the Inbox
   (Decline tells the pal; View opens the review), counted in "N need you", expiring after 7 days.
   Nothing is written until the owner accepts.
-  **The review** (`crew-proposal`, Pals Lite; it replaced the profile panel's Vault › Mission and
+  **The review** (`crew-proposal`, T217; it replaced the profile panel's Vault › Mission and
   AGENTS.md tab for this): a 640 px dialog, "<Pal> proposes a change to its mission" (or to the
   file), the pal's note ("Why: …"), then the change as a diff in green and red (`pal proposal show
   ID` returns `current` and a unified `diff` beside the proposal; the whole proposed text when the
@@ -830,7 +830,7 @@ rectangular segments and tags.
   `quick` rows, `appMenuItems`). Typing searches pals (asleep ones say "wake" and Enter wakes them),
   topics (a state dot: blue working, amber needs you, green done; their task title is searchable),
   open tasks (Enter opens `crew-tasks` for the pal working it) and every command (the pal
-  menu's, New topic, the whole gear menu). (The Vault's notes went with Pals Lite.)
+  menu's, New topic, the whole gear menu). (The Vault's notes went in T217.)
   Matching (`mods/crew-command/search.js`, tested by
   `tests/test_command.mjs`): every word must match; a label's start beats a word's start beats
   anywhere beats its letters in order from a word start; sub lines and extra words count less and
@@ -844,7 +844,7 @@ rectangular segments and tags.
   name and "harness · folder", then The pal (Tasks with the open count: the `crew-tasks` dialog;
   Change machine…, as in "Which computer a pal works on"), The project (Review changes on a
   worktree topic, Open folder), then Sleep / Wake and Close pal. No topics: the hero lists them.
-  ↑/↓, Enter, Esc. The hero's name opens it (Pals Lite: Profile, Vault, Memory and AGENTS.md went
+  ↑/↓, Enter, Esc. The hero's name opens it (T217: Profile, Vault, Memory and AGENTS.md went
   with the profile panel).
 - **The sidebar runs the window's full height** (T97, DeNon 2026-11-10): nothing spans under
   the whole window, and the header has no line under it. In `layouts/pals.json` the `sidebar`
@@ -945,7 +945,7 @@ rectangular segments and tags.
   shortcuts from keys.json): Hire a pal…, Inbox, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
   settings, Command palette, Check for updates (`crew-update` with props `check: true`),
-  Project Pals settings (About: owner, head pal, update, Roll back). (Pals Lite took out New
+  Project Pals settings (About: owner, head pal, update, Roll back). (T217 took out New
   room…, Rooms, Routines, the Desk and the board's and Computer's rows; routines are `pal routine`.)
   **It never runs past the window** (T95, DeNon 2026-11-10: it had outgrown its fixed 438px box
   and a short window, Settings was cut off and nothing scrolled). It's as tall as its rows need
@@ -968,7 +968,7 @@ rectangular segments and tags.
 - **Terminal-first** (DeNon, 2026-11-08): a topic is its terminal; you type in it
   directly, and you answer its permission prompts and questions there too (no prompt card:
   DeNon removed it on 2026-11-08, since it repeated the terminal's question and covered it).
-  A click on a pal opens its terminal (the head pal's opens Home); Pals Lite took out the pal
+  A click on a pal opens its terminal (the head pal's opens Home); T217 took out the pal
   board that a click showed first, and its "Clicking a pal opens…" setting (`palClick`).
 - **Splits:** Herdr's own (Ctrl+Shift+O right, Ctrl+Shift+E down, Ctrl+Shift+X close, Ctrl+Shift+Z
   zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the header, and the right-click on a terminal (`crew-termmenu`, the layout's
@@ -977,7 +977,7 @@ rectangular segments and tags.
   belongs to that topic; the topic's agent stays its lead pane (state, "no agent" and `pal tell`
   all read the agent's pane).
 - **Remembered** in `data/crew-settings.json`: `focus.sidebarPx` (the dragged sidebar width).
-  (`focus.panelPx` was the profile panel's Side width; nothing reads it since Pals Lite.)
+  (`focus.panelPx` was the profile panel's Side width; nothing reads it since T217.)
   Pro's old keys (`layoutMode`, `pro`) are dropped the next time the settings are written.
 
 ### The Desk (0.4)
@@ -996,7 +996,7 @@ still travels through crewd's queue, carrying the card's id.
   `working` / `later` / `blocked` / `needs you` / `done` with `pal desk take|later|block|done|reply`.
   `held` (with `draft`, `asleep` or `gone`) when it's due but can't go out; crewd tries held and
   queued cards again every minute. Callbacks are closed as soon as they're delivered.
-- **No Desk page** (Pals Lite: the Desk view, `desk-view`, is gone, and so is the header's Desk
+- **No Desk page** (T217: the Desk view, `desk-view`, is gone, and so is the header's Desk
   button). Cards that need you are on Home and in the Inbox, the header's **Drop** button opens the
   quick-drop, and `pal desk` lists, opens and moves cards (`pal desk ls --all`, `open`, `done` …).
 - **Quick-drop** (`crew-desk-drop`, the header's **Drop** button, Ctrl+Shift+D, or "Drop a card…"
@@ -1017,7 +1017,7 @@ still travels through crewd's queue, carrying the card's id.
   the owner's and head pal's names), topic `#ideas`. The owner riffs with it; it writes **drafts**
   with `pal desk draft` into `_drafts/` (status `draft`, kind `idea`, `to` its suggestion, `track: yes`
   for a task). A toast says "MUSE drafted a card" (its click opens Home). **Drafts are on Home**
-  (Pals Lite; the Desk page had them): each is a **Draft** card under Needs you with Send (`pal desk
+  (T217; the Desk page had them): each is a **Draft** card under Needs you with Send (`pal desk
   send-draft ID --to <its suggestion>`: the card becomes the owner's own, from the owner,
   `drafted_by` MUSE, in the ledger), Edit… (the quick-drop prefilled with its words, where it
   suggests, how urgent and its board flag, `fromDraft`; dropping sends it with `--from-draft`, and
@@ -1495,7 +1495,7 @@ implementation details below, not the current permission model.
   history, `crewhome.untap`, Stop/Undo controls and tap rendering remain for inspection/recovery.
 - **Layout:** `layouts/pals.json`, the tree above.
   - Stack `center` has the children `tab-view` and `home-view`. `showHome` / `showTabs` switch it.
-    (Pals Lite took out `room-view`, `desk-view`, `pc-view`, `pal-view`, the `crew-composer` block
+    (T217 took out `room-view`, `desk-view`, `pc-view`, `pal-view`, the `crew-composer` block
     and the `profile` column.)
 - **Trusted helpers:** `bin/crewhelpers.py` (the list, the keys, `verify`, `inside_herdr`, the
   record, `adopt_old`); `crewdesk.sender` / `create` / `who` / `frame` (the fourth sender, its
@@ -1514,7 +1514,7 @@ implementation details below, not the current permission model.
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`, `crew-update` (props `check`),
     `crew-attach`, `crew-tasks` (props `space`), `crew-proposal` (props `id`), `crew-machine`,
     `crew-desk-drop`, `crew-desk-settings`. The installer retires the old `crew-tell`.
-  - Removed by Pals Lite (T217): `crew-profile`, `crew-computer`, `crew-computer-app`,
+  - Removed in T217: `crew-profile`, `crew-computer`, `crew-computer-app`,
     `crew-palboard`, `crew-routines`, `crew-desk`, `crew-room`, `crew-room-new` and
     `crew-composer`. The installer sets installed copies aside, backed up, like Pro's.
   - Popup: `crew-menu` (props `what` = "tab" | "pal", `space`, `tab`), the right-click menu.
@@ -1855,7 +1855,7 @@ implementation details below, not the current permission model.
   rule, including nested commands: any never-tappable rule wins, then outward, then local. The
   approval decision repeats this check under its lock. The normal gate keeps its first-match label.
 - **Reserve a proposal before applying it.** Accept, decline, `pal agents apply --proposal`
-  (the profile panel's write, before Pals Lite) and expiry share the proposals lock. An accepted
+  (the profile panel's write, before T217) and expiry share the proposals lock. An accepted
   write first becomes `applying`, then `accepted`; a
   pre-write validation refusal stays `pending` for another review. An application that raises
   becomes `failed`. A crash may leave `applying`. These states are not
@@ -1940,7 +1940,7 @@ implementation details below, not the current permission model.
   is written beside it as `SKILL.md.new`.
 
 - **The feed's `working` events** (a turn starting) only bounded the Computer's calendar blocks and
-  fed the board, so crewd no longer writes them (Pals Lite); `pal feed` still hides the old ones.
+  fed the board, so crewd no longer writes them (T217); `pal feed` still hides the old ones.
 
 - **`systemd-run --scope` must exec in place** (it does: same pid, same parent shell, same
   environment), or sleep's "agent is the shell's direct child" check and session linking break.
@@ -2012,7 +2012,7 @@ implementation details below, not the current permission model.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
   `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose.
-- Pals Lite: the hero's pebbles are Inbox, Tasks, Pop out and the moon (Home on the head pal);
+- Since T217 the hero's pebbles are Inbox, Tasks, Pop out and the moon (Home on the head pal);
   Pop out opens the shown topic's terminal in its own window, and the hero's name opens the pal
   menu, which has Change machine…. A click on a pal shows its terminal. Nothing answers
   Ctrl+Shift+I, Y or U, and an install takes those keys out of keys.json only where they still
@@ -2055,7 +2055,7 @@ implementation details below, not the current permission model.
 - Editing a card's `status:` by hand is put back within a minute; editing its title is kept with an
   "edited by hand" receipt; an owner card edited by hand shows "edited after sending · unverified"
   until the owner confirms it (`pal desk confirm ID`, the owner's click; the Desk page's Confirm as
-  mine went with Pals Lite).
+  mine went in T217).
 - `node tests/test_desk_parser.mjs` passes.
 - Install into a fresh throwaway HOME, then `./install.sh --uninstall --purge`: the HOME is identical
   file for file and byte for byte; with the person's own `keys.json`, `~/.claude/settings.json`

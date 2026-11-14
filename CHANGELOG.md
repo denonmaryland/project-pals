@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Pals Lite: back to the terminal.** The app's full pages are gone, so a pal is its terminals
+- **Back to the terminal.** The app's full pages are gone, so a pal is its terminals
   again: clicking a pal opens its topic (the head pal still opens Home). Gone: the profile panel
   (Profile, the Vault, Memory, the AGENTS.md editor, the dashboard), a pal's Computer, the pal
   board, the Routines dialog, the Desk page and the room page with its composer, their
