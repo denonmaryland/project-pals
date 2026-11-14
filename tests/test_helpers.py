@@ -294,7 +294,9 @@ class Sending(Base):
         self.on()
         code = ("import os, crewhelpers, crewdesk\ncrewhelpers.inside_herdr = lambda *a, **k: None\nos.environ['PAL_HELPER'] = 'Pals'\n"
                 "who = crewdesk.sender([])\nassert who['from_kind'] == 'helper', who\n"
-                "crewhelpers.switch('Pals', False)\n"   # the owner's click lands after this run was accepted
+                # Simulate a separate owner click, then restore the helper process's identity.
+                "claim = os.environ.pop('PAL_HELPER')\ntry:\n    crewhelpers.switch('Pals', False)\n"
+                "finally:\n    os.environ['PAL_HELPER'] = claim\n"
                 "c = crewdesk.create('tell', 'Helper#build', 'late', frm=who['from'], from_kind=who['from_kind'], proof=who['proof'], via='pal tell')\n"
                 "print(json.dumps([c['from_kind'], c['from']]))")
         self.assertEqual(py(self.env, code), ["shell", "a shell on this computer"])
@@ -712,7 +714,9 @@ class StaysOn(Base):
         self.on()
         code = ("import os, crewhelpers, crewdesk\ncrewhelpers.inside_herdr = lambda *a, **k: None\n"
                 "os.environ['PAL_HELPER'] = 'Pals'\nos.environ['PAL_HELPER_STRICT'] = '1'\n"
-                "who = crewdesk.sender([])\nassert who['from_kind'] == 'helper', who\ncrewhelpers.switch('Pals', False)\n"
+                "who = crewdesk.sender([])\nassert who['from_kind'] == 'helper', who\n"
+                "claim = os.environ.pop('PAL_HELPER')\ntry:\n    crewhelpers.switch('Pals', False)\n"
+                "finally:\n    os.environ['PAL_HELPER'] = claim\n"
                 "try:\n    crewdesk.create('tell', 'Helper#build', 'late', frm=who['from'], from_kind=who['from_kind'], proof=who['proof'], via='pal tell')\n"
                 "    print(json.dumps('sent'))\nexcept crewdesk.DeskError as e:\n    print(json.dumps([str(e), getattr(e, 'code', None)]))")
         said, exit_code = py(self.env, code)
@@ -863,7 +867,9 @@ class StaysOn(Base):
         # The owner's Off lands after this run was accepted and before the task is added.
         code = ("import os, crewhelpers, crewdesk, crewtasks\nfrom crewlib import herdr_spaces\n"
                 "crewhelpers.inside_herdr = lambda *a, **k: None\nos.environ['PAL_HELPER'] = 'Pals'\nos.environ['PAL_HELPER_STRICT'] = '1'\n"
-                "spaces = herdr_spaces()\nassert crewdesk.sender(spaces)['from_kind'] == 'helper'\ncrewhelpers.switch('Pals', False)\n"
+                "spaces = herdr_spaces()\nassert crewdesk.sender(spaces)['from_kind'] == 'helper'\n"
+                "claim = os.environ.pop('PAL_HELPER')\ntry:\n    crewhelpers.switch('Pals', False)\n"
+                "finally:\n    os.environ['PAL_HELPER'] = claim\n"
                 "try:\n    crewtasks.add('Late task', spaces, None, 'x', None, 'Helper#build')\n    print(json.dumps('added'))\n"
                 "except crewdesk.DeskError as e:\n    print(json.dumps([str(e), getattr(e, 'code', None)]))")
         said, exit_code = py(self.env, code)

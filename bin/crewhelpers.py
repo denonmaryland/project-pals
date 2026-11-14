@@ -1,4 +1,11 @@
-"""Trusted helpers (T116): the owner's own assistants, sending NORMAL work to the pals in the owner's name.
+"""Trusted helpers: Off / Work only / Full control, selected by the owner's own app click.
+
+Full control is standing delegated authority, attributed to the helper rather than to a supposed
+human reply. Legacy helpers remain Work only; old tap switches never imply Full control. The
+grant revision changes on every owner trust selection, revocation and key rotation, and consumers
+recheck it before acting. Helper credentials cannot manage the owner's trust selector.
+
+The original Work-only relationship (T116) remains:
 
 A helper is a program outside Project Pals (a chat assistant, a script) that the owner switched on
 by name, with a click. It then says who it is when it sends:
@@ -64,15 +71,61 @@ SEND = "helpers-send"   # held while a helper's send is checked and written, and
 #                         a switch-off can't land in the middle of a send, nor a send in the middle of a switch-off
 STRICT = "PAL_HELPER_STRICT"        # =1: a send that isn't accepted is refused, not sent as a shell's
 PER_HOUR_MAX = 500
+LEVELS = ("off", "work", "full")
+
+
+def level(entry):
+    """The effective grant. Old helpers are work-only, never implicitly Full control.
+
+    Binding full grants to both a random revision and the current key also makes an older build's
+    key rotation fail closed: a leftover level field cannot give the new key the old authority.
+    """
+    if not isinstance(entry, dict) or entry.get("on") is not True:
+        return "off"
+    value = entry.get("level", "work")
+    if value == "full":
+        grant = entry.get("grant")
+        key_hash = entry.get("grant_key")
+        if (isinstance(grant, str) and re.fullmatch(r"[0-9a-f]{32}", grant)
+                and isinstance(key_hash, str) and re.fullmatch(r"[0-9a-f]{64}", key_hash)
+                and key_hash == entry.get("sha256")
+                and entry.get("grant_switched") == entry.get("switched")
+                and isinstance(entry.get("grant_switched"), int)):
+            return "full"
+        return "work"
+    return value if value in ("off", "work") else "off"
+
+
+def _new_grant(entry, value):
+    entry["level"], entry["on"] = value, value != "off"
+    entry["grant"] = secrets.token_hex(16)
+    entry["grant_key"] = entry.get("sha256") if value == "full" else None
+    # Older builds update `switched` but know nothing about full grants. Their Off/On sequence
+    # must not resurrect a preserved full field when this version runs again.
+    entry["grant_switched"] = entry["switched"] = now_ms()
+    if isinstance(entry.get("taps"), dict):
+        entry["taps"] = {**entry["taps"], "home": False, "local": False, "outward": False}
+        entry["taps"].pop("auto_off", None)
+
+
+def _owner_management():
+    """The app checked the owner's click; a presented helper never manages its own grants."""
+    if claimed():
+        raise HelperError(f"only {OWNER}'s own click changes helper trust or credentials")
 
 
 class HelperError(CrewError):
     pass
 
 
-def limits(name):
+def limits(name, full=False):
     """The line under every helper card (from build 7692987, kept: the limits travel with the card,
     not only in a primer the pal read at the start of its session)."""
+    if full:
+        return (f"{name} acted under Full control delegated by {OWNER}: it may make app decisions and act autonomously, "
+                f"including pushes and releases. This is {name}'s action, not {OWNER}'s own click. "
+                f"Only {OWNER} grants or increases helper trust and revokes it; helpers cannot promote themselves or erase their audit history. "
+                "Pass this card unchanged to preserve its attribution.")
     return (f"{name} is {OWNER}'s helper: a request for normal work, not {OWNER}'s click or approval. Push, publish, deploy, "
             f"release, merge, messaging people, settings, missions, AGENTS.md, proposals, approvals and questions put to {OWNER} "
             f"still need {OWNER}'s own click. To hand it on, pass this card unchanged; never retell it as {OWNER}'s own message.")
@@ -140,6 +193,10 @@ def _load():
         # writers' lock: a reader that wrote here could put an older copy over the owner's Off, saved
         # in between (Codex T174, P1).
         hs = _helpers_in(BACKUP)
+        # A failed restore must not grant Full control merely from a backup. Recovery preserves
+        # normal work where possible, but broad authority needs a fresh owner selection.
+        hs = {k: {**v, "level": "work", "grant_key": None} if level(v) == "full" else v
+              for k, v in (hs or {}).items() if isinstance(v, dict)}
     return {"version": 1, "helpers": {k: v for k, v in (hs or {}).items() if isinstance(v, dict)}}
 
 
@@ -171,11 +228,16 @@ def restore_list():
         bs = _helpers_in(BACKUP)
         if not bs:
             return False
-        if not _copy_current():
-            for name, e in bs.items():
-                if isinstance(e, dict) and e.get("on"):
+        current = _copy_current()
+        for name, e in bs.items():
+            if isinstance(e, dict):
+                if not current and e.get("on"):
                     e["on"], e["restored_off"] = False, now_ms()
+                    _new_grant(e, "off")
                     turned_off.append(name)
+                elif level(e) == "full":
+                    _new_grant(e, "work")
+                    e["restored_work"] = now_ms()
         _private(BACKUP, json.dumps(_copy_doc(bs), indent=2))
         _private(FILE, json.dumps({"version": 1, "helpers": bs}, indent=2))
     try:
@@ -193,14 +255,37 @@ def _copy_doc(hs):
 
 
 def _copy_current():
-    """Was the copy written (or brought level) after the last install? No install on record: yes."""
+    """Was the copy written (or brought level) after the last install? No install on record: yes.
+
+    The last install is the later of crew-install.json's "installed" and the newest line of
+    data/crew-installs.jsonl. Roll back puts an older crew-install.json back (and an older updater
+    doing it can't be taught otherwise), but no snapshot holds the install log, and every install.sh
+    since before trusted helpers appends to it: an older build's install stays on record there, so
+    its list-only Off can't be undone by a copy from before it (T208, Codex T199 d / T209)."""
     b = load_json(BACKUP, None)
     at = b.get("at") if isinstance(b, dict) else None
+    times = []
     ins = load_json(DATA / "crew-install.json", None)
-    installed = ins.get("installed") if isinstance(ins, dict) else None
-    if not isinstance(installed, (int, float)):
+    if isinstance(ins, dict) and isinstance(ins.get("installed"), (int, float)):
+        times.append(ins["installed"] * 1000)
+    try:
+        for line in (DATA / "crew-installs.jsonl").read_text().splitlines():
+            try:
+                t = json.loads(line).get("at")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(t, (int, float)):
+                times.append(t)
+    except OSError:
+        pass
+    if not times:
         return True
-    return isinstance(at, (int, float)) and at >= installed * 1000
+    # install.sh records whole seconds (int(time.time()), in both places), so an install in the same
+    # second as the copy can't be ordered against it. Fail toward Off: a whole-second time counts as
+    # the end of that second (T209 round 2). A copy written that close to an install is brought level
+    # again by the next run of this version (sync_backup), so only a lost list in that moment pays.
+    latest = max(t + 1000 if float(t).is_integer() and t % 1000 == 0 else t for t in times)
+    return isinstance(at, (int, float)) and at >= latest
 
 
 def sync_backup():
@@ -359,6 +444,7 @@ def _new_key(name):
 def switch(name, on, pals=()):
     """The owner's switch (the caller has checked the click). On, the first time: the helper and its
     key are made. Off: the key stops being accepted at once (it's kept, so On again resumes it)."""
+    _owner_management()
     _ready()
     with locked(SEND), locked("helpers"):
         h = _load()
@@ -376,7 +462,10 @@ def switch(name, on, pals=()):
             e["sha256"], e["made"], made = _new_key(known), now_ms(), True
             e.pop("rotated", None)
         e["on"], e["switched"] = bool(on), now_ms()   # `switched`: the owner has decided this helper's state
+        # The old On command grants normal work only. Off then On must never resurrect Full control.
+        _new_grant(e, "work" if on else "off")
         e.pop("restored_off", None)
+        e.pop("restored_work", None)
         if not on and isinstance(e.get("taps"), dict):
             # Off means off for tapping too (T147): its three tap switches go with it, and stay off
             # when the helper is switched on again, until the owner turns each one on.
@@ -387,8 +476,38 @@ def switch(name, on, pals=()):
     return known, e
 
 
+def set_level(name, value, pals=()):
+    """Set the owner's single selector. Only the caller's own app click may reach this function."""
+    _owner_management()
+    if value not in LEVELS:
+        raise HelperError("the helper trust level is off, work, or full")
+    _ready()
+    with locked(SEND), locked("helpers"):
+        h = _load()
+        known = canonical(name, h)
+        if not known:
+            if value == "off":
+                raise HelperError(f"no helper called {name}")
+            if len(h["helpers"]) >= MAX:
+                raise HelperError(f"{MAX} helpers at most: remove one first")
+            known = check_name(name, pals)
+            h["helpers"][known] = {"on": False, "made": now_ms()}
+        e = h["helpers"][known]
+        if value != "off" and (not e.get("sha256") or not key_path(known).is_file()):
+            e["sha256"], e["made"] = _new_key(known), now_ms()
+            e.pop("rotated", None)
+        _new_grant(e, value)
+        e.pop("restored_off", None)
+        e.pop("restored_work", None)
+        _save(h)
+    log("switch", known, action=f"trust level {value}", level=value, grant=e["grant"])
+    check()
+    return known, e
+
+
 def rotate(name):
     """A new key in the same file; every copy of the old one is dead from now."""
+    _owner_management()
     _ready()
     with locked(SEND), locked("helpers"):
         h = _load()
@@ -396,7 +515,9 @@ def rotate(name):
         if not known:
             raise HelperError(f"no helper called {name}")
         e = h["helpers"][known]
+        old_level = level(e)
         e["sha256"], e["rotated"] = _new_key(known), now_ms()
+        _new_grant(e, old_level)
         _save(h)
     log("switch", known, action="rotate")
     check()
@@ -404,40 +525,10 @@ def rotate(name):
 
 
 def set_taps(name, what, value):
-    """A helper's relayed-tap switches (T147), the owner's click: `what` is home | local | outward
-    (value on | off: may this helper tap that class of thing) or hold (value: minutes an outward tap
-    waits before it runs, 0 to 15). Only for a helper that is switched on."""
-    import crewtaps
-    _ready()
-    with locked(SEND), locked("helpers"):
-        h = _load()
-        known = canonical(name, h)
-        if not known:
-            raise HelperError(f"no helper called {name}")
-        e = h["helpers"][known]
-        taps = dict(e.get("taps") if isinstance(e.get("taps"), dict) else {})
-        if what in crewtaps.CLASSES:
-            if value not in ("on", "off"):
-                raise HelperError(f"pal settings trust-helper {known} taps {what} on|off")
-            if value == "on" and not e.get("on"):
-                raise HelperError(f"{known} is switched off: switch the helper on first")
-            taps[what] = value == "on"
-            taps.pop("auto_off", None)   # the owner has looked: the switch-off notice is answered
-        elif what == "hold":
-            try:
-                n = int(value)
-            except (TypeError, ValueError):
-                raise HelperError("the hold is a number of minutes")
-            if not 0 <= n <= crewtaps.OUTWARD_HOLD_MAX:
-                raise HelperError(f"the hold is 0 to {crewtaps.OUTWARD_HOLD_MAX} minutes")
-            taps["hold"] = n
-        else:
-            raise HelperError(f"pal settings trust-helper {known} taps home|local|outward on|off, or taps hold <minutes>")
-        e["taps"] = taps
-        _save(h)
-    log("switch", known, action=f"taps {what} {value}")
-    check()
-    return known, crewtaps.switches(e)
+    """Legacy tap permissions are retired; trust is now one owner-set level."""
+    _owner_management()
+    raise HelperError("relayed tap switches were replaced by Off / Work only / Full control; "
+                      "choose the helper's trust level in Project Pals")
 
 
 def taps_auto_off(name, why):
@@ -461,6 +552,7 @@ def taps_auto_off(name, why):
 
 def set_limit(name, per_hour):
     """How many messages an hour this helper may send in the owner's name (the owner's click)."""
+    _owner_management()
     try:
         n = int(per_hour)
     except (TypeError, ValueError):
@@ -481,6 +573,7 @@ def set_limit(name, per_hour):
 
 
 def remove(name):
+    _owner_management()
     _ready()
     with locked(SEND), locked("helpers"):
         h = _load()
@@ -518,13 +611,18 @@ def _ppid(proc, pid):
 def inside_herdr(proc="/proc", pid=None, env=None):
     """Why this process counts as running in a Herdr terminal (a pal's, or one a pal started), else
     None. Its own HC_TERMINAL_ID; a parent's, however far up (a pal that drops the variable first, as
-    with `env -u`); or herdr-core's process group, which a child keeps even after it detaches from
-    its parents. A helper runs outside Herdr, so none of these is true for it."""
+    with `env -u`); or the terminal holder's or per-pal cgroup, which a child keeps even after it
+    detaches from its parents. A helper runs outside Herdr, so none of these is true for it."""
     env = os.environ if env is None else env
     if env.get("HC_TERMINAL_ID"):
         return f"terminal {env['HC_TERMINAL_ID']}"
     pid = pid or os.getpid()
-    if b"hc-hold-" in _read(f"{proc}/{pid}/cgroup"):
+    groups = _read(f"{proc}/{pid}/cgroup").splitlines()
+    # crewmem.unit_name / crew.js scoped() move agents out of hc-hold-* into pal scopes.
+    # Match a whole generated unit component, including processes in its descendant cgroups.
+    if any(b"hc-hold-" in group or
+           re.search(rb"(?:^|/)pal-[a-z0-9][a-z0-9-]*-[a-z0-9]+\.scope(?:/|$)", group)
+           for group in groups):
         return "it runs inside a Herdr terminal"
     seen, p = set(), _ppid(proc, pid)
     while p > 1 and p not in seen:
@@ -576,12 +674,20 @@ def verify(name, key_file=None):
     """(the helper's name, its key's short fingerprint) when `name` may speak in the owner's name right
     now; else raise HelperError saying why. No side effects (but for carrying an older build's helper over, once)."""
     _ready()
-    h = _load()
+    # _ready tolerates recovery I/O failures so status screens can still explain the damage.
+    # Its display fallback may predate an older build's Off; only a recovered primary list
+    # can authorize messages. Refuse before reading any credential.
+    hs = _helpers_in(FILE)
+    if hs is None and not FILE.exists() and not BACKUP.exists():
+        hs = {}   # never configured: retain the ordinary missing-helper refusal
+    if hs is None:
+        raise HelperError("the helper list could not be recovered; no helper authority is available")
+    h = {"helpers": {n: e for n, e in hs.items() if isinstance(e, dict)}}
     known = canonical(name, h)
     if not known:
         raise HelperError(f"there's no helper called {name}")
     e = h["helpers"][known]
-    if not e.get("on"):
+    if level(e) == "off":
         raise HelperError(f"{known}'s trusted link is off")
     why = inside_herdr()
     if why:
@@ -591,9 +697,77 @@ def verify(name, key_file=None):
     if not key.startswith(PREFIX) or not want or not hmac.compare_digest(fingerprint(key), want):
         raise HelperError(f"that isn't {known}'s key now (it was rotated, or the file is another's)")
     per_hour = int(e.get("per_hour") or PER_HOUR)
-    if sent_since(known, now_ms() - 3600 * 1000) >= per_hour:
+    if level(e) != "full" and sent_since(known, now_ms() - 3600 * 1000) >= per_hour:
         raise HelperError(f"{known} has sent {per_hour} messages in {OWNER}'s name this hour, which is the limit")
     return known, want[:8]
+
+
+def validate_grant(authority):
+    """Recheck a previously authenticated, internally stamped grant without presenting a key.
+
+    For queued execution and approval consumption by another process. This is NOT authentication
+    of arbitrary caller input: callers must have already verified/stamped the operation's record.
+    """
+    if not isinstance(authority, dict) or not isinstance(authority.get("helper"), str):
+        raise HelperError("that Full control grant is not valid")
+    _ready()
+    h = _load()
+    known = canonical(authority.get("helper"), h)
+    e = h["helpers"].get(known, {})
+    grant = authority.get("grant")
+    if (not known or level(e) != "full" or not isinstance(grant, str)
+            or not hmac.compare_digest(grant, e.get("grant", ""))):
+        raise HelperError("that Full control grant was revoked or replaced")
+    return {"helper": known, "grant": e["grant"], "label": f"{known} acted under Full control"}
+
+
+def full_authority():
+    """Authenticate the presented helper afresh and return its current Full control grant.
+
+    No helper claim or a valid Work-only helper returns None. Invalid claims raise; they must not
+    fall back to click/tap authority. Never use the message sender's cached presented() answer here.
+    """
+    claim = " ".join((os.environ.get(ENV) or "").split())
+    if not claim:
+        return None
+    _ready()
+    # Serialize just authentication/snapshot with owner grant changes. Otherwise a key rotated
+    # while verify read it could incorrectly bind an old authenticated key to the new grant.
+    with locked(SEND):
+        known, _ = verify(claim, os.environ.get(ENV_FILE) or None)
+        e = _load()["helpers"].get(known, {})
+        if level(e) != "full":
+            return None
+        return validate_grant({"helper": known, "grant": e["grant"]})
+
+
+def recheck_full(authority):
+    """The same helper and still-current key/grant must authorize the next operation."""
+    saved = validate_grant(authority)
+    current = full_authority()
+    if not current or current["helper"] != saved["helper"] or current["grant"] != saved["grant"]:
+        raise HelperError("this helper no longer has that Full control grant")
+    return current
+
+
+def invalidate_all_for_uninstall(authority):
+    """Internal lifecycle step after delegated uninstall is authorized, before removing services.
+
+    Uninstall removes the app that enforces grants, so it must invalidate all app-issued authority.
+    This is not a helper-management command and does not expose a general revoke-other endpoint.
+    The uninstall code preserves the final receipt and this module leaves the audit log intact.
+    """
+    actor = recheck_full(authority)
+    with locked(SEND), locked("helpers"):
+        h = _load()
+        e = h["helpers"].get(actor["helper"], {})
+        if level(e) != "full" or e.get("grant") != actor["grant"]:
+            raise HelperError("that Full control grant was revoked or replaced")
+        for e in h["helpers"].values():
+            _new_grant(e, "off")
+        _save(h)
+    log("notice", actor["helper"], reason="uninstall", text="acted under Full control: app-issued helper authority revoked before uninstall")
+    return actor
 
 
 _presented = None   # this run's answer, worked out once
@@ -727,7 +901,7 @@ def strict():
 def health(name, e, now=None):
     """None when `name` is as the owner left it and working; else {"reason", "text", "fix"}."""
     now = now or now_ms()
-    if not e.get("on"):
+    if level(e) == "off":
         if e.get("carried_over") and not e.get("switched"):
             return {"reason": "carried-over", "fix": "on",
                     "text": f"{name} is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name."}
@@ -736,11 +910,10 @@ def health(name, e, now=None):
                     "text": f"{name} is off. The list of helpers was damaged and came back from a copy that another build may have made out of date, "
                             f"so {name} was switched off, not guessed on, and not by you. What it sends is not in your name."}
         return None   # the owner switched it off
-    auto = (e.get("taps") or {}).get("auto_off") if isinstance(e.get("taps"), dict) else None
-    if auto:
-        return {"reason": "taps-off", "fix": None,
-                "text": f"{name} can't tap for you any more. Tapping was switched off, not by you: {auto.get('why') or 'its taps were refused'}. "
-                        f"{name} still sends normal work. Turn tapping on again in Trusted helpers if those taps were yours."}
+    if e.get("restored_work"):
+        return {"reason": "restored-work", "fix": None,
+                "text": f"{name}'s helper list was recovered from a copy. It has Work only access; Full control needs your own new selection."}
+    # Old tap refusal notices are history, not a request to re-enable the retired three switches.
     try:
         key = _read_key(key_path(name))
     except HelperError as ex:
@@ -750,7 +923,7 @@ def health(name, e, now=None):
         return {"reason": "key-mismatch", "fix": "rotate",
                 "text": f"{name} is on, but the key in its file isn't the one you gave it. What it sends is not in your name until it has a new key."}
     per_hour = int(e.get("per_hour") or PER_HOUR)
-    if sent_since(name, now - 3600 * 1000) >= per_hour:
+    if level(e) != "full" and sent_since(name, now - 3600 * 1000) >= per_hour:
         return {"reason": "limit", "fix": None,
                 "text": f"{name} reached its limit of {per_hour} messages an hour. The rest arrive not verified until the hour passes."}
     return None
@@ -842,7 +1015,8 @@ def listing(log_limit=200):
     for name, e in sorted(h["helpers"].items(), key=lambda kv: kv[0].lower()):
         mine = [x for x in log_ if x.get("helper") == name]
         p = key_path(name)
-        out.append({"name": name, "on": bool(e.get("on")), "key": (e.get("sha256") or "")[:8] or None, "key_file": str(p),
+        out.append({"name": name, "on": level(e) != "off", "level": level(e), "grant": e.get("grant"),
+                    "key": (e.get("sha256") or "")[:8] or None, "key_file": str(p),
                     "key_there": p.is_file() and not p.is_symlink(), "sealed": _is_sealed(p), "made": e.get("made"), "rotated": e.get("rotated"),
                     "switched": e.get("switched"), "last_used": e.get("last_used"),
                     "sent": sum(1 for x in mine if x.get("kind") == "sent"),

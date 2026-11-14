@@ -5,6 +5,7 @@ session file, its branch against its base, what it needs from the owner, which c
 herdr-app, like test_computer.
 Run: python3 -m unittest tests.test_board"""
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -106,7 +107,11 @@ class Line(unittest.TestCase):
 
     def test_read_from_the_end_of_a_session_file(self):
         import crewboard
+        from unittest import mock
         d = Path(pals_tmp.mkdtemp(prefix="pals-board-"))
+        p = mock.patch.object(crewboard, "session_roots", lambda: {"claude": d, "agy": d / "agy"})
+        p.start()
+        self.addCleanup(p.stop)
         f = d / "s.jsonl"
         pad = [bot("An early reply that is far from the end of the file. " + "pad " * 200, "2026-11-09T10:00:00.000Z") for _ in range(40)]
         f.write_text("\n".join(pad + [user("the double charge, fix it and prove it", "2026-11-09T15:28:00.000Z"),
@@ -241,12 +246,247 @@ class Board(unittest.TestCase):
         self.assertEqual(v["focus"], "checkout ships Friday")                # Today's fields are still there
 
 
+def tool_use(name, inp, tid, at):
+    return json.dumps({"type": "assistant", "timestamp": at, "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "id": tid, "name": name, "input": inp}]}}, separators=(",", ":"))
+
+
+def tool_result(tid, text, at, error=False):
+    return json.dumps({"type": "user", "timestamp": at, "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": tid, "content": text, "is_error": error}]}}, separators=(",", ":"))
+
+
+class Read(unittest.TestCase):
+    """T183: Read, a topic's conversation as rows."""
+    NOW = 1794000000000
+
+    def rows(self, bubbles, results=None, working=False, **kw):
+        from crewboard import read_rows
+        return read_rows(bubbles, results, working, now_ms=self.NOW, **kw)
+
+    def test_a_turn(self):
+        m = 60000
+        b = [{"kind": "you", "text": "fix the double charge", "at": self.NOW - 20 * m},
+             {"kind": "tool", "verb": "read", "what": "retry.ts", "at": self.NOW - 19 * m, "id": "a"},
+             {"kind": "tool", "verb": "read", "what": "charge.ts", "at": self.NOW - 19 * m, "id": "b"},
+             {"kind": "bot", "text": "Found it: the retry fires too early.", "at": self.NOW - 18 * m},
+             {"kind": "tool", "verb": "edit", "what": "retry.ts", "at": self.NOW - 17 * m, "id": "c"},
+             {"kind": "tool", "verb": "command", "what": "npm test", "at": self.NOW - 16 * m, "id": "d"},
+             {"kind": "bot", "text": "Fixed, and the tests pass.", "at": self.NOW - 15 * m}]
+        rows, earlier = self.rows(b, {"a": (False, "84 lines"), "c": (False, ""), "d": (True, "1 failed")})
+        self.assertEqual(earlier, 0)
+        self.assertEqual([r["k"] for r in rows], ["sep", "you", "chip", "reply", "chip", "reply", "footer"])
+        self.assertTrue(rows[0]["text"].startswith(("Today", "Yesterday")) or rows[0]["text"])
+        self.assertEqual(rows[2]["text"], "Read 2 files")
+        self.assertEqual(rows[2]["state"], "done", "a call without a result in a finished turn counts as done")
+        self.assertEqual(rows[4]["text"], "Edited retry.ts · Ran 1 command")
+        self.assertEqual(rows[4]["state"], "failed")
+        self.assertEqual(rows[4]["calls"][1], {"verb": "command", "what": "npm test", "state": "failed", "out": "1 failed"})
+        self.assertRegex(rows[-1]["text"], r"^\d\d:\d\d · worked 5 min · 4 tools$")
+
+    def test_still_working(self):
+        b = [{"kind": "you", "text": "run it", "at": self.NOW - 120000},
+             {"kind": "tool", "verb": "command", "what": "npm test", "at": self.NOW - 60000, "id": "x"}]
+        rows, _ = self.rows(b, {}, working=True)
+        self.assertEqual(rows[-2]["state"], "running")
+        self.assertRegex(rows[-1]["text"], r"working 2 min · 1 tool so far$")
+
+    def test_notes_events_gaps_and_the_limit(self):
+        h = 3600000
+        b = [{"kind": "note", "from": "Atlas", "text": "rerun the contract tests", "at": self.NOW - 3 * h},
+             {"kind": "bot", "text": "On it.", "at": self.NOW - 3 * h + 1000},
+             {"kind": "event", "text": "Earlier conversation was summarized", "at": self.NOW - 3 * h + 2000},
+             {"kind": "you", "text": "and now?", "at": self.NOW - h}]
+        rows, _ = self.rows(b)
+        self.assertEqual([r["k"] for r in rows], ["sep", "note", "reply", "footer", "event", "sep", "you"])
+        self.assertEqual(rows[1]["from"], "Atlas")
+        many = [{"kind": "bot", "text": f"line {i}.", "at": self.NOW - (300 - i) * 1000} for i in range(300)]
+        rows, earlier = self.rows(many, limit=50)
+        self.assertEqual((len(rows), earlier), (50, 251))   # 300 replies and a footer
+
+    def test_chip_labels(self):
+        from crewboard import chip_label
+        self.assertEqual(chip_label([{"verb": "search", "what": "retry"}]), "Searched “retry”")
+        self.assertEqual(chip_label([{"verb": "command", "what": "a"}, {"verb": "command", "what": "b"}, {"verb": "web", "what": "x"}]),
+                         "Ran 2 commands · Looked up 1 page")
+        self.assertEqual(chip_label([{"verb": "mystery", "what": ""}]), "Used 1 tool")
+
+    def test_an_old_turns_unfinished_tool_is_not_running(self):
+        b = [{"kind": "you", "text": "old turn", "at": 1000},
+             {"kind": "tool", "verb": "command", "what": "old command", "id": "a", "at": 2000},
+             {"kind": "bot", "text": "finished that.", "at": 3000},
+             {"kind": "you", "text": "new turn", "at": 4000},
+             {"kind": "bot", "text": "looking.", "at": 5000}]
+        rows, _ = self.rows(b, {}, working=True)
+        self.assertEqual(next(r for r in rows if r["k"] == "chip")["state"], "done")
+        b.append({"kind": "tool", "verb": "command", "what": "new command", "id": "b", "at": 6000})
+        rows, _ = self.rows(b, {}, working=True)
+        self.assertEqual([r["state"] for r in rows if r["k"] == "chip"], ["done", "running"])
+
+    def test_from_a_session_file_read_only(self):
+        import crewboard
+        from unittest import mock
+        d = Path(pals_tmp.mkdtemp(prefix="pals-read-"))
+        p = mock.patch.object(crewboard, "session_roots", lambda: {"claude": d, "agy": d / "agy"})
+        p.start()
+        self.addCleanup(p.stop)
+        f = d / "s.jsonl"
+        f.write_text("\n".join([
+            user("The pals plugin sent a message:\n[from Orca, a pal, not DeNon] please check the docs\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn.", "2026-11-09T15:00:00.000Z"),
+            tool_use("Bash", {"command": "npm test", "description": "Run the tests"}, "t1", "2026-11-09T15:01:00.000Z"),
+            tool_result("t1", "12 passed", "2026-11-09T15:02:00.000Z"),
+            bot("## Done\n\nThe docs are fine.", "2026-11-09T15:03:00.000Z")]) + "\n")
+        before = f.read_bytes()
+        v = crewboard.read_view("t1", "idle", {"t1": {"transcript": str(f), "harness": "claude"}})
+        self.assertEqual(f.read_bytes(), before, "the session file is only read")
+        self.assertEqual([r["k"] for r in v["rows"]], ["sep", "note", "chip", "reply", "footer"])
+        self.assertEqual((v["rows"][1]["from"], v["rows"][1]["text"]), ("Orca", "please check the docs"))
+        self.assertEqual(v["rows"][2]["calls"][0], {"verb": "command", "what": "Run the tests", "state": "done", "out": "12 passed"})
+        self.assertEqual(v["rows"][3]["text"], "## Done\n\nThe docs are fine.", "replies stay Markdown")
+        self.assertEqual((v["path"], v["size"], v["harness"]), (str(f), len(before), "claude"))
+        none = crewboard.read_view("t9", "idle", {})
+        self.assertEqual((none["rows"], none["path"]), ([], None))
+
+    def test_plugin_messages_from_the_owner_are_yours(self):
+        from crewchat import classify_user_text
+        r = classify_user_text("The pals plugin sent a message:\n[from DeNon] 📥 Re h-1: Build it\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.", 0, 1)
+        self.assertEqual((r[0]["kind"], r[0]["text"]), ("you", "📥 Re h-1: Build it"))
+
+
+class ReadSafety(unittest.TestCase):
+    """T194 (Codex T193): Read opens only the topic's own regular, owned session file under the
+    harness's own folder, never through a symlink, never blocking, never more than its byte cap,
+    and one odd record never breaks the read."""
+
+    def setUp(self):
+        import crewboard
+        from unittest import mock
+        self.root = Path(pals_tmp.mkdtemp(prefix="pals-read-safe-"))
+        self.claude = self.root / "claude-projects"
+        (self.claude / "p").mkdir(parents=True)
+        p = mock.patch.object(crewboard, "session_roots", lambda: {"claude": self.claude, "agy": self.root / "agy"})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def view(self, path, terminal="t1", lk=None, tail=None):
+        import crewboard
+        rec = lk or {"terminal": terminal, "transcript": str(path), "harness": "claude"}
+        kw = {"tail": tail} if tail else {}
+        return crewboard.read_view(terminal, "idle", {terminal: rec}, **kw)
+
+    def session(self, name="s.jsonl", text="a reply."):
+        f = self.claude / "p" / name
+        f.write_text(bot(text, "2026-11-13T10:00:00.000Z") + "\n")
+        return f
+
+    def test_its_own_file_reads(self):
+        v = self.view(self.session())
+        self.assertEqual([r["k"] for r in v["rows"]][-2:], ["reply", "footer"])
+
+    def test_a_symlinked_file_is_refused(self):
+        other = self.session("other.jsonl", "SYNTHETIC OTHER TOPIC")
+        link = self.claude / "p" / "topic-a.jsonl"
+        link.symlink_to(other)
+        v = self.view(link)
+        self.assertEqual((v["rows"], v["path"]), ([], None))
+        self.assertEqual(v["refused"], "not its own session file")
+
+    def test_a_symlinked_folder_is_refused(self):
+        real = self.root / "elsewhere"
+        real.mkdir()
+        (real / "s.jsonl").write_text(bot("hidden", "2026-11-13T10:00:00.000Z") + "\n")
+        (self.claude / "q").symlink_to(real)
+        self.assertEqual(self.view(self.claude / "q" / "s.jsonl")["rows"], [])
+
+    def test_outside_the_harness_folder_is_refused(self):
+        f = self.root / "loose.jsonl"
+        f.write_text(bot("loose", "2026-11-13T10:00:00.000Z") + "\n")
+        self.assertEqual(self.view(f)["rows"], [])
+        self.assertEqual(self.view(self.claude / "p" / ".." / ".." / "loose.jsonl")["rows"], [], "no climbing out with ..")
+
+    def test_another_terminals_link_or_another_owner_is_refused(self):
+        import crewboard
+        from unittest import mock
+        f = self.session()
+        self.assertEqual(self.view(f, lk={"terminal": "t2", "transcript": str(f), "harness": "claude"})["rows"], [])
+        me = os.getuid()
+        with mock.patch.object(crewboard.os, "getuid", lambda: me + 1):
+            self.assertEqual(self.view(f)["rows"], [])
+
+    def test_a_folder_swapped_for_a_symlink_mid_open_is_never_followed(self):
+        """T195 (Codex): the parent folder is checked, then replaced by a symlink to outside the
+        root before (or while) it is opened. Neither reader may read the outside file."""
+        import crewboard
+        from unittest import mock
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "s.jsonl").write_text(bot("SYNTHETIC OUTSIDE ROOT", "2026-11-13T10:00:00.000Z") + "\n")
+        real_open = os.open
+        for reader in ("read_view", "read_line"):
+            for when in ("s.jsonl", "p"):     # swap just before the file's open, or the folder's
+                parent = self.claude / "p"
+                if parent.is_symlink():
+                    parent.unlink()
+                for x in self.claude.iterdir():
+                    if x.name.startswith("parked"):
+                        x.rename(parent) if not parent.exists() else None
+                parent.mkdir(exist_ok=True)
+                f = self.session()
+                done = []
+                def swap(path, flags, *a, **kw):
+                    if not done and os.path.basename(str(path)) == when:
+                        done.append(1)
+                        parent.rename(self.claude / f"parked-{reader}-{when}")
+                        parent.symlink_to(outside, target_is_directory=True)
+                    return real_open(path, flags, *a, **kw)
+                links = {"t1": {"terminal": "t1", "transcript": str(f), "harness": "claude"}}
+                with mock.patch.object(crewboard.os, "open", swap):
+                    out = getattr(crewboard, reader)("t1", "idle", links)
+                self.assertTrue(done, f"{reader}/{when}: the swap happened")
+                self.assertNotIn("SYNTHETIC OUTSIDE ROOT", json.dumps(out), f"{reader}/{when}")
+                parent.unlink()
+
+    def test_a_fifo_never_blocks(self):
+        fifo = self.claude / "p" / "pipe.jsonl"
+        os.mkfifo(fifo)
+        code = ("import sys; sys.path.insert(0, 'bin'); import crewboard; from pathlib import Path;"
+                f"crewboard.session_roots = lambda: {{'claude': Path({str(self.claude)!r}), 'agy': Path('/nonexistent')}};"
+                "v = crewboard.read_view('t1', 'idle', {'t1': {'terminal': 't1', 'transcript': sys.argv[1]}}); print(v['refused'])")
+        r = subprocess.run([sys.executable, "-c", code, str(fifo)], capture_output=True, text=True, timeout=5,
+                           cwd=str(Path(__file__).resolve().parent.parent))
+        self.assertEqual(r.stdout.strip(), "not its own session file", r.stderr)
+
+    def test_the_byte_cap_holds_while_the_file_grows(self):
+        import crewboard
+        from unittest import mock
+        f = self.session(text="initial")
+        seen, real_fstat = [], os.fstat
+        def fstat_then_append(fd):
+            st = real_fstat(fd)
+            with open(f, "a") as g:
+                g.write(bot("x" * 4096, "2026-11-13T10:01:00.000Z") + "\n")
+            return st
+        with mock.patch.object(crewboard.os, "fstat", fstat_then_append), \
+                mock.patch.object(crewboard, "_results", lambda data: seen.append(len(data)) or {}):
+            self.view(f, tail=128)
+        self.assertTrue(seen and max(seen) <= 128, seen)
+
+    def test_one_odd_record_keeps_the_rest(self):
+        f = self.session(text="valid reply")
+        with open(f, "a") as g:
+            g.write('["tool_result"]\n{"type":"user","message":{"content":[{"type":"tool_result"}]}}\n'
+                    '{"type":"user","message":"tool_result"}\n{"type":"user","message":{"content":"tool_result"}}\n')
+        v = self.view(f)
+        self.assertIn("valid reply", [r.get("text") for r in v["rows"]])
+
+
 class TheCommand(unittest.TestCase):
     def setUp(self):
         self.env, self.data = sandbox()
 
     def test_board_json(self):
-        session = self.data / "worker.jsonl"
+        session = Path(self.env["HOME"]) / ".claude" / "projects" / "-p-worker" / "worker.jsonl"
+        session.parent.mkdir(parents=True)
         session.write_text("\n".join([user("rewrite the setup guide", "2026-11-09T13:00:00.000Z"),
                                       bot("Rewrote the setup guide. It's ready to push.", "2026-11-09T14:02:00.000Z")]) + "\n")
         (self.data / "crew-sessions").mkdir()
@@ -272,6 +512,12 @@ class TheCommand(unittest.TestCase):
         today_ = json.loads(pal(self.env, "computer", "Worker", "today", "--json").stdout)
         self.assertNotIn("needs", today_)                                   # Today stays the small, cheap read
         self.assertEqual([x["topic"] for x in today_["topics"]], [x["topic"] for x in v["topics"]])
+        r = pal(self.env, "computer", "Worker", "read", "--topic", "#general", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rd = json.loads(r.stdout)
+        self.assertEqual((rd["topic"], [x["k"] for x in rd["rows"]][-3:]), ("general", ["you", "reply", "footer"]))
+        self.assertNotEqual(pal(self.env, "computer", "Worker", "read", "--topic", "nope").returncode, 0)
+        self.assertNotEqual(pal(self.env, "computer", "Worker", "read").returncode, 0)
         text = pal(self.env, "computer", "Worker", "board").stdout
         self.assertIn("needs you  approval", text)
         self.assertIn("waits for you", text)

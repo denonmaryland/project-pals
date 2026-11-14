@@ -1562,6 +1562,27 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
 - **Keys** (while you aren't typing): Esc the aimed topic's terminal; R reviews what needs you one
   at a time (1–4 press that card's buttons, → or j the next, ← or k back, Esc stops); / or Enter
   the message box. Esc in the box leaves the box first.
+- **Read** (T183, DeNon's pick A on h-4c9e54; plan in crew-boards/chat-view/): the aimed topic
+  card's **Read** (or O) shows that topic's conversation in place of the columns. Your messages on
+  the right, its replies as Markdown (selectable), code fences and pipe tables drawn as their own
+  boxes, each stretch of tool calls as one chip ("Edited retry.ts · Ran 1 command") with a check,
+  a blue dot while running or ✗ when a call failed, that opens to its calls; notes from pals and
+  rooms with who sent them, time lines after a gap, and a footer under each turn ("15:41 · worked
+  13 min · 6 tools"). The newest 60 rows show, then **Show earlier**; it follows the end until you
+  scroll up (↓ Newest). What the topic needs from you sits above it as notices with no buttons
+  ("Answer it on the board (B)", or in the terminal for a prompt): **Read never approves, answers
+  or closes anything**, and its only keys are Esc (the terminal), B (the board) and / (the box);
+  R and 1–4 are the board's alone (T194, Codex T193). The board's box under it sends to that topic.
+  **Board · Read · Terminal** at the top. Read never presses a key in a terminal; a topic without a
+  readable session (Codex today, a shell) says so and offers its terminal. Data: `pal computer <Pal> read --topic <t> --json` (`crewboard.read_view`): the last
+  1.5 MB of its session file, read-only; re-read only when the file grew (one `stat` every 5 s).
+  The file must be the one this terminal's link names, under the harness's own folder
+  (`~/.claude/projects`, `~/.gemini/antigravity-cli`) with no symlink below it and no `..`, a
+  regular file this user owns; each folder below the root is opened from the one above it
+  (never by full path, never through a symlink), the file non-blocking, and it is read
+  with a hard byte cap from the size the open file reports. Anything else reads as nothing.
+  A message a plugin handed in between turns is shown by its own header (Orca's card as Orca's).
+  Ideas from Flockbook (MIT): code and table boxes, chip marks, follow the end.
 - **Data:** `pal computer <Pal> board --json` (`bin/crewboard.py`), read only while shown and only
   when it's due: on showing, after your own click or message, when a topic's state or one of the
   files behind what needs you changed (checked with one `stat` every 5 s), else every 15 s while a
@@ -1570,77 +1591,60 @@ Click a pal and, before any terminal, you see what it's doing and what it needs 
   `since`, `line`, `branch`, `stuck` and `blocked`, the pal's `needs` and `up_next`. Today itself
   stays the small read.
 
-### Trusted helpers (0.4.3)
+### Trusted helpers: one trust level per helper
 
-A trusted helper is one of the owner's own assistants outside Project Pals (a chat app, a script)
-that may send **normal work** to the pals in the owner's name. Off for everyone until the owner
-switches a helper on by name. It is never the owner's click.
+A helper is an assistant outside Project Pals, authenticated by its own key. The owner chooses
+one level in About → Settings → **Trusted helpers**. A helper is always named as itself; even
+Full control never becomes a human owner's click. See [the guide](docs/full-control.md).
 
-- **The switch** (About → Settings → **Trusted helpers**, a row that says who's on; it opens
-  `crew-helpers`, a 560 px sheet): a note on what a helper can and can never do; one 52 px row per
-  helper (a 30 px letter tile, the name with an ON / OFF tag, a line such as "Key made 5h ago · last
-  used 2h ago · 14 sent · 1 refused"; on: **Rotate key** and the switch; off: **Remove**, which asks
-  once more in place, and the switch); after switching one on or rotating, a green box with the
-  line to give the assistant (`PAL_HELPER=Pals pal tell "<Pal>" "…"`) and Copy; a field and **Add
-  and trust** (up to 8; not the owner's name or a pal's); and the record, "In your name". Every
-  button is `pal settings trust-helper <name> on|off|rotate|remove` with the click's token. From a
-  terminal the same command is refused: there is no way to turn a helper on without the app.
-- **Sending:** `PAL_HELPER=<name> pal tell | ask | task add --for | desk send …` from a plain
-  terminal (`pal --as-helper …` is the same for "Pals", `--as-helper=<name>` for another, and
-  allows only those four). The card is headed `[from <owner> via <name>, a trusted helper: normal
-  work only]`, and under its body a line says what it can't authorise and that it's handed on only
-  by passing the card unchanged. `PAL_HELPER=<name> pal helpers check` tells a helper where it stands.
-- **Not accepted** (no such helper, switch off, a missing, wrong or rotated key, a key file that's a
-  link or that others can read, more than 20 sends in the hour, or sent from inside Herdr): the
-  message still goes, headed `[from a shell on this computer, not verified as <owner>]` (a pal's
-  stays a pal's), and the sender is told why on stderr.
-- **Never a click.** Presented as a helper, every owner decision is refused, a real click token
-  included: approvals, landing, settings (the helper switch too), missions, brains, AGENTS.md,
-  proposals, updates, uninstall, renaming, the Desk's owner actions, and answering, closing or
-  parking what's on Home. A helper may add to Home under its own name and take its own item back.
-  It can't send with "now" urgency or `--relaying`, can't attach a `--check` command to a task, and
-  sends only a tell, a question or a task. A pal that gets a helper card asking for a push or a
-  release is held by the same gate as always.
-- **The record** (`pal helpers log`; Home's Today rows and its **In your name** drawer tab, which
-  appears once there's anything; the sheet's list): every send in the owner's name (who, to whom,
-  the title, the card), every send that went as "not verified" and why, every refused try (amber),
-  and every switch change. Never a key.
-- **Only the owner's click turns a helper on or off.** No install, update, roll back or clean-up
-  changes a switch or a key (the installer and updater never write the list or the keys; the list
-  keeps a backup beside it and comes back from it if it's damaged or deleted). The installer's last
-  lines say where each helper stands ("trusted helper: Pals: on, its key works").
-- **A helper that isn't working is said out loud, once.** When a helper the owner left on can't be
-  used (its key is missing, unreadable or not its own; it has reached its hourly limit), or one is
-  off without the owner's click (the one-time carry-over), Home shows a **Helper** card under Needs
-  you: what's wrong, since when, how many messages have arrived "not verified" since, and the fix
-  as a button (**Turn Pals on** or **Rotate key**), **Trusted helpers**, and **Leave it off** /
-  **Switch Pals off**. One card per helper, not one per message; it counts in the sidebar's "need
-  you"; `pal feed` gets a line when it starts and when it clears; the sheet's row shows the same
-  sentence. Looked at after every switch change and install, when crewd starts (so after every
-  update) and each hour, and whenever a send in a helper's name doesn't verify. A helper the owner
-  switched off is quiet however much it sends (the record keeps each try).
-- **The hourly limit is a setting** (20 by default, 5 to 500): −/+ beside Rotate key in the sheet,
-  `pal settings trust-helper <name> limit N` with the click.
-- **A strict helper** (`PAL_HELPER_STRICT=1`) sends in the owner's name or not at all: a send that
-  isn't accepted exits 4 with "not sent: <why>" and nothing goes out, no card and no task. Without
-  it, as before: the message goes as a shell's, exit 0, with the reason on stderr.
-- **A card edited after sending**, or one that claims a helper by hand, reads `[claims to be from
-  <owner> via <name>, unverified …]`; a body line that copies any header is quoted and barred.
-- **Pals are told** (the primer, the pal-desk skill, the head pal's brief): a helper's card is the
-  owner asking for normal work; it never approves anything, never answers a question put to the
-  owner, never changes a mission, settings or AGENTS.md.
+| Level | Authority |
+|---|---|
+| Off | No trusted helper authority. |
+| Work only | Send normal work, questions and tasks to pals. No owner decisions. |
+| Full control | Autonomous app decisions, including settings, missions, AGENTS.md, proposals, Home, installs, uninstall, landing, pushes, releases and messaging people. |
 
-Data: `data/crew-helpers/helpers.json` (`{helpers: {name: {on, sha256, made, rotated, switched,
-last_used, per_hour}}}`: the key's fingerprint, never the key), its copy `helpers.json.bak`,
-`log.jsonl` and `attention.json` (`{name: {reason, text, fix, since, unverified}}`: the helpers that
-aren't working, which Home reads), all 0600, written only by `pal` (bin/crewhelpers.py). The key itself is `~/.config/project-pals/helpers/<slug>.key`
-(0600 in a 0700 folder; a NUL byte, then `palsealed1:<slug>` and the key, `palkey_` + 43 characters,
-encrypted with `systemd-creds --user`; plain after the NUL byte where that isn't available): outside
-the data folder, so a search of data never meets one, and sealed, so a read from higher up shows
-ciphertext. `PAL_HELPER_KEY_FILE` names a copy kept elsewhere. Uninstall removes the keys.
-An install that ran the unreviewed build of 2026-11-10 (one helper kept in `data/crew-helper`) has
-its "Pals" carried over once: by name, switched off, its old key deleted, its sends kept in the
-record; the owner turns it on again in the sheet.
+- **The selector:** one Off / Work only / Full control row per helper in `crew-helpers`.
+  **Add · Work only** never grants Full. **Revoke** chooses Off. The app runs
+  `pal settings trust-helper NAME level off|work|full` using the owner's one-use click token.
+  Only the owner's actual click changes trust or keys, including adding/removing another helper.
+  Helpers cannot promote themselves, manufacture clicks or rewrite trust/audit evidence.
+- **Full control has no per-action prompt or tap hold.** A helper invokes ordinary commands with
+  `PAL_HELPER=NAME pal …` or `pal --as-helper=NAME …`. It may answer Home, approve exact held
+  commands, or use the script's `pal owner-step` gate. An approval authorizes its matching command
+  once and stays bound to the helper's current grant. Existing operation checks still apply:
+  review hashes must match, a landing must merge cleanly, and the Chief remains a read-and-advise
+  role. Standing authority does not invent credentials or capabilities an operation lacks.
+- **Attribution:** Work only cards say `[from <owner> via <name>, a trusted helper: normal work only]`.
+  Authenticated Full cards say `[from <name>, acting under Full control]`. A Full Home answer says
+  the helper answered; it is not counted as the owner's answer. Passing preserves the original
+  card. Copying a header into a body never creates authority. Pals may not read/use helper keys.
+- **Home → Helper activity** and `pal helpers log` record sends, refused attempts, trust changes
+  and Full operations. Full operations say **<name> acted under Full control** with started,
+  done or failed status. The UI combines one operation's start/outcome rows; the underlying
+  history keeps both. It offers **Revoke** beside helper actions. An interrupted operation can
+  remain started: inspect effects before retrying; the log is not an undo mechanism.
+- **Revocation:** Off, a downgrade, key rotation or removal invalidates the previous grant.
+  Queued messages, queued app requests and unused approvals must still match the live grant
+  when used. Revoke prevents their use; it cannot recall delivered messages or undo completed
+  writes, pushes, releases or other effects. Uninstall invalidates app-issued helper authority.
+- **Migration:** legacy `on: true` means Work only; Off stays Off. Old tap switches never imply
+  Full control. New Full grants require the owner's click and bind a new grant revision to the
+  current key. Install/update do not promote a helper or create a Full grant.
+- **Work only compatibility:** normal sends retain the hourly limit (20 by default, configurable
+  by owner click), unverified fallback and `PAL_HELPER_STRICT=1` (exit 4, no card/task if refused).
+  Full control does not use the Work only send quota. A bad/missing key cannot authorize owner
+  operations. Home's Helper attention card still reports a missing key or other health failure.
+- **The boundary:** authentication and app guards prevent mistakes and accidental authority
+  confusion; they are not OS isolation from a determined process running as the same user.
+
+Data: `data/crew-helpers/helpers.json` stores each helper's `on`, `level`, `grant`, `grant_key`,
+key fingerprint and usage/health fields, with `helpers.json.bak`. `log.jsonl` records activity;
+`attention.json` records helpers needing attention. Queued app requests carry one-use proof
+references under `crew-helpers/requests`, bound to exact contents and grant. The key remains
+outside app data at `~/.config/project-pals/helpers/<slug>.key` (0600, directory 0700), sealed
+with `systemd-creds --user` where supported. `PAL_HELPER_KEY_FILE` may name another copy.
+Never put keys or raw command payloads in the activity log. The migration from the unreviewed
+2026-11-10 single-helper build remains historical: that helper was carried over Off, not Full.
 
 ### Memory (T153)
 
@@ -1655,6 +1659,20 @@ record; the owner turns it on again in the sheet.
 - **The installer** adds `hc-hold-.service.d/00-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
   unless a drop-in there already sets that (DeNon's own `10-oomd-avoid.conf` is left alone), and says
   which in its output; `--no-oomd-dropin` skips it, uninstall removes only Project Pals' file.
+  An update's snapshot records the drop-in's text (or that there was none), and Roll back puts that
+  back and runs `daemon-reload`, unless the file was changed since (then it stays, and Roll back
+  says so). A failed install takes away a drop-in it added itself, because the updater that rolls
+  it back may be an older build that doesn't know the file (T201, Codex T198). A snapshot taken by an
+  older updater doesn't record the drop-in; when its library has no `crewmem.py`, the build it puts
+  back predates the memory work and ours goes. Roll back reads Project Pals' drop-in text before it
+  swaps the library, which can take `crewmem.py` away (T209).
+  **Watch out:** an older build's own updater, rolling back after an install that passed its checks
+  (its runtime verification), can't be taught any of this: the drop-in stays with the older build.
+  Installing this version or later again makes it right (the drop-in belongs with per-pal scopes).
+  To take it away while the older build stays, delete
+  `~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf` by hand and run
+  `systemctl --user daemon-reload`. An older build's `pal uninstall` may not know the file; this
+  version's uninstaller removes it (with the rest of Project Pals).
 - **Low memory:** crewd writes `data/crew-memory.json` each minute (`available`, `total`, `floor`,
   `low`, `low_since`, `scope`, `scope_flags`). The floor is `"memory_floor_mb"`, else the larger of
   1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line
@@ -1670,82 +1688,29 @@ record; the owner turns it on again in the sheet.
 - **`pal ram [--json]`:** each awake topic's agent tree (PSS plus SwapPss), whether it has its own
   scope, and the machine's memory.
 
-### Relayed taps (after 0.4.3)
+### Relayed taps (retired; history only)
 
-The owner is away from the app, in chat with a trusted helper. The helper shows them the exact
-thing that waits, they answer there, and the helper taps it for them. Not only questions on Home:
-held commands (a push, a release, a landing), proposals and drafts too. A tap is recorded and told
-as a tap, never as the owner's click. Off for every helper until the owner switches it on.
+Full control replaces the three tap switches and per-action holds. No new tickets are issued;
+new taps, expedited runs and old execution tokens refuse. Legacy queued holds are cancelled
+without executing. A hold that was already running at migration is marked failed with an uncertain
+outcome: inspect its effects before retrying. Existing tap attribution remains in history.
+Historical Home-answer Undo and Stop remain available to the owner; Undo reopens the question
+and notifies its asker, but cannot undo work already performed from the answer.
 
-- **Three switches per helper**, under its row in Trusted helpers (only for a helper that is on),
-  each with one sentence on what it lets happen without the owner: **Home questions**, **Approvals
-  on this computer** (proposals, drafts, held edits that stay local), **Push, release, land**
-  (the explicitly classified rules for push, publish, release, deploy, merge, post, messaging
-  people, landing and `./release`'s own request). New/custom rules stay owner-click only until
-  explicitly classified in the code. Turning the last one on asks once
-  more in place ("<helper>'s tap is the approval…"); while it's on, −/+ sets how long an outward
-  tap is held (5 minutes; 0 to 15). `pal settings trust-helper <name> taps home|local|outward
-  on|off`, `taps hold <minutes>`: the owner's click. Switching the helper off switches all three
-  off, and they stay off when it's switched on again.
-- **The helper's side.** `pal --as-helper taps [--json]` lists what waits with the exact text
-  Project Pals wrote for each (the question and what each choice does; the command and its diff;
-  the proposal's text; the draft) and, for what it may tap, a one-time **ticket**; for the rest,
-  why not. `pal --as-helper tap <ticket> "<choice>" --relayed "the owner's words"` taps;
-  `pal --as-helper tap-cancel <hold>` takes it back while it's held. A refused tap exits 5 with
-  "not tapped: <why>".
-- **A ticket** is good for one item as it was shown (a fingerprint of its text, choices and
-  command: a change of one character refuses the tap), one of its listed choices, one use, ten
-  minutes, and not sooner than twenty seconds after it was made.
-- **The hold.** A tap runs after a minute, an outward one after the helper's hold. Until then it
-  is first under **Needs you** on Home as a **Tap** card (red **Outward tap** for the last class):
-  what was tapped, the clock time it goes through, the words the helper says the owner said, and
-  **Stop** and **Let it go now** (the owner's clicks). The sidebar toasts when a hold starts and
-  plays the "needs you" sound for an outward one. When its time comes it is checked again (helper
-  on, switch on, item unchanged) and dropped if not.
-- **What it runs as.** The owner's own command for that item (`pal home answer`, `approve` / `deny`,
-  `proposal accept` / `decline`, `desk send-draft`), carried out by crewd on its next tick, with a
-  one-time tap token in place of a click token. Each says who: Home's item keeps `tapped: {by,
-  relayed, hold}` and Today reads "Tapped by Pals", never "You answered"; the asker's card is
-  Project Pals' own ("[pal]"), "tapped by Pals, relayed from <owner>", with the reported words and
-  "not <owner>'s own click"; an approval's record says `decided via: a tap by Pals, relayed from
-  <owner>` and the pal is told "Pals tapped, relaying <owner>"; a proposal's `via` is the same; a
-  tapped draft goes out as its drafter's card, a pal's, not the owner's.
-- **Undo** (In your name, on a tapped Home answer): the question is open again, marked for the
-  owner's own click, and the asker gets "Stop: <owner> undid the tap". An approval that ran has
-  run: Stop during the hold is the only way to prevent it.
-- **Limits.** 5 outward taps a day and 30 others an hour per helper; one outward hold at a time;
-  one tap per item ever (after a Stop, a cancel or an Undo the item is the owner's). Three refused
-  taps in ten minutes (a bad, used, old or too-early ticket, a changed item, a choice that isn't
-  listed) switch that helper's tapping off, drop what it had in hand, and raise a Helper card.
-- **Never tappable**, whatever is switched on: the trust switch and these switches; settings,
-  missions, brains, renaming, updates, roll back, uninstall, marking Home seen, the Desk's other
-  owner actions; held commands that reach for a helper's key, a click token, the message queue,
-  the Desk's cards or the taps' own files, or that uninstall; a question without listed choices;
-  mission and brain proposals (including dream context and brain files), unknown proposal kinds;
-  items whose diff, proposal text or draft body exceeds the 6000 characters shown to the helper;
-  a question a helper put on Home; and a question marked **your click only** (`pal home ask …
-  --owner-only`, or `pal home owner-only <id>` by its asker or the head pal).
-- **The record** (In your name, `pal helpers log`, `pal feed`): every tap with its hold time and the
-  relayed words, and how it ended: went through, stopped, taken back, dropped (and why), failed,
-  undone, refused (and why).
-
-Data: `data/crew-taps/` (written only by `pal`): `tickets/k-….json`, `holds/t-….json` (`{id, helper,
-kind home|approval|proposal|draft, item, cls home|local|outward, choice, relayed, title, hash, at,
-run_at, status holding|running|done|stopped|cancelled|dropped|failed|undone, result}`),
-`holds.json` (the recent ones, for the app), `run/<nonce>.json` (the tap token of a hold being
-carried out). A helper's switches are `taps: {home, local, outward, hold}` on its entry in
-`helpers.json`. Holds are kept 14 days. Permanent `used/<item-hash>.json` markers keep the
-one-tap-per-item restriction after history expires; older holds get markers before cleanup.
+`pal taps [--json]` reads history. `pal --as-helper taps` may show waiting items but issues no
+usable ticket. Existing `data/crew-taps` records and used-item markers remain historical data;
+neither those records nor legacy `taps: {home, local, outward, hold}` settings grant Full control.
+The old design used tickets, snapshots, hold periods and outward limits. Those are historical
+implementation details below, not the current permission model.
 
 ## Built from
 
-- **Relayed taps:** `bin/crewtaps.py` (items and their fingerprints, tickets, holds, limits,
-  `run_due`, `take_run_token`); `crewlib.owner_gate(…, tap=)` and `tap_authority()`; `pal taps | tap
-  | tap-cancel`, `acted()` and the `--tap` token in bin/crew; `crewhome.answer(tapped=)`, `untap`,
-  `owner_only`; `crewguard.decide(tap=)` and the `tap-write` rule (policy defaults 17);
-  `crewdesk.send_draft(tap=)`; `crewhelpers.set_taps` / `taps_auto_off`; crewd's tick; `tapNeed`,
-  `tapsHolding`, `tapUndoable` and `TAP_SWITCHES` in `lib/helperlog.js`; the Tap card and Undo in
-  `crew-home`, the switches in `crew-helpers`, the toast and sound in `crew-roster`.
+- **Full delegation:** `crewhelpers.level`, `set_level`, `full_authority`, `validate_grant` and
+  `recheck_full`; `crewlib.begin_delegation`, `owner_gate`, queued request proof and final receipts;
+  `crewguard` grant-bound approvals; Desk/Home delegated attribution; the helper selector and
+  Home's Helper activity in `mods/crew-helpers`, `mods/crew-home` and `lib/helperlog.js`.
+- **Historical taps:** `bin/crewtaps.py` refuses new authority and retires pending holds. Existing
+  history, `crewhome.untap`, Stop/Undo controls and tap rendering remain for inspection/recovery.
 - **Layout:** `layouts/pals.json`, the tree above.
   - Stack `center` has the children `tab-view`, `room-view`, `desk-view` and `home-view`. `showRoom` / `showTabs` switch it
     and show or hide `crew-composer`.
@@ -1762,7 +1727,7 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   ledger entry, the header, the limits line); `pal settings trust-helper`, `pal helpers [log |
   check | --json]`, `pal --as-helper`, `pal owner-step` (bin/crew); crewguard's `helper-key` rule
   and `owner_step`; `claude-mod/pals/hooks/keys.ts`; `mods/crew-helpers` (the sheet), the row in
-  `crew-about`, the Today rows and In your name tab in `crew-home`; `lib/helperlog.js` (pure: what
+  `crew-about`, the Today rows and Helper activity tab in `crew-home`; `lib/helperlog.js` (pure: what
   a helper's line and each record row say), copied into every mod by install.sh like the rest.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-room`,
@@ -2112,13 +2077,13 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   changes a switch: if keys must be remade it remakes them in place. And anything that leaves a
   helper unusable raises the Helper card. The carry-over itself is marked done in the old folder
   (`data/crew-helper/.carried-over`), so a list that later goes missing can't trigger it again.
-- **A tap is the approval, and no test can make it the owner's.** A key proves the helper; Project
+- **Historical tap design (retired): a tap was the approval, not proof of the owner's words.** A key proves the helper; Project
   Pals never sees the chat where the owner answered. With the outward switch on, whatever can act
   as the helper (its key, a bug in it, text that tricks it) can have a push, a release or a
   landing approved in the owner's name, and since a helper can also ask a pal for work, one party
   can close the whole loop. The owner chose this (h-5cadb2, over a second factor). The ticket,
   the hold, the limits and the record bound it and make it visible; they don't prove anything.
-- **A tap token is not a click token.** It is taken only when no click is given, only for the six
+- **Historical tap token checks (all tap execution is now refused).** Previously taken only when no click is given, only for the six
   commands a tap may stand in for (`crewtaps.TAPPABLE`), only for exactly the command line it was
   written for, within two minutes, for a hold that is `running`; and never when the run presents
   itself as a helper. Everything it does says the helper tapped. Settings, the trust and tap
@@ -2130,7 +2095,7 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   the hold's fingerprint under their store's mutation lock. Proposal execution validates the
   in-memory payload it writes, including the proposal subtype, under the proposals lock. A changed item is refused even
   after a hold was dispatched. A draft's task is created only after this validation.
-- **The first matching rule isn't the whole command.** Tap classification checks every matching
+- **The first matching rule isn't the whole command.** Historical tap classification checks every matching
   rule, including nested commands: any never-tappable rule wins, then outward, then local. The
   approval decision repeats this check under its lock. The normal gate keeps its first-match label.
 - **Reserve a proposal before applying it.** Accept, decline, profile-panel application and expiry
@@ -2138,11 +2103,11 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   pre-write validation refusal stays `pending` for another review. An application that raises
   becomes `failed`. A crash may leave `applying`. These states are not
   pending or automatically retried: inspect possible partial effects before proposing again.
-- **A shortened preview cannot authorize a longer write.** Clipped items have no ticket and old
+- **Historical tap previews:** a shortened preview cannot authorize a longer write. Clipped items had no ticket and old
   tokens for them are refused at execution. Dream tool/process tasks record the tap actor, not
   the owner, when created on a tap.
-- **A hold shows a clock time, not a countdown.** A countdown needs a timer redrawing the window.
-- **Refusals that are nobody's fault don't count** toward the three that switch tapping off (a
+- **Historical tap holds show a clock time, not a countdown.** A countdown needs a timer redrawing the window.
+- **Historical tap refusals that are nobody's fault didn't count** toward the three that switched tapping off (a
   limit reached, an item already tapped, a switch that's off): only ones that look like guessing.
 - **A reader must not repair the list.** The first version of the backup had any reader write the
   copy back over a damaged list, with no lock: a reader holding an old copy ("on") could finish
@@ -2157,7 +2122,11 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   with no run of this version in between, the copy can't be vouched for: helpers then come back
   by name with their keys, switched **off**, with a Helper card ("came back from a copy that
   another build may have made out of date", Turn on). A helper wrongly off costs a click; one
-  wrongly on speaks in the owner's name.
+  wrongly on speaks in the owner's name. "When the last install happened" is the later of
+  `crew-install.json`'s `installed` and the newest line of `data/crew-installs.jsonl`: Roll back puts
+  an older `crew-install.json` back (and an older build's updater can't be taught to stamp it), but
+  no snapshot holds the install log, so an older build's install stays on record there (T208, Codex
+  T199 d / T209). This version's Roll back also stamps `installed` with the time it put a build back.
 - **Bring the list into shape before judging it.** `check()` starts with the restore and the
   carry-over; run before them, the first health check after a carry-over said "off (your choice)".
 - **A helper's send and the owner's switch never interleave.** The owner's changes (on, off,
@@ -2189,7 +2158,8 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   Pals writing into `crew-desk` are held (`desk-write`, shell and edit tools; `crewguard.into_place`).
   A `crew-desk` folder right under `mods/` is the Desk's source code, not its cards, and isn't held
   unless it resolves through a link into the real data folder (T68). Only the card's pal
-  (any topic), the owner, or its sender (cancel, while queued or held) changes a card.
+  (any topic), the owner, an authenticated Full control helper, or its sender (cancel, while queued
+  or held) changes a card.
 - **The card format is parsed twice** (`crewdesk.parse` and `parseCard` in crew.js): change both
   and the fixtures in `tests/fixtures/desk/` together. A body line that is exactly `## Receipts` or
   `## Reply` is written with a leading `\`.
@@ -2197,18 +2167,17 @@ one-tap-per-item restriction after history expires; older holds get markers befo
   name a pal and topic from the roster exactly, its urgency is at most `soon` and never replaces the
   owner's own pick, and `routes.jsonl` keeps a hash of the input, never the card's text. Its calls
   count against `desk.triage_daily_cap` in `budget.json`; over the cap no model is called.
-- **Only the owner's click sends a draft.** `pal desk draft` is refused for any pal that isn't the
-  idea partner (`partner: true` on its record, or the Idea partner role) and for shells;
-  `send-draft`, `discard` (besides the partner's own) and `send --from-draft` need the click. Sending
-  re-stamps the card, so its newest event carries the owner as sender: the hand-edit check (which
-  takes the latest stamp from events.jsonl) keeps it the owner's.
+- **Draft sends preserve the actor.** The idea partner or a Full control helper can create a
+  draft. Sending it needs the owner's click or Full control. An owner Send stamps an owner card;
+  a Full helper's Send stamps a helper card with its grant and attribution. The latest event and
+  ledger preserve that identity when checking edits; a helper Send never becomes an owner click.
 - **The Claude Code mod can't redraw rows it submitted itself** (the engine's rule): cards it hands
   over show under "Prompt from the pals plugin" as plain text, and only cards that came by a hook or
   typing are drawn as cards. Its functions that take `$` must be declared at the top of the file
   (`claude plugin validate` refuses closures), and `turn.step` hooks are async generators. A pal
   started before the install has no mod until it's restarted; its hooks and crewd still deliver.
-- **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal), `now` is the owner's
-  only, and a `--re` thread stops at 6 cards deep.
+- **Pals' `soon` is capped** at 6 per topic an hour (then sent as normal); owner/Full control
+  urgency is distinct from Work only limits. A `--re` thread stops at 6 cards deep.
 - **The shipped `pal-desk` skill** is replaced on update only while it's unchanged since the last
   install (`data/crew-skills/.shipped.json` keeps its hash); an edited one is kept and the new one
   is written beside it as `SKILL.md.new`.
@@ -2231,25 +2200,22 @@ one-tap-per-item restriction after history expires; older holds get markers befo
 
 ## Done when
 
-- With no helper switched on, `PAL_HELPER=Pals pal tell <Pal> "x"` arrives "not verified as
-  <owner>". After About → Trusted helpers → Add and trust "Pals", the same line arrives headed
-  "[from <owner> via Pals, a trusted helper: normal work only]" with the limits line under it, and
-  shows on Home under In your name. Switched off, or with its key rotated away, or run from a
-  pal's terminal (also with `env -u HC_TERMINAL_ID`), it's "not verified" again. With the key
-  accepted, `pal approve`, `pal settings …`, `pal home answer|done|drop|park` and the rest of the
-  owner's commands are refused and each try is in the record (`tests/test_helpers.py`,
-  `tests/test_guard.py` HelperKeys, `tests/test_helperlog.mjs`, the mod's `keys.test.ts`).
-- With no tap switch on, `pal --as-helper taps` shows what waits and gives no ticket. With Home
-  questions on: a ticket; `tap` sooner than 20 seconds is refused; then `tap <ticket> "A"
-  --relayed "…"` puts a Tap card first under Needs you, Stop ends it unrun, and left alone the
-  question is answered a minute later, Today says "Tapped by Pals", and the asker's card says so.
-  With the outward switch on, a held `git push` tapped Approve is approved five minutes later with
-  `decided via: a tap by Pals…`, and the pal's command goes through once. A question edited after
-  its ticket, a sixth outward tap in a day, a held command that reaches for a key, and any command
-  outside the six run with a tap token are all refused (`tests/test_taps.py`, TapFiles in
-  `tests/test_guard.py`, `tests/test_helperlog.mjs`, `tests/test_home_view.mjs`).
-- With Pals on, `./install.sh` again leaves `helpers.json` and the key byte for byte and ends with
-  "trusted helper: Pals: on, its key works". Delete the key file: `pal helpers health` says "Pals
+- Add creates Work only. With a valid key its card has the normal-work header; owner operations
+  refuse. Off/missing/rotated keys cannot authorize Full operations; strict sending produces no
+  card/task on refusal. A pal cannot become a helper by reading a key or setting an environment
+  variable. Legacy on/tap flags never migrate to Full.
+- Only an app click grants Full. The authenticated helper can act on Home, missions, agent files,
+  proposals, settings and exact held commands without tap tickets or hold periods. Its messages
+  and answers identify the helper under Full control, never the human owner. Home displays an
+  operation's outcome once and offers Revoke; the raw audit keeps start and outcome receipts.
+- Revoke/downgrade/rotation invalidates queued requests/messages and unused approvals under the
+  old grant. Helpers cannot grant themselves or another helper authority, supply a click token,
+  or approve trust/audit writes. A completed action is not silently reported as undone.
+- Legacy taps mint no tickets, execute no old tokens and cancel pending holds; historical
+  attribution and owner Undo remain readable (`tests/test_taps.py`, `tests/test_helperlog.mjs`,
+  `tests/test_home_view.mjs`).
+- With Pals at Work only, `./install.sh` again preserves its trust and key and reports its
+  current health. Delete the key file: `pal helpers health` says "Pals
   is on, but its key file is missing", Home shows one Helper card with Rotate key, `pal feed` has
   one line, and Rotate key clears all three. With `PAL_HELPER_STRICT=1` and Pals switched off, `pal
   tell` exits 4 and no card is made (`tests/test_helpers.py` StaysOn, `tests/test_uninstall.py`).

@@ -342,6 +342,32 @@ print(json.dumps([r['id'], crewguard.check('tW', 'Worker', 'general', {line!r}) 
         # An older ./release that still passes one joined string: no hand-over (its boundaries are gone).
         rid, ok = approve("./release 9.9.9 notes")
         self.assertEqual(program(["./release 9.9.9 notes"], rid), [False, False])
+        # Round 6 (P2): a literal --click / --tap among the program's arguments is the program's, not
+        # pal's click option: it isn't stripped, so the stripped line's approval isn't claimed by it.
+        for opt in ("--click", "--tap"):
+            rid, ok = approve("./release 9.9.7 reviewed-notes")
+            self.assertEqual(program(["./release", "9.9.7", opt, "unused", "reviewed-notes"], rid), [False, False], opt)
+            rid, ok = approve(f"./release 9.9.8 {opt} unused reviewed-notes")
+            self.assertEqual(program(["./release", "9.9.8", opt, "unused", "reviewed-notes"], rid), [True, True], opt)
+
+    def test_t212r6_the_programs_own_approval_is_keyed_on_its_exact_arguments(self):
+        """#codex-sol T212 round 6 (P1): the program's own request was keyed on the line with its
+        whitespace folded, so the owner's approval of -F 'notes public.md' let -F 'notes  public.md'
+        (another file) through. Now it's keyed on the argument list, element for element."""
+        approved = ["./release", "9.9.9", "-F", "notes public.md"]
+        self.assertEqual(self.step(*approved).returncode, 3)
+        a = requests(self.data)[0]
+        self.assertEqual(a["argv"], approved)
+        self.assertEqual(owner(self.env, self.data, "approve", a["id"], "--inbox").returncode, 0)
+        for other in (["./release", "9.9.9", "-F", "notes  public.md"], ["./release", "9.9.9", "-F", "notes\tpublic.md"],
+                      ["./release", "9.9.9", "-F", "notes public.md "]):
+            self.assertEqual(self.step(*other).returncode, 3, other)
+        self.assertEqual(requests(self.data)[0]["status"], "approved", "the others didn't spend it")
+        self.assertEqual(self.step(*approved).returncode, 0)
+        self.assertEqual(self.step(*approved).returncode, 3, "once")
+        # The same goes for a literal --click in the program's arguments: kept in the request.
+        self.assertEqual(self.step("./release", "9.9.9", "--click", "unused", "notes").returncode, 3)
+        self.assertEqual(requests(self.data)[-1]["argv"], ["./release", "9.9.9", "--click", "unused", "notes"])
 
     def test_release_passes_its_argv(self):
         text = (REPO / "release").read_text()

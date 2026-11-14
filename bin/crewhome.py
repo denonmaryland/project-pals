@@ -263,11 +263,13 @@ def unpark(iid, *, by, role=None):
     return x
 
 
-def answer(iid, text, *, by, tapped=None):
+def answer(iid, text, *, by, tapped=None, delegated=None):
     """The owner's answer to an ask (the caller has checked the click). Or a relayed tap's (T147:
     `tapped` is crewlib.tap_authority(), the caller has taken its token): then it must be one of the
     ask's listed choices, `by` says who tapped, and the item keeps who, what they relayed and which
     hold, so Home shows "Tapped by …" and never "You answered"."""
+    from crewlib import delegation_authority
+    delegated = delegated or delegation_authority()
     text = _one_line(text, 500, "the answer")
     with locked("home"):
         h = load()
@@ -276,6 +278,11 @@ def answer(iid, text, *, by, tapped=None):
             raise HomeError(f"{x['id']} is a {x.get('kind')}, not a question")
         if x.get("status") not in ("open", "parked"):
             raise HomeError(f"{x['id']} is {x['status']} already")
+        if delegated:
+            import crewhelpers
+            delegated = crewhelpers.recheck_full(delegated)
+            x["delegated"] = delegated
+            by = delegated["label"]
         if tapped:
             import crewtaps
             crewtaps.validate_snapshot("home", x, tapped)
@@ -439,6 +446,8 @@ def line(x):
         bits.append(f"withdrawn by {x.get('closed_by') or '?'}")
     if x.get("tapped"):
         bits.append(f"tapped by {x['tapped'].get('by')}, relayed")
+    if x.get("delegated"):
+        bits.append(x["delegated"]["label"])
     if x.get("owner_only") and x.get("status") == "open":
         bits.append("your click only")
     bits.append(f"· {x.get('by', '?')} · {ago(x.get('at'))}")

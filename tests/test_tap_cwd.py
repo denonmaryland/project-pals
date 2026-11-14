@@ -1,4 +1,7 @@
-"""T205: tap approvals retain the hook's execution context. No held command is executed."""
+"""T205: approvals retain the hook's execution context. No held command is executed.
+After Full control (main 9c2966a) taps no longer run anything: the ticket/hold/token cases went with
+them (T205 card c-ddd208); human and Full approvals keep the saved context, one use, revocation and
+the protected-rule checks."""
 import json
 import os
 import shlex
@@ -8,8 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_desk import owner, py
-from test_helpers import Base
-from test_taps import Taps
+from test_helpers import Base, helper
 
 
 def live_repo(case):
@@ -43,56 +45,11 @@ class ApprovalContext(Base):
         return py(self.env, f'import crewguard\ncrewguard.HOOK_CWD={cwd!r}\n'
                   f'print(json.dumps(crewguard.check("tH", "Helper", "build", {command!r}, {extra!r})))')
 
-    def test_original_cwd_and_all_rules_survive_dispatch(self):
-        for suffix in ('git commit -am update', 'git reset --hard HEAD~1'):
-            with self.subTest(suffix=suffix):
-                request = self.request('printf x > AGENTS.md; ' + suffix)
-                self.assertEqual(request['rule'], 'agents-file-shell')
-                context = request.get('guard_context', {})
-                self.assertEqual(context.get('cwd'), str(self.repo))
-                self.assertIn('live-branch', context.get('rules', []))
-                result = py(self.env, f'import crewguard, crewtaps\n'
-                            f'crewguard.HOOK_CWD={str(self.root)!r}\n'
-                            f'print(json.dumps([crewtaps.approval_class({request!r}), crewguard.HOOK_CWD]))')
-                self.assertEqual((result[0][0], result[1]), ('outward', str(self.root)))
-                self.assertIn('own click', result[0][1])
-
-    def test_saved_outward_rule_cannot_be_downgraded_by_later_settings(self):
-        request = self.request()
-        path = self.data / 'crew-settings.json'
-        settings = json.loads(path.read_text()); settings['channel'] = 'stable'
-        path.write_text(json.dumps(settings))
-        cls, why = py(self.env, f'import crewtaps; print(json.dumps(crewtaps.approval_class({request!r})))')
-        self.assertEqual(cls, 'outward')
-        self.assertIn('own click', why)
-
-    def test_symlink_cwd_keeps_the_context_the_hook_classified(self):
-        outside = self.root / 'outside' / 'subdir'
-        outside.mkdir(parents=True)
-        alias = self.repo / 'alias'
-        alias.symlink_to(outside, target_is_directory=True)
-        request = self.request('cd ..; ' + self.command, cwd=str(alias))
-        self.assertEqual(request.get('guard_context', {}).get('cwd'), str(alias))
-        cls, why = py(self.env, f'import crewtaps; print(json.dumps(crewtaps.approval_class({request!r})))')
-        self.assertEqual(cls, 'outward')
-        self.assertIn('own click', why)
-
     def test_extra_metadata_cannot_replace_trusted_context(self):
         fake = {'cwd': str(self.root), 'rules': ['agents-file-shell']}
         request = self.request(extra={'guard_context': fake})
         self.assertEqual(request.get('guard_context', {}).get('cwd'), str(self.repo))
         self.assertIn('live-branch', request.get('guard_context', {}).get('rules', []))
-
-    def test_context_and_full_rule_set_are_in_the_tap_fingerprint(self):
-        request = self.request()
-        context = {'cwd': str(self.repo), 'rules': ['agents-file-shell', 'live-branch']}
-        request['guard_context'] = context
-        for changed in ({'cwd': str(self.root), 'rules': context['rules']},
-                        {'cwd': context['cwd'], 'rules': ['agents-file-shell']}):
-            with self.subTest(changed=changed):
-                other = {**request, 'guard_context': changed}
-                hashes = py(self.env, f'import crewtaps; print(json.dumps([crewtaps.item_hash("approval", {request!r}), crewtaps.item_hash("approval", {other!r})]))')
-                self.assertNotEqual(*hashes)
 
     def test_approval_cannot_be_reused_for_the_same_text_in_another_cwd(self):
         result = py(self.env, f'''import crewguard
@@ -118,93 +75,53 @@ print(json.dumps(crewguard.check('tH','Helper','build',{self.command!r})))''')
         self.assertIsNotNone(result)
         self.assertEqual(result['status'], 'pending')
 
-    def test_legacy_and_unknown_context_require_owner_click(self):
-        request = self.request('printf x > AGENTS.md')
-        legacy = {k: v for k, v in request.items() if k != 'guard_context'}
-        for record in (legacy, {**request, 'guard_context': {'cwd': None, 'rules': ['agents-file-shell']}}):
-            _, why = py(self.env, f'import crewtaps; print(json.dumps(crewtaps.approval_class({record!r})))')
-            self.assertTrue(why)
-            self.assertIn('own click', why)
-        (self.data / 'crew-approvals' / (request['id'] + '.json')).write_text(json.dumps(legacy))
-        approved = owner(self.env, self.data, 'approve', request['id'])
-        self.assertEqual(approved.returncode, 0, approved.stderr)
-
-    def test_new_missing_or_relative_hook_cwd_does_not_become_process_cwd(self):
-        for cwd in (None, 'relative/path'):
-            with self.subTest(cwd=cwd):
-                result = py(self.env, f'''import crewguard, crewtaps
-crewguard.HOOK_CWD={cwd!r}
-request=crewguard.check('tH','Helper','build','printf x > AGENTS.md')
-print(json.dumps([request,crewtaps.approval_class(request)]))''')
-                self.assertIsNone(result[0].get('guard_context', {}).get('cwd'))
-                self.assertIn('own click', result[1][1])
-
-    def test_new_contextual_rules_are_rechecked_at_decision(self):
-        settings = self.data / 'crew-settings.json'
-        document = json.loads(settings.read_text()); document['channel'] = 'stable'
-        settings.write_text(json.dumps(document))
+    def test_original_rules_survive_saved_cwd_reclassification_and_settings_changes(self):
         request = self.request()
-        document['channel'] = 'live'; settings.write_text(json.dumps(document))
-        result = py(self.env, f'''import crewguard, crewtaps
-request={request!r}
-tap={{'kind':'approval','item':request['id'],'hash':crewtaps.item_hash('approval',request),'cls':'local'}}
-try:
-    crewguard.decide(request['id'],True,tap=tap)
-except crewtaps.TapError:
-    refused=True
-else:
-    refused=False
-print(json.dumps(refused))''')
-        self.assertTrue(result)
+        self.assertEqual(request['guard_context']['cwd'], str(self.repo))
+        self.assertIn('live-branch', request['guard_context']['rules'])
+        settings = self.data / 'crew-settings.json'
+        data = json.loads(settings.read_text()); data['channel'] = 'stable'
+        settings.write_text(json.dumps(data))
+        result = py(self.env, f'import crewguard; crewguard.HOOK_CWD={str(self.root)!r}; '
+                    f'print(json.dumps([sorted(crewguard.approval_rules({request!r})), crewguard.HOOK_CWD]))')
+        self.assertIn('live-branch', result[0])
+        self.assertEqual(result[1], str(self.root))
 
+    def test_symlink_cwd_spelling_survives_reclassification(self):
+        outside = self.root / 'outside' / 'subdir'; outside.mkdir(parents=True)
+        alias = self.repo / 'alias'; alias.symlink_to(outside, target_is_directory=True)
+        request = self.request('cd ..; ' + self.command, cwd=str(alias))
+        self.assertEqual(request['guard_context']['cwd'], str(alias))
+        rules = py(self.env, f'import crewguard; print(json.dumps(sorted(crewguard.approval_rules({request!r}))))')
+        self.assertIn('live-branch', rules)
 
-class LocalTapPipeline(Taps):
-    def test_local_only_helper_gets_no_ticket_for_compound_live_edit(self):
-        self.switch('local')
-        repo = live_repo(self)
-        command = 'printf x > AGENTS.md; git commit -am update'
-        rid = py(self.env, f'import crewguard\ncrewguard.HOOK_CWD={str(repo)!r}\n'
-                 f'r=crewguard.check("tH","Helper","build",{command!r})\nprint(json.dumps(r["id"]))')
-        row = self.tickets()[rid]
-        self.assertEqual(row['class'], 'outward')
-        self.assertNotIn('ticket', row)
-        self.assertIn('Working directory: ' + str(repo), row['text'])
-        self.assertEqual(self.approval(rid)['status'], 'pending')
-        self.assertEqual((repo / 'AGENTS.md').read_text(), 'fixture history\n')
+    def test_context_and_all_rules_are_bound_to_delegated_snapshot(self):
+        request = self.request()
+        for context in ({'cwd':str(self.root),'rules':['agents-file-shell','live-branch']},
+                        {'cwd':str(self.repo),'rules':['agents-file-shell']}):
+            other = {**request,'guard_context':context}
+            hashes = py(self.env, f'import crewguard; print(json.dumps([crewguard._delegated_snapshot({request!r}),crewguard._delegated_snapshot({other!r})]))')
+            self.assertNotEqual(*hashes)
 
-    def test_running_token_refuses_changed_or_missing_execution_context(self):
-        self.switch('local')
-        for missing in (False, True):
-            with self.subTest(missing=missing):
-                rid = self.held('printf x > AGENTS.md' + ('; true' if missing else ''))
-                result = py(self.env, f'''import crewtaps, crewguard
-from crewlib import load_json, save_json, now_ms
-path=crewguard.APPROVALS / ({rid!r} + '.json')
-request=load_json(path, {{}})
-hold=dict(id='t-abc123',kind='approval',item=request['id'],cls='local',helper='Pals',choice='Approve',relayed='fixture',status='running',hash=crewtaps.item_hash('approval',request))
-if {missing!r}:
-    request.pop('guard_context',None)
-    hold['hash']=crewtaps.item_hash('approval',request)  # an old build's valid token, missing context
-else:
-    request['guard_context']['cwd']={str(self.data)!r}
-save_json(path,request)
-crewtaps.HOLDS.mkdir(parents=True,exist_ok=True)
-crewtaps.RUN.mkdir(parents=True,exist_ok=True)
-save_json(crewtaps.HOLDS / 't-abc123.json',hold)
-nonce='ab'*16
-args=['approve',request['id']]
-save_json(crewtaps.RUN / (nonce+'.json'),dict(args=args,at=now_ms(),hold=hold['id'],helper='Pals'))
-authority=crewtaps.take_run_token(args,nonce)
-print(json.dumps([authority,(crewtaps.RUN / (nonce+'.json')).exists(),load_json(path,{{}})['status']]))''')
-                self.assertEqual(result, [None, False, 'pending'])
+    def test_unknown_context_never_becomes_process_cwd(self):
+        for cwd in (None, 'relative/path'):
+            result = py(self.env, f'import crewguard; crewguard.HOOK_CWD={cwd!r}; '
+                        'r=crewguard.check("tH","Helper","build","printf x > AGENTS.md"); '
+                        'print(json.dumps([r,crewguard.approval_rules(r)]))')
+            self.assertIsNone(result[0]['guard_context']['cwd'])
+            self.assertIsNone(result[1])
 
+    def test_legacy_contextless_approval_does_not_authorize_a_fresh_contextual_run(self):
+        request = self.request()
+        request.pop('guard_context')
+        (self.data / 'crew-approvals' / (request['id']+'.json')).write_text(json.dumps(request))
+        approved = owner(self.env,self.data,'approve',request['id'])
+        self.assertEqual(approved.returncode,0,approved.stderr)
+        self.assertIsNotNone(self.request())
 
-class NestedCwdPipeline(Taps):
-    """T210: flattening a literal runner must not lose an outer/interpreter cwd change."""
-
+class NestedCwdPipeline(Base):
     def setUp(self):
         super().setUp()
-        self.switch('local')
         self.repo = live_repo(self)
 
     def variants(self, write=True):
@@ -225,17 +142,6 @@ class NestedCwdPipeline(Taps):
     def request(self, command):
         return py(self.env, f'import crewguard\ncrewguard.HOOK_CWD={str(self.root)!r}\n'
                   f'print(json.dumps(crewguard.check("tH","Helper","build",{command!r})))')
-
-    def test_fresh_tap_process_cannot_issue_a_local_ticket_for_nested_mutations(self):
-        for kind, command in self.variants():
-            with self.subTest(kind=kind):
-                request = self.request(command)
-                self.assertIsNotNone(request)
-                row = self.tickets()[request['id']]
-                self.assertNotIn('ticket', row)
-                self.assertIn('own click', row['not_tappable'])
-                self.assertEqual(self.approval(request['id'])['status'], 'pending')
-        self.assertEqual((self.repo / 'AGENTS.md').read_text(), 'fixture history\n')
 
     def test_nested_mutation_without_an_outer_guarded_edit_still_needs_owner(self):
         for kind, command in self.variants(write=False):
@@ -298,12 +204,12 @@ print(json.dumps([crewguard.check('tH','Helper','build',command) for command in 
                     f'echo `cd {outside}; git status`',
                     f'echo "$(cd {outside}; git status)"']
         commands = [child + '; git commit -am update' for child in children]
-        results = py(self.env, f'''import crewguard, crewtaps
+        results = py(self.env, f'''import crewguard
 crewguard.HOOK_CWD={str(self.repo)!r}
 out=[]
 for command in {commands!r}:
     request=crewguard.check('tH','Helper','build',command)
-    out.append([bool(request),bool(crewtaps.approval_class(request)[1]) if request else False])
+    out.append([bool(request),('nested-cwd' in request['guard_context']['rules']) if request else False])
 print(json.dumps(out))''')
         self.assertEqual(results, [[True, True]] * len(commands))
 
@@ -324,12 +230,12 @@ print(json.dumps([crewguard.matches(command) for command in {commands!r}]))''')
                     f'cd {outside} | cat; git commit -am update',
                     f'true || cd {outside}; git commit -am update',
                     f'false && cd {outside}; git commit -am update']
-        results = py(self.env, f'''import crewguard, crewtaps
+        results = py(self.env, f'''import crewguard
 crewguard.HOOK_CWD={str(self.repo)!r}
 out=[]
 for command in {commands!r}:
     request=crewguard.check('tH','Helper','build',command)
-    out.append([bool(request),bool(crewtaps.approval_class(request)[1]) if request else False])
+    out.append([bool(request),('nested-cwd' in request['guard_context']['rules']) if request else False])
 print(json.dumps(out))''')
         self.assertEqual(results, [[True, True]] * len(commands))
 
@@ -344,12 +250,12 @@ crewguard.HOOK_CWD={str(self.repo)!r}
 print(json.dumps([crewguard.matches(command) for command in {commands!r}]))''')
         self.assertEqual(results, [None] * len(commands))
 
-    def test_nested_candidate_overflow_requires_owner_at_gate_ticket_and_decision(self):
+    def test_nested_candidate_overflow_requires_owner_at_initial_gate(self):
         code = 'import os; ' + '; '.join(f'os.system("echo {i}")' for i in range(201))
         code += '; os.system("git commit -am update")'
         self.assert_nested_requires_owner(code)
 
-    def test_interpreter_literal_overflow_requires_owner_at_gate_ticket_and_decision(self):
+    def test_interpreter_literal_overflow_requires_owner_at_initial_gate(self):
         code = 'import os; print(' + ','.join(repr(str(i)) for i in range(41))
         code += ',os.system("git commit -am update"))'
         self.assert_nested_requires_owner(code)
@@ -360,31 +266,6 @@ print(json.dumps([crewguard.matches(command) for command in {commands!r}]))''')
             with self.subTest(command=command):
                 self.assert_nested_requires_owner('import os; os.system(' + repr(command) + ')')
 
-    def assert_nested_requires_owner(self, code):
-        nested = 'python3 -c ' + shlex.quote(code)
-        command = 'printf x > AGENTS.md; ' + nested
-        request = self.request(command)
-        row = self.tickets()[request['id']]
-        result = py(self.env, f'''import crewguard, crewtaps
-from crewlib import save_json
-crewguard.HOOK_CWD={str(self.root)!r}
-initial=crewguard.check('tH','Helper','build',{nested!r})
-request={request!r}
-request['guard_context']['rules']=['agents-file-shell']
-request['key']=crewguard.key(request['terminal'],request['command'],request['guard_context'])
-save_json(crewguard.APPROVALS / (request['id']+'.json'),request)
-hold=dict(id='t-abc123',helper='Pals',kind='approval',item=request['id'],cls='local',choice='Approve',
-          relayed='fixture only',hash=crewtaps.item_hash('approval',request))
-try:
-    crewguard.decide(request['id'],True,tap=hold)
-except crewtaps.TapError:
-    refused=True
-else:
-    refused=False
-print(json.dumps([initial,refused]))''')
-        self.assertEqual([bool(result[0]), 'ticket' not in row, result[1]], [True, True, True])
-        self.assertEqual((self.repo / 'AGENTS.md').read_text(), 'fixture history\n')
-
     def test_quoted_documentation_and_file_heredocs_are_not_execution(self):
         commands = ["printf '%s' \"sh -c 'git commit -am update'\"",
                     "cat <<'DOC' > notes.txt\nsh -c 'git commit -am update'\nDOC",
@@ -393,59 +274,6 @@ print(json.dumps([initial,refused]))''')
 crewguard.HOOK_CWD={str(self.root)!r}
 print(json.dumps([crewguard.matches(command) for command in {commands!r}]))''')
         self.assertEqual(results, [None, None, None])
-
-    def test_legacy_local_hold_token_and_final_decision_are_all_refused(self):
-        for kind, command in self.variants()[:2]:
-            with self.subTest(kind=kind):
-                request = self.request(command)
-                result = py(self.env, f'''import crewguard, crewtaps
-from crewlib import save_json, load_json, now_ms
-request={request!r}
-request['guard_context']['rules']=['agents-file-shell']  # a 94325be local approval
-request['key']=crewguard.key(request['terminal'],request['command'],request['guard_context'])
-path=crewguard.APPROVALS / (request['id']+'.json')
-hold=dict(id='t-abc123',helper='Pals',kind='approval',item=request['id'],cls='local',choice='Approve',
-          relayed='fixture only',title='fixture',by='Helper#build',at=now_ms(),run_at=0,
-          status='holding',hash=crewtaps.item_hash('approval',request))
-save_json(path,request)
-crewtaps._save_hold(hold)
-due=crewtaps.run_due()
-due_status=due[-1]['status']
-save_json(path,request)
-hold['status']='running'
-crewtaps._save_hold(hold)
-crewtaps.RUN.mkdir(parents=True,exist_ok=True)
-nonce='cd'*16
-args=['approve',request['id']]
-save_json(crewtaps.RUN / (nonce+'.json'),dict(args=args,at=now_ms(),hold=hold['id'],helper='Pals'))
-token=crewtaps.take_run_token(args,nonce)
-try:
-    crewguard.decide(request['id'],True,tap=hold)
-except crewtaps.TapError:
-    refused=True
-else:
-    refused=False
-print(json.dumps([due_status,token,(crewtaps.RUN / (nonce+'.json')).exists(),refused,load_json(path,{{}})['status']]))''')
-                self.assertEqual(result, ['dropped', None, False, True, 'pending'])
-        self.assertEqual((self.repo / 'AGENTS.md').read_text(), 'fixture history\n')
-
-    def test_nested_commands_keep_their_class_but_need_owner(self):
-        self.switch('outward')
-        for inner in ('git branch --list', 'git branch --show-current', 'git symbolic-ref HEAD',
-                      'git worktree list', 'git fetch --help', 'git status --short',
-                      'printf "git commit -am update"'):
-            with self.subTest(inner=inner):
-                command = 'printf x > AGENTS.md; sh -c ' + shlex.quote(inner)
-                request = self.request(command)
-                row = self.tickets()[request['id']]
-                self.assertEqual(row['class'], 'local')
-                self.assertNotIn('ticket', row)
-                self.assertIn('own click', row['not_tappable'])
-        request = self.request("sh -c 'git push origin main'")
-        row = self.tickets()[request['id']]
-        self.assertEqual(row['class'], 'outward')
-        self.assertNotIn('ticket', row)
-        self.assertIn('own click', row['not_tappable'])
 
     def test_existing_policy_receives_the_new_guard(self):
         result = py(self.env, '''import crewguard
@@ -459,112 +287,144 @@ for with_names in (False,True):
 print(json.dumps(out))''')
         self.assertEqual(result, [True, True])
 
+    def assert_nested_requires_owner(self, code):
+        nested = 'python3 -c ' + shlex.quote(code)
+        for command in (nested, 'printf x > AGENTS.md; ' + nested):
+            request = self.request(command)
+            self.assertIsNotNone(request)
+            self.assertIn('nested-cwd',request['guard_context']['rules'])
+        self.assertEqual((self.repo / 'AGENTS.md').read_text(),'fixture history\n')
 
-class PlainApprovalBoundary(Taps):
-    """T210r2: unsupported shell shapes cannot gain tap authority. Held strings never run."""
+    def test_readonly_nested_git_stays_free_and_push_keeps_its_rule(self):
+        for inner in ('git branch --list','git branch --show-current','git symbolic-ref HEAD',
+                      'git worktree list','git fetch --help','git status --short','printf "git commit -am update"'):
+            command = 'sh -c ' + shlex.quote(inner)
+            self.assertIsNone(self.request(command),command)
+        request = self.request("sh -c 'git push origin main'")
+        self.assertIn('push',request['guard_context']['rules'])
+        self.assertNotIn('nested-cwd',request['guard_context']['rules'])
+
+
+class FullGuardContext(Base):
+    """Standing Full grants retain context and protected-operation boundaries; no tap authority."""
     def setUp(self):
         super().setUp()
-        self.switch('local')
-        self.repo = live_repo(self)
-
-    def unsafe_commands(self):
-        outside = shlex.quote(str(self.root))
-        return [
-            'printf x > AGENTS.md; cd ' + outside + ' & git commit -am update',
-            'printf x > AGENTS.md; case a in b) :; cd ' + outside + ';; esac; git commit -am update',
-            'printf x > AGENTS.md; cat <<DOC > notes.txt\n$(git commit -am update)\nDOC',
-        ]
+        self.env['PAL_HELPER_PLAIN_KEYS'] = '1'
+        r = owner(self.env,self.data,'settings','trust-helper','Pals','level','full')
+        self.assertEqual(r.returncode,0,r.stderr)
 
     def request(self, command):
-        return py(self.env, f'import crewguard; crewguard.HOOK_CWD={str(self.repo)!r}; '
+        return py(self.env, f'import crewguard; crewguard.HOOK_CWD={str(self.root)!r}; '
                   f'print(json.dumps(crewguard.check("tH","Helper","build",{command!r})))')
 
-    def test_new_unsupported_requests_get_no_ticket_in_a_fresh_process(self):
-        for command in self.unsafe_commands():
-            with self.subTest(command=command):
-                syntax = subprocess.run(['bash','-n'],input=command,capture_output=True,text=True)
-                self.assertEqual(syntax.returncode,0,syntax.stderr)
-                request = self.request(command)
-                row = self.tickets()[request['id']]
-                self.assertNotIn('ticket',row)
-                self.assertIn('own click',row['not_tappable'])
-        self.assertEqual((self.repo/'AGENTS.md').read_text(),'fixture history\n')
+    def record(self, rid):
+        return json.loads((self.data/'crew-approvals'/(rid+'.json')).read_text())
 
-    def test_legacy_holds_tokens_and_final_decisions_reject_unsupported_commands(self):
-        for command in self.unsafe_commands():
-            with self.subTest(command=command):
-                request = self.request(command)
-                result = py(self.env, f'''import crewguard,crewtaps
-from crewlib import save_json,load_json,now_ms
-request={request!r}
-path=crewguard.APPROVALS/(request['id']+'.json')
-hold=dict(id='t-abc123',helper='Pals',kind='approval',item=request['id'],cls='local',choice='Approve',
-          relayed='fixture only',title='fixture',by='Helper#build',at=now_ms(),run_at=0,status='holding',
-          hash=crewtaps.item_hash('approval',request))
-crewtaps._save_hold(hold)
-due=crewtaps.run_due()
-save_json(path,request)
-hold['status']='running';crewtaps._save_hold(hold)
-crewtaps.RUN.mkdir(parents=True,exist_ok=True)
-nonce='ef'*16;args=['approve',request['id']]
-save_json(crewtaps.RUN/(nonce+'.json'),dict(args=args,at=now_ms(),hold=hold['id'],helper='Pals'))
-token=crewtaps.take_run_token(args,nonce)
-try:
-    crewguard.decide(request['id'],True,tap=hold)
-except crewtaps.TapError:
-    refused=True
-else:
-    refused=False
-print(json.dumps([due[-1]['status'],token,(crewtaps.RUN/(nonce+'.json')).exists(),refused,load_json(path,{{}})['status']]))''')
-                self.assertEqual(result,['dropped',None,False,True,'pending'])
-        self.assertEqual((self.repo/'AGENTS.md').read_text(),'fixture history\n')
+    def test_full_can_approve_ordinary_uncertain_git_once(self):
+        command = "sh -c 'git commit -am update'"
+        request = self.request(command)
+        self.assertIn('nested-cwd',request['guard_context']['rules'])
+        r = helper(self.env,'approve',request['id'])
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(self.record(request['id'])['delegated']['helper'],'Pals')
+        self.assertIsNone(self.request(command))
+        self.assertIsNotNone(self.request(command))
 
-    def test_plain_interpreters_wrappers_and_git_execution_options_require_owner(self):
-        self.switch('outward')
-        commands = [
-            'python3 -c ' + shlex.quote('import os; os.system("git push origin main")'),
-            "sh -c 'git push origin main'", "eval 'git push origin main'",
-            'env git push origin main', '/usr/bin/git push origin main',
-            "git -c core.sshCommand='sh -c touch-marker' push origin main",
-            "git -c alias.ship='!git push origin main' ship; git push origin main",
-            'git push origin main > tracked.txt', 'git push origin "$BRANCH"',
-            'git push origin "$(printf main)"', 'git push origin `printf main`',
-        ]
-        for command in commands:
-            with self.subTest(command=command):
-                request = self.request(command)
-                self.assertIsNotNone(request)
-                row = self.tickets()[request['id']]
-                self.assertNotIn('ticket',row)
-                self.assertIn('own click',row['not_tappable'])
+    def test_full_cannot_approve_unknown_context_or_nested_protected_edits(self):
+        command = 'git push origin main; python3 -c ' + shlex.quote('import os; os.system("echo x > data/crew-helpers/helpers.json")')
+        request = self.request(command)
+        self.assertIn('helper-key',request['guard_context']['rules'])
+        r = helper(self.env,'approve',request['id'])
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('trust or audit',r.stderr)
+        request = self.request('git push origin other')
+        request.pop('guard_context')
+        (self.data/'crew-approvals'/(request['id']+'.json')).write_text(json.dumps(request))
+        r = helper(self.env,'approve',request['id'])
+        self.assertNotEqual(r.returncode,0)
+        self.assertIn('execution context',r.stderr)
 
-    def test_reviewed_plain_shapes_keep_local_and_outward_tickets(self):
-        self.switch('outward')
-        command = 'edit /w/AGENTS.md [edit aaaaaaaaaaaa, base bbbbbbbbbbbb]'
-        extra = dict(path='/w/AGENTS.md',edit_hash='aaaaaaaaaaaa',base_hash='bbbbbbbbbbbb',diff='-old\n+new')
-        request = py(self.env, f'import crewguard; crewguard.HOOK_CWD={str(self.repo)!r}; '
-                     f'print(json.dumps(crewguard.check("tH","Helper","build",{command!r},{extra!r})))')
-        row = self.tickets()[request['id']]
-        self.assertEqual(row['class'],'local'); self.assertIn('ticket',row)
-        for command in ('git push origin main','git status --short && git push origin main',
-                        'git status; git push origin main','gh pr merge 4','pal land Worker#general'):
-            with self.subTest(command=command):
-                request = self.request(command)
-                row = self.tickets()[request['id']]
-                self.assertEqual(row['class'],'outward'); self.assertIn('ticket',row)
+    def test_saved_protected_rules_cannot_disappear_before_full_decision(self):
+        request = self.request('git push origin main')
+        request['guard_context']['rules'].append('helper-key')
+        (self.data/'crew-approvals'/(request['id']+'.json')).write_text(json.dumps(request))
+        r = helper(self.env,'approve',request['id'])
+        self.assertNotEqual(r.returncode,0)
+        self.assertEqual(self.record(request['id'])['status'],'pending')
 
-    def test_structured_edit_requires_exact_matching_metadata(self):
-        rid = self.held_edit()
-        original = self.approval(rid)
-        self.assertIn('ticket',self.tickets()[rid])
-        changes = [dict(path='/other/AGENTS.md'),dict(edit_hash='bbbbbbbbbbbb'),
-                   dict(base_hash='invalid'),dict(diff=None),
-                   dict(command=original['command']+'; git push origin main')]
-        for changed in changes:
-            with self.subTest(changed=changed):
-                (self.data/'crew-approvals'/(rid+'.json')).write_text(json.dumps({**original,**changed}))
-                self.assertNotIn('ticket',self.tickets()[rid])
-        for field in ('path','edit_hash','base_hash','diff'):
-            record = dict(original); record.pop(field)
-            (self.data/'crew-approvals'/(rid+'.json')).write_text(json.dumps(record))
-            self.assertNotIn('ticket',self.tickets()[rid],field)
+    def test_context_mutation_invalidates_full_snapshot(self):
+        command = 'git push origin main'
+        request = self.request(command)
+        r = helper(self.env,'approve',request['id']); self.assertEqual(r.returncode,0,r.stderr)
+        approved = self.record(request['id'])
+        approved['guard_context']['rules'].append('invented-rule')
+        (self.data/'crew-approvals'/(request['id']+'.json')).write_text(json.dumps(approved))
+        self.assertIsNotNone(self.request(command))
+        self.assertEqual(self.record(request['id'])['status'],'expired')
+
+    def test_claim_bookkeeping_preserves_full_stamp_but_claims_once(self):
+        command = './release 9.9.9 notes'
+        request = self.request(command)
+        r = helper(self.env,'approve',request['id']); self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIsNone(self.request(command))
+        result = py(self.env, f'''import crewguard
+words=crewguard.handover_words({command!r})
+first=crewguard.recently_used('tH','release-script',words=words,cwd={str(self.root)!r})
+record=next(r for r in crewguard.all_requests() if r['id']=={request['id']!r})
+current=crewguard._delegation_current(record)
+second=crewguard.recently_used('tH','release-script',words=words,cwd={str(self.root)!r})
+print(json.dumps([bool(first),bool(record.get('claimed')),current,second]))''')
+        self.assertEqual(result,[True,True,True,None])
+
+    def test_handoff_invalidates_unclaimed_full_approval(self):
+        command = './release 9.9.9 notes'
+        request = self.request(command)
+        r = helper(self.env,'approve',request['id']); self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIsNone(self.request(command))
+        result = py(self.env, f'''import crewguard,crewhandoff
+crewhandoff.void_approvals('tH')
+record=next(r for r in crewguard.all_requests() if r['id']=={request['id']!r})
+print(json.dumps([record.get('claimed_by'),crewguard._delegation_current(record),
+    crewguard.recently_used('tH','release-script',words=crewguard.handover_words({command!r}),cwd={str(self.root)!r})]))''')
+        self.assertEqual(result,['handoff',True,None])
+
+    def test_revocation_invalidates_unclaimed_full_handover(self):
+        command = './release 9.9.9 notes'
+        request = self.request(command)
+        r = helper(self.env,'approve',request['id']); self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIsNone(self.request(command))
+        r = owner(self.env,self.data,'settings','trust-helper','Pals','level','off')
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIsNone(py(self.env, f'import crewguard; print(json.dumps(crewguard.recently_used("tH","release-script",'
+                             f'words=crewguard.handover_words({command!r}),cwd={str(self.root)!r})))'))
+
+    def test_handover_from_different_cwd_cannot_spend_human_or_full_approval(self):
+        elsewhere = self.root / 'elsewhere'; elsewhere.mkdir()
+        for actor in ('owner','full'):
+            command = './release 9.9.9 ' + actor
+            request = self.request(command)
+            answer = owner(self.env,self.data,'approve',request['id']) if actor == 'owner' else helper(self.env,'approve',request['id'])
+            self.assertEqual(answer.returncode,0,answer.stderr)
+            self.assertIsNone(self.request(command))  # the hook lets the original cwd run
+            result = py(self.env, f'''import os,crewguard
+os.chdir({str(elsewhere)!r})
+other=crewguard.owner_step('tH','Helper','build',{command!r},'release-script')
+record=next(r for r in crewguard.all_requests() if r['id']=={request['id']!r})
+os.chdir({str(self.root)!r})
+same=crewguard.owner_step('tH','Helper','build',{command!r},'release-script')
+again=crewguard.owner_step('tH','Helper','build',{command!r},'release-script')
+print(json.dumps([bool(other),bool(record.get('claimed')),same,bool(again)]))''')
+            self.assertEqual(result,[True,False,None,True],actor)
+
+    def test_handover_without_saved_context_requires_a_fresh_approval(self):
+        command = './release 9.9.9 unknown-context'
+        request = self.request(command)
+        answer = owner(self.env,self.data,'approve',request['id'])
+        self.assertEqual(answer.returncode,0,answer.stderr)
+        self.assertIsNone(self.request(command))
+        record = self.record(request['id']); record.pop('guard_context')
+        (self.data/'crew-approvals'/(request['id']+'.json')).write_text(json.dumps(record))
+        result = py(self.env, f'''import os,crewguard
+os.chdir({str(self.root)!r})
+print(json.dumps(crewguard.owner_step('tH','Helper','build',{command!r},'release-script')))''')
+        self.assertIsNotNone(result)

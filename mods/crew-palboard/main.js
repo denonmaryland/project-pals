@@ -20,6 +20,7 @@
 // Herdr's elements are single-use: every card is built whole before it goes into its column.
 
 import { View, div, svg } from "gpui-kit";
+import { conversation, nothing, READ_SHOWN } from "./read.js";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { theme, spaces, shared, nextCommand, notify, openOverlay, settings, exec, appHome } from "herdr";
 import {
@@ -68,6 +69,15 @@ export default class CrewPalBoard extends View {
     this.input.on("submit", (e, cx) => { if (!e?.shift) cx.timer.after(0, (cx) => this.send(cx)); });
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    // Read (T183): one topic's conversation in place of the columns. `reading` is its topic.
+    this.reading = null;
+    this.readData = null;
+    this.readKey = 0;        // bumped per opening, so its rows' ids (and scroll) start fresh
+    this.readSize = -1;      // the session file's size at the last read (re-read when it grows)
+    this.readLoading = false;
+    this.readShown = READ_SHOWN;
+    this.readFollow = true;
+    this.openChips = new Set();
     this.readAt = 0;         // when the board was last read
     this.sig = null;         // what it looked like then (see signature)
     cx.timer.every(CHECK_MS, (cx) => { if (boardMode()) this.check(cx); });
@@ -93,6 +103,38 @@ export default class CrewPalBoard extends View {
     });
   }
 
+  // Read: open a topic's conversation, leave it, and read it (only when its session file grew).
+  openRead(space, topic, cx) {
+    if (!topic) return;
+    this.setAim(space, topic, null);
+    this.reading = topic; this.readData = null; this.readSize = -1; this.readKey += 1;
+    this.readShown = READ_SHOWN; this.readFollow = true; this.readMeasured = false; this.openChips = new Set();
+    this.reloadRead(cx);
+    cx?.notify();
+  }
+  closeRead(cx) { this.reading = null; this.readData = null; cx?.notify(); }
+  reloadRead(cx) {
+    const pal = this.pal(), topic = this.reading;
+    if (!pal || !topic || this.readLoading) return;
+    this.readLoading = true;
+    cx.spawn(async (cx) => {
+      try {
+        const x = JSON.parse(await crewCli(["computer", pal, "read", "--topic", topic, "--json"]));
+        if (x.pal === this.pal() && x.topic === this.reading) { this.readData = x; this.readSize = x.size ?? 0; this.readErr = null; }
+      } catch (e) { this.readErr = String(e?.message ?? e); }
+      this.readLoading = false;
+      cx.notify();
+    });
+  }
+  // Every 5 s while reading: one stat of its session file; read again only when it grew.
+  async checkRead(cx) {
+    const path = this.readData?.path;
+    if (!path) { if (!this.readData && !this.readLoading) this.reloadRead(cx); return; }
+    let size = this.readSize;
+    try { size = Number((await exec("stat", ["-c", "%s", path], { timeout: 3000 })).stdout.trim()); } catch { /* gone: keep what's shown */ }
+    if (size !== this.readSize) this.reloadRead(cx);
+  }
+
   // What a change on the board would show up in, cheaply: each topic's state as Herdr reports it,
   // and when the watched files last changed (one `stat`, no pal command).
   async signature() {
@@ -108,6 +150,7 @@ export default class CrewPalBoard extends View {
     if (this.loading || this.checking) return;
     this.checking = true;
     cx.spawn(async (cx) => {
+      if (this.reading) await this.checkRead(cx);
       const sig = await this.signature();
       this.checking = false;
       const working = (this.data?.topics ?? []).some((t) => t.state === "working");
@@ -219,6 +262,15 @@ export default class CrewPalBoard extends View {
       if (k === "escape") { this.picking = false; try { this.handle.focus(); } catch { /* not ready */ } this.typing = false; cx.notify(); }
       return;
     }
+    // Read never approves or answers anything (T194, Codex T193): only Esc (its terminal), B (the
+    // board) and / (the box). The board's review and its buttons work only on the board.
+    if (this.reading) {
+      this.review = null;
+      if (k === "escape") openTerminal(space, tabOf(space, this.reading));
+      else if (k === "b") this.closeRead(cx);
+      else if (k === "/") { this.input.focus(); cx.notify(); }
+      return;
+    }
     const needs = this.columns().you;
     if (this.review != null) {
       const c = needs[Math.min(this.review, needs.length - 1)];
@@ -229,6 +281,7 @@ export default class CrewPalBoard extends View {
       return;
     }
     if (k === "escape") { openTerminal(space, tabOf(space, this.aimed(space))); return; }
+    if (k === "o") { const a = this.aimed(space); const tp = (this.data?.topics ?? []).find((t) => t.topic === a); if (tp && tp.state !== "shell") this.openRead(space, a, cx); return; }
     if (k === "r" && needs.length) { this.review = 0; cx.notify(); return; }
     if (k === "/" || k === "enter") { this.input.focus(); cx.notify(); }
   }
@@ -244,7 +297,7 @@ export default class CrewPalBoard extends View {
       this.shownAt = stamp;
       this.shownTime = Date.now();
       if (this.data?.pal !== pal) { this.data = null; this.aim = null; this.sent = {}; }
-      this.review = null; this.picking = false; this.target = "topic";
+      this.review = null; this.picking = false; this.target = "topic"; this.reading = null; this.readData = null;
       this.seen = Number(store(`board-seen-${pal}`)) || 0;
       store(`board-seen-${pal}`, Date.now());
       this.reload(cx);
@@ -273,10 +326,54 @@ export default class CrewPalBoard extends View {
     const x = this.data;
     const cols = this.columns();
     const aim = this.aimed(space);
+    if (this.reading) {
+      return root.child(this.readPage(d, space, x, cols)).child(this.box(d, space, x, aim));
+    }
     return root
       .child(this.head(d, space, bot, x, cols))
       .child(x ? this.board(d, space, cols, aim) : this.waiting(d))
       .child(this.box(d, space, x, aim));
+  }
+
+  // Read's page: the topic's line (state, task, branch), Board · Read · Terminal, the cards of what
+  // it needs from you (the board's own, with their buttons), then its conversation.
+  readPage(d, space, x, cols) {
+    const topic = this.reading;
+    const tp = (x?.topics ?? []).find((t) => t.topic === topic) ?? { topic, state: this.readData?.state ?? "idle" };
+    const tab = tabOf(space, topic);
+    const STATE_CHIP = { working: ["Working", d.infoText], blocked: ["Asks you", d.warnText], done: ["Finished", d.okHi], idle: ["Resting", d.fg2], asleep: ["Asleep", d.fg3], shell: ["No pal", d.fg3] };
+    const [word, color] = STATE_CHIP[tp.state] ?? [tp.state, d.fg2];
+    const seg = (id, label, on, go, extra = null) => h_flex().id(id).h(26).px(10).gap(6).items_center().cursor_pointer()
+      .when(on, (el) => el.bg(d.sel)).hover((s) => s.bg(d.hover)).on_click((_e, cx) => go(cx))
+      .child(div().text_size(12).text_color(on ? d.fg1 : d.fg2).child(label))
+      .when(Boolean(extra), (el) => el.child(div().text_size(10.5).font_family(d.mono).text_color(d.fg4).child(extra)));
+    const head = h_flex().flex_none().items_center().gap(10).px(PAD).pt(18).pb(10).border_b_1().border_color(d.line)
+      .child(div().size(7).rounded(4).flex_none().bg(this.stateColor(d, tp.state)))
+      .child(div().text_size(15).font_family(d.mono).text_color(d.fg1).child(`#${topic}`))
+      .child(this.chip(d, `${word}${tp.state === "working" && tp.since ? ` ${waited(tp.since)}` : ""}`, color))
+      .child(div().min_w(0).flex_1().child(this.meta(d, tp) ?? div()))
+      .child(h_flex().flex_none().rounded(d.r.md).border_1().border_color(d.lineMid).overflow_hidden()
+        .child(seg("rd-seg-board", "Board", false, (cx) => this.closeRead(cx), "B"))
+        .child(seg("rd-seg-read", "Read", true, () => {}))
+        .child(seg("rd-seg-term", "Terminal", false, () => openTerminal(space, tab), "Esc")));
+    // What it needs from you, as notices only: Read never approves or answers (T194). The buttons
+    // are on the board, one key away.
+    const needs = cols.you.filter((c) => c.need.topic === topic);
+    const body = v_flex().flex_1().min_h(0).px(PAD).pt(12).gap(10);
+    if (needs.length) {
+      body.child(v_flex().flex_none().w_full().max_w(820).mx_auto().gap(6).children(needs.map((c) => {
+        const n = c.need;
+        return h_flex().id(`rd-need-${n.id}`).gap(8).items_center().py(7).px(10).rounded(d.r.md).bg(d.raised).border_1().border_color(d.warn + "55")
+          .child(this.chip(d, KIND[n.kind] ?? n.kind, d.warnText))
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(d.fg1).child(n.title || "(no title)"))
+          .when(Boolean(n.since), (el) => el.child(div().flex_none().text_size(10.5).font_family(d.mono).text_color(d.warnText).child(`waiting ${waited(n.since)}`)))
+          .child(div().flex_none().text_size(11.5).text_color(d.fg3).child(n.kind === "prompt" ? "Answer it in the terminal (Esc)" : "Answer it on the board (B)"));
+      })));
+    }
+    const data = this.readData;
+    body.child(data?.rows?.length ? conversation(this, d, data)
+      : nothing(d, data, () => openTerminal(space, tab), this.readErr && !data ? `Couldn't read it: ${clip(this.readErr, 160)}` : null));
+    return v_flex().flex_1().min_h(0).child(head).child(body);
   }
 
   waiting(d) {
@@ -481,6 +578,8 @@ export default class CrewPalBoard extends View {
     }
     if (on) {
       const tools = h_flex().gap(6).pt(2);
+      if (tp.state !== "shell") tools.child(pebble(d, { id: `pb-read-${tp.topic}`, icon: "book-open", label: "Read", extra: "O",
+        onClick: (cx) => this.openRead(space, tp.topic, cx), tooltip: "Read its conversation here, as a page (O)" }));
       if (asleep) tools.child(pebble(d, { id: `pb-wake-${tp.topic}`, icon: "ds-moon", label: "Wake", disabled: Boolean(this.busy[`wake-${tp.topic}`]),
         onClick: (cx) => this.act(`wake-${tp.topic}`, ["wake", `${space.name}#${tp.topic}`], `Waking #${tp.topic}`, cx, false) }));
       tools.child(pebble(d, { id: `pb-term-${tp.topic}`, icon: "ds-terminal", label: "Terminal", onClick: () => openTerminal(space, tab) }));
