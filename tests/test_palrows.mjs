@@ -643,6 +643,34 @@ try {
     assert.equal(brainsOf()[tab.id], "codex", "kept as this topic's brain");
     const woke = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id });
     assert.equal(woke.argv[0], "codex", "wake starts the seat's holder");
+    // T173, T221: the brain the seat last ran (pal sleep's mark, or its handoff holder) comes before
+    // the pal's own command, and is kept as this topic's brain for a wake with no mark (an outage).
+    {
+      const GROK = { key: "grok", name: "Grok", run: ["grok"], installed: true };
+      fixtures.known = [CLAUDE, AGY, CODEX_IN, GROK];
+      fixtures.shared.crew = { ...before, bots: before.bots.map((b) => (b.id === rec.id ? { ...b, argv: ["claude", "--model", "opus"], harness: "claude", brains: {} } : b)) };
+      const plain = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id });
+      assert.equal(plain.why, "its command on record", "nothing seen, nothing on record: the pal's command (the old bug's path)");
+      const seen = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id, seen: "grok" });
+      assert.equal(seen.argv[0], "grok", "a Grok seat wakes as Grok, not the pal's Claude Code");
+      assert.equal(seen.why, "the brain it ran before");
+      assert.equal(brainsOf()[tab.id], "grok", "kept as this topic's brain");
+      const later = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id });
+      assert.equal(later.argv[0], "grok", "a later wake with no mark still finds it");
+      assert.equal(later.why, "this topic's brain on record");
+      const codexSeen = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id, seen: "codex" });
+      assert.equal(codexSeen.argv[0], "codex", "what ran last beats an older record");
+      const odd = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id, seen: "../claude --x" });
+      assert.equal(odd.argv[0], "codex", "a malformed seen brain is ignored");
+      const ownSeen = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id, seen: "claude" });
+      assert.deepEqual(ownSeen.argv.slice(0, 3), ["claude", "--model", "opus"], "seen as the pal's own brain: its saved command, model kept");
+      fixtures.known = [CLAUDE, AGY, CODEX_IN];
+      fixtures.shared.crew = { ...before, bots: before.bots.map((b) => (b.id === rec.id ? { ...b, argv: ["claude"], harness: "claude", brains: {} } : b)) };
+      const missing = await crew.requestHandlers["wake-brain"]({ op: "wake-brain", space: s1.id, tab: tab.id, seen: "grok" });
+      assert.equal(missing.argv[0], "claude", "a seen brain that isn't installed falls through");
+      assert.equal(brainsOf()[tab.id], undefined, "and isn't kept");
+      fixtures.shared.crew = before;
+    }
     fixtures.known = [CLAUDE, AGY, CODEX];
     await assert.rejects(crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: s1.id, tab: tab.id, to: "codex" }), /isn't installed/);
     await assert.rejects(crew.requestHandlers["handoff-brain"]({ op: "handoff-brain", space: "nope", to: "codex" }), /isn't open/);

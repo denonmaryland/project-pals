@@ -1173,12 +1173,25 @@ def cmd_sleep(spaces, rest):
         _tell_app("sleep", out, refused)
 
 
+def _seen_brain(addr):
+    """The brain this seat last ran, as a brain key, or None: the agent pal sleep stopped there (its
+    mark's app, else its session link's harness), else the seat's holder from pal handoff. Only a
+    brain Project Pals knows by name; anything else (a wrapper's process name) says nothing (T173, T221)."""
+    import crewsleep, crewhandoff as ho
+    mark = crewsleep.slept(addr) or {}
+    held = ho.holder(addr) or {}
+    for k in (mark.get("app"), (mark.get("link") or {}).get("harness"), held.get("brain")):
+        if ho.brain_key(k) in ho.NAMES:
+            return ho.brain_key(k)
+    return None
+
+
 def _wake_line(spaces, space, tab, addr, info):
     """(the command to type, what it says about the brain and the session). The brain is T27's pick,
-    made by the app (wake-brain): this topic's brain on record, else the pal's command on record,
-    else its harness started fresh, else Claude Code."""
+    made by the app (wake-brain): the brain this seat last ran (_seen_brain), else this topic's brain
+    on record, else the pal's command on record, else its harness started fresh, else Claude Code."""
     import crewsleep, crewchat
-    brain = request("wake-brain", spaces, space=space["id"], tab=tab["id"])
+    brain = request("wake-brain", spaces, space=space["id"], tab=tab["id"], seen=_seen_brain(addr))
     base = crewsleep.base_argv(brain.get("argv"), brain.get("key"))
     if not base:
         raise crewsleep.Refused("no brain to start for it")
