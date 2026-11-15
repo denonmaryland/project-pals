@@ -7,7 +7,8 @@
 #   ./install.sh --no-agy-hooks     helpers + Claude Code hooks, leaving ~/.gemini/config/hooks.json alone
 #   ./install.sh --no-helpers       only the layout, mods and commands
 #   (--from-release, --from-live, --from-try and --keep-crewd are the updater's own: bin/crewupdate.py)
-#   ./install.sh --no-oomd-dropin   helpers, without marking Herdr's terminal holder "kill last" (below)
+#   ./install.sh --no-oomd-dropin   remember not to mark Herdr's terminal holder "kill last"
+#   ./install.sh --oomd-dropin      turn that installer-managed drop-in back on
 #   ./install.sh --uninstall [--purge] [--dry-run]
 #                                   take Project Pals out again (bin/crewuninstall.py): everything it
 #                                   added, nothing of yours; your pals' data stays unless --purge
@@ -19,7 +20,8 @@
 # ~/.config/systemd/user, ~/.claude/settings.json and ~/.gemini/config/hooks.json (backed up first).
 # With systemd, each pal's agent starts in its own scope, so systemd-oomd takes one hungry pal rather
 # than Herdr's terminal holder (hc-hold-<id>.service) with the whole crew; a drop-in marks that holder
-# ManagedOOMPreference=avoid, unless one there already sets it (--no-oomd-dropin skips it).
+# ManagedOOMPreference=avoid, unless one there already sets it (--no-oomd-dropin remembers an opt-out;
+# --oomd-dropin opts back in).
 #
 # Herdr hot-reloads mods and layouts, so a running window picks this up at once. Previous copies
 # are backed up to ~/.config/herdr-app/.crew-backups/. Your pals, rooms and memory are never touched.
@@ -32,7 +34,7 @@ backup="$home/.crew-backups/$stamp"
 helpers=1
 claude_hooks=1
 agy_hooks=1
-oomd_dropin=1
+oomd_dropin=""   # no explicit flag: reuse the saved choice (legacy/fresh installs default to on)
 oomd_added=0   # this run wrote the hc-hold drop-in: a failed install takes it away again (T201)
 from="local"
 keep_crewd=0
@@ -44,6 +46,7 @@ for arg in "$@"; do
     --no-claude-hooks) claude_hooks=0 ;;
     --no-agy-hooks) agy_hooks=0 ;;
     --no-oomd-dropin) oomd_dropin=0 ;;
+    --oomd-dropin) oomd_dropin=1 ;;
     --from-release) from="release" ;;
     # The Live channel and Try it live (bin/crewupdate.py): the updater has already snapshotted what's
     # installed and restarts crewd itself, only when its code changed.
@@ -66,6 +69,18 @@ fi
 
 [[ -d "$home" ]] || { echo "no Herdr app home at $home (open Herdr once first)" >&2; exit 1; }
 for need in rsync python3; do command -v "$need" >/dev/null || { echo "Project Pals needs $need; install it and run this again" >&2; exit 1; }; done
+
+if [[ -z "$oomd_dropin" ]]; then
+  oomd_dropin="$(python3 - "$home/data/crew-install.json" <<'PY'
+import json, sys
+try:
+    record = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    record = {}
+print(0 if isinstance(record, dict) and record.get("oomd_dropin") is False else 1)
+PY
+)"
+fi
 
 # Which Herdr this release works with (pals.json "herdr"): outside that range, say so loudly, then go on.
 # If the check itself breaks, say that loudly too (Grok T56): the install goes on, unchecked.
@@ -298,7 +313,10 @@ if [[ $helpers -eq 1 ]]; then
         *)     echo "memory: couldn't add the hc-hold oomd drop-in (pals still get their own scopes)" ;;
       esac
     else
-      echo "memory: skipped the hc-hold oomd drop-in (--no-oomd-dropin); pals still get their own scopes"
+      # An opt-out also removes our existing file, never one the owner edited (T202).
+      python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewupdate; print("\n".join(crewupdate.restore_dropin({"oomd_dropin": None})))' \
+        "$HOME/.local/lib/herdr-crew" || echo "memory: couldn't remove the hc-hold oomd drop-in"
+      echo "memory: hc-hold oomd drop-in opted out (remembered; --oomd-dropin turns it back on); pals still get their own scopes"
     fi
   else
     echo "skipped crewd: no systemd user session here (messages are typed in directly; no routines or callbacks)"
@@ -436,9 +454,9 @@ mkdir -p "$home/data"
 # CREW_BUILD=<hash> (with CREW_BUILD_BRANCH / CREW_BUILD_SUBJECT if known) or a BUILD file at the
 # root (a hash, or JSON with hash, branch, subject, tag, ahead). A release tarball has none.
 # data/crew-installs.jsonl keeps one line per install (the last 200).
-python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$claude_hooks" "$agy_hooks" "$from" "$src" "$home/data/crew-installs.jsonl" <<'PY'
+python3 - "$src/pals.json" "$home/data/crew-install.json" "$version" "$helpers" "$claude_hooks" "$agy_hooks" "$oomd_dropin" "$from" "$src" "$home/data/crew-installs.jsonl" <<'PY'
 import json, os, subprocess, sys, time
-manifest, out, version, helpers, claude_hooks, agy_hooks, source, src, log = sys.argv[1:]
+manifest, out, version, helpers, claude_hooks, agy_hooks, oomd_dropin, source, src, log = sys.argv[1:]
 m = json.load(open(manifest))
 def git(*a):
     try:
@@ -486,7 +504,7 @@ else:
         print(f"ignored the build id {h[:40]!r} (CREW_BUILD or BUILD): it isn't a commit hash", file=sys.stderr)
 now = int(time.time())
 rec = {"name": m.get("name"), "repo": m.get("repo"), "version": version, "helpers": helpers == "1",
-       "claude_hooks": claude_hooks == "1", "agy_hooks": agy_hooks == "1",
+       "claude_hooks": claude_hooks == "1", "agy_hooks": agy_hooks == "1", "oomd_dropin": oomd_dropin == "1",
        "source": source, "installed": now}
 if build:
     rec["build"] = build

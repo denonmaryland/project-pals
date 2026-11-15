@@ -75,7 +75,9 @@ unit. When memory ran out, systemd-oomd killed that unit, and with it every pal.
 - **Herdr's holder goes last.** The installer adds `ManagedOOMPreference=avoid` for
   `hc-hold-<id>.service` (`~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf`),
   unless a drop-in of yours there already sets it (yours wins either way: ours sorts first). Skip it
-  with `--no-oomd-dropin`; uninstall takes it out.
+  with `--no-oomd-dropin`; this choice is remembered through reinstalls, updates and rollback.
+  `./install.sh --oomd-dropin` turns Project Pals' drop-in back on. Owner-edited drop-ins stay as
+  they are; uninstall takes out only Project Pals' file.
 - **Warned before it runs out.** Under the floor (1.5 GB available or 10% of RAM, whichever is larger;
   `"memory_floor_mb"` to change it), `pal hire`, `pal topic` and `pal wake` say so, the app's hire
   and topic paths show a toast, and Home shows a quiet "Memory is low" row with **Sleep idle pals**.
@@ -256,7 +258,8 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
   - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
   - With systemd: a drop-in making Herdr's terminal holder oomd's last pick
     (`~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf`; skip with
-    `--no-oomd-dropin`), and each pal's agent in its own `pal-*.scope` (see Memory).
+    `--no-oomd-dropin`, remembered until `--oomd-dropin`), and each pal's agent in its own
+    `pal-*.scope` (see Memory).
 - **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; choose in About → Background model).
 - **The Desk's Auto routing:** a card you drop with Auto is sent to Claude Haiku (else Antigravity
   CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk.

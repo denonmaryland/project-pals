@@ -446,6 +446,9 @@ def rollback(path=None, log=print, wrote=None):
     # The drop-in text this build writes, read now: putting an older library back can take
     # crewmem.py away before restore_dropin asks it (T209: ours was then taken for the owner's).
     dropin_ours = _dropin_ours()
+    # This is an installation preference, not a build file: keep the latest explicit choice even
+    # when the snapshot predates that field (T202).
+    oomd_choice = installed().get("oomd_dropin")
     if wrote is None:
         wrote = load_json(wrote_file(path), None)
         wrote = wrote if isinstance(wrote, dict) else None
@@ -516,6 +519,10 @@ def rollback(path=None, log=print, wrote=None):
     ins = installed()
     if isinstance(ins, dict) and ins:
         ins["installed"] = time.time()
+        if isinstance(oomd_choice, bool):
+            ins["oomd_dropin"] = oomd_choice
+        else:
+            oomd_choice = ins.get("oomd_dropin")   # an older installer may have dropped the field
         save_json(INSTALL, ins)
     # The drop-in: a snapshot from this version says what it was. One taken by an updater from before
     # T201 doesn't; when its library has no crewmem.py, the build it puts back is from before the memory
@@ -523,6 +530,8 @@ def rollback(path=None, log=print, wrote=None):
     dsnap = dict(snap) if isinstance(snap, dict) else {}
     if "oomd_dropin" not in dsnap and lib_name in listed and f"{lib_name}/crewmem.py" not in listed:
         dsnap["oomd_dropin"] = None
+    if oomd_choice is False and (dsnap.get("oomd_dropin") is None or dsnap.get("oomd_dropin") == dropin_ours):
+        dsnap["oomd_dropin"] = None   # never put our drop-in back against the remembered opt-out
     for line in (restore_config(snap, log=log) if snap else []) + restore_dropin(dsnap, log=log, ours=dropin_ours):
         log(line)
     # crewd holds its code in memory: restart it when what was put back differs from what it runs.
@@ -602,6 +611,8 @@ def apply(log=print, version=None):
         log(f"backed up the current version to {snap.name}")
         args = ["bash", str(root / "install.sh"), "--from-release"]
         ins_now = installed()
+        if ins_now.get("oomd_dropin") is False:
+            args.append("--no-oomd-dropin")
         if not ins_now.get("helpers", True):
             args.append("--no-helpers")
         else:
@@ -1002,6 +1013,8 @@ def install_tree(root, source, log=print):
         drop_snapshot(snap)
     mods0, crewd0, errors0 = mods_fingerprint(), crewd_fingerprint(), _app_errors()
     args = ["bash", str(root / "install.sh"), f"--from-{source}", "--keep-crewd"]
+    if ins.get("oomd_dropin") is False:
+        args.append("--no-oomd-dropin")
     if not ins.get("helpers", True):
         args.append("--no-helpers")
     else:

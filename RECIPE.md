@@ -1447,7 +1447,12 @@ Never put keys or raw command payloads in the activity log. The migration from t
   `"pal_scopes": false`. Without systemd it's the plain command, as before.
 - **The installer** adds `hc-hold-.service.d/00-project-pals-oomd.conf` (`ManagedOOMPreference=avoid`)
   unless a drop-in there already sets that (DeNon's own `10-oomd-avoid.conf` is left alone), and says
-  which in its output; `--no-oomd-dropin` skips it, uninstall removes only Project Pals' file.
+  which in its output. `--no-oomd-dropin` saves an opt-out in `crew-install.json` (`oomd_dropin:
+  false`) and removes an unchanged Project Pals drop-in during a helper install. Reinstalls and
+  stable/Live/trial updates reuse the choice; `--oomd-dropin` explicitly turns it back on.
+  `--no-helpers` still records the choice but makes no systemd changes; the next helper install
+  applies it. Fresh/legacy install records with no choice default to on; a historical skip that was
+  never recorded cannot be inferred from a missing file. Uninstall removes only Project Pals' file.
   An update's snapshot records the drop-in's text (or that there was none), and Roll back puts that
   back and runs `daemon-reload`, unless the file was changed since (then it stays, and Roll back
   says so). A failed install takes away a drop-in it added itself, because the updater that rolls
@@ -1455,6 +1460,10 @@ Never put keys or raw command payloads in the activity log. The migration from t
   older updater doesn't record the drop-in; when its library has no `crewmem.py`, the build it puts
   back predates the memory work and ours goes. Roll back reads Project Pals' drop-in text before it
   swaps the library, which can take `crewmem.py` away (T209).
+  Roll back preserves the latest recorded choice, including when restoring a record from before
+  this field existed. An opt-out prevents it restoring Project Pals' drop-in; owner-edited files
+  are still preserved. Opting in permits the next helper install to add it; rollback to a build
+  without the memory feature still removes the drop-in as above.
   **Watch out:** an older build's own updater, rolling back after an install that passed its checks
   (its runtime verification), can't be taught any of this: the drop-in stays with the older build.
   Installing this version or later again makes it right (the drop-in belongs with per-pal scopes).
