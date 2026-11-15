@@ -14,6 +14,9 @@ or changes keys. A helper cannot promote itself or another helper, forge a click
 trust/audit evidence. New helpers are added at Work only; old on helpers remain Work only.
 No migration or old tap setting enables Full control.
 
+Questions marked **owner-only** are reserved for your own app click. Helpers at every level,
+including Full control, cannot answer them. Ordinary Home questions still accept Full answers.
+
 ## Using the grant
 
 The helper authenticates with its own key from outside a pal's terminal. For example:
@@ -39,7 +42,12 @@ it does not impersonate your own click.
 **Home → Helper activity** says **Pals acted under Full control**, with the operation and its
 outcome. Full Home answers name the helper. An operation may be started, done or failed; if it
 remains started after an interruption, inspect what happened before retrying. `pal helpers log`
-also shows activity. The log does not contain the helper's key.
+also shows activity. The log does not contain the helper's key or click token.
+
+New trust changes record the resulting grant, configured owner label and `app-click` source
+when a matching app click was validated. This records authorization, not proof of the physical
+person operating the app. Direct local API changes say `unknown` / `local-api`; historical
+records without this evidence say actor not recorded. Past grants are not reattributed.
 
 Click **Revoke** on Home or choose **Off** in Trusted helpers. A downgrade, key rotation or
 removal also invalidates the previous grant. Queued operations and unused approvals must still

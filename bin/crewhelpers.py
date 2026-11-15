@@ -114,6 +114,22 @@ def _owner_management():
         raise HelperError(f"only {OWNER}'s own click changes helper trust or credentials")
 
 
+def _trust_provenance(name, operation, click_args):
+    """Only the matching CLI operation may use an already validated, single-use app receipt.
+    Local API callers and historical rows have no evidence of a human clicker.
+    """
+    if isinstance(click_args, list):
+        # helpers ignores its display flag; the receipt still matches the exact original argv.
+        clean = [a for a in click_args if a != "--json"]
+        prefixes = [["helpers"], ["settings", "trust-helper"], ["settings", "trusted-helpers"], ["settings", "helpers"]]
+        if any(clean == prefix + [name, *operation] for prefix in prefixes):
+            from crewlib import take_owner_click_provenance
+            receipt = take_owner_click_provenance(click_args)
+            if receipt:
+                return receipt
+    return {"actor": "unknown", "source": "local-api"}
+
+
 class HelperError(CrewError):
     pass
 
@@ -441,7 +457,7 @@ def _new_key(name):
     return fingerprint(key)
 
 
-def switch(name, on, pals=()):
+def switch(name, on, pals=(), *, _click_args=None):
     """The owner's switch (the caller has checked the click). On, the first time: the helper and its
     key are made. Off: the key stops being accepted at once (it's kept, so On again resumes it)."""
     _owner_management()
@@ -471,13 +487,15 @@ def switch(name, on, pals=()):
             # when the helper is switched on again, until the owner turns each one on.
             e["taps"] = {**e["taps"], "home": False, "local": False, "outward": False}
         _save(h)
-    log("switch", known, action="on" if on else "off", **({"key": "made"} if made else {}))
+    action = "on" if on else "off"
+    log("switch", known, action=action, level=level(e), grant=e["grant"],
+        **_trust_provenance(name, [action], _click_args), **({"key": "made"} if made else {}))
     check()
     return known, e
 
 
-def set_level(name, value, pals=()):
-    """Set the owner's single selector. Only the caller's own app click may reach this function."""
+def set_level(name, value, pals=(), *, _click_args=None):
+    """Set the single selector. CLI callers gate the owner click; local API calls have unknown actor."""
     _owner_management()
     if value not in LEVELS:
         raise HelperError("the helper trust level is off, work, or full")
@@ -500,12 +518,13 @@ def set_level(name, value, pals=()):
         e.pop("restored_off", None)
         e.pop("restored_work", None)
         _save(h)
-    log("switch", known, action=f"trust level {value}", level=value, grant=e["grant"])
+    log("switch", known, action=f"trust level {value}", level=value, grant=e["grant"],
+        **_trust_provenance(name, ["level", value], _click_args))
     check()
     return known, e
 
 
-def rotate(name):
+def rotate(name, *, _click_args=None):
     """A new key in the same file; every copy of the old one is dead from now."""
     _owner_management()
     _ready()
@@ -519,7 +538,8 @@ def rotate(name):
         e["sha256"], e["rotated"] = _new_key(known), now_ms()
         _new_grant(e, old_level)
         _save(h)
-    log("switch", known, action="rotate")
+    log("switch", known, action="rotate", level=level(e), grant=e["grant"],
+        **_trust_provenance(name, ["rotate"], _click_args))
     check()
     return known, e
 
@@ -550,7 +570,7 @@ def taps_auto_off(name, why):
     return known
 
 
-def set_limit(name, per_hour):
+def set_limit(name, per_hour, *, _click_args=None):
     """How many messages an hour this helper may send in the owner's name (the owner's click)."""
     _owner_management()
     try:
@@ -567,12 +587,13 @@ def set_limit(name, per_hour):
             raise HelperError(f"no helper called {name}")
         h["helpers"][known]["per_hour"] = n
         _save(h)
-    log("switch", known, action=f"limit {n} an hour")
+    log("switch", known, action=f"limit {n} an hour",
+        **_trust_provenance(name, ["limit", str(per_hour)], _click_args))
     check()
     return known, n
 
 
-def remove(name):
+def remove(name, *, _click_args=None):
     _owner_management()
     _ready()
     with locked(SEND), locked("helpers"):
@@ -580,12 +601,13 @@ def remove(name):
         known = canonical(name, h)
         if not known:
             raise HelperError(f"no helper called {name}")
-        h["helpers"].pop(known)
+        previous = h["helpers"].pop(known)
         _save(h)
         p = key_path(known)
         if not KEYS.is_symlink() and not p.is_symlink():
             p.unlink(missing_ok=True)
-    log("switch", known, action="remove")
+    log("switch", known, action="remove", level="off", grant=previous.get("grant"),
+        **_trust_provenance(name, ["remove"], _click_args))
     check()
     return known
 
@@ -980,8 +1002,8 @@ def check(bump=None):
                 log("notice", n, reason="removed", text="was removed; its notice is closed")
                 feed("helper", helper=n, status="removed", text=f"{n} was removed")
             elif not e.get("on"):   # the owner switched it off (or chose to leave it off)
-                log("notice", n, reason="off", text="is off, by your click; its notice is closed")
-                feed("helper", helper=n, status="off", text=f"{n} is off, by {OWNER}'s click")
+                log("notice", n, reason="off", text="is off; its notice is closed")
+                feed("helper", helper=n, status="off", text=f"{n} is off")
             else:
                 log("notice", n, reason="ok", text="is working again")
                 feed("helper", helper=n, status="ok", text=f"{n} is working again")

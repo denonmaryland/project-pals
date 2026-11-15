@@ -45,7 +45,7 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home link URL [--title …] [--topic P#t] | note "one line" | deploy "what" [--topic P#t]
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
-  pal home ask … --owner-only | pal home owner-only ID   legacy no-tap marker; Full control may answer
+  pal home ask … --owner-only | pal home owner-only ID   only the owner's app click may answer
   pal welcome                       where the welcome tour stands (it runs on Home; replay it from the gear menu)
   pal welcome folders [--json]      the project folders the tour would suggest for a new pal (names and dates only)
   pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
@@ -2860,7 +2860,8 @@ def cmd_helpers(rest):
                 what = {"sent": f"sent {e.get('card_kind') or 'a card'} to {e.get('to')}: {e.get('title')} ({e.get('card')})",
                         "refused": f"refused: {e.get('command')} ({e.get('what')})" + ("" if e.get("verified") else " · no valid key"),
                         "unverified": f"went as not verified ({e.get('via')}): {e.get('why')}",
-                        "switch": f"{OWNER}: {e.get('action')}",
+                        "switch": f"{e.get('actor') or 'actor not recorded'}: {e.get('action')}"
+                                  + (f" · {e['source']}" if e.get('source') else ""),
                         "action": f"{e.get('label')}: {e.get('action')} {e.get('target') or ''} · {e.get('status')}"}.get(e.get("kind"), e.get("kind"))
                 print(f"{ago(e.get('at'))} · {e.get('helper')} · {what}")
             if not info["log"]:
@@ -2901,7 +2902,7 @@ def cmd_helpers(rest):
         return
     if len(rest) == 3 and rest[1] == "level":
         require_owner("setting a helper's trust level", allow_delegate=False)
-        known, entry = crewhelpers.set_level(rest[0], rest[2], [s["name"] for s in herdr_spaces()])
+        known, entry = crewhelpers.set_level(rest[0], rest[2], [s["name"] for s in herdr_spaces()], _click_args=owner_args())
         label = {"off": "Off", "work": "Work only", "full": "Full control"}[crewhelpers.level(entry)]
         print(f"{known}: {label}")
         return
@@ -2919,7 +2920,7 @@ def cmd_helpers(rest):
     if len(rest) == 3 and rest[1] == "limit":
         require_owner("changing helper trust", allow_delegate=False)
         try:
-            known, n = crewhelpers.set_limit(rest[0], rest[2])
+            known, n = crewhelpers.set_limit(rest[0], rest[2], _click_args=owner_args())
         except crewhelpers.HelperError as e:
             die(str(e))
         print(f"{known}: up to {n} messages an hour in {OWNER}'s name")
@@ -2936,17 +2937,17 @@ def cmd_helpers(rest):
                     pals = [s["name"] for s in herdr_spaces()]
                 except CrewError:
                     pass
-            known, e = crewhelpers.switch(name, what == "on", pals)
+            known, e = crewhelpers.switch(name, what == "on", pals, _click_args=owner_args())
             if what == "off":
                 print(f"{known}: off. Its key isn't accepted now; what it sends arrives as \"not verified as {OWNER}\".")
                 return
             print(f"{known}: on · key {e['sha256'][:8]}\nkey file: {crewhelpers.key_path(known)} (only you can read it; Project Pals keeps its fingerprint, not the key)\n"
                   f"Give your assistant this line: PAL_HELPER={shlex.quote(known)} pal tell \"<Pal>\" \"…\"   (from a plain terminal, not inside Herdr)")
         elif what == "rotate":
-            known, e = crewhelpers.rotate(name)
+            known, e = crewhelpers.rotate(name, _click_args=owner_args())
             print(f"{known}: new key {e['sha256'][:8]} in {crewhelpers.key_path(known)}. Every copy of the old key is dead.")
         else:
-            print(f"{crewhelpers.remove(name)}: removed, and its key file with it. What it sent stays in the record.")
+            print(f"{crewhelpers.remove(name, _click_args=owner_args())}: removed, and its key file with it. What it sent stays in the record.")
     except crewhelpers.HelperError as e:
         die(str(e))
 
@@ -3484,14 +3485,16 @@ def cmd_home(spaces, rest):
         elif sub == "answer" and len(args) >= 2:
             # The owner's pick, from a click in Project Pals (main proved it); never a pal's, never typed.
             if not owner_proven():
-                require_owner("answer a question on Home")
+                item = crewhome._find(crewhome.load(), args[0])
+                require_owner("answer an owner-only question on Home" if item.get("owner_only") else "answer a question on Home",
+                              allow_delegate=not item.get("owner_only"))
             from crewlib import tap_authority
             t = tap_authority()
             x = crewhome.answer(args[0], " ".join(args[1:]), by=acted(), tapped=t)
             print(crewhome.line(x))
             print(home_answer_to(spaces, x, x["answer"], tap=t))
         elif sub == "owner-only" and len(args) == 1:
-            # No helper's tap answers this ask (T147): its asker, the head pal or the owner marks it.
+            # No helper answers this ask: its asker, the head pal or the owner marks it.
             print(crewhome.line(crewhome.owner_only(args[0], by=by, role=role)))
         elif sub == "seen":
             if not owner_proven():

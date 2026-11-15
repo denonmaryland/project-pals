@@ -27,8 +27,8 @@ class FullExecution(Base):
     def approval(self, rid):
         return json.loads((self.data / 'crew-approvals' / (rid + '.json')).read_text())
 
-    def test_owner_only_home_answer_has_helper_provenance_and_no_click(self):
-        asked = pal(self.env, 'home', 'ask', 'Ship this?', '--option', 'Yes', '--option', 'No', '--owner-only', term='tW')
+    def test_ordinary_home_answer_has_helper_provenance_and_no_click(self):
+        asked = pal(self.env, 'home', 'ask', 'Ship this?', '--option', 'Yes', '--option', 'No', term='tW')
         self.assertEqual(asked.returncode, 0, asked.stderr)
         iid = asked.stdout.split()[0]
         r = helper(self.env, 'home', 'answer', iid, 'Yes')

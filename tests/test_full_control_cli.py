@@ -17,7 +17,7 @@ class FullControlCLI(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_full_answers_home_without_tickets_or_human_impersonation(self):
-        r = pal(self.env, 'home', 'ask', 'Choose?', '--option', 'A', '--option', 'B', '--owner-only', term='tW')
+        r = pal(self.env, 'home', 'ask', 'Choose?', '--option', 'A', '--option', 'B', term='tW')
         self.assertEqual(r.returncode, 0, r.stderr)
         home = self.data / 'crew-home' / 'home.json'
         ident = json.loads(home.read_text())['items'][-1]['id']

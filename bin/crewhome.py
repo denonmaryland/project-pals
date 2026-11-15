@@ -184,7 +184,7 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
     if status == "parked":
         item["parked_at"] = item["at"]
     if owner_only and kind == "ask":
-        item["owner_only"] = True   # no helper's tap answers it (pal home ask --owner-only)
+        item["owner_only"] = True   # no helper, including Full control, answers it
     with locked("home"):
         h = load()
         if status == "open" and sum(1 for x in h["items"] if x.get("status") == "open") >= OPEN_CAP:
@@ -268,7 +268,7 @@ def answer(iid, text, *, by, tapped=None, delegated=None):
     `tapped` is crewlib.tap_authority(), the caller has taken its token): then it must be one of the
     ask's listed choices, `by` says who tapped, and the item keeps who, what they relayed and which
     hold, so Home shows "Tapped by …" and never "You answered"."""
-    from crewlib import delegation_authority
+    from crewlib import delegation_authority, owner_proven
     delegated = delegated or delegation_authority()
     text = _one_line(text, 500, "the answer")
     with locked("home"):
@@ -278,6 +278,10 @@ def answer(iid, text, *, by, tapped=None, delegated=None):
             raise HomeError(f"{x['id']} is a {x.get('kind')}, not a question")
         if x.get("status") not in ("open", "parked"):
             raise HomeError(f"{x['id']} is {x['status']} already")
+        if x.get("owner_only"):
+            import crewhelpers
+            if delegated or tapped or crewhelpers.claimed() or not owner_proven():
+                raise HomeError(f"{x['id']} is owner-only: only the owner's own app click may answer it; helper authority cannot")
         if delegated:
             import crewhelpers
             delegated = crewhelpers.recheck_full(delegated)
@@ -316,7 +320,7 @@ def untap(iid):
 
 
 def owner_only(iid, *, by, role=None):
-    """Mark an ask for the owner's own click: no helper's tap answers it. Its asker (any topic of that
+    """Mark an ask for the owner's own click: no helper at any level answers it. Its asker (any topic of that
     pal), the head pal or the owner may; nobody can take the mark off but the owner answering it."""
     with locked("home"):
         h = load()

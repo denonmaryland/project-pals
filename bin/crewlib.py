@@ -322,6 +322,19 @@ def where_of(terminal, spaces):
 # only with prove_owner() (bin/crew calls it for tell / ask / task when the app passes --click).
 SHELL_NAME = "a shell on this computer"
 _owner_proven = False
+_owner_click_argv = None   # validated command only; never retain the click nonce
+
+
+def take_owner_click_provenance(argv):
+    """Audit one exact operation whose app token owner_gate validated in this process.
+    This identifies the configured owner label and authorization source, not the physical operator.
+    It is not an authorization API, and a receipt can be attached to only one audit event.
+    """
+    global _owner_click_argv
+    if os.environ.get("PAL_HELPER") or _owner_click_argv is None or _owner_click_argv != argv:
+        return None
+    _owner_click_argv = None
+    return {"actor": OWNER, "source": "app-click"}
 
 
 def prove_owner(argv, click):
@@ -482,7 +495,8 @@ def owner_gate(argv, click=None, what="this", tap=None, allow_delegate=True):
     it for exactly this command line, for a hold that is running, and only for the few commands a tap
     may stand in for). The run then speaks as "<helper> (tapped, relayed from <owner>)", never as
     the owner: tap_authority() says who."""
-    global _tap
+    global _tap, _owner_click_argv
+    _owner_click_argv = None
     if os.environ.get("PAL_HELPER"):
         if allow_delegate and not click and not tap:
             try:
@@ -513,6 +527,7 @@ def owner_gate(argv, click=None, what="this", tap=None, allow_delegate=True):
         tok = load_json(path, None)
         path.unlink(missing_ok=True)   # single use, whatever happens next
         if tok and tok.get("args") == argv and now_ms() - tok.get("at", 0) < CLICK_TTL * 1000:
+            _owner_click_argv = list(argv)
             return "the app"
         die(f"that click expired or was for something else; click again in Project Pals")
     die(f"{what}: only {OWNER} decides this, with a click in Project Pals (Home, the Inbox, or the proposal dialog)")

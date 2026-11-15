@@ -51,10 +51,16 @@ assert.match(logRow({ ...refused, verified: false }).rest, /no valid key$/);
 assert.match(logRow(refused, "DeNon").rest, /only DeNon's click/);
 const unv = { at: NOW - 3 * MIN, kind: "unverified", helper: "Pals", why: "Pals's trusted link is off", via: "pal tell" };
 assert.deepEqual(logRow(unv), { bold: "Pals: not sent in your name", rest: "Pals's trusted link is off · it went as not verified", tone: "warn", card: null });
-assert.equal(logRow({ kind: "switch", helper: "Pals", action: "on", key: "made" }).bold, "You switched Pals on · key made");
-assert.equal(logRow({ kind: "switch", helper: "Pals", action: "off" }).bold, "You switched Pals off");
-assert.equal(logRow({ kind: "switch", helper: "Pals", action: "rotate" }).bold, "You rotated Pals's key");
-assert.equal(logRow({ kind: "switch", helper: "Pals", action: "remove" }).bold, "You removed Pals");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "on", key: "made" }).bold, "Switched Pals on · key made");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "off" }).bold, "Switched Pals off");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "rotate" }).bold, "Rotated Pals's key");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "remove" }).bold, "Removed Pals");
+// Historical and local API records do not invent a clicker; new receipts name the configured owner.
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "on" }, "DeNon").rest, "actor not recorded");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "trust level full", actor: "unknown", source: "local-api" }).rest, "local API · actor unknown");
+assert.deepEqual(logRow({ kind: "switch", helper: "Pals", action: "trust level full", actor: "DeNon", source: "app-click" }),
+  { bold: "DeNon gave Pals Full control", rest: "app click", tone: "quiet", card: null });
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "on", actor: "DeNon" }).rest, "actor not recorded");
 const carried = logRow({ kind: "switch", helper: "Pals", action: "carried over, off" });
 assert.equal(carried.bold, "Pals was carried over, switched off");
 assert.match(carried.rest, /turn it on again/);
@@ -70,8 +76,8 @@ assert.deepEqual(logRow(action), { bold: "Pals acted under Full control", rest: 
 assert.equal(logRow({ ...action, status: "started" }).tone, "quiet");
 assert.equal(logRow({ ...action, status: "failed" }).tone, "warn");
 assert.match(logRow({ ...action, status: "unrecognized" }).rest, /outcome unknown$/);
-assert.equal(logRow({ kind: "switch", helper: "Pals", action: "level full" }).bold, "You gave Pals Full control");
-assert.equal(logRow({ kind: "switch", helper: "Pals", action: "level off" }).bold, "You revoked Pals's access");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "level full" }).bold, "Gave Pals Full control");
+assert.equal(logRow({ kind: "switch", helper: "Pals", action: "level off" }).bold, "Revoked Pals's access");
 const started = { ...action, at: NOW - 2 * MIN, status: "started" };
 assert.deepEqual(helperRows([started, action]), [action], "one displayed outcome per operation");
 assert.equal(helperToday([started, action], NOW), "1 Full control action", "start and outcome count once");
@@ -83,9 +89,9 @@ assert.equal(helperRows([started, { ...action, at: started.at }])[0].status, "do
 assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "no-key", text: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key." }),
   { bold: "Pals is not working", rest: "Pals is on, but its key file is missing. What it sends is not in your name until it has a new key.", tone: "warn", card: null });
 assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "ok", text: "is working again" }), { bold: "Pals is working again", rest: "what it sends is in your name again", tone: "quiet", card: null });
-// A notice closed by your own Off or Remove says that, not "working again" (Codex T174).
+// Off/Remove closes the notice without inventing its clicker, even for old notice text (T220).
 assert.deepEqual(logRow({ kind: "notice", helper: "Pals", reason: "off", text: "is off, by your click; its notice is closed" }),
-  { bold: "Pals is off", rest: "your click · its notice is closed", tone: "quiet", card: null });
+  { bold: "Pals is off", rest: "its notice is closed", tone: "quiet", card: null });
 assert.equal(logRow({ kind: "notice", helper: "Wabi", reason: "removed", text: "was removed; its notice is closed" }).bold, "Wabi was removed");
 assert.equal(logRow({ kind: "notice", helper: "The list of helpers", reason: "restored", text: "was unreadable and was put back from its backup copy" }).bold, "The list of helpers");
 const carriedOver = { name: "Pals", reason: "carried-over", fix: "on", since: NOW - 19 * H, unverified: 3,

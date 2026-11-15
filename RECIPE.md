@@ -1394,8 +1394,9 @@ Full control never becomes a human owner's click. See [the guide](docs/full-cont
   Helpers cannot promote themselves, manufacture clicks or rewrite trust/audit evidence.
 - **Full control has no per-action prompt or tap hold.** A helper invokes ordinary commands with
   `PAL_HELPER=NAME pal …` or `pal --as-helper=NAME …`. It may answer Home, approve exact held
-  commands, or use the script's `pal owner-step` gate. An approval authorizes its matching command
-  once and stays bound to the helper's current grant. Existing operation checks still apply:
+  commands, or use the script's `pal owner-step` gate. Home questions marked `owner_only`
+  are the exception: only the owner's proven app click may answer, checked again under the Home
+  lock. An approval authorizes its matching command once and stays bound to the helper's current grant. Existing operation checks still apply:
   review hashes must match, a landing must merge cleanly, and the Chief remains a read-and-advise
   role. Standing authority does not invent credentials or capabilities an operation lacks.
 - **Attribution:** Work only cards say `[from <owner> via <name>, a trusted helper: normal work only]`.
@@ -1407,6 +1408,10 @@ Full control never becomes a human owner's click. See [the guide](docs/full-cont
   done or failed status. The UI combines one operation's start/outcome rows; the underlying
   history keeps both. It offers **Revoke** beside helper actions. An interrupted operation can
   remain started: inspect effects before retrying; the log is not an undo mechanism.
+  New trust-change rows bind the grant to the configured owner label and `app-click` source
+  only after validating the matching single-use app token. This is authorization provenance,
+  not proof of the physical operator. Ungated local API changes say `unknown` / `local-api`;
+  historical rows without provenance say actor not recorded. Tokens and keys are never logged.
 - **Revocation:** Off, a downgrade, key rotation or removal invalidates the previous grant.
   Queued messages, queued app requests and unused approvals must still match the live grant
   when used. Revoke prevents their use; it cannot recall delivered messages or undo completed
