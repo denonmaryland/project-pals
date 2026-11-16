@@ -51,6 +51,7 @@ H.264 MP4 plus a GIF for the README (palette).
 | `switch-channels.mp4` / `.gif` | Clicking through Juniper's topics (#api-tests, #perf, #docs, #checkout): the list highlight moves and the terminal follows. | 9 s |
 | `open-profile.mp4` / `.gif` | Live: from the working #docs-check session, opening the profile panel on Vault › Home in Side, then Full, then Mission and Journal from the file tree (journal entries blurred). 14 fps; the GIF is 7 fps, 860 wide. | 11 s |
 | `task-with-image.mp4` / `.gif` | Writing "Tidy the README screenshots" in Tasks, attaching a screenshot, pressing Enter: "Task added for Juniper". | 11 s |
+| `promo.mp4` | The 0.4.3 promo film (2026-11-16), 720p of the 1080p master: a demo crew (Bean, Mallow, Copper, Flick) with real Claude Code and Codex sessions in throwaway folders, ending on a Claude Code → Codex handoff. The repo's `preview.png` is its handoff still. Every frame of the master was text-checked; version numbers, usage warnings and a session id are painted out. | 45 s |
 
 The drag-into-a-group clip from the shot list wasn't taken: dragging needs the real mouse, and the
 demo was driven by commands only. `switch-channels` is in its place.
