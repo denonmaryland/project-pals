@@ -23,6 +23,9 @@ Early software: start with a throwaway project.
   brief, not the old transcript. `pal handoff back` returns it.
 - **Tasks and cards.** A shared task board (`pal task`), and a desk per pal: everything sent to a pal
   is a card that shows whether it arrived, is being worked, is done, or is held.
+- **Your call.** What only you decide comes up one at a time in a small dialog over the terminal
+  (**Ctrl+Shift+A**, or the header's **Your call** pill): a pal's question, a held command, a
+  proposed change, with who's asking and what each option does.
 - **An approval gate.** Claude Code and Antigravity CLI pals stop and wait for your click before
   they push, merge or land a branch, publish a release, deploy, or edit a project's AGENTS.md or
   CLAUDE.md. It catches mistakes; it isn't a sandbox.
@@ -70,7 +73,8 @@ Something broke, or worked? `pal report` prints local diagnostics (it uploads no
 
 - [docs/guide.md](docs/guide.md): every feature, harness support, memory, the gate in detail,
   updates, uninstall
-- [RECIPE.md](RECIPE.md): the full spec, what each part does and how it behaves
+- [RECIPE.md](RECIPE.md): the brief in Herdr's format, and [docs/spec.md](docs/spec.md): the full
+  spec, what each part does and how it behaves
 - [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for working on Project Pals
 
 MIT licensed.

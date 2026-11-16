@@ -10,8 +10,8 @@ without a systemd user session) aren't supported yet. See [mac-support.md](mac-s
 
 Each Herdr space is a pal (a project with a brain), and each of its tabs is a topic. Pals can
 work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. The app
-is terminal-forward: you work in the pals' terminals, and around them are a sidebar, Home, an
-Inbox and small dialogs. On top of that you get:
+is terminal-focused: you work in the pals' terminals, and around them are a sidebar, a header and
+small dialogs; what only you decide comes up in **Your call**. On top of that you get:
 
 - **Pocket pets:** every pal is a little LED critter whose pose shows what it's doing (working,
   needs you, done, PR open, merged, stuck, asleep). Pick its species, colour, what it wears and its
@@ -40,7 +40,7 @@ Everything sent to a pal (a message, a question, a task, the answer to something
 card with a status: queued, seen, working, done, held or needs you. You see when a pal actually
 got it and what it did with it, instead of guessing from its screen.
 
-- Cards that wait on you show on Home and are counted on the Inbox. `pal desk ls --all` lists every
+- Cards that wait on you come up in Your call and count in its pill. `pal desk ls --all` lists every
   desk: what has no pal yet, what's held and why, each pal and its topics.
 - **Send to a pal** (**Ctrl+Shift+D**, or the gear menu) sends a message from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
   model (Claude Haiku) picks one for you, and a card it isn't sure about waits for you to place it.
@@ -50,14 +50,19 @@ got it and what it did with it, instead of guessing from its screen.
 - Pals work their desk with `pal desk` (`take`, `done "result"`, `reply`, `block`, `pass`).
   Cards are plain files in `~/.config/herdr-app/data/crew-desk`.
 
-## Home
+## Your call
 
-Click your head pal (or press **Ctrl+Shift+H**) for one page to come back to: everything that
-needs you, oldest first, under one line saying who's working and what shipped today, or "All
-caught up". While something needs you, Home shows one decision at a time: who's asking, the
-context, what each option does and the asker's recommendation. Pick with a click or 1-9 (Enter
-takes the recommendation). **T** opens your head pal's terminal, and "What happened today" opens
-a drawer with what finished, got installed or was linked.
+What only you decide comes up in **Your call**, a small dialog over the terminal, one item at a
+time and oldest first: a pal's question, a command held for your approval, a card waiting on you,
+the idea partner's drafts, a proposed change to a mission or an AGENTS.md, a helper that needs
+your click, and topics that look stuck. Each shows who's asking, the context, what each option
+does and the asker's recommendation. Pick with a click or 1-9 (Enter takes the recommendation);
+**L** (Later) moves on and keeps this one waiting, and **T** opens the asker's terminal.
+
+It opens with **Ctrl+Shift+A**, the amber **Your call · N** pill in the header (red while a
+command is held), the head pal's Your call button, the command bar or the gear menu, or the toast
+that says something new is waiting. There is no page: the terminal stays the app.
+**Ctrl+Shift+H** goes to your head pal's terminal.
 
 ## Memory
 
@@ -76,8 +81,8 @@ unit. When memory ran out, systemd-oomd killed that unit, and with it every pal.
   `./install.sh --oomd-dropin` turns Project Pals' drop-in back on. Owner-edited drop-ins stay as
   they are; uninstall takes out only Project Pals' file.
 - **Warned before it runs out.** Under the floor (1.5 GB available or 10% of RAM, whichever is larger;
-  `"memory_floor_mb"` to change it), `pal hire`, `pal topic` and `pal wake` say so, the app's hire
-  and topic paths show a toast, and Home shows a quiet "Memory is low" row with **Sleep idle pals**.
+  `"memory_floor_mb"` to change it), `pal hire`, `pal topic` and `pal wake` say so, the app's hire,
+  topic and wake paths show a "Memory is low" toast (at most once every 10 minutes).
 - **Idle topics can sleep by themselves.** `"sleep_idle_hours": 6` (off by default) has crewd put
   topics idle that long to sleep, with `pal sleep`'s usual checks (never the head pal, never one
   that's mid-turn or waiting). `pal sleep --idle --older 6` does the same once.
@@ -99,7 +104,7 @@ Before waking many topics at once, check `pal ram`'s available figure against th
 An optional pal to think out loud with. Hire it from the hire dialog (Idea partner) or with
 `pal hire --partner`, then riff in its #ideas topic: half-formed ideas, screenshots. It asks sharp
 questions and turns what you settle on into card drafts with the right pal suggested. Nothing goes
-out until you click **Send** on its draft on Home (or **Edit…** it first); then it's your own card. MUSE runs on Claude
+out until you click **Send** on its draft in Your call (or **Edit…** it first); then it's your own card. MUSE runs on Claude
 Code (Sonnet).
 
 ## Harnesses
@@ -171,7 +176,7 @@ Claude Code and Antigravity CLI pals ask you before they push, publish, make a G
 merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
 moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
-tokens or the Desk's cards. The command waits in your Inbox for approval. You can approve it
+tokens or the Desk's cards. The command waits in Your call for approval. You can approve it
 yourself, or delegate ordinary app decisions to a helper with Full control. Trust and audit
 protections remain under your own click.
 
@@ -188,7 +193,7 @@ protections remain under your own click.
 - Only your actual app click sets helper trust or changes keys. Helpers cannot promote themselves
   or other helpers. New helpers start at Work only when you add them; existing on helpers migrate
   to Work only. No update or migration turns Full control on.
-- **Home → Helper activity** says “Pals acted under Full control”, shows outcomes, and offers
+- **The Trusted helpers dialog's record** (and `pal helpers log`) says “Pals acted under Full control”, shows outcomes, and offers
   **Revoke**. Revoke switches that helper off and invalidates queued actions and unused approvals
   under its old grant. It does not undo completed work. Helper decisions are always attributed to
   the helper, never described as your own click.
@@ -219,8 +224,8 @@ git clone https://github.com/denonmaryland/project-pals && cd project-pals
 ```
 
 Needs Linux, Herdr (open it once first), `python3`, `curl` and `rsync`. A first install switches
-Herdr to the `pals` layout (Ctrl+Shift+L if it didn't), and your head pal is waiting on Home with
-a one-minute welcome tour: it introduces itself and offers to hire your first pal on one of your
+Herdr to the `pals` layout (Ctrl+Shift+L if it didn't), and your head pal greets you with a
+one-minute welcome tour in a dialog: it introduces itself and offers to hire your first pal on one of your
 project folders. Skip it any time; it's in the gear menu as Welcome tour. Without a systemd user
 session the install still works, but crewd is skipped: messages are typed in directly and routines
 and callbacks don't run.
@@ -245,7 +250,7 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
 - **Layout, mods and commands:** `~/.config/herdr-app/layouts/pals.json`, `mods/crew-*`, and
   `~/.local/bin/pal` and friends (`crew` is an alias).
 - **Shortcuts:** Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
-  card) and Ctrl+Shift+H (Home) go into Herdr's `keys.json`, backed up first, and only where the
+  card), Ctrl+Shift+A (Your call) and Ctrl+Shift+H (the head pal's terminal) go into Herdr's `keys.json`, backed up first, and only where the
   key and the action are free.
 - **Helpers (skip all with `--no-helpers`, or skip one harness's hooks with `--no-claude-hooks` / `--no-agy-hooks`):**
   - `herdr-crew.service`, the background helper.
@@ -357,7 +362,7 @@ A first install has nothing to roll back to; to take it out again, use Uninstall
 ```
 
 This bumps `VERSION`, tags it, builds the tarball and `SHA256SUMS`, pushes, and creates the
-GitHub release. It first asks for the owner's go: a request in Project Pals' Inbox, then the same
+GitHub release. It first asks for the owner's go: a request in Project Pals' Your call, then the same
 command once more after the click (without Project Pals, you type the version). `./release 0.2.0
 --dry-run` runs every check and nothing else.
 
