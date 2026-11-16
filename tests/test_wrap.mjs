@@ -84,23 +84,20 @@ try {
   const src = (f) => readFileSync(join(root, f), "utf8").split("\n");
   const sites = [
     ["mods/crew-update/main.js", "child(h.detail)"],                              // release-note highlights
-    ["mods/crew-home/main.js", "child(sp.sub ?? \"\")"],                          // the review's who line
-    ["mods/crew-home/main.js", "${rec.why}"],                                    // the recommendation's why
-    ["mods/crew-home/main.js", "The asker didn't pick one"],
-    ["mods/crew-home/main.js", "child(op.does || \"\")"],                         // an option's "does" (rows)
-    ["mods/crew-home/main.js", "child(op.does || \" \")"],                        // and (cards)
+    ["mods/crew-decide/main.js", "child(sp.sub ?? \"\")"],                        // Your call's who line
+    ["mods/crew-decide/main.js", "${rec.why}"],                                  // the recommendation's why
+    ["mods/crew-decide/main.js", "The asker didn't pick one"],
+    ["mods/crew-decide/main.js", "text_color(on ? \"#C9DCEF\" : d.fg2).child(l)"],  // an option's "does", each line
   ];
   for (const [f, mark] of sites) {
     const lines = src(f).filter((l) => l.includes(mark));
     assert.ok(lines.length, `${f}: "${mark}" is still drawn`);
     for (const l of lines) assert.ok(!l.includes(".truncate()"), `${f}: "${mark}" wraps`);
   }
-  // A Needs-you card's sentence wraps; only a command (mono) stays on one line.
-  assert.ok(src("mods/crew-home/main.js").some((l) => l.includes("const line = sub == null") && l.includes("when(mono, (el) => el.truncate())")));
   // Boxes holding a wrapping sentence grow instead of clipping it.
-  const home = readFileSync(join(root, "mods/crew-home/main.js"), "utf8");
-  for (const box of ['id(`need-${n.key}`).min_h(CARD)', 'id("rv-rec").min_h(52)', 'id(`rv-o-${j}`).min_h(40)', 'min_w(0).min_h(72)'])
-    assert.ok(home.includes(box), `crew-home: ${box}`);
+  const decide = readFileSync(join(root, "mods/crew-decide/main.js"), "utf8");
+  for (const box of ['id("decide-rec").min_h(34)', 'id(`decide-o-${j}`).min_h(40)', "h_flex().min_h(44).flex_none()"])
+    assert.ok(decide.includes(box), `crew-decide: ${box}`);
   console.log("test_wrap: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

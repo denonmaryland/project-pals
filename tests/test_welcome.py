@@ -146,11 +146,12 @@ class FirstInstall(unittest.TestCase):
     def test_a_first_install_starts_the_tour_and_a_second_leaves_it(self):
         out = self.install()
         self.assertEqual(self.settings()["welcome"], {"state": "new", "beat": 0})
-        self.assertIn("Orchestrator is waiting on Home to show you around", out)
+        self.assertIn("Orchestrator is waiting to show you around", out)
         self.assertIn("layout.switch", (self.home / "herdr-app.log").read_text())
-        # The tour's files are in the Home mod.
-        for f in ("welcome.js", "welcome-text.js"):
-            self.assertTrue((self.app / "mods" / "crew-home" / f).exists(), f)
+        # The tour is its own dialog (T235 took Home out): crew-welcome, and no Home mod.
+        for f in ("main.js", "welcome.js", "welcome-text.js"):
+            self.assertTrue((self.app / "mods" / "crew-welcome" / f).exists(), f)
+        self.assertFalse((self.app / "mods" / "crew-home").exists(), "no Home mod")
         # The owner finishes it; a second install doesn't bring it back or switch the layout again.
         s = self.settings()
         s["welcome"] = {"state": "done"}

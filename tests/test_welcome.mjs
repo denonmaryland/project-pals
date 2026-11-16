@@ -1,7 +1,7 @@
-// The welcome tour's words and small decisions (T76; mods/crew-home/welcome-text.js).
+// The welcome tour's words and small decisions (T76; mods/crew-welcome/welcome-text.js).
 // Run: node tests/test_welcome.mjs
 import assert from "node:assert/strict";
-import { BEATS, beat, beatAt, pending, pickBrain, gated, palName, when } from "../mods/crew-home/welcome-text.js";
+import { BEATS, beat, beatAt, pending, pickBrain, gated, palName, when } from "../mods/crew-welcome/welcome-text.js";
 
 // Seven screens, each with something to say and one main button.
 assert.equal(BEATS.length, 7);

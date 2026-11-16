@@ -507,7 +507,7 @@ def owner_gate(argv, click=None, what="this", tap=None, allow_delegate=True):
                 pass  # keep the refused attempt in the same audit trail as Work-only refusals
         # Presented as a trusted helper (T116): never an owner decision, whatever else comes with it,
         # a click token included (from build 7692987). A key sends normal work; it's never a click.
-        # Home's record says it tried.
+        # The helpers' record says it tried.
         try:
             import crewhelpers
             crewhelpers.note_refused(argv, what)
@@ -530,7 +530,7 @@ def owner_gate(argv, click=None, what="this", tap=None, allow_delegate=True):
             _owner_click_argv = list(argv)
             return "the app"
         die(f"that click expired or was for something else; click again in Project Pals")
-    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (Home, the Inbox, or the proposal dialog)")
+    die(f"{what}: only {OWNER} decides this, with a click in Project Pals (Your call, or the proposal dialog)")
 
 
 def is_bot_terminal(terminal):

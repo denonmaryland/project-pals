@@ -152,7 +152,9 @@ done
 # panel, the Routines dialog, the Desk page, the room page and its composer. (The Desk's cards, in
 # data/, are the pals' messages and are never touched.) 0.4.4 (T222): the Desk settings dialog too;
 # its settings stay in crew-settings.json (a Full control helper, or the owner by hand, changes them).
-for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines crew-desk crew-room crew-room-new crew-composer crew-desk-settings; do
+# T235 (DeNon, 2026-11-16: terminal-focused): Home and its chat window bar; decisions are in Your call
+# (crew-decide), the welcome tour is crew-welcome. Home's data (data/crew-home) stays: `pal home` uses it.
+for gone in crew-rail crew-chat crew-prompt crew-palrail crew-tabs crew-side crew-tell crew-computer crew-computer-app crew-palboard crew-profile crew-routines crew-desk crew-room crew-room-new crew-composer crew-desk-settings crew-home crew-home-chat; do
   if [[ -d "$home/mods/$gone" ]]; then
     mkdir -p "$backup/mods"; cp -a "$home/mods/$gone" "$backup/mods/" && rm -rf "$home/mods/$gone"
   fi
@@ -195,13 +197,14 @@ fi
 # Project Pals' shortcuts in keys.json's global map: ctrl-shift-space → crew-header.search (the command bar, T18; Herdr leaves
 # it free, and Ctrl+K stays with the terminal, where it's the shell's kill-line) and ctrl-shift-d →
 # crew-header.drop (the Desk's quick-drop; free in Herdr and in keys.json) and ctrl-shift-h →
-# crew-roster.home (Home, the head pal's page; free in both too) and ctrl-shift-j → crew-roster.chief
+# crew-roster.home (the head pal's terminal; it was Home's key before T235; free in both too) and
+# ctrl-shift-a → crew-header.decide (Your call, T235; free in both, checked 2026-11-16) and ctrl-shift-j → crew-roster.chief
 # (the Chief's pop-up; free in both, checked 2026-11-09) and ctrl-shift-g → crew-roster.factory (the
 # factory switcher, T66; free in both, checked the same day). Each only when
 # nothing in the file uses that key yet and its action isn't bound already. keys.json is backed up
 # first; without a keys.json, nothing is written (a new file would replace Herdr's default keys), and
 # the panel and the command bar still open from the header, the hero and the menus.
-for pair in "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home Home" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher"; do
+for pair in "ctrl-shift-space crew-header.search the command bar" "ctrl-shift-d crew-header.drop the quick-drop" "ctrl-shift-h crew-roster.home the head pal's terminal" "ctrl-shift-a crew-header.decide Your call" "ctrl-shift-j crew-roster.chief the Chief" "ctrl-shift-g crew-roster.factory the factory switcher"; do
   read -r key action what <<<"$pair"
   if [[ -f "$home/keys.json" && ! -L "$home/keys.json" ]] && ! grep -q "\"$action\"" "$home/keys.json"; then
     mkdir -p "$backup"; [[ -f "$backup/keys.json" ]] || cp -a "$home/keys.json" "$backup/keys.json"
@@ -543,7 +546,7 @@ echo "installed Project Pals $version into $home"
 if [[ -n "$was_shown" || -n "$first_install" ]]; then herdr-app do layout.switch '{"name":"pals"}' >/dev/null 2>&1 && echo "switched Herdr to the pals layout"; fi
 if [[ -n "$first_install" ]]; then
   head="$(HERDR_APP_HOME="$home" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import crewlib; print(crewlib.settings()["head"])' "$HOME/.local/lib/herdr-crew" 2>/dev/null || echo Orchestrator)"
-  echo "Open Herdr (the pals layout: Ctrl+Shift+L): $head is waiting on Home to show you around."
+  echo "Open Herdr (the pals layout: Ctrl+Shift+L): $head is waiting to show you around."
 fi
 
 # Trusted helpers (T170): an install never changes a helper's switch or key. Say where each one stands,

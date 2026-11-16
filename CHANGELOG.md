@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+- **Just the terminals: Home and the Inbox are gone.** Project Pals is terminal-focused now. Clicking
+  any pal, the head pal included, opens its terminal, and Ctrl+Shift+H takes you to the head pal's
+  terminal. Gone: Home (the head pal's page with Needs you, the one-at-a-time review, All caught up,
+  the What happened today drawer and its chat window), the sidebar's Inbox and Tasks views and their
+  switcher, the hero's Inbox, Tasks and Home buttons, the status strip's "N need you", and the
+  command bar's Inbox and "<Head> home". Tasks are still in the pal menu and the command bar, and
+  `pal task` keeps the board. The installer sets the old Home mods aside; nothing you made is
+  touched, and `pal home` keeps working.
+- **Your call.** What only you decide comes to you in a small window over your terminal, one item
+  at a time: a pal's question, a login, a held command, a Desk card waiting on you, a proposal (Dream
+  proposals show their whole text before Approve), the idea partner's drafts, a trusted helper that
+  needs a click, a topic asking you or one that looks stuck. Each shows who asks, the context, their
+  recommendation, what each choice does and any attachments, all in one scroll so nothing is cut off.
+  Press 1-9 to pick, Enter for the recommended one, L for
+  later, T to open the asker's terminal, Esc to close. It opens from its toasts, the amber "Your call
+  · N" pill at the top (red while a command is held), the head pal's Your call button, the command
+  bar and Ctrl+Shift+A (bound only when the key is free). Only your own click or key press in it
+  decides anything: a pal or a helper can open it, never answer through it. It lists every
+  factory's items, so a switch never hides one, and **Parked** in it brings back (or drops) what you
+  put off. A card for you that can't be read is shown instead of vanishing.
+- **The welcome tour is its own window.** It opens by itself on a first install and from the gear
+  menu's Welcome tour, and closes when you finish or skip it. Screen 4 now says "Your calls come to
+  you"; the last screen offers "Go to <Head>".
+- **Undo for a tapped answer** moved to the Trusted helpers dialog's record.
+- `pal home link`, `note` and `deploy` still store what they're given, but the app no longer shows
+  them; the next release from `pal home queue` is on the Chief's dashboard. Messages that said "the
+  Inbox" now say "Your call".
+
 ## 0.4.3 — 2026-11-13
 
 Supported Herdr is unchanged: 0.1.8 or newer and herdr-core 0.1.11 or newer, both below 0.2. This

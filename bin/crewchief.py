@@ -107,7 +107,7 @@ def refuse_target(spec, what="a card"):
     """Raise when `spec` names the Chief: it takes no cards, messages, rooms or routines."""
     if is_chief_pal(spec):
         raise CrewError(f"the {NAME} doesn't take {what}: it only reads, when {OWNER} opens it. "
-                        f"Put it on Home (pal home …) or tell {inbox_label()}.")
+                        f"Put it in Your call (pal home ask …) or tell {inbox_label()}.")
 
 
 # ── what the Chief may run ─────────────────────────────────────────────────────────────────────

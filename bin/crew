@@ -35,7 +35,7 @@ Pop out (the owner, from Project Pals: a topic's live terminal in its own deskto
   (the owner's click: popout <Pal[#topic]>, popout pin KEY, popout close KEY. The window floats, can be
    pinned to every workspace (Hyprland), resizes freely, and remembers its size, place and pin.)
 
-Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
+Home: what the head pal keeps for the owner (asks and logins show in the app's Your call, Ctrl+Shift+A)
   pal home [--json] [--factory NAME|all]   what's on Home (with several factories: the one you're in)
   pal home ask "question" [--option A [--does "what A does"] [--approves "exact command"]]... [--recommend A --why "…"] [--topic P#t]
             [--body …] [--link URL]... [--image FILE]...   a decision for the owner (options: one click each)
@@ -46,9 +46,9 @@ Home (the head pal keeps it current: what needs the owner, links, what's queued;
   pal home queue ["what"] [--release 0.4.1] [--note "…"] | unqueue ID   the next release and what's in it
   pal home done ID ["result"] | park ID|"title" | unpark ID | drop ID
   pal home ask … --owner-only | pal home owner-only ID   only the owner's app click may answer
-  pal welcome                       where the welcome tour stands (it runs on Home; replay it from the gear menu)
+  pal welcome                       where the welcome tour stands (a dialog; replay it from the gear menu)
   pal welcome folders [--json]      the project folders the tour would suggest for a new pal (names and dates only)
-  pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and Home. Your
+  pal factory [ls|show NAME] [--json]   the factories: crews with their own foreman and asks. Your
                                     crew is the default one; until you make another, nothing changes
   pal factory new NAME [--template project-crew|platform-lanes] [--foreman Pal] [--foreman-topic T]
   pal factory switch NAME | move PAL NAME | foreman NAME [PAL] [--topic T] | rename NAME NEW | rm NAME
@@ -102,7 +102,7 @@ Work
 Mission, brain and agent files (a pal proposes a change; DeNon accepts it in the proposal dialog)
   pal mission [Pal] [--json]        a pal's mission: what it's for, goals, focus, done when
   pal mission focus "…" | tick "goal" [--undo]          keep your focus current, tick a goal
-  pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to the Inbox
+  pal mission propose -F draft.md   the mission is the owner's: propose one, it goes to Your call
   pal brain [ls] [Pal] [--json] | show [Pal] [file]     the pal's brain (mission, decisions, change log, map, notes)
   pal brain log "what changed" | decide "what" --why "why" | note <subject> "…"
   pal agents show|lint [Pal] [--json] [--deep]          the project's AGENTS.md / CLAUDE.md: what loads, what to fix
@@ -153,8 +153,8 @@ Trusted helpers (About → Settings → Trusted helpers; see docs/full-control.m
   Off grants no helper authority. Work only sends normal work and cannot make owner decisions.
   Full control acts autonomously across the app: decisions, settings, missions, AGENTS.md,
   proposals, Home, installs, uninstall, landing, pushes and releases; no per-action prompt or hold.
-  A Full helper acts as itself under delegation, never as the owner's own click. Home's Helper
-  activity says "<name> acted under Full control", records outcomes and offers Revoke.
+  A Full helper acts as itself under delegation, never as the owner's own click. Trusted helpers'
+  record says "<name> acted under Full control", records outcomes and offers Revoke.
   Only the owner's actual app click changes helper trust or keys. Helpers cannot promote themselves
   or other helpers, forge click tokens, or alter trust/audit evidence. Legacy on becomes Work only;
   no migration enables Full control. Revoke stops future/queued use; it does not undo completed work.
@@ -178,7 +178,7 @@ Approvals (the owner or a helper with Full control)
   pal approvals                     guarded commands waiting on the owner
   pal approve ID | pal deny ID ["note"]
   pal owner-step <rule> -- <command line>   a script asks for the owner's go itself (./release does):
-                                     exit 0 go ahead once, exit 3 it waits in the Inbox; then run it again
+                                     exit 0 go ahead once, exit 3 it waits in Your call; then run it again
 
 "Pal" matches a pal's name or the start of it ("docs" finds "Docs Site"); without
 #topic you get the one it's showing (Pal#topic: a pal's tabs are its topics; --channel and
@@ -1774,7 +1774,7 @@ def cmd_desk(spaces, rest):
         if card.get("task"):
             crewtasks.update(card["task"], spaces, who["me"], who["name"], status="blocked", note=why, from_card=True)
         card = crewdesk.mark(card["id"], "needs you" if o.get("owner") else "blocked", by, via, why[:300])
-        print(crewdesk.line(card) + (f"\n{OWNER} sees it in the Inbox." if o.get("owner") else ""))
+        print(crewdesk.line(card) + (f"\n{OWNER} sees it in Your call." if o.get("owner") else ""))
     elif sub == "pass" and len(args) >= 2:
         _, card = desk_card(args[0])
         desk_may(card, who, "pass")
@@ -2201,7 +2201,7 @@ def cmd_mission(spaces, rest):
         if o.get("json"):
             print(json.dumps({"pal": name, "dir": str(d), "text": text, "sha": crewbrain.sha(text), **crewbrain.parse_mission(text)}))
         else:
-            print(text or f"(no mission yet for {name}: a pal proposes one with pal mission propose --file F, and {OWNER} accepts it from Home)")
+            print(text or f"(no mission yet for {name}: a pal proposes one with pal mission propose --file F, and {OWNER} accepts it in Your call)")
         return
     space, rec, name = pal_of(spaces, o.get("pal") or (pos[0] if sub == "set" and pos else None))
     rec = {**rec, "folder": rec.get("folder") or space.get("folder")}
@@ -2232,7 +2232,7 @@ def cmd_mission(spaces, rest):
         text = file_opt(o)
         cur = crewbrain.read(d, "mission.md")
         p = crewproposals.propose("mission", name, f"{name}#{chan(t)}" if t else acted(), text, "mission.md", crewbrain.sha(cur), o.get("note"))
-        print(f"proposed ({p['id']}): {OWNER} sees it in the Inbox and accepts or declines it; you'll hear which")
+        print(f"proposed ({p['id']}): {OWNER} sees it in Your call and accepts or declines it; you'll hear which")
 
 
 def cmd_brain(spaces, rest):
@@ -2391,7 +2391,7 @@ def cmd_agents(spaces, rest):
         _, t = my_bot(spaces)
         cur = crewagents.read(os.path.join(folder, rel))
         p = crewproposals.propose("agents", name, f"{name}#{chan(t)}" if t else acted(), file_opt(o), rel, crewagents.sha(cur), o.get("note"))
-        print(f"proposed ({p['id']}): {OWNER} sees the diff in the Inbox and applies or declines it; you'll hear which")
+        print(f"proposed ({p['id']}): {OWNER} sees the diff in Your call and applies or declines it; you'll hear which")
     elif sub == "backups":
         space, rec, name = pal_of(spaces, pos[0] if pos else o.get("pal"))
         bs = crewagents.backups(name, pos[1] if len(pos) > 1 else None)
@@ -2476,7 +2476,7 @@ def cmd_proposals(spaces, rest):
                         import crewagents
                         crewagents.validate_apply(folder_of(space, rec), p["file"], p.get("base") or "none")
                     else:
-                        die(f"accept {p['kind']} proposals in the Inbox")
+                        die(f"accept {p['kind']} proposals in Your call")
 
         def apply(p):
             if p["kind"] == "dream":
@@ -2494,7 +2494,7 @@ def cmd_proposals(spaces, rest):
                 out = crewagents.apply(name, folder_of(space, rec), p["file"], p["text"], p.get("base") or "none", p.get("note"))
                 brain_log(space, rec, name, f"{out['file']}: {p.get('note') or 'edited'} (from {p['by']}'s proposal, {acted()})")
             else:
-                die(f"accept {p['kind']} proposals in the Inbox")
+                die(f"accept {p['kind']} proposals in Your call")
 
         p = crewproposals.decide(pos[0], "accepted" if accepted else "declined", why,
                                  via=acted() if acted() != OWNER else "cli", validate=validate, apply=apply if accepted else None)
@@ -2637,7 +2637,7 @@ def cmd_dream(spaces, rest):
             meta["topic"] = o.get("name") or p["summary"][:40]
             pr = crewproposals.propose("dream", target or "crew", by, text, None, None, o.get("note"), meta)
         crewdream.proposed(pid, pr["id"])
-        print(f"proposed ({pr['id']}) for {pid}: {OWNER} sees it in the Inbox; nothing is written before {OWNER} approves it")
+        print(f"proposed ({pr['id']}) for {pid}: {OWNER} sees it in Your call; nothing is written before {OWNER} approves it")
     elif sub == "intake":
         if not o.get("pattern"):
             die("pal dream intake --pattern P-n -F note.md   (a draft for DJM OS's intake; the owner files it)")
@@ -2719,7 +2719,7 @@ def cmd_approvals(decide=None, rid=None, note=None, inbox=False):
 
 def cmd_owner_step(rest):
     """pal owner-step <rule> -- <the command line>: a program asks for the owner's go itself (T110:
-    ./release, wherever it's run). Exit 0: go ahead, this once. Exit 3: it waits in the Inbox; run the
+    ./release, wherever it's run). Exit 0: go ahead, this once. Exit 3: it waits in Your call; run the
     same command again after the owner's click there. --probe: does this pal have the command."""
     if rest[:1] == ["--probe"]:
         print("owner-step 1")
@@ -2746,7 +2746,7 @@ def cmd_owner_step(rest):
         die(str(e))
     if not held:
         return
-    sys.stderr.write(f"held for {OWNER}: {held['why'] or rule}. It waits in Project Pals' Inbox as {held['id']} ({bot}).\n"
+    sys.stderr.write(f"held for {OWNER}: {held['why'] or rule}. It waits in Project Pals' Your call as {held['id']} ({bot}).\n"
                      f"After {OWNER}'s click there, run exactly the same command again within {crewguard.EXPIRE_MIN} minutes; it goes through once.\n")
     sys.exit(3)
 

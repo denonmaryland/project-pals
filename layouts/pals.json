@@ -125,13 +125,6 @@
                       "lone": false
                     }
                   }
-                },
-                {
-                  "id": "home-view",
-                  "type": "block",
-                  "content": {
-                    "mod": "crew-home"
-                  }
                 }
               ]
             }

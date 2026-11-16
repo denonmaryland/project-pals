@@ -1,5 +1,5 @@
 // The welcome story's words and small decisions (T76; design: data/crew-boards/onboarding, DeNon's
-// pick A, "On Home", 2026-11-09). Pure: no Herdr imports, so `node tests/test_welcome.mjs` reads it.
+// pick A, 2026-11-09; a dialog since T235). Pure: no Herdr imports, so `node tests/test_welcome.mjs` reads it.
 // Fixed text, with the head pal's and the owner's names filled in. Seven screens, one message each.
 
 export const BEATS = ["hello", "pal", "hire", "home", "talk", "charge", "done"];
@@ -78,14 +78,14 @@ export function beat(id, ctx = {}) {
       };
     case "home":
       return {
-        say: "This page is Home.",
-        more: "When a pal needs a decision from you, it lands here, one at a time, with what each choice does and my pick. When nothing's waiting, it says \"All caught up\". Click me in the sidebar, or press Ctrl+Shift+H, to come back.",
+        say: "Your calls come to you.",
+        more: "When a pal needs a decision from you, a small window called Your call shows it over your terminal, one at a time, with what each choice does and my pick. The amber pill at the top says how many are waiting, and Ctrl+Shift+A opens it.",
         go: "Next",
       };
     case "talk":
       return {
         say: "Ask me anything, in plain words.",
-        more: "I have a terminal of my own. Press T on Home and type. I can tell you what every pal is doing, hire one, or go and ask a pal something for you.",
+        more: "I have a terminal of my own. Click me in the sidebar, or press Ctrl+Shift+H, and type. I can tell you what every pal is doing, hire one, or go and ask a pal something for you.",
         chips: ["what's everyone working on?", "hire a pal for my website", pal ? `ask ${pal} why the tests fail` : "ask a pal why the tests fail"],
         go: "Next",
       };
@@ -107,7 +107,7 @@ export function beat(id, ctx = {}) {
         say: "That's it. You're set.",
         more: (ctx.hired && pal ? `${pal} is reading its project now. ` : "Hire your first pal whenever you like: the + at the bottom of the sidebar. ")
           + "I'll be up here in the sidebar. To see this again, open the gear menu and pick Welcome tour.",
-        go: ctx.hired && pal ? `Go to ${pal}` : "Done", alt: ctx.hired && pal ? "Stay on Home" : null,
+        go: ctx.hired && pal ? `Go to ${pal}` : "Done", alt: ctx.hired && pal ? `Go to ${ctx.head}` : null,
       };
   }
 }

@@ -262,7 +262,8 @@ class InstallRecordsTheBuild(unittest.TestCase):
         self.assertTrue(rec["build"]["subject"])
         self.assertIn("dirty", rec["build"])
         keys = json.loads((self.app / "keys.json").read_text())["global"]
-        self.assertEqual(keys.get("ctrl-shift-h"), "crew-roster.home")
+        self.assertEqual(keys.get("ctrl-shift-h"), "crew-roster.home", "the head pal's terminal")
+        self.assertEqual(keys.get("ctrl-shift-a"), "crew-header.decide", "Your call (T235)")
         self.assertEqual(keys.get("ctrl-shift-g"), "crew-roster.factory", "the factory switcher (T66)")
         self.install()
         log = [json.loads(x) for x in (self.app / "data" / "crew-installs.jsonl").read_text().splitlines()]

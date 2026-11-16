@@ -14,7 +14,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, setShared, exec, appHome, home } from "herdr";
+import { theme, props, closeOverlay, openOverlay, notify, spaces, shared, exec, appHome, home } from "herdr";
 import { botOf, crewCli, ownerCli, loadOps, taskFor, ago, ds, tone, scrollArea, sheet, sheetHeader, sheetFace, sheetBody, sheetFooter } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
@@ -212,9 +212,7 @@ export default class CrewTasks extends View {
         .child(scrollArea(d, "tk-list", v_flex().gap(2).pr(10)
           .children(mine.map(row))
           .when(!mine.length, (el) => el.child(div().py(8).px(8).text_size(12).line_height("16px").text_color(d.fg3)
-            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`)))).max_h(320))
-        .child(div().id("tk-board").cursor_pointer().hover((s) => s.opacity(0.75)).on_click(() => { setShared("crew.view", "tasks"); close(); })
-          .child(div().text_size(12).line_height("16px").text_color(d.fg2).child("All tasks on the board →"))))
+            .child(`Add one above: it goes on the shared board, assigned to ${bot.name}.`)))).max_h(320)))
       .child(sheetFooter(d, { id: "tk", hint: "Enter adds · Shift+Enter new line · Esc closes", onCancel: close, cancelLabel: "Close", ready: (!empty || this.files.length > 0) && !this.busy,
         primary: this.busy ? "Adding…" : "Add task", onPrimary: (cx) => this.add(cx) }));
   }

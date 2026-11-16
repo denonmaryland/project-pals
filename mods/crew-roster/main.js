@@ -1,20 +1,17 @@
 // Project Pals roster: your pals (left pane of the Project Pals layout). Every space is a pal, a project with a
-// brain; its tabs are its channels (the hero lists the shown pal's). Pals tab: each
-// pal's mascot shows its most urgent channel, with a pill for its channel count (red when one is
-// blocked). Inbox tab: every channel that needs you, across all pals and machines.
+// brain; its tabs are its channels (the hero lists the shown pal's). Each pal's mascot shows its most
+// urgent channel. Clicking a pal, the head pal too, shows its terminal: Project Pals is terminal-focused
+// (T235). What needs you is in Your call (crew-decide), not here.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, run, theme, settings, openOverlay, machines, shared, setShared, nextCommand, layout, notify } from "herdr";
 import { tapNeed, tapsHolding } from "./helperlog.js";
 import {
-  alertSound, crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a, migrateChannelKeys, linkRecords, updateBot, refreshMachines, STATUS_RANK, WAVE, statusColor, statusWord, rooms, roomMembers, showTabs, adoptRooms, serveRequests, loadOps, crewCli, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, headName, autoColor, orderPins, pinPal, wakePal, wantsTo, tone, applyLayout, rememberWidths, sidebarPref, ds, leadPane, petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, taskFor, needsOf, blockedReports, openProposal, appMenuSpec, noteWindowHeight, workingMark, palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, workingEverywhere, anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark, severalFactories, currentFactory, inFactory, runsHome, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf, scrollArea, scrollState, scrollTo, scrollIntoView, deskOf, deskLane, deskLaneMark, deskSlug, showHome, toggleHome, homeMode, hasHome, welcomeMark, openTerminal, CLOSE_LABEL, toggleChief, withoutChief, isChiefRec, openPalMenu, popOut,
+  alertSound, crew, botOf, sleepers, mascotEl, mood, channelName, harnessName, ago, a, migrateChannelKeys, linkRecords, updateBot, refreshMachines, STATUS_RANK, WAVE, statusWord, rooms, roomMembers, showTabs, adoptRooms, serveRequests, loadOps, ownerCli, taskOf, findChannel, ensureLooks, syncPetState, syncSettings, owner as ownerName, marks, autoColor, orderPins, pinPal, wakePal, tone, applyLayout, rememberWidths, sidebarPref, ds, leadPane, petOf, petReady, petEl, petState, palOrder, stamp, palPinned, taskTitle, agentTabs, noAgentTag, openChannels, rememberModel, channelOrder, tabPinned, palSections, palGroups, placePal, pebble, needsOf, blockedReports, appMenuSpec, noteWindowHeight, workingMark, palListStyle, palFacts, sleeperFacts, palPet, palLookRow, palLookTree, palLeadTab, palTreesOn, topicsFolded, workingEverywhere, anyAreas, areaViews, areaChipW, AREA_CHIP_GAP, LIVE_VIEW, syncAreas, topicRenamed, sunk, raisedTile, saveUiSettings, palStatus, topicMark, severalFactories, currentFactory, inFactory, isForeman, syncFactories, countFactoryNeeds, needsOutsideFactory, openFactoryMenu, templateOf, scrollArea, scrollState, scrollTo, scrollIntoView, deskLane, deskLaneMark, deskSlug, welcomeMark, openWelcome, openDecide, ownerCount, openTerminal, CLOSE_LABEL, toggleChief, withoutChief, isChiefRec, openPalMenu, popOut
 } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
-// The hero's Inbox / Tasks / Desk pebbles show their names from this sidebar width up (each pebble
-// is a fifth of the row less the gaps; under this a name would truncate to "In…").
-const HERO_LABELS_AT = 430;
 // Focus grid (2026-11-08 audit): content (text, icons, pets) starts 16 px in; row backgrounds and
 // buttons sit 8 px in from both sides.
 // Focus pal rows: drawn by crew.js palLookRow in the look chosen in Project Pals settings → Pal list
@@ -36,7 +33,7 @@ function toggleRail() {
 }
 
 // A blocked channel whose question is for you, not one asking another pal (T19: the roster's
-// published "crew.needs" lists those apart, so the count, the rail and the Inbox agree).
+// published "crew.needs" lists those apart, so the count, the rail and Your call agree).
 const askingYou = (tab) => tab.status === "blocked" && !(shared("crew.needs")?.toPalItems ?? []).some((x) => x.tab === tab.id);
 
 export default class CrewRoster extends View {
@@ -75,10 +72,12 @@ export default class CrewRoster extends View {
       try { await syncFactories(); } catch {}
       try { await syncAreas(); } catch {}
       this.followRenames();
-      if (!this.laidOut && applyLayout()) { this.laidOut = true; cx.notify(); }
-      // A first install: the welcome tour opens on Home by itself, once per window (it resumes at
-      // the screen it was left on). A replay from the gear menu shows Home itself.
-      if (this.laidOut && !this.welcomed && welcomeMark()?.state === "new" && hasHome()) { this.welcomed = true; showHome(); cx.notify(); }
+      // Laid out: the topic's terminal shows (an older install's clicks may have left Home's
+      // home-view selected in the center stack, T235).
+      if (!this.laidOut && applyLayout()) { this.laidOut = true; showTabs(); cx.notify(); }
+      // A first install: the welcome tour opens by itself, once per window (it resumes at the screen
+      // it was left on). A replay from the gear menu opens it itself.
+      if (this.laidOut && !this.welcomed && welcomeMark()?.state === "new") { this.welcomed = true; openWelcome(); cx.notify(); }
     });
     sync();
     cx.timer.every(3000, () => sync());
@@ -98,12 +97,13 @@ export default class CrewRoster extends View {
         if ((this.tapsSaid ??= new Set()).has(h.id)) continue;
         this.tapsSaid.add(h.id);
         const tn = tapNeed(h);
-        notify({ title: tn.title, body: `${tn.goes} unless you stop it. Stop is on Home.`, level: tn.outward ? "warning" : "info", timeout: tn.outward ? 20000 : 8000 });
+        notify({ title: tn.title, body: `${tn.goes} unless you stop it. Stop is in Your call.`, level: tn.outward ? "warning" : "info", timeout: tn.outward ? 20000 : 8000,
+          action: { name: "crew-header.decide" } });
         if (tn.outward) alertSound("blocked");
       }
       // What blocked agents said (only they're asked), so a pal asking another pal isn't counted (T19).
       try { this.reports = await blockedReports(this.reports ?? {}); } catch {}
-      // What needs DeNon, for the status bar's "N need you", with why each counts (published only
+      // What needs DeNon, for the header's pill and Your call, with why each counts (published only
       // when it changes, reasons included).
       const n = needsOf(withoutChief(), this.ops, this.reports ?? {}, shared("crew.desk")?.needs ?? []), was = shared("crew.needs");
       if (JSON.stringify(was ?? null) !== JSON.stringify(n)) setShared("crew.needs", n);
@@ -119,25 +119,21 @@ export default class CrewRoster extends View {
       cx.spawn(async () => { try { await syncPetState(this.ops.stalled); } catch {} this.petBusy = false; }); };
     cx.timer.after(1500, (cx) => pets(cx));
     cx.timer.every(10000, (cx) => pets(cx));
-    // Add a task from the Tasks view: "title" or "@Pal title".
-    this.taskInput = InputState.new({ placeholder: "Add a task, @Pal to assign it" });
-    this.taskInput.on("submit", (_e, cx) => this.addTask(cx));
     // The hero's channel search (its header's magnifier): filters as you type, Esc clears.
     this.chSearch = InputState.new({ placeholder: "Search topics" });
     this.chSearch.on("change", (_e, cx) => cx.notify());
     this.chSearchOpen = false;
     this.chShownKey = null;
-    // keys.json / herdr-app do: crew-roster.hire, crew-roster.channel (add one to the shown pal), crew-roster.you / .pals.
+    // keys.json / herdr-app do: crew-roster.hire, crew-roster.channel (add one to the shown pal), crew-roster.home.
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
         if (c === "hire") this.hire();
         else if (c === "look") { const sp = spaces().find((x) => x.active); if (sp) this.look(sp); }
         else if (c === "topic" || c === "channel" || c === "duplicate") { const s = spaces().find((x) => x.active); if (s) this.duplicate(botOf(s)); }
-        else if (c === "you" || c === "bots") setShared("crew.view", c);
         // Ctrl+Shift+I: the shown pal's profile panel (again: closes it).
-        // Ctrl+Shift+H: the head pal's Home (again: back to the topic).
-        else if (c === "home") toggleHome();
+        // Ctrl+Shift+H: the head pal's terminal, with the keyboard in it.
+        else if (c === "home") openTerminal();
         // Ctrl+Shift+J: the Chief's pop-up (again: closes it).
         else if (c === "chief") toggleChief();
         // Ctrl+Shift+G: the factory switcher.
@@ -148,7 +144,7 @@ export default class CrewRoster extends View {
   }
 
   // With several factories: what each one needs from you (the switcher's counts, the chip's count
-  // of the others'). Everything Home's "Needs you" lists counts, Desk cards and proposals too.
+  // of the others'). Everything Your call lists counts, Desk cards and proposals too.
   publishFactoryNeeds() {
     const fn = countFactoryNeeds(this.waitingNow(), this.ops, shared("crew.factory.asks") ?? [], shared("crew.desk")?.needs ?? []);
     if (JSON.stringify(shared("crew.factory.needs") ?? {}) !== JSON.stringify(fn)) setShared("crew.factory.needs", fn);
@@ -157,59 +153,6 @@ export default class CrewRoster extends View {
   // Topics that wait on you (a question for you), in every factory.
   waitingNow() {
     return withoutChief().flatMap((space) => space.tabs.filter((tb) => askingYou(tb)).map((tab) => ({ space, tab })));
-  }
-
-  view() { const v = shared("crew.view"); return v === "you" || v === "tasks" ? v : "bots"; }
-
-  addTask(cx) {
-    const raw = this.taskInput.value().trim();
-    if (!raw) return;
-    const m = raw.match(/^@(\S+)\s+([\s\S]+)$/);
-    const args = m ? ["task", "add", m[2], "--for", m[1].replace(/[-_]/g, " ")] : ["task", "add", raw];
-    this.taskInput.set_value("");
-    cx.spawn(async (cx) => {
-      try { await crewCli(args); } catch (e) { notify({ title: "Couldn't add the task", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-      this.refreshOps(cx);
-    });
-  }
-
-  decide(a, approve, cx) {
-    cx.spawn(async (cx) => {
-      try {
-        await ownerCli([approve ? "approve" : "deny", a.id, "--inbox"]);
-        notify({ title: approve ? `Approved for ${a.bot}` : `Declined for ${a.bot}`, body: a.command.slice(0, 120), level: approve ? "success" : "info", timeout: 3000 });
-      } catch (e) { notify({ title: "Couldn't decide", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-      this.refreshOps(cx);
-    });
-  }
-
-  // One Desk card waiting on the owner, in the Inbox.
-  cardWaiting(c, t) {
-    const from = (c.from || "?").split("#")[0];
-    const f = c.from_kind === "pal" ? this.locate(from) : null;
-    const bot = f ? botOf(f.space) : { name: from, harness: null };
-    const why = c.tray === "_owner" ? `${from} sent you this` : `waits on you${c.note ? `: ${c.note}` : ""}`;
-    return v_flex().id(`dc-${c.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.blocked, "10")).border_1().border_color(a(t.blocked, "28"))
-      .child(h_flex().items_center().gap(11)
-        .child(mascotEl(bot, "blocked", 32, t))
-        .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(c.title || "(no title)"))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`${why} · ${c.id}`))))
-      .child(h_flex().gap(8).justify_between()
-        .child(div().id(`dc-open-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-          .on_click((_e, cx) => { showHome(); cx.notify(); }).child(div().text_size(12.5).text_color(t.foreground).child("Read it on Home")))
-        .child(div().id(`dc-done-${c.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
-          .on_click((_e, cx) => this.cardDone(c, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Done"))));
-  }
-
-  cardDone(c, cx) {
-    cx.spawn(async (cx) => {
-      try {
-        await ownerCli(["desk", "done", c.id, "done from the Inbox"]);
-        notify({ title: "Card done", body: c.title.slice(0, 120), level: "success", timeout: 2500 });
-      } catch (e) { notify({ title: "Couldn't close the card", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-      this.refreshOps(cx);
-    });
   }
 
   // A pal by name (as tasks and approvals name them) → its space and a channel to show.
@@ -270,12 +213,12 @@ export default class CrewRoster extends View {
     const rows = (only ? all.filter((s) => only.includes(s.name)) : all).map((space) => ({ space, bot: botOf(space, c, ps) }))
       // The head pal sits above everyone; then whoever needs you most.
       .sort((x, y) => (y.bot.god ? 1 : 0) - (x.bot.god ? 1 : 0) || (STATUS_RANK[y.space.status] ?? 0) - (STATUS_RANK[x.space.status] ?? 0) || x.space.index - y.space.index);
-    // With several factories the list is the shown factory's floor, its foreman on top. The Inbox
-    // below stays everyone's: what waits on you is never hidden by a switch.
+    // With several factories the list is the shown factory's floor, its foreman on top. Your call
+    // stays everyone's: what waits on you is never hidden by a switch.
     const several = severalFactories();
-    const floor = several ? rows.filter((r) => inFactory(r.space.name)).sort((x, y) => (runsHome(y.space, y.bot) ? 1 : 0) - (runsHome(x.space, x.bot) ? 1 : 0)) : rows;
+    const floor = several ? rows.filter((r) => inFactory(r.space.name)).sort((x, y) => (isForeman(y.space, y.bot) ? 1 : 0) - (isForeman(x.space, x.bot) ? 1 : 0)) : rows;
     const asleep = sleepers(spaces(), c).filter((b) => !isChiefRec(b)).filter((rec) => !several || inFactory(rec.name));
-    // Inbox: channels that finished while you weren't looking ("done"), and the rare question ("blocked").
+    // For the rail's count: channels that finished while you weren't looking ("done") or ask ("blocked").
     const waiting = rows.flatMap((r) => r.space.tabs.filter((tb) => tb.status === "blocked" || tb.status === "done").map((tab) => ({ ...r, tab })));
     // Also waiting on you: commands held for approval, and channels that look stuck.
     const extra = this.ops.approvals.length + Object.keys(this.ops.stalled).length + (this.ops.proposals?.length ?? 0)
@@ -286,7 +229,7 @@ export default class CrewRoster extends View {
 
   // Folded: just the pals' faces, the active one lit, a red count for what needs you.
   rail(rows, waiting, t, extra = 0) {
-    // What waits on you, as the Inbox counts it: finished and blocked channels, approvals, stuck ones.
+    // What waits on you, as Your call counts it (the header's pill); a click opens Your call.
     const total = waiting.length + extra;
     const urgent = waiting.some((w) => askingYou(w.tab)) || this.ops.approvals.length > 0;
     // Pinned pals first here too (after the head pal).
@@ -297,7 +240,7 @@ export default class CrewRoster extends View {
       .hover((s) => s.bg(a(t.foreground, "10"))).on_click(action).child(svg(`${ICON}/${name}.svg`).size(16).text_color(color));
     return v_flex().id("crew-rail").size_full().items_center().pt(16).pb(12).gap(10).text_color(t.foreground)
       .child(icon("rail-open", "panel-left", () => toggleRail()))
-      .when(total > 0, (el) => el.child(div().id("rail-you").relative().cursor_pointer().on_click((_e, cx) => { setShared("crew.view", "you"); toggleRail(); cx.notify(); })
+      .when(total > 0, (el) => el.child(div().id("rail-you").relative().cursor_pointer().tooltip("Your call (Ctrl+Shift+A)").on_click((_e, cx) => { openDecide(); cx.notify(); })
         .child(div().size(36).flex().items_center().justify_center().rounded(6).hover((s) => s.bg(a(t.foreground, "10")))
           .child(div().text_size(15).font_weight(300).text_color(urgent ? t.blocked : t.done).child(String(total))))))
       .child(div().w(28).h(1).bg(a(t.foreground, "14")))
@@ -345,244 +288,13 @@ export default class CrewRoster extends View {
       .child(blocked ? `${blocked} blocked` : `${n} topic${n === 1 ? "" : "s"}`);
   }
 
-  segments(t, bots, waiting, extra = 0, first = "Pals") {
-    const asked = waiting.some((w) => askingYou(w.tab)) || this.ops.approvals.length > 0;
-    const seg = (id, label, count, dot) => {
-      const on = this.view() === id;
-      return h_flex().id(`seg-${id}`).flex_1().justify_center().items_center().gap(5).py(5).rounded(3).cursor_pointer()
-        .when(on, (el) => el.bg(a(t.foreground, "14")))
-        .on_click((_e, cx) => { setShared("crew.view", id); cx.notify(); })
-        .when(Boolean(dot), (el) => el.child(div().size(5).rounded_full().bg(dot)))
-        .child(div().text_size(12.5).when(on, (el) => el.font_medium()).text_color(on ? t.foreground : t.muted).child(label))
-        .when(Boolean(dot) && count > 0, (el) => el.child(div().text_size(11.5).text_color(on ? t.muted : t.dim).child(String(count))));
-    };
-    return h_flex().p(2).gap(2).rounded(4).border_1().border_color(a(t.foreground, "14"))
-      .child(seg("bots", first, bots, false))
-      .child(seg("tasks", "Tasks", this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status)).length, false))
-      .child(seg("you", "Inbox", waiting.length + extra, asked ? t.blocked : waiting.length + extra ? t.done : null));
-  }
-
-  inbox(waiting, t) {
-    const list = v_flex().gap(4);
-    const { approvals, stalled } = this.ops;
-    const proposals = this.ops.proposals ?? [];
-    const cardsWaiting = shared("crew.desk")?.needs ?? [];
-    const total = waiting.length + approvals.length + Object.keys(stalled).length + proposals.length + cardsWaiting.length;
-    list.child(h_flex().items_baseline().gap(8).px(8).pb(10)
-      .child(div().text_size(44).font_weight(200).text_color(t.foreground).child(String(total)))
-      .child(div().text_size(14).text_color(t.muted).child("ready for you")));
-    if (!this.ops.daemon) {
-      list.child(div().mx(8).mb(8).px(12).py(9).rounded(6).bg(a(t.blocked, "18")).text_size(12).text_color(t.muted)
-        .child("crewd isn't running, so messages aren't queued and routines won't fire. systemctl --user start herdr-crew"));
-    }
-    // Commands a pal wants to run that need you: push, publish, deploy…
-    for (const ap of approvals) {
-      const f = this.locate(ap.bot);
-      const bot = f ? botOf(f.space) : { name: ap.bot, harness: null };
-      list.child(v_flex().id(`ap-${ap.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.blocked, "12")).border_1().border_color(a(t.blocked, "30"))
-        .child(h_flex().items_center().gap(11)
-          .child(mascotEl(bot, "blocked", 32, t))
-          .child(v_flex().flex_1().min_w(0).gap(2)
-            .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${ap.bot.split(" - ")[0]} wants to ${wantsTo(ap.why || ap.rule)}`))
-            .child(div().truncate().text_size(12).text_color(t.dim).child(`${ap.channel ? `#${ap.channel} · ` : ""}${ago(ap.at)} · ${ap.id}`))))
-        .child(div().px(10).py(7).rounded(6).bg(a(t.canvas, "aa")).text_size(12).font_family("JetBrains Mono").text_color(t.foreground)
-          .child(ap.command.length > 220 ? ap.command.slice(0, 220) + "…" : ap.command))
-        // An AGENTS.md / CLAUDE.md edit: the exact change it would make, in full (review H2). Approving
-        // lets exactly this edit, to this version of the file, through once.
-        .when(Boolean(ap.diff), (el) => el.child(scrollArea(ds(t), `ap-diff-${ap.id}`, v_flex().px(10).py(6)
-          .children(ap.diff.split("\n").map((line, i) => div().id(`ap-dl-${ap.id}-${i}`).text_size(11.5).font_family("JetBrains Mono")
-            .text_color(line.startsWith("+") && !line.startsWith("+++") ? t.working ?? t.ansi2 : line.startsWith("-") && !line.startsWith("---") ? t.blocked : t.muted)
-            .child(line || " ")))).max_h(280).rounded(6).bg(a(t.canvas, "aa"))))
-        // Decline and Approve at opposite ends of the card, so one can't be hit for the other.
-        .child(h_flex().gap(8).justify_between()
-          .child(div().id(`ap-no-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-            .on_click((_e, cx) => this.decide(ap, false, cx)).child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
-          .child(div().id(`ap-ok-${ap.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
-            .on_click((_e, cx) => this.decide(ap, true, cx)).child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve")))));
-    }
-    // Desk cards waiting on you (needs you, or sent to you): the same ones Home and the status bar count.
-    // Open in Desk shows them there; Done closes the card (a click), and its sender sees the receipt.
-    for (const c of cardsWaiting) list.child(this.cardWaiting(c, t));
-    // Proposals: a change a pal wants made to its mission or its project's AGENTS.md / CLAUDE.md.
-    // View opens the profile panel on it (the diff, then Write / Accept); Decline tells the pal.
-    for (const pr of proposals) {
-      if (pr.kind === "dream") { list.child(this.dreamCard(pr, t)); continue; }
-      const f = this.locate(pr.pal);
-      const bot = f ? botOf(f.space) : { name: pr.pal, harness: null };
-      const what = pr.kind === "mission" ? "its mission" : pr.file;
-      list.child(v_flex().id(`pr-${pr.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.accent, "10")).border_1().border_color(a(t.accent, "30"))
-        .child(h_flex().items_center().gap(11)
-          .child(mascotEl(bot, "idle", 32, t))
-          .child(v_flex().flex_1().min_w(0).gap(2)
-            .child(div().text_size(14).font_medium().text_color(t.foreground).child(`${pr.by.split(" - ")[0]} proposes a change to ${what}`))
-            .child(div().truncate().text_size(12).text_color(t.dim).child(`${pr.pal.split(" - ")[0]} · ${ago(pr.at)} · ${pr.id}`))))
-        .when(Boolean(pr.note), (el) => el.child(div().text_size(12).text_color(t.muted).child(pr.note)))
-        .when(Boolean(pr.meta?.pattern), (el) => el.child(div().text_size(12).text_color(t.dim)
-          .child(`Dream ${pr.meta.pattern}: ${pr.meta.summary} · ${pr.meta.count}x, ${pr.meta.pals?.length ?? 0} pal(s), ~${pr.meta.minutes}m lost`)))
-        .child(h_flex().gap(8).justify_between()
-          .child(div().id(`pr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-            .on_click((_e, cx) => cx.spawn(async (cx) => { try { await ownerCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
-            .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
-          .child(div().id(`pr-view-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(t.solid).hover((s) => s.opacity(0.88))
-            .on_click(() => { if (f) this.go(f.space, null); openProposal(pr); })
-            .child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("View")))));
-    }
-    // Channels that have been "working" with an unchanged screen for a while.
-    for (const [term, st] of Object.entries(stalled)) {
-      const f = this.locate(`${st.bot}#${st.channel}`);
-      if (!f) continue;
-      list.child(h_flex().id(`stall-${term}`).items_center().gap(12).px(12).py(10).rounded(8).cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "08")))
-        .on_click(() => this.go(f.space, f.tab))
-        .child(mascotEl(botOf(f.space), "blocked", 36, t))
-        .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(`${f.space.name} looks stuck`))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`#${st.channel} · no progress since ${ago(st.since)}`))));
-    }
-    if (!total) {
-      list.child(div().px(8).text_size(13).text_color(t.dim).child("All caught up. Finished work, questions and approvals land here."));
-      return list;
-    }
-    // Questions for you first, then finished work and pals asking pals, oldest first.
-    waiting.sort((x, y) => (askingYou(x.tab) ? 0 : 1) - (askingYou(y.tab) ? 0 : 1) || (x.tab.changed_at ?? 0) - (y.tab.changed_at ?? 0));
-    for (const w of waiting) {
-      const on = w.space.active && w.tab.active;
-      list.child(h_flex().id(`wait-${w.tab.id}`).items_center().gap(12).px(12).py(10).rounded(8).cursor_pointer()
-        .when(on, (el) => el.bg(a(t.accent, "22")).border_1().border_color(a(t.accent, "33")))
-        .when(!on, (el) => el.hover((s) => s.bg(a(t.foreground, "08"))))
-        .on_click(() => this.go(w.space, w.tab))
-        .child(mascotEl(w.bot, w.tab.status === "blocked" ? "blocked" : "done", 36, t))
-        .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(askingYou(w.tab) ? `${w.bot.name} has a question` : w.tab.status === "blocked" ? `${w.bot.name} asked another pal` : `${w.bot.name} finished`))
-          .child(div().truncate().text_size(12).text_color(t.dim).child(`#${channelName(w.tab)} · ${w.space.machine ?? "this computer"}`)))
-        .child(div().flex_none().text_size(12).text_color(statusColor(w.tab.status, t)).child(ago(w.tab.changed_at))));
-    }
-    return list;
-  }
-
-  // A Dream loop proposal (a skill, a task, a brain note): the pattern behind it (pals, how often,
-  // time lost, two quotes from the notebooks), the text, Decline and Approve at opposite ends.
-  // Approve writes it through its kind's writer (`pal proposal accept`); nothing before that.
-  dreamCard(pr, t) {
-    const m = pr.meta ?? {};
-    const what = { skill: `New skill: ${m.name}`, tool: "A tool to build (a task)", process: "A process change (a task)", context: `Context for ${m.pal ?? "a pal"} (a brain note)` }[m.kind] ?? "A fix";
-    // The whole text, loaded on demand; Approve stays off until it's been shown, and is bound to its
-    // digest, so a different text can't be approved in its place (review H5).
-    this.shownProposals ??= {};
-    const shown = this.shownProposals[pr.id];
-    return v_flex().id(`dr-${pr.id}`).gap(9).px(12).py(11).rounded(8).bg(a(t.accent, "10")).border_1().border_color(a(t.accent, "30"))
-      .child(h_flex().items_center().gap(8)
-        .child(div().px(5).h(16).flex().items_center().rounded(3).border_1().border_color(a(t.accent, "55")).text_size(10).font_family("JetBrains Mono").text_color(t.accent).child(`dream · ${m.kind}`))
-        .child(div().flex_1().truncate().text_size(11).font_family("JetBrains Mono").text_color(t.dim).child(`${pr.id} · ${m.pattern} · from ${pr.by.split("#")[0]}`)))
-      .child(div().text_size(14).font_medium().text_color(t.foreground).child(what))
-      .child(div().text_size(12).text_color(t.muted).child(`${m.summary} · ${m.count}x, ${m.pals?.length ?? 0} pal(s), ~${m.minutes}m lost`))
-      .children((m.quotes ?? []).map((q, i) => div().id(`dr-q-${pr.id}-${i}`).pl(8).border_l_2().border_color(a(t.foreground, "22")).text_size(12).text_color(t.dim).child(`“${q}”`)))
-      .child(shown
-        ? scrollArea(ds(t), `dr-text-${pr.id}`, v_flex().px(10).py(7)
-          .children(shown.text.split("\n").map((l, i) => div().id(`dr-tl-${pr.id}-${i}`).text_size(11.5).font_family("JetBrains Mono").text_color(t.foreground).child(l || " "))))
-          .max_h(320).rounded(6).bg(a(t.canvas, "aa"))
-        : div().id(`dr-show-${pr.id}`).px(10).py(7).rounded(6).border_1().border_color(a(t.foreground, "22")).cursor_pointer().hover((s) => s.bg(a(t.foreground, "08")))
-          .on_click((_e, cx) => cx.spawn(async (cx) => {
-            try { const p = JSON.parse(await crewCli(["proposal", "show", pr.id])); this.shownProposals[pr.id] = { text: p.text ?? "", sha: p.text_sha }; }
-            catch (e) { notify({ title: "Couldn't load it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-            cx.notify();
-          }))
-          .child(div().text_size(12).text_color(t.muted).child("Show the whole proposal (needed before Approve)")))
-      .when(Boolean(pr.note), (el) => el.child(div().text_size(12).text_color(t.muted).child(pr.note)))
-      .child(h_flex().gap(8).justify_between()
-        .child(div().id(`dr-no-${pr.id}`).px(14).py(6).rounded(4).cursor_pointer().bg(a(t.foreground, "0f")).hover((s) => s.bg(a(t.foreground, "18")))
-          .on_click((_e, cx) => cx.spawn(async (cx) => { try { await ownerCli(["proposal", "decline", pr.id]); } catch {} this.refreshOps(cx); }))
-          .child(div().text_size(12.5).text_color(t.foreground).child("Decline")))
-        .child(div().id(`dr-ok-${pr.id}`).px(14).py(6).rounded(4).when(!shown, (el) => el.opacity(0.4)).when(Boolean(shown), (el) => el.cursor_pointer().hover((s) => s.opacity(0.88))).bg(t.solid)
-          .on_click((_e, cx) => { if (!shown) return; cx.spawn(async (cx) => {
-            try { const out = await ownerCli(["proposal", "accept", pr.id, "--text-sha", shown.sha]); notify({ title: "Approved", body: out.trim().split("\n")[0].slice(0, 200), level: "success", timeout: 3500 }); }
-            catch (e) { notify({ title: "Couldn't apply it", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
-            this.refreshOps(cx);
-          }); })
-          .child(div().text_size(12.5).font_medium().text_color(t.solid_foreground).child("Approve"))));
-  }
-
-  // The task board, in the Project Pals dialogs' look: an add field, then a quiet bordered list per group
-  // (blocked, in progress, open, done today). Click a task for its details and a few actions.
-  taskList(rows, t) {
-    const tasks = this.ops.tasks;
-    const list = v_flex().gap(16).px(4);
-    list.child(div().h(40).px(14).flex().items_center().rounded(8)
-      .bg(a(t.canvas, "aa")).border_1().border_color(a(t.foreground, "10"))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .child(Input.new(this.taskInput).w_full().text_size(13).text_color(t.foreground)));
-
-    const dot = { blocked: t.blocked, claimed: t.working, open: a(t.foreground, "40"), done: t.done, cancelled: t.dim };
-    const act = (args, done) => (_e, cx) => cx.spawn(async (cx) => {
-      try { await crewCli(args); if (done) notify({ title: done, level: "success", timeout: 2500 }); }
-      catch (e) { notify({ title: "That didn't work", body: String(e.message ?? e).slice(0, 220), level: "warning" }); }
-      this.refreshOps(cx);
-    });
-    const link = (id, label, action, color) => div().id(id).cursor_pointer().hover((s) => s.opacity(0.75)).on_click(action)
-      .child(div().text_size(12).text_color(color ?? t.accent).child(label));
-
-    const row = (task, first) => {
-      const owner = task.claimed_by || task.assignee;
-      const f = owner && owner !== ownerName() ? this.locate(owner) : null;
-      const bot = f ? botOf(f.space) : null;
-      const open = this.openTask === task.id;
-      const who = owner ? owner.split("#")[0].split(" - ")[0] : "anyone";
-      const waits = task.deps?.length && task.status === "open" ? ` · after ${task.deps.join(", ")}` : "";
-      const face = bot ? mascotEl(bot, task.status === "claimed" ? "working" : task.status === "blocked" ? "blocked" : task.status === "done" ? "done" : "calm", 22, t)
-        : div().size(22).flex_none().flex().items_center().justify_center().child(div().size(7).rounded_full().bg(dot[task.status] ?? t.dim));
-      const head = h_flex().id(`task-${task.id}`).items_center().gap(10).px(12).py(9).cursor_pointer()
-        .hover((s) => s.bg(a(t.foreground, "05")))
-        .on_click((_e, cx) => { this.openTask = open ? null : task.id; cx.notify(); })
-        .child(face)
-        .child(v_flex().flex_1().min_w(0).gap(1)
-          .child(div().truncate().text_size(13).text_color(task.status === "done" ? t.muted : t.foreground).child(task.title))
-          .child(div().truncate().text_size(11.5).text_color(t.dim).child(`${task.id} · ${who}${waits}`)));
-      const last = task.notes?.length ? task.notes[task.notes.length - 1] : null;
-      const details = open ? v_flex().gap(8).pl(44).pr(12).pb(10)
-        .when(Boolean(task.body), (el) => el.child(div().text_size(12).text_color(t.muted).child(task.body)))
-        .when(Boolean(task.result), (el) => el.child(div().text_size(12).text_color(t.muted).child(`Result: ${task.result}`)))
-        .when(Boolean(last) && !task.result, (el) => el.child(div().text_size(12).text_color(t.dim).child(`${last.by}: ${last.text}`)))
-        .child(h_flex().gap(14)
-          .when(Boolean(f), (el) => el.child(link(`tk-go-${task.id}`, "Open topic", () => this.go(f.space, f.tab))))
-          .when(task.status !== "done", (el) => el.child(link(`tk-done-${task.id}`, "Mark done", act(["task", "done", task.id], `${task.id} done`), t.muted)))
-          .when(task.status === "done" || task.status === "cancelled", (el) => el.child(link(`tk-re-${task.id}`, "Reopen", act(["task", "reopen", task.id]), t.muted)))
-          .when(task.status !== "done" && task.status !== "cancelled", (el) => el.child(link(`tk-x-${task.id}`, "Cancel", act(["task", "cancel", task.id]), t.dim)))) : null;
-      return v_flex().when(!first, (el) => el.child(div().h(1).mx(12).bg(a(t.foreground, "0a"))))
-        .when(open, (el) => el.bg(a(t.foreground, "04"))).child(head).when(Boolean(details), (el) => el.child(details));
-    };
-    const group = (label, these) => v_flex()
-      .child(h_flex().items_baseline().justify_between().px(4).pb(6)
-        .child(div().text_size(12).text_color(t.dim).child(label))
-        .child(div().text_size(11.5).text_color(t.dim).child(String(these.length))))
-      .child(v_flex().rounded(8).border_1().border_color(a(t.foreground, "10")).overflow_hidden()
-        .children(these.map((x, i) => row(x, i === 0))));
-
-    let any = false;
-    for (const [status, label] of [["blocked", "Blocked"], ["claimed", "In progress"], ["open", "Open"]]) {
-      const these = tasks.filter((x) => x.status === status);
-      if (these.length) { any = true; list.child(group(label, these)); }
-    }
-    const today = tasks.filter((x) => x.status === "done" && Date.now() - x.updated < 86400000);
-    if (today.length) list.child(group("Done today", today));
-    if (!any && !today.length) {
-      list.child(div().px(6).text_size(12.5).text_color(t.dim)
-        .child(`No tasks yet. Add one above, or ask ${headName()} to plan something: pals claim tasks, finish them, and unblock what's next.`));
-    }
-    return list;
-  }
-
-
   // ── Drawn to the Paper board "MODE · Focus (default)", then reworked with DeNon ─────────────
 
   // The channel a pal's row stands for, and opens (crew.js palLeadTab): one that needs you, else
   // one that finished, else one working, else the most recently active.
   leadTab(space) { return palLeadTab(space); }
-  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); its topics stay one click away
-  // (the hero's topic list, and the Home pebble, which reads Terminal while Home shows).
-  // Clicking the head pal opens its Home (Orca's call, 2026-11-08); any other pal, its terminal
-  // (Pals Lite, T217: the board and the Computer are gone).
+  // Clicking a pal shows its terminal, the head pal's too (T235: Home is gone; terminal-focused).
   open(space) {
-    if (runsHome(space) && hasHome()) { showHome(); return; }
     this.go(space, this.leadTab(space));
   }
 
@@ -590,7 +302,7 @@ export default class CrewRoster extends View {
   focusColumn(rows, asleep, waiting, t, extra) {
     const d = ds(t);
     const w = this.width ?? 304;
-    const shown = rows.find((r) => r.space.active) ?? rows.find((r) => runsHome(r.space, r.bot)) ?? rows[0];
+    const shown = rows.find((r) => r.space.active) ?? rows.find((r) => isForeman(r.space, r.bot)) ?? rows[0];
     const ordered = palOrder(rows);
     const live = ordered.filter((r) => r.bot.awake || r.space.active || r.bot.starting);
     const dozing = ordered.filter((r) => !(r.bot.awake || r.space.active || r.bot.starting));
@@ -610,7 +322,6 @@ export default class CrewRoster extends View {
       .on_mouse_up("left", (_e, cx) => this.drop(cx))
       .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; cx.notify(); } });
     const scroller = (inner) => scrollArea(d, "crew-list", inner, { fade: "side" }).flex_1().min_h(0);
-    if (this.view() !== "bots") return root.child(scroller(this.otherView(list, rows, waiting, t, d)));
     list.child(h_flex().h(28).flex_none().items_center().pl(8).pr(2)
       .child(div().flex_none().text_size(12).font_weight(500).text_color(d.fg3).child("Pals"))
       // How many agents are working, everywhere (T98: it moved here from the status strip, and now
@@ -648,7 +359,6 @@ export default class CrewRoster extends View {
         .child(div().flex_1().text_size(big ? 13 : 12).text_color(d.fg2).child("Hidden pals")));
       if (showHidden) list.children(dozing.map((r) => this.palRow(r, t, d))).children(asleep.map((rec) => this.sleeperRow(rec, t, d)));
     }
-    this.extras(list, waiting, extra, d);
     return root.child(scroller(list));
   }
 
@@ -667,34 +377,6 @@ export default class CrewRoster extends View {
       .when(n > 0, (el) => el.child(div().id("factory-chip-n").flex_none().h(16).px(5).flex().items_center().rounded(3).bg(d.warn).text_size(11).font_weight(600).text_color("#1A1203")
         .tooltip(`${n} waiting on you in other factories`).child(String(n))))
       .child(svg(`${ICON}/chevron-down.svg`).size(11).flex_none().text_color(d.fg3)));
-  }
-
-  // Not on the boards, and only there while they have something: the Inbox (approvals wait for
-  // your click there; channels that look stuck), and your rooms.
-  extras(list, waiting, extra, d) {
-    if (extra > 0) {
-      list.child(h_flex().id("inbox-row").h(40).flex_none().items_center().gap(12).pl(8).pr(8).rounded(d.r.md).cursor_pointer()
-        .hover((s) => s.bg(d.hover))
-        .on_click((_e, cx) => { setShared("crew.view", "you"); cx.notify(); })
-        .child(div().w(palListStyle().pet).flex_none().flex().justify_center().child(div().size(6).rounded(3).bg(d.warn)))
-        .child(div().flex_1().text_size(13).text_color(d.body).child(this.ops.approvals.length ? "Inbox · waiting for your OK" : "Inbox"))
-        .child(div().text_size(12).text_color(d.warnText).child(String(waiting.length + extra))));
-    }
-    // (Pals Lite, T217: no Rooms rows; the pals keep their rooms with pal-room.)
-  }
-
-  // Inbox, Tasks or Rooms (from crew-roster.you / .tasks keys and the Inbox row), with a way back.
-  otherView(list, rows, waiting, t, d) {
-    const view = this.view();
-    list.child(h_flex().id("back-to-pals").h(28).flex_none().items_center().gap(6).px(6).cursor_pointer()
-      .on_click((_e, cx) => { setShared("crew.view", "bots"); cx.notify(); })
-      .child(svg(`${ICON}/chevron-right.svg`).size(11).text_color(d.fg3))
-      .child(div().text_size(12).font_weight(500).text_color(d.fg3).child({ you: "Inbox", tasks: "Tasks" }[view] ?? "Pals"))
-      .child(div().flex_1())
-      .child(div().text_size(11).text_color(d.fg4).child("back to pals")));
-    if (view === "you") list.child(this.inbox(waiting, t));
-    else if (view === "tasks") list.child(this.taskList(rows, t));
-    return list;
   }
 
   // The Focus hero (hero v2, DeNon 2026-11-08: "2 · Floor", then the name up top and the channels
@@ -750,45 +432,24 @@ export default class CrewRoster extends View {
         .child(bot.name)))
       // No state word (DeNon took it out): the dot, the pose and the floor say it; the tooltip names it.
       .tooltip(`${bot.name} · ${label} · click the name for its menu`));
-    // The tools are five raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look; the
-    // recessed strip that replaced them for a day went back out, T109, 2026-11-10: "go back to them
-    // looking like this, just laid out in a more uniform way"). One rule for the layout: all five
-    // are the SAME size. They share the row equally (flex-basis 0), 6 px apart, from the Topics
-    // well's left edge to its right edge; each one's icon and count sit centred together, and the
-    // count appears only when there is one, so a count or a pal switch never changes a width. The
-    // open view's pebble is the lit (primary) one. Names (Inbox, Tasks, Desk) show from
-    // HERO_LABELS_AT; under that they are in the tooltips.
-    const labels = (w ?? 0) >= HERO_LABELS_AT;
-    const tool = (id, icon, text, action, count, tip, more = {}) => pebble(d, { id, icon, label: labels ? text : null, even: true,
-      extra: count ? (count > 99 ? "99+" : count) : null, onClick: action, tooltip: tip, ...more });
-    // Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; New topic is the list's last row, the
-    // command bar and the right-click menu): the sidebar's Inbox view, again goes back to the pals.
-    // Its count is what needs you (the status bar's "N need you", shared crew.needs), amber when any.
-    const needs = shared("crew.needs")?.count ?? 0;
-    const mine = this.ops.tasks.filter((x) => ["open", "claimed", "blocked"].includes(x.status) && taskFor(x, space.name)).length;
-    const desk = deskOf(space.name);
+    // The tools are raised "pebbles" (DeNon, after the Omarchy Recess plugin's Raised look, T109), all
+    // the same size: they share the row equally (flex-basis 0), 6 px apart. T235 took out Inbox, Tasks
+    // and the head pal's Home (Project Pals is terminal-focused): Pop out, then Close pal. The head
+    // pal never sleeps, so its last slot is Your call (the same two widths for every pal), with what
+    // waits on you as an amber count.
+    const tool = (id, icon, action, tip, more = {}) => pebble(d, { id, icon, even: true, onClick: action, tooltip: tip, ...more });
+    const waits = bot.god ? ownerCount(shared("crew.needs"), [], []) : 0;
     return v_flex().id(`hero-${space.id}`).flex_none().pb(14).border_b_1().border_color(d.line)
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.menu(space); })
       .child(art)
       .child(this.heroChannels(space, bot, d))
       .child(h_flex().id("hero-tools").px(8).pt(12).gap(6)
-        .child(tool("hero-inbox", "ds-inbox", "Inbox", () => setShared("crew.view", this.view() === "you" ? "bots" : "you"), needs,
-          needs ? `Inbox: ${needs} need${needs === 1 ? "s" : ""} you` : "Inbox: nothing needs you", { extraColor: needs ? d.warnText : null, primary: this.view() === "you" }))
-        // Tasks: add one for this pal (it's told when its turn ends) and see its open ones. It used to
-        // be two buttons, Tell and Tasks (DeNon: a Tell is really a task). A dialog, so never "open".
-        .child(tool("hero-tasks", "ds-tasks", "Tasks", () => openOverlay({ mod: "crew-tasks", kind: "dialog", width: 520, props: { space: space.id } }), mine,
-          mine ? `Tasks: ${mine} open for ${space.name}` : `Tasks: add one for ${space.name}`))
-        // (Pals Lite, T217: the Desk pebble is gone; cards that need you are counted on Inbox and shown on Home.)
-        // Pop out (Pals Lite, T217, in Profile's old slot): the shown topic's terminal in its own window.
-        .child(tool("hero-popout", "ds-expand", null, () => { const tab = space.tabs.find((x) => x.active); if (tab) popOut(space, tab); }, 0, "Pop out this topic's terminal"))
-        // The last pebble: Close pal (end its space; Sleep in place is in its menus), except on the head
-        // pal, which never sleeps (its menu has no Sleep either). There it's Home (a terminal icon
-        // while Home shows: back to the topic), in the same place, so the row is the same for every
-        // pal. Ctrl+Shift+H does the same.
-        .child(bot.god && hasHome()
-          ? tool("hero-home", homeMode() ? "ds-terminal" : "ds-home", null, () => toggleHome(), 0,
-            homeMode() ? "Back to the terminal (Ctrl+Shift+H)" : `${headName()} home (Ctrl+Shift+H)`, { primary: homeMode() })
-          : tool("hero-sleep", "ds-moon", null, (cx) => this.sleep(space, bot, cx), 0, CLOSE_LABEL)));
+        // Pop out (Pals Lite, T217): the shown topic's terminal in its own window.
+        .child(tool("hero-popout", "ds-expand", () => { const tab = space.tabs.find((x) => x.active); if (tab) popOut(space, tab); }, "Pop out this topic's terminal"))
+        .child(bot.god
+          ? tool("hero-decide", "ds-check", () => openDecide(), `Your call (Ctrl+Shift+A)${waits ? `: ${waits} waiting` : ""}`,
+            { extra: waits ? (waits > 99 ? "99+" : waits) : null, extraColor: waits ? d.warnText : null })
+          : tool("hero-sleep", "ds-moon", (cx) => this.sleep(space, bot, cx), CLOSE_LABEL)));
   }
 
   // The hero's channels, full width: a header ("Channels", the count, and a magnifier that opens a

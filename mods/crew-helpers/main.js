@@ -5,8 +5,8 @@
 import { View, div, svg } from "gpui-kit";
 import { InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, notify, exec, shared } from "herdr";
-import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetField, pebble, scrollArea, crewCli, ownerCli } from "./crew.js";
-import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperLevel, HELPER_LEVELS } from "./helperlog.js";
+import { ds, tone, sheet, sheetHeader, sheetBody, sheetFooter, sheetField, pebble, scrollArea, crewCli, ownerCli, loadOps } from "./crew.js";
+import { helperSub, helperLine, helperAgo, logRow, helperRows, helperToday, helperNameOk, helperLevel, HELPER_LEVELS, tapUndoable } from "./helperlog.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 34;
@@ -30,6 +30,8 @@ export default class CrewHelpers extends View {
     cx.spawn(async (cx) => {
       try { this.info = JSON.parse(await crewCli(["helpers", "--json"])); this.error = null; }
       catch (e) { this.error = String(e.message ?? e).slice(0, 200); }
+      // The relayed taps, for Undo on a question that went through on one (it was on Home until T235).
+      try { this.taps = (await loadOps()).taps; } catch {}
       cx.notify();
     });
   }
@@ -143,6 +145,19 @@ export default class CrewHelpers extends View {
     return row;
   }
 
+  // Undo a tapped answer (your click): the question is open again and its asker is told to stop.
+  undoTap(hold, cx) {
+    if (this.busy) return;
+    this.busy = hold;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try { await ownerCli(["taps", "undo", hold]); notify({ title: "Undone: the question is open again", level: "success", timeout: 3000 }); }
+      catch (e) { notify({ title: "That didn't work", body: String(e.message ?? e).slice(0, 220), level: "warning", timeout: 6000 }); }
+      this.busy = null;
+      this.load(cx);
+    });
+  }
+
   recordRow(d, e, i, owner) {
     const r = logRow(e, "you");
     const color = r.tone === "warn" ? d.warnText : r.tone === "quiet" ? d.fg2 : d.fg1;
@@ -152,6 +167,8 @@ export default class CrewHelpers extends View {
       .child(div().flex_none().max_w(250).truncate().text_size(12).line_height("16px").font_weight(500).text_color(color).child(r.bold))
       .child(div().flex_1().min_w(0).truncate().text_size(12).line_height("16px").text_color(d.fg2).child(r.rest))
       .when(Boolean(r.card), (el) => el.child(div().flex_none().text_size(10.5).font_family(d.mono).text_color(d.fg4).child(r.card)))
+      .when(e.kind === "tap-done" && tapUndoable(this.taps, e.hold), (el) => el.child(pebble(d, { id: `thl-undo-${i}`, label: "Undo", disabled: Boolean(this.busy),
+        tooltip: "Open the question again; its asker is told to stop", onClick: (cx) => this.undoTap(e.hold, cx) })))
       .child(div().w(56).flex_none().text_right().text_size(11).text_color(d.fg4).child(helperAgo(e.at)));
   }
 

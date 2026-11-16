@@ -6,8 +6,8 @@ Codex, Grok CLI, Gemini CLI, opencode, Hermes, Copilot, Cursor, pi.
 Every Herdr space is a pal (a project with a brain), and each of its tabs is a topic, a clone
 working on one thing. Pals are pocket pets whose pose shows what they're doing. A topic is its
 agent's own terminal. You can put pals together in group-chat rooms and give them tasks and
-scheduled routines. Everything sent to a pal is a card on its desk (the Desk), and Home is the
-one page that shows what needs you. A head pal (named Orchestrator by default; About → Settings
+scheduled routines. Everything sent to a pal is a card on its desk (the Desk). What only you can
+decide comes to you in **Your call**, a small dialog over the terminal. A head pal (named Orchestrator by default; About → Settings
 renames it) oversees everyone.
 
 The layout updates itself from its GitHub releases.
@@ -20,13 +20,12 @@ The window is one shell on the `chrome` background, with no title bar. The inter
 Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 
 - **Sidebar** (left; 300px wide, drag between 56 and 440; under 160px it folds to a 64px rail of
-  faces, each naming its pal on hover; its count at the top is what the Inbox counts, red when
-  something needs you, hidden at zero):
+  faces, each naming its pal on hover; its count at the top is the topics that finished or ask
+  you plus held commands, stuck topics, proposals and Desk cards waiting on you, red when a topic
+  asks you or a command is held, hidden at zero; a click opens Your call):
   - Two round icon buttons at the top: fold, and search (opens the command palette).
   - **The head pal, on top:** a 64px living face, centered, with its name under it and a small status
     dot on the face.
-  - **A pill switcher:** Pals · Tasks · Inbox. Only Inbox shows a count, with a red or
-    green dot, when something waits.
   - **Pals:** each pal is a 40px face, its name (14px, 500), and a one-line preview. The preview
     is its latest topic's terminal title, tagged `[topic]` when it has several. A mark shows
     only when something's happening: a wave while working, a green dot when it finished. A pill
@@ -43,14 +42,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
     Each topic runs its brain: the command on record, else its brain on record started fresh, else
     Claude Code (as `pal topic` does), never bare shells; when nothing was on record it says which
     brain it picked and keeps it (T27). No brain to be had: a warning, and the topics open as shells.
-  - **Tasks:** an "Add a task, @Pal to assign it" field, then bordered lists (Blocked, In
-    progress, Open, Done today). Each task row shows its owner's face, its title and
-    `T3 · Owner`. Clicking a task expands it: details, Open topic, Mark done, Cancel, Reopen.
-  - **Inbox:**
-    - Approval cards ("X wants to push", the command in monospace, Decline / Approve).
-    - "X looks stuck" rows.
-    - Finished and needs-you topics.
-    - A banner if the helper service is off.
+  - (The pill switcher, the Tasks view and the Inbox view went in T235, 2026-11-16: what needs
+    you is in Your call, and `pal task` keeps the board.)
   - **Footer:** "+ Hire a pal", then icons for computers, About (ⓘ, with a dot
     when an update is out) and settings.
 - **Frame** (padding 8/10, gap 6):
@@ -69,7 +62,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
       500; click to rename). On the right: a status dot and word, and the details-panel toggle.
     - **Center stack:**
       - `tab-view`: the topic's terminal (padding 0/24, pane radius 12).
-      - `home-view`: Home, the head pal's page (below).
+      - (`home-view`, Home, the head pal's page, was deleted on 2026-11-16 (T235): Project Pals
+        is terminal-focused, and what needs you is in Your call, a dialog.)
       - (The room page `room-view`, the Desk page `desk-view`, the Computer `pc-view` and the pal
         board `pal-view` were deleted on 2026-11-13 (T217).)
       - (A `chat-view`, the topic read as a chat, was removed on 2026-11-08: Project Pals is
@@ -89,6 +83,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - Hire a pal, New topic, Look (the pet's colour), About.
   - Review (86% × 88%, a diff with line comments).
   - A proposal's review (640px, `crew-proposal`: the change as a diff, Decline or Accept).
+  - Your call (520 × 480, `crew-decide`: what only you decide, one at a time; see Your call).
+  - The welcome tour (760 × 580, `crew-welcome`).
   - Attach (a 400 × 440 popup).
   - All share one look: a small header (face, 17px title, one dim line, ✕), a big name field in
     a rounded card, settings as one-line rows in a bordered list, and a footer with a quiet note,
@@ -97,8 +93,10 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 ## How it behaves
 
 - **Terminal-forward** (T217; DeNon's decision h-724046, 2026-11-13): the app is terminal-forward. A pal is
-  its topics' terminals, and the app around them is the sidebar, the header, Home, the Inbox and
-  small dialogs. The full pages were deleted: the profile panel (Profile, Vault, Memory, the
+  its topics' terminals, and the app around them is the sidebar, the header and small dialogs.
+  T235 (DeNon, 2026-11-16: "remove the Decisions page completely and make Project Pals just
+  terminal focused") took out Home and the sidebar's Inbox and Tasks views too; decisions come up
+  in Your call. The full pages were deleted: the profile panel (Profile, Vault, Memory, the
   AGENTS.md editor, the dashboard), the pal's Computer, the pal board and its Read mode, the
   Routines dialog, the Desk page and the room page with its composer. Git history keeps their code
   for a future app. What they showed stays on disk and in the CLI: memory, notebooks, missions,
@@ -136,7 +134,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   radius 2.5 (half its width), 3px in from the right edge in the padding every list keeps, at least
   24px tall, quiet (#FFFFFF26 dark, #0000002E light), brighter on hover and while dragged
   (#FFFFFF4D / #00000059), and draggable. The hero's topics, the pal list (and the folded rail),
-  the Inbox's diff and proposal text, dialogs (task list, the proposal's diff, update and About
+  Your call's context, dialogs (task list, the proposal's diff, update and About
   notes, attach, the review's file list, the selects' lists via `sheetPanelBox`) all use it. The
   long virtual list (the review's diff) keeps its virtualisation: Herdr's bar is gone and the same pill is placed from
   the rows the list drew (`thumbFor`; dragging it scrolls to the row under it). No mod uses
@@ -398,8 +396,8 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - A cheap model (`claude -p` or `agy -p`, chosen in About → Background model: `pal settings llm` with the owner's click) reviews topics to save memory notes, distilled nightly.
   - Pals' replies (for `pal ask` and the "finished what you asked" callbacks) are read from Claude Code (`~/.claude/projects/…`) and Antigravity CLI (`~/.gemini/antigravity-cli/brain/…`) session files, through `crewchat.py`.
   - It checks for updates every 6 hours at most (`crewupdate.CHECK_EVERY`).
-- **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in the
-  Inbox: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
+- **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in
+  Your call: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
   When the hook lets an approved line through and the program it runs asks again itself (`pal land`'s
   own check, `./release`'s owner-step), that program may count the approval once, and only when the
@@ -486,7 +484,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   **Try it live** is a button on Review, beside Land, for a branch of Project Pals itself (`pal
   diff --json` says `pals`): `pal update try <Pal#topic>` installs the branch's last commit the
   same way and keeps the snapshot from before it. While a branch is tried, a 32 px strip runs
-  across the top of the window (the layout's `crew-live` block, hidden otherwise; DeNon's pick, Home
+  across the top of the window (the layout's `crew-live` block, hidden otherwise; DeNon's pick,
   h-0a897a): an amber square, "Trying", the branch and commit in mono, "· tests running | passed |
   failed: … · since 20:41", then **Back** and **Land on main** (the branch's own base, if not
   main). The status strip says "trying crew/x" in amber (or just "trying"). The Live channel waits during a trial. Back
@@ -711,25 +709,23 @@ rectangular segments and tags.
     one), then a grid of 44px tiles with live 24px previews per group; a click applies at once,
     Done keeps it, Cancel or Esc puts back the one you had.
     No dragging: Herdr's lists have no row drag, so there is no hover pin either; each row takes its
-    own click and right-click. Then the tools: four raised "pebbles" (one flat #1B1B1E face, a 6% white hairline inside
+    own click and right-click. Then the tools: two raised "pebbles" (one flat #1B1B1E face, a 6% white hairline inside
     the top, a 1px darker line inside the bottom, a thin dark outline, GPUI's faintest shadow,
     28px, r7; hover a shade lighter, press a shade darker, nothing moves; `pebble()` in crew.js).
     **One rule for the layout** (T109, DeNon 2026-11-10: the separate buttons, "just laid out in
-    a more uniform way"; a recessed strip replaced them for a day, T106, and went back out): all
-    four are the SAME size. They share the row equally (flex-basis 0), 6px apart, from the
+    a more uniform way"; a recessed strip replaced them for a day, T106, and went back out): they
+    are the SAME size. They share the row equally (flex-basis 0), 6px apart, from the
     Topics well's left edge to its right (8px in); each one's icon and count sit centred
     together (6px in), and the count appears only when there is one, so a count or a pal switch
-    never changes a width and there is no empty slot. Inbox, Tasks, Pop out, and Close pal
-    (Home on the head pal); T217 took out Desk and Profile, and Pop out took Profile's slot.
-    The open view's pebble is the lit (primary) one: Inbox while the sidebar shows it, Home
-    while Home shows. Names (Inbox, Tasks) show from a 430px sidebar; under that they are
-    in the tooltips. The pebbles:
-    Inbox (DeNon, 2026-11-08: it took "+ Channel"'s place; an inbox icon,
-    the sidebar's Inbox view, a second click goes back to the pals; its count is what needs you,
-    the status bar's "N need you" from shared `crew.needs`, amber #F0C04A when any, blank at zero;
-    New topic is still the list's "+ New topic" row, the command bar and the right-click menu), Tasks with this pal's open count, an icon-only Pop out (the shown topic's terminal in a
-    window of its own, `popOut`: see Pop out under Home) and an icon-only moon (put to
-    sleep; Herdr asks first). The hero's name, underlined on hover, opens the pal menu (below). Tasks (Tell merged into it: DeNon, "a Tell is really a task") opens `crew-tasks`
+    never changes a width and there is no empty slot. T217 took out Desk and Profile; T235
+    (2026-11-16, terminal-focused) took out Inbox, Tasks and the head pal's Home. The pebbles: an
+    icon-only Pop out (the shown topic's terminal in a window of its own, `popOut`: see Pop out)
+    and an icon-only moon (put to sleep; Herdr asks first). The head pal never sleeps, so its
+    second pebble is **Your call** (`hero-decide`, a check icon, in the moon's slot): it opens Your
+    call, and shows what waits on you (`ownerCount` of shared `crew.needs`) as an amber count,
+    blank at zero. New topic is the list's "+ New topic" row, the command bar and the right-click
+    menu. The hero's name, underlined on hover, opens the pal menu (below). Tasks (Tell merged
+    into it: DeNon, "a Tell is really a task") is in the pal menu and the command bar; it opens `crew-tasks`
     (520px): a composer on top (a 13.5px textarea, 3 rows growing to 10; Enter adds, Shift+Enter is
     a new line; images by pasting, dropping files on the dialog, or the paperclip's recent-files list,
     copied into `data/crew-attachments`, images only, 10MB and 6 per task, shown as 64x48 thumbnails
@@ -737,7 +733,7 @@ rectangular segments and tags.
     --body "<the rest, and the images' paths>"`, marked from the owner; the pal is told when its turn
     ends and its "New task" message carries the body, paths included. Then that pal's open tasks
     (working first, then blocked, then open; a tick finishes one, a click on its title shows its
-    details, notes and who asked), and "All tasks on the board →". Quick questions go in the
+    details, notes and who asked). Quick questions go in the
     terminal. No state pill, no species/brain line; the task text is in its pal row. The header has the
   command bar's field centred (T18; DeNon: "this pill is redundant maybe it should be a global
   search / command type of thing, the things that are in the dropdown already there are perfect"):
@@ -747,7 +743,8 @@ rectangular segments and tags.
   shared `crew.command.open`), a magnifier, "Search pals, topics, tasks… or run a command" and
   its shortcut as a tiny raised pebble (`keyCap`); a click or **Ctrl+Shift+Space**
   (`crew-header.search`) opens the command bar over it (below).
-  The split buttons are on the right; the git branch is in
+  On the left, as wide as the right side so the field stays centred, the amber **Your call · N**
+  pill while anything waits on you (see Your call). The split buttons are on the right; the git branch is in
   the agent's own status line instead (crew-statusline adds a dim "(worktree)" in a linked worktree,
   or prints the branch when you have no status line of your own); no
   topic picker on the left (DeNon took it out: topics switch from the hero's list, which shows
@@ -802,8 +799,8 @@ rectangular segments and tags.
   (`P-n`), reusing the ledger's open ones; if the call fails, word overlap (2+ shared words). (3)
   Patterns seen in 2+ pals, 3+ times or costing 30+ minutes (at most 3) go to the head pal as a
   `[dream]` digest; it drafts fixes with `pal dream propose` (skill, rule = lines added to a pal's
-  AGENTS.md as an agent-file proposal, tool / process = a task, context = a brain note). Each is an
-  Inbox card (the pattern, two quotes, the text; Decline · Approve) or, for a rule, the usual
+  AGENTS.md as an agent-file proposal, tool / process = a task, context = a brain note). Each is a
+  Your call item (the pattern, two quotes, the text; Show the whole proposal, then Approve; Decline) or, for a rule, the usual
   agent-file proposal. Approve writes through that kind's writer. `data/crew-dream/patterns.json`
   + `ledger.jsonl`: accepted → watching 14 days → resolved, or recurred when the hiccup comes back;
   declined rests 30 days unless it doubles; a proposal that expires reopens its pattern. It never
@@ -811,8 +808,8 @@ rectangular segments and tags.
   `data/crew-dream/intake/` for the owner to file. (The Dreams view in the Vault went with Pals
   T217; `pal dream ls` lists the patterns and their states.)
 - **Proposals** (`bin/crewproposals.py`, `data/crew-proposals/<id>.json` + `.md`): a pal's
-  `pal mission propose` or `pal agents propose <file>` becomes a card on Home and in the Inbox
-  (Decline tells the pal; View opens the review), counted in "N need you", expiring after 7 days.
+  `pal mission propose` or `pal agents propose <file>` comes up in Your call
+  (Decline tells the pal; View opens the review), counted in the header's Your call pill, expiring after 7 days.
   Nothing is written until the owner accepts.
   **The review** (`crew-proposal`, T217; it replaced the profile panel's Vault › Mission and
   AGENTS.md tab for this): a 640 px dialog, "<Pal> proposes a change to its mission" (or to the
@@ -853,9 +850,9 @@ rectangular segments and tags.
   them; the strip is the sidebar's #0E0E0F with its #1E1E20 edge line down the right side and
   no line on top, so the sidebar's edge reaches the window's bottom. **The strip is just the
   gear** when all is calm (T98, DeNon 2026-11-10: "N working", the usage limits and "pal 0.x.y"
-  went from it). Two things join it only when they apply, fitted to its width
-  (`crew-status` `statusFit`, widths estimated at 5.9px a character): "N need you" after a
-  separator, and on the right the update pill ("Update · X", else just "Update"; if even that
+  went from it; T235, 2026-11-16, moved "N need you" to the header's Your call pill). One thing
+  joins it only when it applies, fitted to its width (`crew-status` `statusFit`, widths estimated
+  at 5.9px a character): on the right the update pill ("Update · X", else just "Update"; if even that
   doesn't fit, the gear's tooltip says an update is out). The version is in Project Pals
   settings (the gear's menu → About). Usage is no longer shown by the app; Claude Code's own
   status line in the terminal still shows it. Folded to the 56px rail the strip is empty (the
@@ -885,7 +882,7 @@ rectangular segments and tags.
   steady again): while a pal's pet is in its "work" state the whole sprite (pet and tapping paw)
   sways from side to side and back every 2.6s, eased, and is still the moment
   it stops working. Everywhere the pet is drawn (`crew.js petEl`: pal rows, the hero, the
-  folded rail's heads, Home, the Chief), boxed or open, big or a small head; the box, its edge
+  folded rail's heads, Your call, the Chief), boxed or open, big or a small head; the box, its edge
   and the saber don't move. The sway is 1.5px each way at the 75px row size, scaled with the
   pet and kept between 0.75 and 3px (`rockPx`). gpui-kit can't rotate an element (its native
   `loop` moves opacity, width, height, left and top only), so it is a sway, not a tilt about
@@ -931,21 +928,21 @@ rectangular segments and tags.
   yet (use `pal topic area add`, or wait for stage 3).
   Still to come: the pal proposing its own sort (3), the Shelf (4), area headings in the topic
   picker and on the pal's page (5).
-- **Status strip** (24px, the sidebar's last row): a quiet gear at its left end and, when any,
-  **"N need you"** (questions for you, approvals waiting, stuck topics, proposals; amber, red while
-  an approval waits; a click opens the Inbox; hidden at zero; the roster publishes it as shared
-  `crew.needs`). Claude Code marks a topic blocked from the wording of its last message, so a
+- **Status strip** (24px, the sidebar's last row): a quiet gear at its left end. What needs you
+  is the header's **Your call · N** pill (see Your call) since T235; its count comes from shared
+  `crew.needs`, which the roster publishes (questions for you, approvals waiting, stuck topics,
+  proposals, helpers, held taps, Desk cards waiting on you). Claude Code marks a topic blocked from the wording of its last message, so a
   blocked topic plainly addressed to another pal ("Orca, should I…", "tell Orca#general when…",
   `pal tell`) isn't counted: the roster reads blocked agents' `hc get` → `status.msg` (only theirs,
   cached until the report changes) and `blockedFor()` decides; anything unclear, or no text,
-  still counts. Its tooltip says why each one counts ("Question: Orca #general · Approval: push ·
-  OMA CMZ #dotfiles · Stuck: … · not counted: 1 asking a pal"). The Inbox lists the pal-to-pal ones
-  as "<pal> asked another pal", after your questions, and they don't turn the Inbox red. Then come the shown topic's 5-hour and weekly usage, the update pill (see Updates) and the installed
-  version. The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252px-wide popup in the terminal menu's look, with
-  shortcuts from keys.json): Hire a pal…, Inbox, Theme and look
+  still counts. The pill's tooltip says why each one counts ("Question: Orca #general · Approval: push ·
+  OMA CMZ #dotfiles · Stuck: … · not counted: 1 asking a pal"). Pal-to-pal questions aren't in
+  Your call. On the strip's right, the update pill (see Updates). The gear (and the folded rail's) opens the app menu (`crew-appmenu`, a 252px-wide popup in the terminal menu's look, with
+  shortcuts from keys.json): Hire a pal…, New group…, Send to a pal…, Your call, <Head>'s
+  terminal, the Chief, Factories, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
   settings, Command palette, Check for updates (`crew-update` with props `check: true`),
-  Project Pals settings (About: owner, head pal, update, Roll back). (T217 took out New
+  Project Pals settings (About: owner, head pal, update, Roll back), Welcome tour. (T217 took out New
   room…, Rooms, Routines, the Desk and the board's and Computer's rows; routines are `pal routine`.)
   **It never runs past the window** (T95, DeNon 2026-11-10: it had outgrown its fixed 438px box
   and a short window, Settings was cut off and nothing scrolled). It's as tall as its rows need
@@ -968,7 +965,7 @@ rectangular segments and tags.
 - **Terminal-first** (DeNon, 2026-11-08): a topic is its terminal; you type in it
   directly, and you answer its permission prompts and questions there too (no prompt card:
   DeNon removed it on 2026-11-08, since it repeated the terminal's question and covered it).
-  A click on a pal opens its terminal (the head pal's opens Home); T217 took out the pal
+  A click on a pal opens its terminal, the head pal's too (T235: Home is gone); T217 took out the pal
   board that a click showed first, and its "Clicking a pal opens…" setting (`palClick`).
 - **Splits:** Herdr's own (Ctrl+Shift+O right, Ctrl+Shift+E down, Ctrl+Shift+X close, Ctrl+Shift+Z
   zoom, Alt+H/J/K/L move, Alt+Shift swap), plus split right / down buttons in the header, and the right-click on a terminal (`crew-termmenu`, the layout's
@@ -997,8 +994,8 @@ still travels through crewd's queue, carrying the card's id.
   `held` (with `draft`, `asleep` or `gone`) when it's due but can't go out; crewd tries held and
   queued cards again every minute. Callbacks are closed as soon as they're delivered.
 - **Nothing in the app says Desk** (T217 took out the Desk page; 0.4.4, T222, the header's button and
-  the Desk settings dialog). Cards are the pals' messages underneath: cards that need you are on
-  Home (tagged **Message**) and counted on the Inbox, and `pal desk` lists, opens and moves them
+  the Desk settings dialog). Cards are the pals' messages underneath: cards that need you come up
+  in Your call (tagged **Message**, with Done) and count in its pill, and `pal desk` lists, opens and moves them
   (`pal desk ls --all`, `open`, `done` …).
 - **Send to a pal** (the quick-drop, `crew-desk-drop`: Ctrl+Shift+D, or "Send to a pal…" in the
   command bar and the gear menu; no header button): a 560 px dialog with To (Auto, To route, a pal,
@@ -1018,17 +1015,17 @@ still travels through crewd's queue, carrying the card's id.
   a Claude Code pal on Sonnet in `data/crew-partner` (its brief, `partner/AGENTS.md`, rendered with
   the owner's and head pal's names), topic `#ideas`. The owner riffs with it; it writes **drafts**
   with `pal desk draft` into `_drafts/` (status `draft`, kind `idea`, `to` its suggestion, `track: yes`
-  for a task). A toast says "MUSE drafted a card" (its click opens Home). **Drafts are on Home**
-  (T217; the Desk page had them): each is a **Draft** card under Needs you with Send (`pal desk
+  for a task). A toast says "MUSE drafted a card" (its click opens Your call). **Drafts are in Your call**
+  (T235; Home had them from T217, the Desk page before): each is a **Draft** item with Send (`pal desk
   send-draft ID --to <its suggestion>`: the card becomes the owner's own, from the owner,
   `drafted_by` MUSE, in the ledger), Edit… (the quick-drop prefilled with its words, where it
   suggests, how urgent and its board flag, `fromDraft`; dropping sends it with `--from-draft`, and
   the draft closes "edited and sent as c-…") and Discard, each the owner's click.
   `desk.partner_sends_as_itself` sends its cards at once as a pal's instead.
-- **Cards waiting on the owner are in the Inbox too** (needs you, or sent to the owner; not drafts),
-  each with Read it on Home and Done (a click), and they count in the status bar's "N need you" as
+- **Cards waiting on the owner are in Your call** (needs you, or sent to the owner; not drafts),
+  each with Done (a click), and they count in its pill, listed in the tooltip as
   "Card: <title> · <sender>". The header publishes them (`shared("crew.desk").needs`, via
-  `needsYouCards`); Home uses the same filter, so the three agree.
+  `needsYouCards`); `ownerQueue` uses the same filter, so the pill and the dialog agree.
 - **The Desk's settings** have no dialog since 0.4.4 (T222): triage (auto / off) and its daily cap,
   pals' soon cards per topic an hour, the check-in's held and quiet minutes, the archive days, and
   "MUSE sends as itself" keep their values in `crew-settings.json` ("desk"; defaults in
@@ -1069,118 +1066,111 @@ still travels through crewd's queue, carrying the card's id.
 - **Trays:** `_route/` (To route: no pal yet, or its pal was removed) and `_owner/` (cards a pal
   sent the owner with `pal desk send <owner> "…"`: needs you).
 
-### Home (0.4)
+### Your call (T235)
 
-The head pal's page, so coming back after working in parallel isn't a terminal scroll (mock:
-`data/crew-boards/orca-home/index.html`). It's `crew-home`, the `center` stack's second child
-(`home-view`). **Clicking the head pal** (its row, rail face or hero art) opens it; so do the
-head pal's hero **Home** pebble (icon-only, in the moon's place: the head pal never sleeps; while
-Home shows it's a terminal icon, primary, that goes back to the topic), "<Head> home" in the command bar and gear menu, and
-**Ctrl+Shift+H** (`crew-roster.home`, bound by install.sh only when free). Showing it selects the
-head pal, so the hero is its. Picking any topic leaves it (`showTabs`). While it
-shows, the header hides the split buttons.
+What only the owner decides, one item at a time, in a small dialog over the terminal (`crew-decide`,
+a 520 × 480 dialog; `focusable`). It replaced Home, the head pal's page, and the sidebar's Inbox on
+2026-11-16 (DeNon: "remove the Decisions page completely and make Project Pals just terminal
+focused"). There is no page: the terminal stays the app.
 
-"Inbox zero" (DeNon's pick, 2026-11-08, of five simpler directions on
-`crew-boards/orca-home/simple.html`): the page is one list.
+**What comes up** (`ownerQueue` in `lib/crew.js`, oldest first; the dialog reads it every 3 s):
+Home asks and logins (`pal home ask` / `login`, open ones in `data/crew-home/home.json`), commands
+held for approval, relayed taps being held, Desk cards waiting on the owner (needs you, or sent to
+the owner), the idea partner's drafts, proposals (mission and agent-file ones, and Dream
+proposals), trusted helpers that need a click, topics asking the owner (from shared `crew.needs`; a
+pal asking another pal isn't one), and topics that look stuck.
 
-- **Head** (28 px): "Needs you" at 20/600 and its count in a 40 px slot (amber, grey at 0), and on
-  the right "What happened today ›" (blue; "Close ×" while the drawer is open).
-- **One status line** (20 px, truncates), built from the data, never written by a model: the
-  working indicator and "N working", who on what ("Herdr Mod on #orca-home and #pal-looks"; more
-  than two topics: "N topics"), then "· ● 0.3.0 shipped 18:35" (mint, a release published today)
-  or "· ● Installed 477580b 18:23" (violet, today's last install), then "N held · N stuck" and
-  "crewd isn't running: messages wait" in amber when they apply.
-- **Needs you**, oldest first, each a 76 px card in one box that takes the rest of the page and
-  scrolls: pet with its aura (44 px), a rectangular tag, the title, one line of context, the
-  actions, and the age in a 52 px right-aligned slot (amber past an hour). Kinds: **Approval**
-  (Decline · Approve, 10 px apart, Approve last), **Decision** (`pal home ask`: one button per
-  option, the first primary, then Park; without options "Answer in #topic"), **Login** (the command
-  in a mono box, Copy via wl-copy, Open #topic), **Question** (a topic asking you, from
-  `crew.needs`, with what it said; Open), **Desk** (a card waiting on you; Done),
-  **Draft** (one the idea partner drafted: Discard, Edit…, Send; see the Desk's MUSE),
-  **Proposal** (Decline, View: the proposal review), **Stuck** (Open). Answering removes a card.
-- **The review** (DeNon's pick, mock A of `crew-boards/orca-home/review.html`): while anything
-  waits, ONE item fills the page, oldest first (40 px sides): a 32 px top row (Needs you, progress
-  dashes 22×3 (amber the current one, grey the ones before), "2 of 5", then K Back · J Skip · L
-  Later · Esc List with their key caps); the asker (pet 56 px with its aura, name, #topic, the kind's
-  tag, "asked 10m ago"); the title at 24/600 in a fixed two-line 64 px band; the context, which
-  scrolls in the space left (the body at 14/22, the command in a mono box and an AGENTS.md diff in
-  green and red for an approval, link chips that open, up to four 150×94 image thumbnails that open);
-  a 52 px **Recommended** banner (blue edge: the pick and "Asker: why"; with none, a grey "No
-  recommendation" line in the same place); the options as 72 px cards (label 14/600, what it does
-  12 px, a key cap 1-9, or L for Park; the recommended one lit blue with a Recommended tag;
-  Approve and View 30 px apart from Decline); and a 52 px foot with **C Chat with <Pal #topic>**
-  and the key legend. Keys (Home takes the keyboard when it shows; `focusable` in mod.json): 1-9
-  pick, Enter takes the recommendation (nothing without one), C chat, J next, K back, L later (an
-  ask is parked; others skip), Esc to the list ("Review one at a time ›" comes back). A decision
-  removes the item and the next one takes its place; the last ends on All caught up.
-- **Narrow** (Home under 900 px wide, e.g. a half-width window; measured with on_size_change):
-  the review's top bar drops "Needs you" and shows key caps only (words in tooltips), option
-  cards put the number before the label instead of a cap, the key legend is hidden, and with more
-  than three options they become full-width 40 px rows (key, label, Recommended, what it does);
-  the list header says "Today ›" / "Review ›" and Talk to <Head> is its icon and T.
-- **Each showing** is stamped by `showHome` (shared `crew.home.shown`, a counter): a hidden view
-  doesn't render, so that's how Home knows to take the keyboard and restart its review after a
-  trip to the terminal.
-- **Pop out** (T70): a topic's live terminal in a desktop window of its own, because Herdr's
-  `window` overlays (Home's chat, the Chief) are drawn inside the main window and a window manager
-  can't pin those. "Pop out" on the chat window's bar (not for the idea partner; the chat window then
-  closes), the sidebar hero's Pop out pebble (the shown topic) and "Pop out to a window" on a
-  terminal's right-click run `pal popout <Pal#topic>` with
-  the owner's click (`popOut` in `lib/crew.js`). `bin/crewpopout.py` builds a throwaway app home
-  under `$XDG_RUNTIME_DIR/pals-popout/<key>` (short, for the socket path): one layout, a 30 px bar
-  (`crew-popout-bar`: Pal, #topic, Pin, Open topic, ×) over the terminal, the owner's theme and
-  zoom, no keys and no crew state; then starts a second `herdr-app` on it (same herdr-core, so the
-  same terminal). A watcher beside it floats the window at the remembered size and place (560×520,
-  centred, the first time), pins it if it was pinned, and saves size, place and pin to
-  `data/crew-popout.json` every 2 s while they change, so resizing or moving it by any means is
-  remembered; when the window closes it removes the runtime home. Pin is `pal popout pin KEY` (the
-  owner's click, written from the bar into the main home's `crew-clicks`): Hyprland's pin on that
-  one window by address, never the active window; the bar re-reads the store every 3 s so a pin made
-  with Super+O shows. No Hyprland: the window still opens and Pin says to use the window manager.
-  Opening a topic that's already out focuses its window. Closing never ends the terminal.
-  **Whose window it is:** the key is the topic's exact address, `key_of("Pal#topic")`: the slug's
-  first 37 characters, `-`, and 10 hex of the address's SHA-256 (`orca-ops-190e8ce702`; 48 at
-  most). The slug alone folds punctuation and cuts long names, so `App#build-api` and
-  `App#build_api` shared one through 0.4.2 and the second got the first's window. An open window
-  is reused only when its state names the same label AND terminal (`shows`), looked for under every
-  open key, so a window 0.4.2 left open under its slug is still found. The same topic on another
-  terminal (the topic was closed and reopened): that window is closed and a new one opens. Another
-  topic under our key: refused with its name, nothing reused, nothing built over. Geometry from
-  0.4.2 (under the slug) is copied to the new key the first time (`adopt`); the old entry stays.
-  `pal popout pin|close` takes an open pop-out's key or its `Pal#topic`.
-  Watch-outs: nothing is written to the Hypr config (no window rule); `pal popout` open / pin /
-  close refuse everyone but the owner's click (`ls` is anyone's).
-- **Chat about it** opens a window (key `home-chat`, 560×520) over Home: a 34 px bar
-  (`crew-home-chat`: pet, Pal, #topic, what it's about, Open topic, ×; drag the window by it) over
-  the asking topic's live terminal; the bar says "click below to type" (Herdr can't give a window's
-  terminal the keyboard from code). Esc on Home closes it (Home keeps its id; `overlay.close` can't
-  reach a window). When that topic has no live agent, the idea partner's (Muse's) terminal instead,
-  with a toast saying so.
-- **Recommendations:** `pal home ask … --option A --does "what A does" … --recommend A --why "…"
-  [--link URL]… [--image FILE]…` (images are copied into `data/crew-attachments`), and for an
-  approval, a Desk card or an ask afterwards `pal home recommend <a-…|c-…|h-…> <approve|decline |
-  done|open | an option> --why "…"` (stored in home.json `recs`, kept 14 days).
-- **The head pal's terminal, one step away:** "Talk to <Head>" (a 26 px pebble with the terminal
-  icon and a T key cap) at the right of the header, after "What happened today ›"; "T <Head>'s
-  terminal" after a hairline at the end of the review's top bar; the **T** key; Ctrl+Shift+H from
-  Home; and any topic in the hero. Each leaves Home, shows that topic and puts the keyboard in its
-  lead pane (`openTerminal`: `pane.focus {terminal}`); the hero's topics did the first two before but
-  left the keyboard on the hidden Home.
-- **All caught up** when nothing waits: the head pal's pet (120 px) with its aura, "All caught up"
-  18/600, "N decisions answered today. <Head> puts new ones here first.", and a quiet blue
-  "Message <Head> ›" that opens its terminal with the keyboard in it.
-- **The drawer** (420 px, over the page on the right, a strong left hairline and a shadow; ×, the
-  link again, or leaving Home closes it; it reopens on the tab you used last), tabs with counts:
-  **Today** (since midnight, newest first, 36 px rows, a blue time while newer than Mark all
-  seen: installs with the violet dot, hash (+ if dirty), subject and branch; tasks done; topics
-  finished, one row each with its turns; your answers; links (click opens); notes; things closed on
-  Home; cards the head pal closed. "N new since you last looked" and **Mark all seen**, your click),
-  **Working** (48 px rows, longest first: pet, the working indicator, pal, #topic, its terminal
-  title, how long; held and stuck in amber; then "Waiting with <head> · N" and its open cards),
-  **Releases** (three 64 px cells, Public · GitHub / Installed here with the build / Next, then
-  queued items and pending deploys, and when GitHub was checked), **Parked** (title, Unpark ·
-  Drop, when).
+**Where it opens:**
+- A toast for each new Home ask or login ("<Pal> asks you" / "<Pal> needs you to log in", "… · Your
+  call has it."), each newly held command ("A command waits for your OK"), each new draft ("MUSE
+  drafted a card … Review and send it in Your call.") and each relayed tap being held. Each is toasted
+  once (the ids already toasted are kept in the header's localStorage); a click runs
+  `crew-header.decide`.
+- The header's **Your call · N** pill, on the left of the command field (26 px, round, a 6 px dot;
+  amber, red while a command or a tap is held; hidden at zero; 99+ past 99). N is `ownerCount`:
+  shared `crew.needs`' count, plus open Home asks and logins, plus drafts. Its tooltip names the key
+  and why each one counts.
+- The head pal's hero pebble **Your call** (`hero-decide`, in the moon's old slot), with an amber
+  count; the folded rail's count; "Your call" in the command bar and the gear menu.
+- **Ctrl+Shift+A** (`crew-header.decide`; install.sh binds it only when free).
+
+**What you see**, top to bottom, at a fixed 520 × 480 (nothing jumps: the context scrolls, and
+sentences wrap rather than cut off):
+- A 36 px top row: "Your call" (13/600), "2 of 5", then **Parked · N** (only when something is
+  parked), **L Later** (the next item; this one waits; grey with only one) and ×.
+- Who asks: the asker's pet (44 px), Pal and #topic, a rectangular tag for the kind, and one line
+  ("asked 10m ago", "held 4m ago · rule push · a-…").
+- One scroll area holds everything you decide on, so nothing is cut off or pushed out of the
+  dialog (Codex's T235 review): who asks, the whole question at 17/600 (it wraps), the body (13/19),
+  a command in a mono box, an AGENTS.md diff in green and red, link chips and attachment chips (a
+  paperclip and the file name; both open with `xdg-open`), the recommendation bar and the options.
+- The recommendation bar (34 px at least): blue "RECOMMENDED" with the pick and "<Asker>: why", or a
+  grey "NO RECOMMENDATION · The asker didn't pick one. Open its terminal if you're unsure."
+- The options as rows (40 px at least; the label and what it does wrap, every line of it: a program
+  owner step's command, topic, folder and commit in mono), each with a key cap 1-9, the label at
+  13/600; the recommended one lit blue with a Recommended tag.
+- A 44 px foot: **T Open <asker>'s terminal** and the key legend ("1–9 pick · Enter recommended ·
+  Esc", without Enter when there's no recommendation).
+- **Parked · N** shows what you parked, newest first, each with **Unpark** (back in the queue) and
+  **Drop** (closed), both your click (`pal home unpark|drop`); Esc goes back to the queue, and number
+  keys do nothing there.
+- Nothing waiting: "Nothing needs you" ("Looking…" before the first read) under the head pal's pet
+  (96 px), "<Head> puts decisions here, and tells you when one comes up.", and "Open <Head>'s
+  terminal" with a T cap.
+
+**The kinds and their options:**
+- **Approval** (red tag): "<Pal> wants to <push…>", the command, the diff for an agent-file edit.
+  Decline, Approve (lets exactly this command or edit through, once).
+- **Decision** (`pal home ask`): one option per `--option` with its `--does`; a program owner step
+  (`--approves`) shows each option's full command, the asking topic, its working directory and the
+  pinned land commit, and is answered with the question as shown bound to it. Without options,
+  "Answer in #topic" (opens its terminal). Then Park (it stays parked until its asker brings it back).
+- **Login**: the command in a mono box, "Type it in #topic's terminal: the ! runs it there.", Open
+  #topic, Copy (wl-copy), Park.
+- **Question** (a topic asking you): what it said, Open #topic.
+- **Message** (a Desk card waiting on you): its body, result and attachments, Done.
+- **Can't read** (red tag; a card in your tray whose file can't be parsed): its id and the error,
+  and only "Open <Head>'s terminal": nothing can be done with it until it's repaired.
+- **Draft** (from the idea partner, with its attachments): Send (as your card, to where it suggests), Edit… (closes the
+  dialog and opens the quick-drop prefilled), Discard.
+- **Dream** (violet tag, with its kind): the pattern, how often, how many pals, the time lost and the
+  quotes. **Show the whole proposal** loads its text; only then does Approve appear, bound to that
+  text's digest (`--text-sha`). Decline (it rests 30 days).
+- **Proposal** (a mission or AGENTS.md change): View (closes the dialog and opens `crew-proposal`,
+  the diff), Decline.
+- **Tap** (a relayed tap being held; red "Outward tap" when it goes outside): Stop (it doesn't run;
+  the item is yours to answer), Let it go now.
+- **Helper** (a trusted helper that needs a click): its fix (turn it on, or a new key) when there is
+  one, recommended; Trusted helpers (opens that dialog); its off switch when it has one.
+- **Stuck** (a topic working with an unchanged screen): Open #topic.
+
+**Keys** (real presses in the dialog; it takes the keyboard after it renders): 1-9 pick, Enter takes
+the recommendation (nothing without one), L later, T opens the asker's terminal (the head pal's when
+there's no asker), Esc closes. A decision runs as the owner (a toast says what happened, or "That
+didn't work" with why); the item goes and the next one takes its place, kept by key across refreshes.
+**T** and every "Open #topic" close the dialog, show that topic and put the keyboard in its lead pane
+(`openTerminal`). A topic that isn't open says "<Pal> isn't open · Wake it from the sidebar first."
+
+**The owner-only rule.** A decision runs only from a real click or key press in this dialog, through
+`ownerCli` (the one-time click token for exactly that command line; `owner_gate`, its receipts and
+the trusted-helper refusal are unchanged). The dialog's `nextCommand` accepts only `"focus"`, so
+`herdr-app do crew-decide.<anything>` from a pal or a helper decides nothing, and opening it
+(`crew-header.decide`, `mod.open`) only shows it. There is no terminal fallback: a pal can type into
+a terminal as well as a person can.
+
+**Factories.** Your call is everyone's, whichever factory shows: what waits on you is never hidden
+by a switch, and the pill counts the same list (Codex's T235 review). The switcher's per-factory
+counts are unchanged (see Factories).
+
+**Recommendations:** `pal home ask … --option A --does "what A does" … --recommend A --why "…"
+[--link URL]… [--image FILE]…` (images are copied into `data/crew-attachments`; Your call shows
+each as an attachment chip), and for an approval, a Desk card or an ask afterwards `pal home recommend <a-…|c-…|h-…>
+<approve|decline|done|open | an option> --why "…"` (stored in home.json `recs`, kept 14 days).
+
+**The head pal's terminal** is one step away without Your call: clicking the head pal (its row, rail
+face or hero art), **Ctrl+Shift+H** (`crew-roster.home`, install.sh binds it only when free), and
+"<Head>'s terminal" in the command bar and the gear menu all run `openTerminal()`: the head pal (the
+shown factory's foreman), its shown topic, the keyboard in its lead pane.
 
 Data: `data/crew-home/home.json`, written only by `pal home` (bin/crewhome.py, locked, atomic):
 `{seen, items: [{id h-6hex, kind ask|login|link|note|deploy|later, status
@@ -1188,36 +1178,74 @@ open|answered|done|parked|dropped, title ≤160, body ≤2 KB, options ≤4 (ask
 (link), topic, by (stamped), at, answer, answered_at, result, closed_at, parked_at}], release:
 {next, note, queued: [{id r-6hex, text, at, by}]}}`. Closed items go after 14 days. `pal home
 answer ID "option"` and `pal home seen` are the owner's (a click); an answer is told to whoever
-asked as a card from the owner. **Who takes an item off Home** (`done`, `drop`, `park`, `unpark`):
-whoever put it there (the same pal, from any of its topics), the head pal, or the owner's click;
-anyone else is refused and told who may. An ask closed by anyone but the owner is `withdrawn`:
-Today shows it as **Withdrawn** by whom, in amber, and it is never an answer. install.sh adds `build` (`hash`, `branch`, `subject`, `dirty`,
+asked as a card from the owner. Your call shows only open asks and logins: `pal home link`, `note`
+and `deploy` still store their items, but nothing in the app shows them now, and the release queue
+(`pal home queue`) shows on the Chief's dashboard as Next. **Who takes an item off** (`done`, `drop`, `park`,
+`unpark`): whoever put it there (the same pal, from any of its topics), the head pal, or the owner's
+click; anyone else is refused and told who may. An ask closed by anyone but the owner is
+`withdrawn`, and it is never an answer. install.sh adds `build` (`hash`, `branch`, `subject`, `dirty`,
 `tag`, `ahead`) to `crew-install.json` and a line to `data/crew-installs.jsonl` (the last 200):
 from git in a checkout, else (an export: `git archive`, how the head pal installs) from
 `CREW_BUILD=<hash>` with optional `CREW_BUILD_BRANCH` / `CREW_BUILD_SUBJECT`, or a `BUILD` file at
 the root (a hash, or JSON with those fields); `export: true` marks it. Anything that isn't a hex
 hash is ignored, with a warning.
-Home reads only while it shows: files every 4 s, `pal desk ls --all --json --done` every 10 s.
+
+### Pop out (T70)
+
+A topic's live terminal in a desktop window of its own, because Herdr's `window` overlays (the
+Chief) are drawn inside the main window and a window manager can't pin those. The sidebar hero's Pop
+out pebble (the shown topic) and "Pop out to a window" on a terminal's right-click run `pal popout
+<Pal#topic>` with the owner's click (`popOut` in `lib/crew.js`). `bin/crewpopout.py` builds a throwaway app home
+under `$XDG_RUNTIME_DIR/pals-popout/<key>` (short, for the socket path): one layout, a 30 px bar
+(`crew-popout-bar`: Pal, #topic, Pin, Open topic, ×) over the terminal, the owner's theme and
+zoom, no keys and no crew state; then starts a second `herdr-app` on it (same herdr-core, so the
+same terminal). A watcher beside it floats the window at the remembered size and place (560×520,
+centred, the first time), pins it if it was pinned, and saves size, place and pin to
+`data/crew-popout.json` every 2 s while they change, so resizing or moving it by any means is
+remembered; when the window closes it removes the runtime home. Pin is `pal popout pin KEY` (the
+owner's click, written from the bar into the main home's `crew-clicks`): Hyprland's pin on that
+one window by address, never the active window; the bar re-reads the store every 3 s so a pin made
+with Super+O shows. No Hyprland: the window still opens and Pin says to use the window manager.
+Opening a topic that's already out focuses its window. Closing never ends the terminal.
+**Whose window it is:** the key is the topic's exact address, `key_of("Pal#topic")`: the slug's
+first 37 characters, `-`, and 10 hex of the address's SHA-256 (`orca-ops-190e8ce702`; 48 at
+most). The slug alone folds punctuation and cuts long names, so `App#build-api` and
+`App#build_api` shared one through 0.4.2 and the second got the first's window. An open window
+is reused only when its state names the same label AND terminal (`shows`), looked for under every
+open key, so a window 0.4.2 left open under its slug is still found. The same topic on another
+terminal (the topic was closed and reopened): that window is closed and a new one opens. Another
+topic under our key: refused with its name, nothing reused, nothing built over. Geometry from
+0.4.2 (under the slug) is copied to the new key the first time (`adopt`); the old entry stays.
+`pal popout pin|close` takes an open pop-out's key or its `Pal#topic`.
+Watch-outs: nothing is written to the Hypr config (no window rule); `pal popout` open / pin /
+close refuse everyone but the owner's click (`ls` is anyone's).
 
 ### The welcome tour
 
-Every install starts with the head pal, and it shows a new user around (T76; DeNon's pick "A · On
-Home", 2026-11-09; mock: `data/crew-boards/onboarding`). It's drawn by `crew-home/welcome.js` with
-the words in `crew-home/welcome-text.js`: fixed text with the head pal's and the owner's names
+Every install starts with the head pal, and it shows a new user around (T76; DeNon's pick "A", 2026-11-09;
+mock: `data/crew-boards/onboarding`). It's a 760 × 580 dialog of its own since T235 (it was drawn on
+Home), `crew-welcome`, drawn by `crew-welcome/welcome.js` with the words in
+`crew-welcome/welcome-text.js`: fixed text with the head pal's and the owner's names
 filled in, never written by a model.
 
-- **Seven screens on Home, one message and one main button each** (Enter; ← or K goes back):
+- **Seven screens, one message and one main button each** (Enter; ← or K goes back):
   hello ("Hello, I'm the Orchestrator. I'm the pal that oversees every other pal…") → what a pal
-  is → hire your first pal → what Home is → talk to me (T opens its terminal) → you stay in
-  charge (the approval gate) → done. Progress dashes and "3 of 7" on top; **Skip the tour** on
-  every screen but the last. While it shows, it has the whole page.
+  is → hire your first pal → "Your calls come to you" (what Your call is, with an example
+  decision; the amber pill and Ctrl+Shift+A) → talk to me ("Click me in the sidebar, or press
+  Ctrl+Shift+H"; T or "Open <Head>'s terminal" opens it) → you stay in charge (the approval gate)
+  → done. Progress dashes and "3 of 7" on top; **Skip the tour** on every screen but the last. The
+  dialog takes the keyboard after it renders, and closes itself once the tour is done or skipped.
 - **When it shows.** `install.sh` writes `"welcome": {"state": "new"}` into `crew-settings.json`
   only when it creates that file and no pals are on record: a first install. It then switches Herdr
-  to the `pals` layout and ends with "Open Herdr …: <Head> is waiting on Home to show you around."
-  The sidebar opens Home once per window while the mark is "new". An install that was already
+  to the `pals` layout and ends with "Open Herdr …: <Head> is waiting to show you around."
+  The sidebar opens the dialog by itself once per window while the mark is "new" (after the
+  layout is laid out). An install that was already
   there has no mark and never gets the tour by itself. **Welcome tour** in the gear menu (and the
-  command bar) replays it (`state: "open"`). Done and Skip write "done" / "skipped"; the screen
-  number is saved at each step, so a tour left halfway resumes there.
+  command bar) replays it (`state: "open"`) and opens the dialog. Done and Skip write "done" /
+  "skipped"; the screen number is saved at each step, so a tour left halfway resumes there. The
+  last screen, after a hire, has "Go to <Pal>" and "Go to <Head>" (its terminal).
+  `pal welcome` while it waits: "The welcome tour is waiting (screen N of 7): it opens when Project
+  Pals starts, or from the gear menu's Welcome tour."
 - **Before any click it only looks:** the installed brains (Herdr's `knownAgents`, the hire
   dialog's list; the head pal gets Claude Code, else Antigravity, else Codex, else the first
   installed; click the name on screen 1 for another) and `pal welcome folders`: git folders one
@@ -1242,7 +1270,7 @@ filled in, never written by a model.
 ### The Chief (0.4.2)
 
 The owner's chief of staff, above the head pal (design and mockups: `data/crew-boards/chief/`; DeNon
-picked direction A, the Split deck, and "Build it" on Home, 2026-11-09). Orca is both the owner's chat
+picked direction A, the Split deck, and "Build it", 2026-11-09). Orca is both the owner's chat
 partner and the switchboard; the Chief is a separate, calm agent the owner summons, which reads the
 whole crew and hands work down, so the owner's thinking isn't interrupted by pal traffic.
 
@@ -1252,14 +1280,15 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   (`chief/AGENTS.md`, rendered with `{{OWNER}}`, `{{HEAD}}`, `{{CHIEF}}`, and `{{HEAD}}#ops` as the head
   pal's inbox topic) and `priorities.md`, `decisions.md`, `watch.md` (seeded once, never overwritten);
   topic `#chief`, Opus unless a model is given; record `chief: true`, role "Chief of staff".
-- **Hidden:** the sidebar (pals, Asleep, the needs count), Home, the quick-drop's To options,
+- **Hidden:** the sidebar (pals, Asleep, the needs count), Your call, the quick-drop's To options,
   the command bar's pal list, `pal team` and `pal overview` leave it out (`withoutChief`
   in `crew.js`, `without_chief` in `bin/crew`; the CLI prints one line saying it's in its pop-up). Its
   screen is the owner's conversation.
 - **It only pulls** (`bin/crewchief.py`): nothing reaches it. `crewdesk.create` / `move` refuse a card
   to it, `crewlib.enqueue` refuses its terminal, crewd drops anything in its queue folder and sends it no
   callback or notebook nudge, and `pal tell / ask / task add --for / task assign / routine add / invite`
-  and `pal-room new` refuse it by name ("doesn't take … Put it on Home or tell <head>#<inbox>").
+  and `pal-room new` refuse it by name ("doesn't take … Put it in Your call (pal home ask …) or tell <head>#<inbox>"; the
+  message still says Home, meaning the `pal home` store).
 - **What it may run:** from its terminal, `pal` does only the reads (overview, team, feed, peek, home,
   desk ls/open/sent/stats, task ls/show/ready, memory, remember, notebook, skill ls/show, routine
   ls/log, mission show, diff) and `pal desk send`, which always goes to the head pal's inbox topic
@@ -1316,16 +1345,16 @@ whole crew and hands work down, so the owner's thinking isn't interrupted by pal
   read (`priorities.md`'s list items, and "Watching:" from `watch.md`, labelled), a strip (working,
   stuck, needs you, held, next release), every awake pal (not the Chief) with up to four topics
   (status dot, `#topic`, what it's on; a click closes the pop-up and opens the topic) and "Asleep: …",
-  Needs you and stuck (the roster's `crew.needs`; Open Home ›), Shipping (public, installed here,
+  Needs you and stuck (the roster's `crew.needs`; Open Your call ›), Shipping (public, installed here,
   next), and the cards it handed the head pal with their status. Reads only while open: files every
   4 s, the Desk every 10 s. Drilling into a pal or topic (design stages 2-3) is later.
 
 ### Factories (phase 1)
 
 Several crews in one Project Pals: a **factory** is a named set of pals with a foreman, a template
-(its org shape) and its own Home. **Your crew is the default factory and needs no file.** Until a
+(its org shape) and its own asks. **Your crew is the default factory and needs no file.** Until a
 second factory is made there is one, and nothing looks or behaves differently: no chip, no extra
-field on anything, no file written. (Design, with what comes later: Platform lanes' own Home, the
+field on anything, no file written. (Design, with what comes later: Platform lanes' own panels, the
 Chief over all factories: `data/crew-boards/chief/design.md`, Part 2.)
 
 **Making one.** Ctrl+Shift+G (`crew-roster.factory`, bound by install.sh only when free), or
@@ -1342,21 +1371,22 @@ its job; a foreman moved out stops being foreman.
 
 **The switcher chip** sits above the hero once there are several: a colour square, the factory's
 name, its template (Crew / Lanes) and an amber count of what the OTHER factories need from you
-(everything their Homes list under Needs you: topics asking you, approvals, stuck topics,
-proposals, Desk cards waiting on you, Home's open asks and logins; each by its pal's factory: a
+(everything Your call would list for them: topics asking you, approvals, stuck topics,
+proposals, Desk cards waiting on you, open `pal home` asks and logins; each by its pal's factory: a
 proposal's pal, a card's sender). Click it for the
 switcher. Switching shows that floor: the pal list is its pals (foreman first, the hero is the pal
 on show, else the foreman, else the first), and if the pal on show isn't on it, its foreman (else
-its first open pal) is shown. Nothing stops or sleeps: other floors keep working. The sidebar's
-Inbox stays everyone's, so a switch never hides an approval.
+its first open pal) is shown. Nothing stops or sleeps: other floors keep working. Your call stays
+everyone's on every floor, and the chip's count says what the other floors hold.
 
-**Home follows the factory.** With several, Home (Ctrl+Shift+H) is the shown factory's: its Home
-items, its pals' questions, approvals, cards and stuck topics, its pals' work in progress, and its
-foreman's cards ("Waiting with <foreman>", Talk to <foreman>). A small tag by "Needs you" names the
-factory. A Home item belongs to the factory of the pal it's about (`topic`, else who added it),
-stamped as `factory` when added; an older item without the stamp goes by the same rule. Installs
-and the release track are the default factory's. A factory with no foreman yet has nobody's desk.
-Clicking a factory's foreman shows Home, as clicking the head pal does.
+**Your call doesn't follow the factory.** It lists what waits on you in every factory, so a switch
+never hides a decision and the pill and the list agree (Codex's T235 review). A `pal home` item still
+belongs to the factory of the pal it's about (`topic`, else who added it), stamped as `factory` when
+added (an older item without the stamp goes by the same rule, `homeItemShown`): that's what the
+switcher's per-factory counts use. Installs and the release track are the default
+factory's. A factory with no foreman yet has nobody's desk. Clicking a factory's foreman opens its
+terminal, as clicking the head pal does; with no space, `openTerminal()` and Ctrl+Shift+H go to the
+shown factory's foreman (`isForeman`), which sits on top of its floor's list.
 
 **Commands.** `pal factory` (or `ls`, `show NAME`, both with `--json`) is anyone's to read. `new
 NAME [--template T] [--foreman Pal] [--foreman-topic T]`, `switch`, `move PAL NAME`, `foreman NAME
@@ -1371,7 +1401,7 @@ template or an id that's gone reads as the default; nothing is repaired on disk.
 every 3 s into shared `crew.factories` (lib/factories.js is the same model, pure); at most 12
 factories besides the default.
 
-Not yet (later phases): Platform lanes' own Home panels (lanes, parity, PR/CI/review), messages and
+Not yet (later phases): Platform lanes' own panels (lanes, parity, PR/CI/review), messages and
 the task board per factory, a foreman's inbox routing, Sleep this factory, the Chief's All
 factories level.
 
@@ -1385,7 +1415,7 @@ Full control never becomes a human owner's click. See [the guide](docs/full-cont
 |---|---|
 | Off | No trusted helper authority. |
 | Work only | Send normal work, questions and tasks to pals. No owner decisions. |
-| Full control | Autonomous app decisions, including settings, missions, AGENTS.md, proposals, Home, installs, uninstall, landing, pushes, releases and messaging people. |
+| Full control | Autonomous app decisions, including settings, missions, AGENTS.md, proposals, `pal home` asks, installs, uninstall, landing, pushes, releases and messaging people. |
 
 - **The selector:** one Off / Work only / Full control row per helper in `crew-helpers`.
   **Add · Work only** never grants Full. **Revoke** chooses Off. The app runs
@@ -1393,20 +1423,22 @@ Full control never becomes a human owner's click. See [the guide](docs/full-cont
   Only the owner's actual click changes trust or keys, including adding/removing another helper.
   Helpers cannot promote themselves, manufacture clicks or rewrite trust/audit evidence.
 - **Full control has no per-action prompt or tap hold.** A helper invokes ordinary commands with
-  `PAL_HELPER=NAME pal …` or `pal --as-helper=NAME …`. It may answer Home, approve exact held
-  commands, or use the script's `pal owner-step` gate. Home questions marked `owner_only`
-  are the exception: only the owner's proven app click may answer, checked again under the Home
-  lock. An approval authorizes its matching command once and stays bound to the helper's current grant. Existing operation checks still apply:
+  `PAL_HELPER=NAME pal …` or `pal --as-helper=NAME …`. It may answer `pal home` asks, approve exact held
+  commands, or use the script's `pal owner-step` gate. Asks marked `owner_only`
+  are the exception: only the owner's proven app click (in Your call) may answer, checked again
+  under the home.json lock. An approval authorizes its matching command once and stays bound to the helper's current grant. Existing operation checks still apply:
   review hashes must match, a landing must merge cleanly, and the Chief remains a read-and-advise
   role. Standing authority does not invent credentials or capabilities an operation lacks.
 - **Attribution:** Work only cards say `[from <owner> via <name>, a trusted helper: normal work only]`.
-  Authenticated Full cards say `[from <name>, acting under Full control]`. A Full Home answer says
+  Authenticated Full cards say `[from <name>, acting under Full control]`. A Full answer to an ask says
   the helper answered; it is not counted as the owner's answer. Passing preserves the original
   card. Copying a header into a body never creates authority. Pals may not read/use helper keys.
-- **Home → Helper activity** and `pal helpers log` record sends, refused attempts, trust changes
+- **The Trusted helpers dialog's record** (`crew-helpers`; it was Home's Helper activity tab until
+  T235) and `pal helpers log` record sends, refused attempts, trust changes
   and Full operations. Full operations say **<name> acted under Full control** with started,
   done or failed status. The UI combines one operation's start/outcome rows; the underlying
-  history keeps both. It offers **Revoke** beside helper actions. An interrupted operation can
+  history keeps both. It offers **Revoke** beside helper actions, and **Undo** on a tapped answer that can still be
+  undone (`pal taps undo`, the owner's click: the question is open again and its asker is told to stop). An interrupted operation can
   remain started: inspect effects before retrying; the log is not an undo mechanism.
   New trust-change rows bind the grant to the configured owner label and `app-click` source
   only after validating the matching single-use app token. This is authorization provenance,
@@ -1422,7 +1454,7 @@ Full control never becomes a human owner's click. See [the guide](docs/full-cont
 - **Work only compatibility:** normal sends retain the hourly limit (20 by default, configurable
   by owner click), unverified fallback and `PAL_HELPER_STRICT=1` (exit 4, no card/task if refused).
   Full control does not use the Work only send quota. A bad/missing key cannot authorize owner
-  operations. Home's Helper attention card still reports a missing key or other health failure.
+  operations. Your call's **Helper** item still reports a missing key or other health failure.
 - **The boundary:** authentication and app guards prevent mistakes and accidental authority
   confusion; they are not OS isolation from a determined process running as the same user.
 
@@ -1476,8 +1508,8 @@ Never put keys or raw command payloads in the activity log. The migration from t
   1536 MB and 10% of RAM. Under it: `pal hire` / `pal topic` / `pal wake` print a `note:` line
   pointing at `pal sleep --idle`; the app's hire, topic and wake paths toast "Memory is low (…)" at
   most once per 10 minutes for the whole app (the clock is shared state `crew.memory.toldAt`: every
-  mod has its own copy of crew.js); Home shows a 24 px row under the status line (warning dot, "Memory is
-  low", the figures, **Sleep idle pals ›** running `pal sleep --idle` as the owner). A state older
+  mod has its own copy of crew.js; the toast says "Sleep idle pals to free some."; Home's Memory is
+  low row went with Home in T235). A state older
   than 5 minutes says nothing about low.
 - **Idle sleep:** `"sleep_idle_hours": N` (off by default: sleeping drops a pal's warm context and
   would surprise) makes crewd run `pal sleep --idle --older N --notify` every 30 minutes. A topic's
@@ -1492,8 +1524,10 @@ Full control replaces the three tap switches and per-action holds. No new ticket
 new taps, expedited runs and old execution tokens refuse. Legacy queued holds are cancelled
 without executing. A hold that was already running at migration is marked failed with an uncertain
 outcome: inspect its effects before retrying. Existing tap attribution remains in history.
-Historical Home-answer Undo and Stop remain available to the owner; Undo reopens the question
-and notifies its asker, but cannot undo work already performed from the answer.
+Historical tap Undo and Stop remain available to the owner: Stop is in Your call while a legacy
+hold is still listed, and Undo is on a tapped answer in the Trusted helpers dialog's record (both
+were on Home until T235). Undo reopens the question and notifies its asker, but cannot undo work
+already performed from the answer.
 
 `pal taps [--json]` reads history. `pal --as-helper taps` may show waiting items but issues no
 usable ticket. Existing `data/crew-taps` records and used-item markers remain historical data;
@@ -1505,12 +1539,13 @@ implementation details below, not the current permission model.
 
 - **Full delegation:** `crewhelpers.level`, `set_level`, `full_authority`, `validate_grant` and
   `recheck_full`; `crewlib.begin_delegation`, `owner_gate`, queued request proof and final receipts;
-  `crewguard` grant-bound approvals; Desk/Home delegated attribution; the helper selector and
-  Home's Helper activity in `mods/crew-helpers`, `mods/crew-home` and `lib/helperlog.js`.
+  `crewguard` grant-bound approvals; Desk and `pal home` delegated attribution; the helper selector
+  and its record in `mods/crew-helpers` and `lib/helperlog.js`.
 - **Historical taps:** `bin/crewtaps.py` refuses new authority and retires pending holds. Existing
   history, `crewhome.untap`, Stop/Undo controls and tap rendering remain for inspection/recovery.
 - **Layout:** `layouts/pals.json`, the tree above.
-  - Stack `center` has the children `tab-view` and `home-view`. `showHome` / `showTabs` switch it.
+  - Stack `center` has the one child `tab-view` (`showTabs` selects it, for an older layout's
+    clicks that left `home-view` selected). T235 took out `home-view` (Home).
     (T217 took out `room-view`, `desk-view`, `pc-view`, `pal-view`, the `crew-composer` block
     and the `profile` column.)
 - **Trusted helpers:** `bin/crewhelpers.py` (the list, the keys, `verify`, `inside_herdr`, the
@@ -1518,18 +1553,22 @@ implementation details below, not the current permission model.
   ledger entry, the header, the limits line); `pal settings trust-helper`, `pal helpers [log |
   check | --json]`, `pal --as-helper`, `pal owner-step` (bin/crew); crewguard's `helper-key` rule
   and `owner_step`; `claude-mod/pals/hooks/keys.ts`; `mods/crew-helpers` (the sheet), the row in
-  `crew-about`, the Today rows and Helper activity tab in `crew-home`; `lib/helperlog.js` (pure: what
+  `crew-about`; Your call's Helper and Tap items in `crew-decide`; `lib/helperlog.js` (pure: what
   a helper's line and each record row say), copied into every mod by install.sh like the rest.
 - **Mods:**
   - Persistent: `crew-roster` (sidebar, and it serves requests), `crew-header`, `crew-status`,
-    `crew-home` (Home; `focusable`), `crew-live` (the trial strip: the root column's first block, 32 px, hidden until `crew-status`
+    `crew-live` (the trial strip: the root column's first block, 32 px, hidden until `crew-status`
     shows it with `layout.show` while `crew-live.json` has `trying`).
     Popups: `crew-appmenu` (the gear), `crew-termmenu`, `crew-palmenu` (props `space`), `crew-command` (props `space`; `at` the header's field). Removed with Pro: `crew-palrail`, `crew-tabs`,
     `crew-side` (the installer sets installed copies aside, backed up; Roll back restores them).
   - Dialogs: `crew-group` (props `mode` new/rename, `group`, `bot`), `crew-hire`, `crew-duplicate` (props `space`),
     `crew-look` (props `space`), `crew-review` (props `space`, `tab`), `crew-about`, `crew-update` (props `check`),
     `crew-attach`, `crew-tasks` (props `space`), `crew-proposal` (props `id`), `crew-machine`,
-    `crew-desk-drop`. The installer retires the old `crew-tell`.
+    `crew-desk-drop`, `crew-decide` (Your call; `focusable`, 520 × 480), `crew-welcome` (the welcome
+    tour; `focusable`, 760 × 580, with `welcome.js` and `welcome-text.js`). The installer retires
+    the old `crew-tell`.
+  - Removed in T235: `crew-home` (Home) and `crew-home-chat` (its chat window's bar). The
+    installer sets installed copies aside, backed up.
   - Removed in T217: `crew-profile`, `crew-computer`, `crew-computer-app`,
     `crew-palboard`, `crew-routines`, `crew-desk`, `crew-room`, `crew-room-new` and
     `crew-composer`. The installer sets installed copies aside, backed up, like Pro's.
@@ -1545,9 +1584,11 @@ implementation details below, not the current permission model.
   - Commands: `space.new`, `tab.new`, `tab.select`, `tab.rename`, `tab.close`, `space.select`,
     `layout.select`, `layout.toggle`, `layout.resize`, `pane.focus`, `app.settings`,
     `app.palette`, `mod.open`.
-  - Keyable commands: `crew-roster.hire|topic|look|home|chief|factory` (`crew-roster.channel` still works), `crew-header.search|drop`. The
-    installer binds `ctrl-shift-space` to `crew-header.search` (and Ctrl+Shift+D, H, J, G to the
-    drop, Home, the Chief and the factory switcher) in keys.json's `global` map, each when no
+  - Keyable commands: `crew-roster.hire|topic|look|home|chief|factory` (`crew-roster.channel` still works;
+    `.home` is the head pal's terminal), `crew-header.search|drop|decide` (`decide` only opens Your
+    call; `crew-decide`'s own `nextCommand` takes only `focus`). The
+    installer binds `ctrl-shift-space` to `crew-header.search` (and Ctrl+Shift+D, H, A, J, G to the
+    drop, the head pal's terminal, Your call, the Chief and the factory switcher) in keys.json's `global` map, each when no
     section uses that key yet and the action isn't bound (keys.json backed up first; no keys.json,
     no change). It no longer binds Ctrl+Shift+I, Y or U (the profile panel, the Computer, the
     board), and takes those three pairs out where they still point at `crew-roster.profile`,
@@ -1582,7 +1623,7 @@ implementation details below, not the current permission model.
   `crew-clicks` is held (`owner-click`). Same-user processes can still forge one on purpose: this
   guards against accidents and peer influence, not a hostile process.
 - **An AGENTS.md / CLAUDE.md edit approval is for one exact edit** (H2): the request is bound to the
-  path, a hash of the edit and a hash of the file it applies to, and the Inbox card shows the
+  path, a hash of the edit and a hash of the file it applies to, and Your call shows the
   resulting diff. A different payload, or the file having changed, is a new request.
 - **Interpreter writes to them are held too** (`agents-file-interpreter`, 2026-11-08): a line that
   runs python / node / perl / ruby / php / … (also through `uv run`, `npx`, `sh -c`) is held when its
@@ -1647,7 +1688,7 @@ implementation details below, not the current permission model.
 - **Attachments** (M4, M5, `bin/crewattach.py`): opened without following symlinks, a regular file,
   read at most 10 MB + 1 byte from that handle, the bytes must be an image; a fresh unique name created
   exclusively, so nothing is overwritten and a failure never removes an existing file.
-- **Dream Approve shows the whole proposal first** (H5): the Inbox card loads the full text on "Show
+- **Dream Approve shows the whole proposal first** (H5): Your call loads the full text on "Show
   the whole proposal"; Approve stays off until then and passes `--text-sha`, the digest of the text
   shown, which `pal proposal accept` checks (a dream or mission proposal without it, or with
   another text, is refused).
@@ -1792,12 +1833,12 @@ implementation details below, not the current permission model.
 - **The gate sees only the line a pal types:** a script that pushes or publishes inside itself
   (a repo's `./release`) goes around the per-command rules, so release scripts have their own rule
   (`release-script`). An approval is good for one run of that exact command, and lapses
-  (`expired`) if it isn't used within 30 minutes. Inbox cards show the request's ID, keep Decline
-  and Approve at opposite ends, and every decision attempt is recorded with where it came from.
+  (`expired`) if it isn't used within 30 minutes. Your call shows the request's ID on the asker's
+  line, lists Decline first and Approve second (keys 1 and 2), and every decision attempt is recorded with where it came from.
 - **A release script asks for the owner itself:** the gate is a hook in pals' terminals, so a
   script run from a plain shell was never asked (0.4.2 went out that way). `./release` now runs
   `pal owner-step release-script -- <its own command line>` before it checks or changes anything:
-  exit 3 and a request in the Inbox from "a shell on this computer", then the same line goes
+  exit 3 and a request in Your call from "a shell on this computer", then the same line goes
   through once after the owner's click, within 30 minutes. A pal whose run the gate already held
   isn't asked twice (the gate's approval, used in the last 2 minutes, counts). Without Project Pals
   the person at the keyboard types the version; with no terminal it's refused. `--dry-run` runs
@@ -1863,7 +1904,7 @@ implementation details below, not the current permission model.
 - **Fingerprint what would be written, not what is listed.** `crewproposals.all_()` leaves a
   proposal's text out; a fingerprint made from that would not have noticed the text being swapped
   after the owner was shown it.
-- **Validate the record being changed.** Home answers, approval decisions and draft sends compare
+- **Validate the record being changed.** `pal home` answers, approval decisions and draft sends compare
   the hold's fingerprint under their store's mutation lock. Proposal execution validates the
   in-memory payload it writes, including the proposal subtype, under the proposals lock. A changed item is refused even
   after a hold was dispatched. A draft's task is created only after this validation.
@@ -1971,22 +2012,22 @@ implementation details below, not the current permission model.
   refuse. Off/missing/rotated keys cannot authorize Full operations; strict sending produces no
   card/task on refusal. A pal cannot become a helper by reading a key or setting an environment
   variable. Legacy on/tap flags never migrate to Full.
-- Only an app click grants Full. The authenticated helper can act on Home, missions, agent files,
+- Only an app click grants Full. The authenticated helper can act on `pal home` asks, missions, agent files,
   proposals, settings and exact held commands without tap tickets or hold periods. Its messages
-  and answers identify the helper under Full control, never the human owner. Home displays an
-  operation's outcome once and offers Revoke; the raw audit keeps start and outcome receipts.
+  and answers identify the helper under Full control, never the human owner. The Trusted helpers dialog's record
+  shows an operation's outcome once and offers Revoke; the raw audit keeps start and outcome receipts.
 - Revoke/downgrade/rotation invalidates queued requests/messages and unused approvals under the
   old grant. Helpers cannot grant themselves or another helper authority, supply a click token,
   or approve trust/audit writes. A completed action is not silently reported as undone.
 - Legacy taps mint no tickets, execute no old tokens and cancel pending holds; historical
   attribution and owner Undo remain readable (`tests/test_taps.py`, `tests/test_helperlog.mjs`,
-  `tests/test_home_view.mjs`).
+  `tests/test_decide_view.mjs`).
 - With Pals at Work only, `./install.sh` again preserves its trust and key and reports its
   current health. Delete the key file: `pal helpers health` says "Pals
-  is on, but its key file is missing", Home shows one Helper card with Rotate key, `pal feed` has
+  is on, but its key file is missing", Your call shows one Helper item with Rotate key, `pal feed` has
   one line, and Rotate key clears all three. With `PAL_HELPER_STRICT=1` and Pals switched off, `pal
   tell` exits 4 and no card is made (`tests/test_helpers.py` StaysOn, `tests/test_uninstall.py`).
-- `./release X.Y.Z "notes"` from a plain shell exits 3 with a request in the Inbox and changes
+- `./release X.Y.Z "notes"` from a plain shell exits 3 with a request in Your call and changes
   nothing; after Approve the same line goes on to the checks; `--dry-run` asks nobody. A plain
   shell's `pal home done <a pal's ask>` is refused; the asker's is shown as Withdrawn
   (`tests/test_owner_step.py`, `tests/test_home.py`).
@@ -1999,22 +2040,27 @@ implementation details below, not the current permission model.
   main merges it without touching the project folder's checkout, and is refused if the branch got
   a commit after the trial started. From a pal's terminal, `pal settings channel live`, `pal update
   try`, `back` and `stable` are refused, and with Live on, a pal's `git update-ref refs/heads/main
-  …` is held for the Inbox.
+  …` is held for Your call.
 
-- A pal can attach a guarded command to a decision option with `pal home ask "Land it?" --option "Land it" --approves "pal land Pal#topic"`. Home shows the full command, asking topic, working directory and pinned land commit in the review. The owner's own click approves it once for that topic and directory for 30 minutes. The same exact command and commit may pass the hook and the land program's own check without a second click; a changed command, commit, directory, topic or reused approval is held. Helpers cannot activate the approval. Other options do not approve anything. Commands must be a single plain guarded command without shell expansion. For a land, use `pal land` with single spaces and the `--check`, `--at`, `--onto` options in that order; the asker gets a refusal for other spellings.
+- A pal can attach a guarded command to a decision option with `pal home ask "Land it?" --option "Land it" --approves "pal land Pal#topic"`. Your call shows the full command, asking topic, working directory and pinned land commit with the option. The owner's own click approves it once for that topic and directory for 30 minutes. The same exact command and commit may pass the hook and the land program's own check without a second click; a changed command, commit, directory, topic or reused approval is held. Helpers cannot activate the approval. Other options do not approve anything. Commands must be a single plain guarded command without shell expansion. For a land, use `pal land` with single spaces and the `--check`, `--at`, `--onto` options in that order; the asker gets a refusal for other spellings.
 
-- Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
-  `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
-  closes it and the asker gets "Re h-…: A" as a card from the owner. With nothing waiting, Home
-  says "All caught up"; "What happened today ›" opens the drawer on Today.
+- Clicking the head pal, or Ctrl+Shift+H, shows its terminal with the keyboard in it; nothing in
+  the app shows a Home page or a sidebar Inbox, and `layouts/pals.json` has no `home-view`.
+  `pal home ask "x?" --option A --option B --recommend A --why "y"` toasts "<Pal> asks you", and
+  the header shows an amber "Your call · 1" pill. Ctrl+Shift+A (or the toast, or the pill) opens
+  Your call on a Decision with A (lit, Recommended) and B; Enter or 1 picks A, the item goes, and
+  the asker gets "Re h-…: A" as a card from the owner. With nothing waiting it says "Nothing needs
+  you" and offers the head pal's terminal. A held push shows as an Approval (red pill) with Decline
+  and Approve; `herdr-app do crew-decide.approve` (or any `crew-decide.<x>`) decides nothing; T
+  closes the dialog and puts the keyboard in the asker's terminal (`node tests/test_decide_view.mjs`).
 
 - `./install.sh` ends with "all Project Pals mods pass herdr-app check", and switching to the
   `pals` layout shows the sidebar with the head pal on top (once one is hired: the welcome
   tour's first click on a new install, or `pal hire --god`, which takes the name from settings).
-- A first `./install.sh` (no `crew-settings.json`, no pals on record) ends with "… is waiting on
-  Home to show you around", and Home shows "Welcome · 1 of 7". **Show me around** hires the head
+- A first `./install.sh` (no `crew-settings.json`, no pals on record) ends with "… is waiting to
+  show you around", and the pals layout opens the welcome tour's dialog on screen 1 of 7. **Show me around** hires the head
   pal; screen 3's **Hire <Pal>** makes that pal's space on the picked folder without moving your
-  view; the last screen's button marks it done and Home says "All caught up". A second install
+  view; the last screen's button marks it done and the dialog closes. A second install
   doesn't bring the tour back; the gear menu's **Welcome tour** does.
 - `pal team` lists every space as a pal.
 - `pal hire Test --harness claude` makes a space named Test, and your view doesn't move.
@@ -2030,24 +2076,24 @@ implementation details below, not the current permission model.
 - Every pal's face is a pocket pet in its own colour on a faint container: the working one has a
   lightsaber lapping the container's edge and a tapping paw, and `data/crew-demo.json`
   `{"states": {"<pal>": "merged"}}` gives that pal a purple edge and the cheering pose.
-- Since T217 the hero's pebbles are Inbox, Tasks, Pop out and the moon (Home on the head pal);
-  Pop out opens the shown topic's terminal in its own window, and the hero's name opens the pal
+- Since T235 the hero's pebbles are Pop out and the moon (Your call, with an amber count, on the
+  head pal); Pop out opens the shown topic's terminal in its own window, and the hero's name opens the pal
   menu, which has Change machine…. A click on a pal shows its terminal. Nothing answers
   Ctrl+Shift+I, Y or U, and an install takes those keys out of keys.json only where they still
   point at Project Pals' actions. No shipped mod or layout opens a deleted mod
   (`tests/test_lite.py`).
 - A worktree topic's right-click has Review changes; a plain topic's doesn't.
-- `pal mission set` from a pal is refused; `pal mission propose -F f` puts a card in the Inbox; View
+- `pal mission set` from a pal is refused; `pal mission propose -F f` puts a Proposal in Your call; View
   opens the proposal review with the change as a diff; Accept writes `mission.md`, and the next
   session's primer starts with the new mission (`tests/test_proposal_review.py`).
-- A pal's Edit of an AGENTS.md is held in the Inbox.
+- A pal's Edit of an AGENTS.md is held in Your call, with its diff.
 - `pal notebook "did: x" --hiccup "y (cost: 10m)"` from a pal adds one entry, shown live in the
   `pal notebook ls`; a line with `sk-ant-…` comes out ‹masked›; a pasted 20-line log is refused.
 - With three pals' notebooks holding the same hiccup, `pal dream --no-model --dry-run` shows one
   qualifying pattern; a real run sends the head pal one `[dream]` digest; `pal dream propose
-  --kind skill …` puts one card in the Inbox; Approve saves the skill and `pal dream ls` shows the
+  --kind skill …` puts one Dream item in Your call; Show the whole proposal, then Approve, saves the skill and `pal dream ls` shows the
   pattern watching; the same hiccup again makes it recurred; 15 quiet days, resolved.
-- The status bar shows "1 needs you" while one topic asks, and nothing at zero. A topic that ends
+- The header shows "Your call · 1" while one topic asks, and nothing at zero. A topic that ends
   its turn with "Orca, should I…?" doesn't raise it, and the tooltip names why each one counts
   (`node tests/test_needs.mjs`).
 - No radius above 8 anywhere, and no oval pills: only status dots of 9px or less are round.
@@ -2092,8 +2138,8 @@ implementation details below, not the current permission model.
   or waits in To route as needs you with the reason; an answer naming a pal or topic that isn't
   there is thrown away (`tests/test_desk.py` Triage).
 
-- `pal hire --partner` hires MUSE (Sonnet, `data/crew-partner`, #ideas); its `pal desk draft` waits
-  on Home as a Draft card, nothing is delivered until Send, and the card then arrives as "[from
+- `pal hire --partner` hires MUSE (Sonnet, `data/crew-partner`, #ideas); its `pal desk draft` toasts
+  "MUSE drafted a card" and waits in Your call as a Draft, nothing is delivered until Send, and the card then arrives as "[from
   <owner>]" with the task
   made when it was drafted with `--task` (`tests/test_desk.py` Drafts).
 - `claude plugin validate claude-mod/pals` passes and `claude plugin test claude-mod/pals` runs its 5
@@ -2108,4 +2154,4 @@ implementation details below, not the current permission model.
 - With systemd, a new topic's agent is in `app.slice/pal-<pal>-<topic>-….scope` (`pal ram` shows no
   "no scope of its own"), `pal sleep` and `pal wake` still work on it, and the stored argv has no
   `systemd-run` (`tests/test_scope.mjs`, `tests/test_memory.py` Scopes). Under the floor, `pal hire`
-  prints the `note:` line and Home shows the Memory is low row.
+  prints the `note:` line and the app's hire toasts "Memory is low".

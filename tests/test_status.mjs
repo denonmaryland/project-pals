@@ -123,28 +123,27 @@ try {
   // The version is still one click away: the menu's Project Pals settings row opens About.
   assert.ok(crew.appMenuItems().some((x) => x.id === "settings" && x.label === "Project Pals settings"));
   assert.match(readFileSync(join(root, "mods/crew-about/main.js"), "utf8"), /ins\.version/, "About shows the installed version");
-  // Something needs you: it shows beside the gear (a separator between) and opens the Inbox.
+  // Something needs you: not here any more (T235: the header's "Your call" pill has it).
   fx.shared["crew.needs"] = { count: 2, approvals: 0 };
   n = draw(304);
-  assert.deepEqual(strings(n), ["2 need you"]);
-  assert.ok(n.find((x) => x.args.id?.[0] === "crew-needs").calls.includes("on_mouse_down"), "and still opens the Inbox");
-  assert.equal(n[0].kids.filter((k) => k.node.args.w?.[0] === 1 && k.node.args.h?.[0] === 12).length, 1, "one separator, between the gear and it");
+  assert.deepEqual(strings(n), []);
+  assert.ok(!ids(n).includes("crew-needs"), "no needs-you link: the sidebar Inbox is gone");
   // An update: the pill on the right, naming the version; a click opens the update dialog.
   st.update = { current: "0.4.1", latest: "0.4.2", available: true };
   n = draw(304);
-  assert.deepEqual(strings(n), ["2 need you", "Update · 0.4.2"]);
+  assert.deepEqual(strings(n), ["Update · 0.4.2"]);
   n.find((x) => x.args.id?.[0] === "crew-update").args.on_mouse_down[1]({}, { stop_propagation() {} });
   assert.equal(fx.overlays.at(-1).mod, "crew-update");
   // Narrower: the pill shortens to "Update", then steps aside and the gear's tooltip says it.
-  assert.deepEqual(strings(draw(210)), ["2 need you", "Update"]);
-  n = draw(160);
-  assert.deepEqual(strings(n), ["2 need you"]);
+  assert.deepEqual(strings(draw(130)), ["Update"]);
+  n = draw(110);
+  assert.deepEqual(strings(n), []);
   assert.ok(n.find((x) => x.args.id?.[0] === "crew-gear").args.tooltip[0].includes("Project Pals 0.4.2 is out"), "nothing lost: the gear says an update is out");
   assert.ok(!draw(304).find((x) => x.args.id?.[0] === "crew-gear").args.tooltip[0].includes("is out"), "while the pill shows, the gear's tooltip is just the menu");
   // What's drawn never adds up to more than the strip (the estimate the fit uses), and the gear is always there.
   for (const w of [120, 160, 200, 240, 304, 360, 440]) {
     const nodes = draw(w);
-    const used = STRIP.pad + 20 + (ids(nodes).includes("crew-needs") ? STRIP.gap * 2 + 1 + 12 + textW("2 need you") : 0)
+    const used = STRIP.pad + 20
       + (ids(nodes).includes("crew-update") ? STRIP.gap + 30 + textW(strings(nodes).at(-1)) : 0);
     assert.ok(used <= w, `${w} px: what shows fits (${used}: ${strings(nodes)})`);
     assert.ok(ids(nodes).includes("crew-gear"), `${w} px: the gear is always there`);
@@ -159,7 +158,7 @@ try {
   assert.equal(st.w, 304); assert.equal(notes, 0, "the same width: no redraw");
   draw(304)[0].args.on_size_change[0]({ width: 300, height: 36 }, { notify() { notes++; } });
   assert.equal(st.w, 200); assert.equal(notes, 1);
-  console.log("status: ok (the strip is the sidebar's last 24 px: the gear, and needs-you / update when they apply)");
+  console.log("status: ok (the strip is the sidebar's last 24 px: the gear, and the update pill when it applies)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

@@ -73,7 +73,7 @@ CONFIGS = {"keys.json": KEYS, "claude-settings.json": CLAUDE, "agy-hooks.json": 
 # The key → action pairs install.sh adds to keys.json's "global" (and ctrl-shift-m, which older
 # versions added). Only these exact pairs are taken out; the person's own bindings stay.
 INSTALL_KEYS = {"ctrl-shift-i": "crew-roster.profile", "ctrl-shift-space": "crew-header.search",
-                "ctrl-shift-d": "crew-header.drop", "ctrl-shift-h": "crew-roster.home", "ctrl-shift-j": "crew-roster.chief",
+                "ctrl-shift-d": "crew-header.drop", "ctrl-shift-h": "crew-roster.home", "ctrl-shift-a": "crew-header.decide", "ctrl-shift-j": "crew-roster.chief",
                 "ctrl-shift-g": "crew-roster.factory", "ctrl-shift-y": "crew-roster.computer",
                 "ctrl-shift-u": "crew-roster.board",
                 "ctrl-shift-m": "crew-roster.mode"}
