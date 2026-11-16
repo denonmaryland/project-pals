@@ -94,3 +94,38 @@ direct = crewguard.check('tW', 'Worker', 'general', cmd + '  # at ' + tip[:12], 
 again = crewguard.check('tW', 'Worker', 'general', cmd + '  # at ' + tip[:12], claim=True, cwd=cwd)
 print(json.dumps([hook, bool(handed), ag, direct, bool(again)]))''')
         self.assertEqual(result, [None, True, None, None, True])
+
+    def test_real_cli_land_needs_no_second_approval(self):
+        import subprocess
+        repo = self.root / 'repo'; repo.mkdir()
+        wt = self.root / 'topic'
+        env = {**self.env, 'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.invalid',
+               'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 'test@example.invalid'}
+        def git(*args):
+            result = subprocess.run(['git', '-C', str(repo), *args], env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.strip()
+        git('init', '-q', '-b', 'main')
+        (repo / 'base').write_text('base')
+        git('add', 'base'); git('commit', '-qm', 'base')
+        start = git('rev-parse', 'HEAD')
+        git('worktree', 'add', '-qb', 'crew/test', str(wt), 'main')
+        (wt / 'change').write_text('change')
+        git('-C', str(wt), 'add', 'change'); git('-C', str(wt), 'commit', '-qm', 'change')
+        tip = git('-C', str(wt), 'rev-parse', 'HEAD')
+        app = Path(self.env['HERDR_APP_HOME']); app.mkdir(parents=True, exist_ok=True)
+        (app / 'shared.json').write_text(json.dumps({'crew': {'bots': [{'name': 'Helper', 'space': 's2',
+            'worktrees': {'#build': {'path': str(wt), 'repo': str(repo), 'branch': 'crew/test',
+                                      'base': 'main', 'start': start}}}]}}))
+        self.env.update({k: env[k] for k in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL')})
+        self.command = 'pal land Helper#build'
+        for bad in ('crew land Helper#build', 'pal  land Helper#build', "pal land 'Helper#build'"):
+            self.assertNotEqual(pal(self.env, 'home', 'ask', 'x', '--option', 'Go', '--approves', bad, term='tW').returncode, 0, bad)
+        x = self.ask()
+        self.assertEqual(x['authorization']['commands'][0]['land_tip'], tip)
+        r = self.approve(x); self.assertEqual(r.returncode, 0, r.stderr)
+        r = pal(self.env, 'land', 'Helper#build', term='tW')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('landed crew/test on main', r.stdout)
+        self.assertEqual(git('merge-base', '--is-ancestor', tip, 'main'), '')
+        self.assertEqual([json.loads(f.read_text())['status'] for f in (self.data / 'crew-approvals').glob('*.json')], ['used'])

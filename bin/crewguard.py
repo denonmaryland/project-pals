@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import time
 
@@ -1670,11 +1671,24 @@ def home_authorization(terminal, bot, channel, cwd, commands):
         if cmd is None:
             entries.append(None)
             continue
-        if not handover_words(cmd):
+        words = handover_words(cmd)
+        if not words:
             raise CrewError("--approves needs one plain command without shell expansion")
         rules = all_matches_at(cmd, cwd)
         if not rules:
             raise CrewError("--approves needs a command held by the approval gate")
+        if any(r["name"] == "land" for r in rules):
+            # cmd_land reconstructs this spelling in hookless harnesses. Reject variants here,
+            # while the asker can fix them, rather than promising a click that asks again.
+            flags = words[3:]
+            if (len(words) < 3 or words[:2] != ["pal", "land"] or len(flags) % 2
+                    or any(flags[i] not in ("--check", "--at", "--onto") for i in range(0, len(flags), 2))
+                    or [flags[i] for i in range(0, len(flags), 2)] !=
+                       [f for f in ("--check", "--at", "--onto") if f in flags[::2]]):
+                raise CrewError("--approves land needs canonical pal land syntax")
+            canonical = " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
+            if cmd != canonical:
+                raise CrewError("--approves land needs canonical pal land syntax")
         tip = land_tip(cmd)
         if any(r["name"] == "land" for r in rules) and not tip:
             raise CrewError("--approves cannot identify the topic's current commit")
