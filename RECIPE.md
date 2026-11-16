@@ -115,7 +115,7 @@ One window, the `pals` layout (Focus), on the `chrome` background with no title 
   in `claude-mod/pals`; plus `git`, `hc`, `herdr-app`, `systemctl --user`, `claude -p` / `agy -p`.
 - **Data:** `~/.config/herdr-app/data/crew-*` (settings, roster, desk, tasks, memory, rooms,
   routines, approvals, worktrees).
-- **Keys** (added to Herdr's `keys.json` only where free, backed up first), among them
+- **Keys** (added to an existing Herdr `keys.json` only where free, backed up first), among them
   Ctrl+Shift+Space (command bar), Ctrl+Shift+D (send to a pal) and Ctrl+Shift+A (Your call).
 
 ## Watch out
@@ -126,8 +126,8 @@ One window, the `pals` layout (Focus), on the `chrome` background with no title 
 - **Supported Herdr:** herdr-app 0.1.8 to below 0.2, herdr-core 0.1.11 to below 0.2 (`pals.json`).
   The installer warns outside that range and installs anyway; Herdr 0.1.x can change under it.
 - **The helpers change your setup:** hooks and a status line in `~/.claude/settings.json`, hooks
-  in `~/.gemini/config/hooks.json`, a systemd unit, `~/.local/bin/pal`. Each file is backed up
-  first; `--no-helpers` skips them all.
+  in `~/.gemini/config/hooks.json`, a systemd unit. Each file is backed up first; `--no-helpers`
+  skips them all (the commands in `~/.local/bin`, `pal` and friends, are always installed).
 - **It runs programs and reads outside Herdr's folder,** and memory reviews and Auto routing send
   topic screens or pal names to a cheap model (Haiku, or Gemini Flash through Antigravity CLI).
 - **The gate isn't a security boundary.** Pals run as you; a determined one can build a command

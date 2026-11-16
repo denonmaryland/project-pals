@@ -1,7 +1,7 @@
 # Project Pals: the guide
 
 Everything Project Pals does, in one place. The [README](../README.md) is the short version;
-[RECIPE.md](../RECIPE.md) is the full spec.
+[RECIPE.md](../RECIPE.md) is the brief in Herdr's format and [spec.md](spec.md) the full spec.
 
 **Linux only for now.** The helpers run as a systemd user service, so macOS (and WSL or containers
 without a systemd user session) aren't supported yet. See [mac-support.md](mac-support.md).
@@ -251,7 +251,9 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
   `~/.local/bin/pal` and friends (`crew` is an alias).
 - **Shortcuts:** Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
   card), Ctrl+Shift+A (Your call) and Ctrl+Shift+H (the head pal's terminal) go into Herdr's `keys.json`, backed up first, and only where the
-  key and the action are free.
+  key and the action are free. With no `keys.json` (or a link), nothing is written: a new file would
+  replace Herdr's default keys, so bind them yourself; everything still opens from the header and
+  the menus.
 - **Helpers (skip all with `--no-helpers`, or skip one harness's hooks with `--no-claude-hooks` / `--no-agy-hooks`):**
   - `herdr-crew.service`, the background helper.
   - Claude Code hooks and a status-line wrapper in `~/.claude/settings.json`, backed up first.
