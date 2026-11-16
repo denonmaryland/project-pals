@@ -292,13 +292,15 @@ def answer(iid, text, *, by, tapped=None, delegated=None, approval_snapshot=None
         index = next((i for i, o in enumerate(options) if o.lower() == text.lower()), None)
         commands = auth.get("commands") or []
         command = commands[index] if index is not None and index < len(commands) else None
-        if command:
+        if approval_snapshot is not None or command:
             try:
                 shown = json.loads(approval_snapshot or "null")
             except (TypeError, ValueError):
                 shown = None
-            if shown != auth:
-                raise HomeError("the command or its context changed; reopen this question")
+            expected = {k: x.get(k) for k in ("authorization", "options", "title", "body", "does", "by", "recommend", "why", "links", "images")}
+            if shown != expected:
+                raise HomeError("the question or command changed; reopen this question")
+        if command:
             import crewhelpers
             if delegated or tapped or crewhelpers.claimed() or not owner_proven():
                 raise HomeError("only the owner’s own app click can approve a command")

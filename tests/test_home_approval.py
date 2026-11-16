@@ -25,7 +25,7 @@ class HomeApproval(unittest.TestCase):
 
     def approve(self, x):
         return owner(self.env, self.data, 'home', 'answer', x['id'], 'Push',
-                     '--approval-snapshot', json.dumps(x['authorization'], separators=(',', ':')))
+                     '--approval-snapshot', json.dumps({k: x.get(k) for k in ('authorization', 'options', 'title', 'body', 'does', 'by', 'recommend', 'why', 'links', 'images')}, separators=(',', ':')))
 
     def gate(self, command, terminal='tW', bot='Worker', channel='general'):
         return py(self.env, f'''import crewguard
@@ -63,12 +63,20 @@ print(json.dumps(r))''')
         r = pal(self.env, 'home', 'ask', 'x', '--option', 'Go', '--approves', 'git push && echo hi', term='tW')
         self.assertNotEqual(r.returncode, 0)
 
+    def test_changed_option_mapping_cannot_approve(self):
+        x = self.ask()
+        f = self.data / 'crew-home/home.json'; h = json.loads(f.read_text())
+        h['items'][0]['options'] = ['Wait', 'Push']
+        f.write_text(json.dumps(h))
+        self.assertNotEqual(self.approve(x).returncode, 0)
+        self.assertFalse((self.data / 'crew-approvals').exists())
+
     def test_helper_cannot_activate_an_approval(self):
         x = self.ask()
         result = py(self.env, f'''import crewhome, crewlib
 crewlib.owner_proven = lambda: False
 try:
-    crewhome.answer({x['id']!r}, 'Push', by='helper', delegated={{'helper': 'test'}}, approval_snapshot={json.dumps(x['authorization'])!r})
+    crewhome.answer({x['id']!r}, 'Push', by='helper', delegated={{'helper': 'test'}}, approval_snapshot={json.dumps({k: x.get(k) for k in ('authorization', 'options', 'title', 'body', 'does', 'by', 'recommend', 'why', 'links', 'images')})!r})
     print(json.dumps('allowed'))
 except crewhome.HomeError:
     print(json.dumps('refused'))''')
