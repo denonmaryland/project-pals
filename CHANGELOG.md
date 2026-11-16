@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-11-16
+
+Supported Herdr is unchanged: 0.1.8 or newer and herdr-core 0.1.11 or newer, both below 0.2. The
+full test suite for this release ran on Herdr 0.1.16 with herdr-core 0.1.21.
 
 - **Project Pals settings scroll.** On a shorter screen the About/settings dialog cut off its rows
   below Trusted helpers and the wheel did nothing. Its body now scrolls between the header and the
@@ -32,6 +35,44 @@
 - `pal home link`, `note` and `deploy` still store what they're given, but the app no longer shows
   them; the next release from `pal home queue` is on the Chief's dashboard. Messages that said "the
   Inbox" now say "Your call".
+- **A pal can ask you to approve a command with one click.** `pal home ask "Land it?" --option
+  "Land it" --approves "pal land Pal#topic"` ties a guarded command to one option. Your call shows
+  that option's full command, the asking topic, its folder and, for a land, the exact commit. Your
+  own click on it approves that command once, for that topic and folder, for 30 minutes: the gate and
+  the program's own check (`pal land`, `./release`'s owner step) both accept it, so you aren't asked
+  twice. A changed command, commit, folder or topic, or a second use, is held again. Helpers can't
+  use it, other options approve nothing, and the command must be one plain command (for a land:
+  `pal land` with `--check`, `--at`, `--onto` in that order); other spellings are refused when asked.
+- **Nothing in the app says Desk.** The header's Drop button and the Desk settings dialog are gone.
+  Sending a pal a message from the app is **Send to a pal…** (Ctrl+Shift+D, the gear menu or the
+  command bar), still your own card. Messages waiting on you are tagged Message in Your call. The
+  Desk's settings (triage, the check-in's timings, archiving, whether MUSE sends as itself) keep
+  their values; to change one, ask your trusted helper on Full control, or edit the "desk" section
+  of `crew-settings.json`. Pals' cards (`pal tell`, `pal ask`, tasks) work as before.
+- **Wake brings back the brain the topic last ran.** After a handoff, `pal wake` (and Wake in the
+  app) starts the brain that topic was running when it went to sleep, or the one it was handed to,
+  not the pal's original command. It works after an outage too.
+- **Owner-only questions stay owner-only.** A question asked with `pal home ask … --owner-only` can be answered only
+  by your own click in the app, not by a helper, even one on Full control. Changes to a helper's
+  trust level now record that they came from your app click; older records without that say the
+  actor wasn't recorded, and tokens and keys are never logged.
+- **Your oomd choice sticks.** `./install.sh --no-oomd-dropin` is remembered: reinstalls, updates
+  (stable, Live and Try it live) and Roll back keep it until `./install.sh --oomd-dropin` turns the
+  drop-in back on. With `--no-helpers` the choice is saved and applied at the next helper install.
+- **The approval gate:** deleting the Desk's cards, click tokens or other protected data with `rm`,
+  `rmdir` or `unlink` is held like a write. A protected mod name that only appears inside a list of
+  words (a quoted string being edited) is no longer mistaken for a path.
+- `pal` keeps `--click` and `--tap` that come after `--` as the program's own arguments, so a
+  helper's command can pass them through.
+- **A shorter README and RECIPE.** The README is now one screen: what it is, the new preview (a
+  still from the 45-second film, also in `docs/media/promo.mp4`), how the crew works and install in
+  three steps. The full tour moved to `docs/guide.md`. RECIPE.md is a short brief in Herdr's format,
+  and the full spec moved to `docs/spec.md`.
+
+### Fixed
+
+- `test_guard` no longer fails when other test files load the shared library first: it uses the
+  same data folder the gate already reads.
 
 ## 0.4.3 — 2026-11-13
 
@@ -50,11 +91,7 @@ herdr-core 0.1.20.
   shows it as a diff, with Decline and Accept; the idea partner's drafts are on Home, with Send,
   Edit… and Discard; Change machine… is in the pal menu (click the pal's name); the sidebar's
   buttons are Inbox, Tasks, Pop out (the topic's terminal in its own window) and Close pal (Home
-  on the head pal); and sending a pal a message from the app is **Send to a pal…** (Ctrl+Shift+D or the
-  gear menu). Nothing in the app says Desk any more: the header's button and the Desk settings dialog
-  are gone too, and waiting messages on Home are tagged Message. The Desk's settings (triage, the check-in's
-  timings, archiving, whether MUSE sends as itself) keep their values; to change one, ask your trusted
-  helper on Full control, or edit the "desk" section of `crew-settings.json`. Nothing you made is touched: memory,
+  on the head pal); and the header's button is now **Drop**, which drops a card. Nothing you made is touched: memory,
   notebooks, missions, tasks, cards, rooms, routines and pages stay on disk. The installer backs up
   the old mods before setting them aside, and takes the three old shortcuts out of `keys.json` only
   where they still point at Project Pals.
