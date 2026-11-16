@@ -81,6 +81,24 @@ print(json.dumps({"ok":True}))
 """)
         self.assertTrue(got["ok"])
 
+    def test_openbot_setup_mode_parsing(self):
+        got = py(self.env, """
+from unittest.mock import patch
+import crewnotifycli as cli
+with patch.object(cli, 'setup_interactive') as setup:
+    with patch('builtins.print'):
+        cli.run(['setup', '--mode', 'openbot'], lambda *_: None)
+    assert setup.call_args.kwargs['mode'] == 'openbot'
+    setup.reset_mock()
+    for args in (['setup', '--mode', 'openbot', '--header', 'X-Key'], ['setup', '--mode', 'bad']):
+        try: cli.run(args, lambda *_: None)
+        except cli.crewnotify.NotifyError: pass
+        else: raise AssertionError('invalid mode accepted')
+    assert not setup.called
+print(json.dumps({'ok': True}))
+""")
+        self.assertTrue(got['ok'])
+
     def test_secure_prompt_never_falls_back_to_echo_and_saves_disabled(self):
         out = py(self.env, '''
 import io, warnings

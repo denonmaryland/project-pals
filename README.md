@@ -182,6 +182,10 @@ The default is HTTPS POST with `Authorization: Bearer <key>` and JSON containing
 an opaque id only**. An optional mode adds title and topic: those names leave this computer
 and may identify private projects. For a receiver that uses a custom header, setup accepts
 `--header X-Your-Header`; custom `X-*` headers carry the raw key, without `Bearer `.
+For an OpenBot receiver, run `pal notify setup --mode openbot` instead and enter its URL and
+signing secret in the hidden prompts. OpenBot requests carry a signed timestamp and stable
+per-event delivery ID, so the receiver can recognize retries. Minimal privacy still sends only
+kind and opaque ID in `data`, with empty title and topic; detail mode includes those names.
 There is no incoming approval, answer or command path. Decisions still happen in Project Pals.
 
 Credentials are kept outside Herdr's data folder with private file permissions and sealed for

@@ -8,6 +8,8 @@ one crewd thread and one deadline-limited child, never in crewd.tick().
 import contextlib
 import copy
 import fcntl
+import datetime
+import hmac
 import hashlib
 import json
 import os
@@ -205,7 +207,7 @@ def status(*, directory=None):
             "dropped": _number(s.get("dropped")), "expired": _number(s.get("expired"))}
 
 
-def _validate(url, key, auth_header="Authorization"):
+def _validate(url, key, auth_header="Authorization", mode="bearer"):
     if not isinstance(url, str) or not isinstance(key, str) or not 1 <= len(key) <= 4096 or len(url) > 4096:
         raise NotifyError("Enter a valid HTTPS webhook URL and sender key")
     try:
@@ -221,7 +223,9 @@ def _validate(url, key, auth_header="Authorization"):
         auth_header = "Authorization"
     if auth_header != "Authorization" and not re.fullmatch(r"(?i)X-[A-Za-z0-9-]{1,60}", str(auth_header)):
         raise NotifyError("The authentication header must be Authorization or an X- header")
-    return {"url": url, "key": key, "auth_header": auth_header}
+    if mode not in ("bearer", "openbot"):
+        raise NotifyError("Unknown phone-alert sender mode")
+    return {"url": url, "key": key, "auth_header": auth_header, "mode": mode}
 
 
 def _crypt(mode, raw):
@@ -237,9 +241,9 @@ def _unseal(blob):
     return _crypt("decrypt", blob)
 
 
-def configure(url, key, *, allow_plain=False, privacy="minimal", auth_header="Authorization", directory=None):
+def configure(url, key, *, allow_plain=False, privacy="minimal", auth_header="Authorization", mode="bearer", directory=None):
     """Replace credentials atomically, disabled. URL/key must come from hidden owner input."""
-    bundle = _validate(url, key, auth_header)
+    bundle = _validate(url, key, auth_header, mode)
     if privacy not in ("minimal", "detail"):
         raise NotifyError("Privacy must be minimal or detail")
     raw = json.dumps(bundle, separators=(",", ":")).encode()
@@ -284,7 +288,7 @@ def _credentials(directory):
         bundle = None
     if not isinstance(bundle, dict):
         raise NotifyError("Phone-alert credentials are unavailable")
-    return _validate(bundle.get("url"), bundle.get("key"), bundle.get("auth_header", "Authorization"))
+    return _validate(bundle.get("url"), bundle.get("key"), bundle.get("auth_header", "Authorization"), bundle.get("mode", "bearer"))
 
 
 def _mutate(fn, directory=None):
@@ -517,12 +521,32 @@ def _post(bundle, payload):
     """Only run in the bounded child; no raw response or exception escapes."""
     if PROTOCOL != "bearer-json-v1":
         return "protocol-unconfirmed"
-    bundle = _validate(bundle.get("url"), bundle.get("key"), bundle.get("auth_header", "Authorization"))
-    auth = bundle["auth_header"]
-    headers = {"Content-Type": "application/json", auth: ("Bearer " if auth == "Authorization" else "") + bundle["key"]}
+    event_at, delivery_id = bundle.get("event_at"), bundle.get("delivery_id")
+    bundle = _validate(bundle.get("url"), bundle.get("key"), bundle.get("auth_header", "Authorization"), bundle.get("mode", "bearer"))
+    headers = {"Content-Type": "application/json"}
+    if bundle["mode"] == "openbot":
+        if (_number(event_at, None) is None or not isinstance(delivery_id, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}", delivery_id)):
+            return "rejected"
+        try:
+            occurred = datetime.datetime.fromtimestamp(event_at, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        except (ValueError, OverflowError, OSError):
+            return "rejected"
+        data = {"kind": payload["kind"], "id": payload["id"],
+                "title": payload.get("title", ""), "topic": payload.get("topic", "")}
+        body = json.dumps({"type": payload["kind"], "occurredAt": occurred, "data": data},
+                          separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        timestamp = str(int(time.time()))
+        signed = timestamp.encode() + b"." + delivery_id.encode() + b"." + body
+        headers.update({"x-openbot-timestamp": timestamp, "x-openbot-delivery-id": delivery_id,
+                        "x-openbot-signature": "sha256=" + hmac.new(bundle["key"].encode(), signed, hashlib.sha256).hexdigest()})
+    else:
+        auth = bundle["auth_header"]
+        headers[auth] = ("Bearer " if auth == "Authorization" else "") + bundle["key"]
+        body = json.dumps(payload, separators=(",", ":")).encode()
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect(),
                                          urllib.request.HTTPSHandler(context=ssl.create_default_context()))
-    request = urllib.request.Request(bundle["url"], data=json.dumps(payload, separators=(",", ":")).encode(), headers=headers, method="POST")
+    request = urllib.request.Request(bundle["url"], data=body, headers=headers, method="POST")
     try:
         with opener.open(request, timeout=POST_TIMEOUT - 1) as response:
             code = response.status  # Don't read or log the response body.
@@ -698,6 +722,8 @@ class Worker:
             outcome = None
             try:
                 bundle = _credentials(folder)
+                if bundle.get("mode") == "openbot":
+                    bundle.update(event_at=due["at"], delivery_id="p-" + hashlib.sha256(due["identity"].encode()).hexdigest())
             except (NotifyError, SourceUnavailable, OSError):
                 outcome = "credentials-unavailable"
             with _locked(self.directory) as folder:

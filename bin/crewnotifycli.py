@@ -8,10 +8,10 @@ import warnings
 import crewnotify
 
 
-USAGE = "pal notify [status [--json]|setup [--allow-plain] [--header NAME]|enable|disable|privacy minimal|privacy detail|test]"
+USAGE = "pal notify [status [--json]|setup [--allow-plain] [--header NAME] [--mode bearer|openbot]|enable|disable|privacy minimal|privacy detail|test]"
 
 
-def setup_interactive(allow_plain=False, auth_header="Authorization"):
+def setup_interactive(allow_plain=False, auth_header="Authorization", mode="bearer"):
     import crewhelpers
     import crewuninstall
 
@@ -33,7 +33,10 @@ def setup_interactive(allow_plain=False, auth_header="Authorization"):
                 warnings.simplefilter("error", getpass.GetPassWarning)
                 url = getpass.getpass("Webhook URL (hidden): ", stream=tty)
                 key = getpass.getpass("Sender key (hidden): ", stream=tty)
-            crewnotify.configure(url, key, allow_plain=allow_plain, privacy="minimal", auth_header=auth_header)
+            options = {"allow_plain": allow_plain, "privacy": "minimal", "auth_header": auth_header}
+            if mode != "bearer":
+                options["mode"] = mode
+            crewnotify.configure(url, key, **options)
     except (OSError, EOFError, KeyboardInterrupt, getpass.GetPassWarning):
         raise crewnotify.NotifyError("Setup cancelled or a secure interactive prompt was unavailable.") from None
 
@@ -60,19 +63,26 @@ def run(rest, require_owner):
     if args[:1] == ["setup"]:
         if as_json:
             raise crewnotify.NotifyError("Setup is interactive; --json is only for status and app controls.")
-        tail, allow_plain, header, header_set = args[1:], False, "Authorization", False
+        tail, allow_plain, header, header_set, mode, mode_set = args[1:], False, "Authorization", False, "bearer", False
         while tail:
             if tail[0] == "--allow-plain" and not allow_plain:
                 allow_plain, tail = True, tail[1:]
             elif tail[0] == "--header" and len(tail) > 1 and not header_set:
                 header, tail = tail[1], tail[2:]
                 header_set = True
+            elif tail[0] == "--mode" and len(tail) > 1 and not mode_set:
+                mode, tail, mode_set = tail[1], tail[2:], True
             else:
                 raise crewnotify.NotifyError(USAGE)
+        if mode not in ("bearer", "openbot") or (mode == "openbot" and header_set):
+            raise crewnotify.NotifyError(USAGE)
         if not re.fullmatch(r"Authorization|X-[A-Za-z0-9-]{1,60}", header, flags=re.I):
             raise crewnotify.NotifyError("Use Authorization or a custom X- header.")
         # No credential values are accepted on the command line, even for owner setup.
-        setup_interactive(allow_plain=allow_plain, auth_header=header)
+        if mode == "bearer":
+            setup_interactive(allow_plain=allow_plain, auth_header=header)
+        else:
+            setup_interactive(allow_plain=allow_plain, auth_header=header, mode=mode)
         print("Receiver saved. Sending is off. Open About → Phone alerts to enable or send a test.")
         return
     valid = args in (["enable"], ["disable"], ["test"], ["privacy", "minimal"], ["privacy", "detail"])

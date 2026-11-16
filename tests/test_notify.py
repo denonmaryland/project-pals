@@ -214,6 +214,26 @@ class Notify(unittest.TestCase):
         self.assertEqual(set(self.sent[-1][1]), {"kind", "id", "title", "topic"})
         self.assertNotIn("NEVER BODY", json.dumps(self.sent))
 
+    def test_openbot_configuration_defaults_off_and_old_bundle_is_bearer(self):
+        self.configure(mode="openbot")
+        self.assertFalse(n.status(directory=self.directory)["enabled"])
+        self.assertEqual(n._credentials(self.directory)["mode"], "openbot")
+        self.assertEqual(n._validate("https://example.invalid", "fake")["mode"], "bearer")
+
+    def test_openbot_retry_keeps_event_identity_and_time(self):
+        self.configure(mode="openbot")
+        self.enable()
+        self.new()
+        self.outcome = "retry"
+        self.worker.step()
+        first = self.sent[-1][0]
+        self.now += 2
+        self.worker.step()
+        second = self.sent[-1][0]
+        self.assertEqual(first["delivery_id"], second["delivery_id"])
+        self.assertEqual(first["event_at"], second["event_at"])
+        self.assertRegex(first["delivery_id"], r"^p-[0-9a-f]{64}$")
+
     def test_retry_backoff_persists_and_expiry(self):
         self.configure()
         self.enable()
@@ -538,6 +558,39 @@ class Transport(unittest.TestCase):
                 self.assertEqual(n.transport({"key": "FAKE"}, {}), "timeout")
             self.assertTrue(pid.exists())
             self.assertFalse(Path("/proc") .joinpath(pid.read_text()).exists())
+
+    def test_openbot_signature_body_and_response_contract(self):
+        import hashlib
+        import hmac
+        bundle = {"url": "https://example.invalid/hook", "key": "fake-signing-key",
+                  "mode": "openbot", "event_at": 1700000000, "delivery_id": "p-123"}
+        payload = {"kind": "ask", "id": "a-abcdef", "title": "Café", "topic": "work"}
+        class Response:
+            def __init__(self, status): self.status = status
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+        class Opener:
+            def open(self, request, timeout):
+                self.request = request
+                return Response(self.status)
+        opener = Opener()
+        with patch.object(n.urllib.request, "build_opener", return_value=opener), patch.object(n.time, "time", return_value=1700000100):
+            for code in (200, 202):
+                opener.status = code
+                self.assertEqual(n._post(bundle, payload), "sent")
+            request = opener.request
+            self.assertEqual(json.loads(request.data), {"type": "ask", "occurredAt": "2023-11-14T22:13:20Z", "data": payload})
+            self.assertNotIn("Authorization", request.headers)
+            signed = b"1700000100.p-123." + request.data
+            self.assertEqual(request.get_header("X-openbot-signature"), "sha256=" + hmac.new(b"fake-signing-key", signed, hashlib.sha256).hexdigest())
+            self.assertEqual(request.get_header("X-openbot-delivery-id"), "p-123")
+            n._post(bundle, {"kind": "test", "id": "n-abcdef"})
+            self.assertEqual(json.loads(opener.request.data)["data"],
+                             {"kind": "test", "id": "n-abcdef", "title": "", "topic": ""})
+            for code, expected in ((401, "rejected"), (503, "retry")):
+                with patch.object(opener, "open", side_effect=urllib.error.HTTPError(bundle["url"], code, "", {}, io.BytesIO())):
+                    self.assertEqual(n._post(bundle, payload), expected)
+        self.assertEqual(n._post({**bundle, "delivery_id": "bad id"}, payload), "rejected")
 
     def test_post_schema_statuses_redirects_and_tls(self):
         bundle = {"url": "https://example.invalid/hook", "key": "SECRET"}
