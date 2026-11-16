@@ -119,7 +119,7 @@ print(json.dumps([hook, bool(handed), ag, direct, bool(again)]))''')
                                       'base': 'main', 'start': start}}}]}}))
         self.env.update({k: env[k] for k in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL')})
         self.command = 'pal land Helper#build'
-        for bad in ('crew land Helper#build', 'pal  land Helper#build', "pal land 'Helper#build'"):
+        for bad in ('crew land Helper#build', 'pal  land Helper#build', "pal land 'Helper#build'", "pal land Helper#build --check ''"):
             self.assertNotEqual(pal(self.env, 'home', 'ask', 'x', '--option', 'Go', '--approves', bad, term='tW').returncode, 0, bad)
         x = self.ask()
         self.assertEqual(x['authorization']['commands'][0]['land_tip'], tip)

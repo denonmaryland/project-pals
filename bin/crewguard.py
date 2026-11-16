@@ -1682,6 +1682,7 @@ def home_authorization(terminal, bot, channel, cwd, commands):
             # while the asker can fix them, rather than promising a click that asks again.
             flags = words[3:]
             if (len(words) < 3 or words[:2] != ["pal", "land"] or len(flags) % 2
+                    or not words[2] or any(not flags[i + 1] for i in range(0, len(flags), 2))
                     or any(flags[i] not in ("--check", "--at", "--onto") for i in range(0, len(flags), 2))
                     or [flags[i] for i in range(0, len(flags), 2)] !=
                        [f for f in ("--check", "--at", "--onto") if f in flags[::2]]):
