@@ -942,7 +942,9 @@ rectangular segments and tags.
   terminal, the Chief, Factories, Theme and look
   (`app.settings {section: "look"}`), Switch Herdr layout (`layout.switch`), Machines, Herdr
   settings, Command palette, Check for updates (`crew-update` with props `check: true`),
-  Project Pals settings (About: owner, head pal, update, Roll back), Welcome tour. (T217 took out New
+  Project Pals settings (About: owner, head pal, update, Roll back; its header and footer stay put
+  and the body between them scrolls, capped to the window: `aboutBodyMax`, the window height from
+  shared `crew.window` less 220, never under 240; T242), Welcome tour. (T217 took out New
   room…, Rooms, Routines, the Desk and the board's and Computer's rows; routines are `pal routine`.)
   **It never runs past the window** (T95, DeNon 2026-11-10: it had outgrown its fixed 438px box
   and a short window, Settings was cut off and nothing scrolled). It's as tall as its rows need

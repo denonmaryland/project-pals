@@ -21,6 +21,11 @@ const vt = (v) => (String(v ?? "0").match(/\d+/g) ?? []).concat(["0", "0", "0"])
 const newer = (x, y) => { const p = vt(x), q = vt(y); for (let i = 0; i < 3; i++) if (p[i] !== q[i]) return p[i] > q[i]; return false; };
 const ago = (s) => { const d = Date.now() / 1000 - s; return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)}h ago` : `${Math.round(d / 86400)}d ago`; };
 
+// The most the body may take (T242): the window's height less the header (~80 px), the footer
+// (~70 px) and room around the dialog (~70 px), never under 240. No height known yet: 640.
+export const ABOUT_CHROME = 220;
+export const aboutBodyMax = (winH) => (Number(winH) > 0 ? Math.max(240, Math.round(Number(winH) - ABOUT_CHROME)) : 640);
+
 export default class CrewAbout extends View {
   init(_props, cx) {
     this.ins = {};
@@ -357,10 +362,15 @@ export default class CrewAbout extends View {
         div().text_size(12.5).text_color(memoryLow() ? t.blocked : t.muted)
           .child(shared("crew.memory")?.available != null ? `${shared("crew.memory").available} GB free` : "")));
 
+    // The body scrolls between the fixed header and footer (T242, DeNon 2026-11-16: at 1920x1200 the
+    // rows below Trusted helpers were cut off and the wheel did nothing). A dialog is as tall as what
+    // it draws, so the body is capped to the window (the roster publishes its height, crew.window)
+    // less the header, the footer and the dialog's margins; under that it's the whole list, unscrolled.
+    const bodyMax = aboutBodyMax(shared("crew.window")?.h);
     return v_flex().id("crew-about").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .w_full().bg(t.popover).text_color(t.foreground)
       .child(header)
-      .child(v_flex().gap(10).px(24).pt(12)
+      .child(scrollArea(tk, "about-body", v_flex().gap(10).px(24).pt(12).pb(4)
         .child(status)
         // The Herdr it was installed on, when that's outside the range this version supports (pals.json "herdr").
         .when(ins.herdr?.supported === false, (el) => el.child(div().px(4).text_size(12).text_color(t.blocked)
@@ -368,7 +378,7 @@ export default class CrewAbout extends View {
         .child(div().px(4).text_size(12).text_color(t.dim)
           .child("Updates replace Project Pals's own files only. Your pals, rooms, memory and routines stay as they are, and the previous version is kept so you can roll back."))
         .child(div().px(4).pt(10).text_size(12.5).font_medium().text_color(t.muted).child("Settings"))
-        .child(settings))
+        .child(settings)).max_h(bodyMax).flex_none())
       .child(footer);
   }
 }

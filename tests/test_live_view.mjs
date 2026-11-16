@@ -22,7 +22,7 @@ try {
   // Every builder call returns the element; children, .when and .map callbacks run, so the whole tree
   // is built. Text children are collected (drawn), clicks kept by id.
   mod("gpui-kit", `
-    export const clicks = new Map(), drawn = [], used = new Set();
+    export const clicks = new Map(), drawn = [], used = new Set(), maxh = new Map(), wheel = new Set();
     const el = () => {
       const p = new Proxy(function () {}, {
         get: (t, k) => {
@@ -31,6 +31,8 @@ try {
           if (k === "when") return (c, f) => (c ? f(p) : p);
           if (k === "map") return (f) => f(p);
           if (k === "id") return (id) => { t.__id = id; return p; };
+          if (k === "max_h") return (v) => { if (t.__id) maxh.set(t.__id, v); return p; };
+          if (k === "on_scroll_wheel") return () => { if (t.__id) wheel.add(t.__id); return p; };
           if (k === "on_click" || k === "on_mouse_down") return (...a) => { const f = a.at(-1); if (t.__id && (k === "on_click" || !clicks.has(t.__id))) clicks.set(t.__id, f); return p; };
           if (k === "child") return (c) => { if (typeof c === "string") drawn.push(c); return p; };
           if (k === "tooltip") return (c) => { drawn.push(String(c)); return p; };
@@ -66,7 +68,7 @@ try {
   for (const m of ["crew-live", "crew-status", "crew-about", "crew-review"]) copyFileSync(join(root, "mods", m, "main.js"), join(dir, `${m}.mjs`));
   const at = (p) => pathToFileURL(join(dir, p)).href;
   const { fx } = await import(at("node_modules/herdr/index.js"));
-  const { clicks, drawn, used } = await import(at("node_modules/gpui-kit/index.js"));
+  const { clicks, drawn, used, maxh, wheel } = await import(at("node_modules/gpui-kit/index.js"));
   const crew = await import(at("crew.js"));
 
   // ── The helpers ──
@@ -237,6 +239,27 @@ try {
   assert.match(text, /Version 0\.4\.1 · main b6c982c · 53 commits after v0\.4\.1/);
   assert.match(text, /Update channel/);
   assert.match(text, /Stable: GitHub releases\. Live: what you land on main/);
+  // T242: the body scrolls between the fixed header and footer, capped to the window, so every row
+  // is reachable (at 1920x1200 the rows below Trusted helpers were cut off and the wheel did nothing).
+  {
+    const aboutMod = await import(at("crew-about.mjs"));
+    assert.equal(aboutMod.aboutBodyMax(1200), 980);
+    assert.equal(aboutMod.aboutBodyMax(300), 240, "never under 240");
+    assert.equal(aboutMod.aboutBodyMax(undefined), 640, "no height known yet");
+    for (const h of [1200, 700]) {
+      fx.shared["crew.window"] = { h };
+      maxh.clear(); wheel.clear();
+      const all = about.draw();
+      assert.equal(maxh.get("about-body"), aboutMod.aboutBodyMax(h), `${h} px: the body is capped to the window`);
+      assert.ok(wheel.has("about-body"), "the wheel scrolls it");
+      for (const row of ["Trusted helpers", "Pal list style", "Pal look", "Memory"]) assert.ok(all.includes(row), `${row} is drawn (in the scrolled body)`);
+    }
+    delete fx.shared["crew.window"];
+    const src = readFileSync(join(root, "mods/crew-about/main.js"), "utf8");
+    const body = src.indexOf('scrollArea(tk, "about-body"'), hdr = src.lastIndexOf(".child(header)"), foot = src.lastIndexOf(".child(footer)");
+    assert.ok(hdr > 0 && body > hdr && foot > body, "header, then the scrolled body, then the footer: both stay put");
+    assert.ok(/\.child\(settings\)\)\.max_h\(bodyMax\)/.test(src), "the settings are the body's last part");
+  }
   clicks.get("set-channel-live")({}, about.cx);
   await tick();
   const sw = fx.calls.find((c) => c[0] === "pal" && c[1] === "settings");

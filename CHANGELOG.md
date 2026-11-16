@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Project Pals settings scroll.** On a shorter screen the About/settings dialog cut off its rows
+  below Trusted helpers and the wheel did nothing. Its body now scrolls between the header and the
+  buttons, and is never taller than the window.
 - **Just the terminals: Home and the Inbox are gone.** Project Pals is terminal-focused now. Clicking
   any pal, the head pal included, opens its terminal, and Ctrl+Shift+H takes you to the head pal's
   terminal. Gone: Home (the head pal's page with Needs you, the one-at-a-time review, All caught up,
