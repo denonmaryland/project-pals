@@ -1807,6 +1807,20 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None, argv=None):
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
+            # A Home click may precede the program's own gate on a harness without a hook.
+            # The program supplies argv; compare each argument and the pinned execution context.
+            home_cmd = r.get("command") or ""
+            home_context = r.get("guard_context")
+            home_match = (r.get("home_exact") and r.get("status") == "approved"
+                          and r.get("terminal") == terminal and r.get("bot") == bot
+                          and r.get("channel") == channel and r.get("rule") == rule
+                          and handover_words(home_cmd) == exact and home_context == command_context(home_cmd, os.getcwd())
+                          and rule in (home_context.get("rules") or [])) if isinstance(home_context, dict) else False
+            if home_match:
+                r["status"], r["used"] = "used", now_ms()
+                r["claimed"] = r["used"]
+                save_json(APPROVALS / f"{r['id']}.json", r)
+                return None
             if r.get("key") != k or r.get("guard_context") != context or r.get("argv") != exact:
                 continue
             if r["status"] == "approved" and _delegation_current(r, cmd):

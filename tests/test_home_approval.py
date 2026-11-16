@@ -137,3 +137,24 @@ print(json.dumps([hook, bool(handed), ag, direct, bool(again)]))''')
         self.assertIn('landed crew/test on main', r.stdout)
         self.assertEqual(git('merge-base', '--is-ancestor', tip, 'main'), '')
         self.assertEqual([json.loads(f.read_text())['status'] for f in (self.data / 'crew-approvals').glob('*.json')], ['used'])
+
+    def test_program_owner_step_consumes_home_approval_once(self):
+        self.command = './release 9.9.9 notes'
+        x = self.ask()
+        self.assertEqual(self.approve(x).returncode, 0)
+        def step(*args, term='tW'):
+            return pal(self.env, 'owner-step', 'release-script', '--', *args, term=term)
+        self.assertEqual(step('./release', '9.9.9', 'other').returncode, 3)
+        self.assertEqual(step('./release', '9.9.9', 'notes', term='tH').returncode, 3)
+        self.assertEqual(step('./release', '9.9.9', 'notes').returncode, 0)
+        self.assertEqual(step('./release', '9.9.9', 'notes').returncode, 3)
+
+    def test_program_owner_step_after_hook_does_not_double_gate(self):
+        self.command = './release 9.9.9 notes'
+        x = self.ask()
+        self.assertEqual(self.approve(x).returncode, 0)
+        self.assertIsNone(self.gate(self.command))
+        r = pal(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'notes', term='tW')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = pal(self.env, 'owner-step', 'release-script', '--', './release', '9.9.9', 'notes', term='tW')
+        self.assertEqual(r.returncode, 3, r.stderr)
