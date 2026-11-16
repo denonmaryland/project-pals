@@ -66,6 +66,7 @@ export default class CrewNotify extends View {
         .child(row("Expired / dropped", `${info.expired ?? 0} / ${info.dropped ?? 0}`)));
       body.child(text("Set up or replace the receiver yourself in a terminal outside Herdr:", true));
       body.child(div().px(10).py(8).rounded(4).bg(d.inset).text_size(12).font_family(d.mono).text_color(d.fg1).child("pal notify setup"));
+      body.child(text("For OpenBot, use: pal notify setup --mode openbot", true));
       body.child(text("Both URL and key use hidden prompts. Setup turns sending off. Never paste them into a pal or a chat.", true));
       body.child(text("Same-user programs can still reach user credentials. These controls prevent ordinary agent access; they do not provide OS isolation.", true));
       body.child(div().flex().items_center().gap(6)
