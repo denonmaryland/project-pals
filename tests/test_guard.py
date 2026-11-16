@@ -9,14 +9,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 
-TMP = pals_tmp.mkdtemp(prefix="pals-test-")
+# One data folder for the in-process gate and the `pal` runs these tests start. crewlib fixes its
+# paths when first imported; when an earlier suite in this process imported it (test_sleep's sandbox,
+# through test_handoff, say), these tests use that folder, or the gate would read one folder while
+# the tests write another (T213: 7 tests failed after owner_step/land_base/handoff/taps).
+_crewlib = sys.modules.get("crewlib")
+TMP = str(_crewlib.DATA) if _crewlib is not None else pals_tmp.mkdtemp(prefix="pals-test-")
+Path(TMP).mkdir(parents=True, exist_ok=True)
 os.environ["CREW_DATA"] = TMP
 os.environ["HERDR_APP_HOME"] = TMP
 os.environ.pop("HC_TERMINAL_ID", None)
 # A fake hc first on PATH (N1): deciding an approval types a note into the pal's terminal, and that
 # must never reach a live Herdr session, nor fail where there's no hc. It logs what it was asked.
 SHIMS = Path(TMP) / "shims"
-SHIMS.mkdir()
+SHIMS.mkdir(exist_ok=True)
 (SHIMS / "hc").write_text(f'#!/bin/sh\necho "$@" >> "{TMP}/hc.log"\nexit 0\n')
 (SHIMS / "hc").chmod(0o755)
 os.environ["PATH"] = f"{SHIMS}:{os.environ.get('PATH', '/usr/bin:/bin')}"
@@ -513,11 +519,86 @@ class HelperKeys(unittest.TestCase):
             crewguard.POLICY.unlink(missing_ok=True)
 
 
+class TapFiles(unittest.TestCase):
+    """T147: a ticket, a hold or a tap token written by hand would be a tap nobody tapped, or one let
+    through early. A pal's writes into data/crew-taps are held like the owner's click tokens; reading
+    the holds (`pal taps`) and working on the feature's own source aren't."""
+    D = "~/.config/herdr-app/data/crew-taps"
+
+    HELD = [
+        f"echo '{{}}' > {D}/run/abababababababababababababababab.json",
+        f"cp /tmp/h.json {D}/holds/t-abc123.json",
+        f"sed -i 's/holding/running/' {D}/holds/t-abc123.json",
+        f"jq '.run_at = 0' {D}/holds/t-abc123.json > /tmp/x && mv /tmp/x {D}/holds/t-abc123.json",
+        'tee "$CREW_DATA/crew-taps/tickets/k-000000000000.json" < /tmp/t.json',
+        "edit /home/x/.config/herdr-app/data/crew-taps/holds/t-abc123.json",
+        "python3 -c \"import json; json.dump({'args': ['approve', 'a-1'], 'at': 0}, open('/d/crew-taps/run/x.json', 'w'))\"",
+        f"rm {D}/holds/t-abc123.json; cp /tmp/forged.json {D}/holds.json",
+    ]
+    FREE = [
+        "pal taps",
+        "pal taps --json",
+        f"cat {D}/holds.json",
+        f"ls {D}/holds",
+        "edit /w/bin/crewtaps.py",
+        "edit /w/tests/test_taps.py",
+        "python3 -m unittest tests.test_taps",
+        "git add bin/crewtaps.py tests/test_taps.py",
+        "grep -rn 'crew-taps' bin tests",
+    ]
+
+    def test_held(self):
+        for cmd in self.HELD:
+            self.assertEqual(rule(cmd), "tap-write", cmd)
+
+    def test_free(self):
+        for cmd in self.FREE:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_a_pal_presenting_as_a_helper_to_tap_is_held_by_the_helper_rule(self):
+        for cmd in ('pal --as-helper tap k-000000000000 Approve --relayed "yes"', "pal --as-helper taps --json",
+                    'PAL_HELPER=Pals pal tap k-000000000000 Approve --relayed "yes"', "env -u HC_TERMINAL_ID pal --as-helper tap-cancel t-abc123"):
+            self.assertEqual(rule(cmd), "helper-key", cmd)
+
+    def test_an_older_policy_gets_the_rule(self):
+        names = sorted(r["name"] for r in crewguard.DEFAULT["guarded"] if r["name"] != "tap-write")
+        old = {**crewguard.DEFAULT, "defaults_version": 16, "defaults_names": names, "guarded": [r for r in crewguard.DEFAULT["guarded"] if r["name"] != "tap-write"]}
+        crewguard.save_json(crewguard.POLICY, old)
+        try:
+            self.assertEqual(rule(self.HELD[0]), "tap-write")
+            self.assertEqual(crewguard.policy()["defaults_version"], crewguard.DEFAULTS_VERSION)
+        finally:
+            crewguard.POLICY.unlink(missing_ok=True)
+
+
 class DeskSourceIsNotDeskCards(unittest.TestCase):
     """T68 (2026-11-09, a-24cc2d, a-867e72): editing the Desk's mods in a worktree
     (mods/crew-desk/main.js) was held as "writes into the Desk's cards". Only the data folder
     (data/crew-desk, or anywhere that resolves into it through a link) is the cards."""
     WT = "/home/x/.config/herdr-app/data/crew-worktrees/pp/t63"
+
+    def test_deleting_cards_is_held_like_writing_them(self):
+        """T219: removing a card or its folder changes the Desk's data too."""
+        for cmd in [
+            "rm -r ~/.config/herdr-app/data/crew-desk/helper",
+            "rm -f -- data/crew-desk/helper/open/a.md",
+            "rm ordinary.txt data/crew-desk/helper/open/a.md",
+            "env /usr/bin/rm -rf \"$CREW_DATA/crew-desk/helper\"",
+            "sh -c 'rm -r data/crew-desk/helper'",
+            "rmdir -p data/crew-desk/helper/open",
+            "unlink data/crew-desk/helper/open/a.md",
+        ]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
+        for cmd in ["rm -r mods/crew-desk", "rmdir mods/crew-desk", "unlink mods/crew-desk/main.js",
+                    "rm ordinary.txt", "ls data/crew-desk/helper", "echo rm data/crew-desk/helper"]:
+            self.assertIsNone(rule(cmd), cmd)
+
+    def test_deleting_other_guarded_files_uses_their_existing_rules(self):
+        for path, expected in [("AGENTS.md", "agents-file-shell"), ("CLAUDE.md", "agents-file-shell"),
+                               ("data/crew-clicks/a.json", "owner-click"), ("data/crew-queue/t1", "queue-write"),
+                               ("data/crew-taps/holds/a.json", "tap-write"), ("data/crew-helpers/log.jsonl", "helper-key")]:
+            for program in ("rm -f", "unlink"):
+                self.assertEqual(rule(f"{program} {path}"), expected, (program, path))
 
     def test_the_desk_mods_are_code(self):
         for cmd in [
@@ -531,6 +612,39 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
             "python3 -c \"open('mods/crew-desk/main.js','w').write('x')\"",
         ]:
             self.assertIsNone(rule(cmd), cmd)
+
+    def test_a_name_in_a_list_of_words_is_not_a_path(self):
+        """T218 (a-4d41c0): a pal removing the Desk's mods ran `git rm -r mods/crew-desk …` and then a
+        Python heredoc that edited install.sh, replacing one string with a list of mod names
+        ("… crew-routines crew-desk crew-room …") and saving the file. The quoted list was taken for
+        a path into the cards. A data folder in quoted code is a path component: the whole string,
+        or after a "/", and followed by "/" or the closing quote."""
+        heredoc = ("cd ~/x/pals-lite && git rm -q -r mods/crew-desk mods/crew-room && python3 - <<'PYEOF'\n"
+                   "from pathlib import Path\n"
+                   "p = Path(\"install.sh\"); s = p.read_text()\n"
+                   "s = s.replace(\"crew-profile crew-routines; do\", \"crew-profile crew-routines crew-desk crew-room; do\")\n"
+                   "p.write_text(s)\nPYEOF")
+        for cmd in [heredoc,
+                    "git rm -q -r mods/crew-desk mods/crew-room",
+                    "python3 -c \"open('notes.txt','w').write('the crew-desk mod is gone')\"",
+                    "python3 -c \"open('install.sh','w').write('for m in crew-desk crew-room; do')\""]:
+            self.assertIsNone(rule(cmd), cmd)
+        for cmd in ["python3 -c \"import os; open(os.path.join(D, 'crew-desk', 'a.md'), 'w').write('x')\"",
+                    "python3 -c \"open('crew-desk/a.md','w').write('x')\"",
+                    "python3 -c \"from pathlib import Path; (Path(D) / 'crew-desk' / 'a.md').write_text('x')\"",
+                    "python3 -c \"open(f'{D}/crew-desk/helper/open/a.md','w').write('x')\""]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
+
+    def test_the_held_command_itself_now_passes_and_real_card_writes_stay_held(self):
+        """T218, Orca's check: the exact text of a-4d41c0 (kept verbatim in fixtures), and real
+        writes into the data folder's crew-desk/<pal>/… still held."""
+        held = (Path(__file__).resolve().parent / "fixtures" / "held-a-4d41c0.txt").read_text()
+        self.assertIn("git rm -q -r mods/crew-desk", held)
+        self.assertIsNone(rule(held))
+        for cmd in ["printf x > ~/.config/herdr-app/data/crew-desk/Orca/open/a.md",
+                    f"printf x > {Q}/crew-desk/Orca/open/a.md",
+                    "python3 -c \"import os; open(os.path.expanduser('~/.config/herdr-app/data/crew-desk/Orca/open/a.md'),'w').write('x')\""]:
+            self.assertEqual(rule(cmd), "desk-write", cmd)
 
     def test_the_cards_are_still_held(self):
         for cmd in [
@@ -554,6 +668,8 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         (wt / "mods" / "notes").symlink_to(real)
         self.assertEqual(rule(f"edit {wt}/mods/crew-desk/helper/open/a.md"), "desk-write")
         self.assertEqual(rule(f"echo x > {wt}/mods/notes/helper/open/a.md"), "desk-write")
+        self.assertEqual(rule(f"rm -r {wt}/mods/crew-desk/helper"), "desk-write")
+        self.assertEqual(rule(f"unlink {wt}/mods/notes/helper/open/a.md"), "desk-write")
         self.assertIsNone(rule(f"echo x > {wt}/mods/other.txt"))
 
     def test_the_hook_asks_the_same_question_for_edits(self):
@@ -561,7 +677,7 @@ class DeskSourceIsNotDeskCards(unittest.TestCase):
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk/main.js", {"crew-desk"}))
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-desk-drop/main.js", {"crew-desk"}))
         hook = (Path(__file__).resolve().parent.parent / "bin" / "crew-hook").read_text()
-        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper"})', hook)
+        self.assertIn('crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper", "crew-taps"})', hook)
         # The same for the helpers' mod (T116): its source is code, the data folder of that name isn't.
         self.assertTrue(crewguard.into_place(f"{Q}/crew-helpers/helpers.json", {"crew-helpers"}))
         self.assertFalse(crewguard.into_place(f"{self.WT}/mods/crew-helpers/main.js", {"crew-helpers"}))
@@ -1018,17 +1134,19 @@ class LiveBranchRefs(unittest.TestCase):
 
     def test_on_stable_landing_by_hand_is_held_and_working_on_main_is_not(self):
         """T136: with the Live channel off, every row that moves main by NAME is still held (it is a
-        landing without the click `pal land` needs); rows that work where main is checked out are free."""
+        landing without the click `pal land` needs). Sequential checked-out work is free; T205's
+        conservative context guard requires the owner for conditional mutation chains."""
         slipped, held_work = [], []
         for layout, where, template in self.MOVERS:
             cmd, held, moved = self.case(layout, where, template, "stable")
             if self.where_checked_out(layout, template):
-                if held:
-                    held_work.append(f"{cmd} -> {held}")
+                expected = "nested-cwd" if " && " in template else None
+                if held != expected:
+                    held_work.append(f"{cmd} -> {held} (expected {expected})")
             elif moved and held not in ("base-branch", "push"):   # (git push . x:main is the push rule's)
                 slipped.append(f"{cmd} -> {held}")
         self.assertEqual(slipped, [], "landed by hand without being held:\n  " + "\n  ".join(slipped))
-        self.assertEqual(held_work, [], "ordinary work on a checked-out main was held:\n  " + "\n  ".join(held_work))
+        self.assertEqual(held_work, [], "checked-out work had the wrong context guard:\n  " + "\n  ".join(held_work))
 
     # A value that lets git carry on, for the options that take one (the sweeps below).
     VALUES = {"jobs": "1", "depth": "1", "deepen": "1", "shallow-since": "2000-01-01", "upload-pack": "git-upload-pack",

@@ -229,7 +229,17 @@ def void_approvals(terminal, note="seat changed hands"):
     out = []
     with locked("approvals"):
         for r in crewguard.all_requests():
-            if r.get("terminal") != terminal or r.get("status") not in ("approved", "pending"):
+            if r.get("terminal") != terminal:
+                continue
+            # One the hook just let through, not yet claimed by the program it let run: that program's
+            # own check could still count it for two minutes (T206). The new brain doesn't get it.
+            if r.get("status") == "used" and not r.get("claimed") \
+                    and now_ms() - r.get("used", 0) < crewguard.HANDOVER_S * 1000:
+                r.update({"claimed": now_ms(), "claimed_by": "handoff", "note": note})
+                save_json(crewguard.APPROVALS / f"{r['id']}.json", r)
+                out.append(r.get("command") or "")
+                continue
+            if r.get("status") not in ("approved", "pending"):
                 continue
             r.update({"was": r["status"], "status": "expired", "expired": now_ms(), "note": note})
             save_json(crewguard.APPROVALS / f"{r['id']}.json", r)

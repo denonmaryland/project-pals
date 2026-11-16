@@ -375,13 +375,13 @@ class Live(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), parked_head, "the project folder's own branch didn't move")
         self.assertEqual(self.git("status", "--porcelain", "--untracked-files=no"), "", "nor its files")
         self.assertNotIn("trying", self.live())
-        deadline = time.time() + 120   # pal land started the install of main on its own
+        deadline = time.time() + 900   # (a loaded machine: each install runs every JS test) pal land started the install of main on its own
         while time.time() < deadline and not merge.startswith(self.running().get("hash") or "-"):
             time.sleep(0.5)
         self.assertTrue(merge.startswith(self.running()["hash"]), "what runs is what landed")
         self.assertIn("// tried", (self.app / "mods" / "crew-review" / "main.js").read_text())
         self.assertIn("// three", (self.app / "mods" / "crew-about" / "main.js").read_text())
-        deadline = time.time() + 30
+        deadline = time.time() + 300
         while time.time() < deadline and self.live().get("pending"):
             time.sleep(0.3)
         self.assertNotIn("pending", self.live())

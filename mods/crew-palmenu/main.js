@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, theme, props, closeOverlay, home } from "herdr";
-import { botOf, ds, tone, taskFor, loadOps, panelOpen, panelTab, panelState, palMenuItems } from "./crew.js";
+import { botOf, ds, tone, taskFor, loadOps, palMenuItems } from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 const ROW = 30;
@@ -51,8 +51,6 @@ export default class CrewPalMenu extends View {
     const bot = botOf(space);
     const items = this.items(space, bot);
     root.on_key_down((e, cx) => this.key(e, cx, items));
-    // Which row the open panel is already on (choosing it again closes the panel).
-    const onTab = panelOpen() ? (panelState().section === "memory" ? "memory" : panelTab()) : null;
     root.child(v_flex().px(8).pt(6).pb(7).mb(2).border_b_1().border_color(d.line)
       .child(div().truncate().text_size(13).line_height("18px").font_weight(600).text_color(d.fg1).child(bot.name))
       .child(div().truncate().text_size(11).line_height("14px").font_family(d.mono).text_color(d.fg3)
@@ -65,7 +63,7 @@ export default class CrewPalMenu extends View {
         else if (g) root.child(div().px(8).pt(group === null ? 2 : 6).pb(2).text_size(10).line_height("14px").font_family(d.mono).text_color(d.fg3).child(g.toUpperCase()));
         group = g;
       }
-      const on = onTab === id;
+      const on = false;
       root.child(h_flex().id(`pm-${id}`).h(ROW).flex_none().px(8).gap(9).items_center().rounded(3).cursor_pointer()
         .when(this.cursor === i, (el) => el.bg(d.sel))
         .on_hover((h, cx) => { if (h && this.cursor !== i) { this.cursor = i; cx.notify(); } })

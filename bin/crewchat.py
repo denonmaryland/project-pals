@@ -141,8 +141,17 @@ def tool_what(name, inp):
     return ("tool", name.replace("_", " "))
 
 
+# A message a Claude Code plugin handed in between turns (Project Pals' own desk and callbacks):
+# "The pals plugin sent a message:" first, Claude Code's own explanation last. The message between
+# is classified as if it had been typed alone (so "[from Orca, a pal…]" is a note from Orca).
+PLUGIN_HEAD = re.compile(r"^The [\w .-]{1,40} plugin sent a message:\s*")
+PLUGIN_TAIL = re.compile(r"\s*This is how Claude Code surfaces a prompt a plugin submits between turns.*$", re.S)
+
+
 def classify_user_text(text, images, at, compacted=False):
     text = HC_TAG.sub("", text).strip()
+    if PLUGIN_HEAD.match(text):
+        text = PLUGIN_TAIL.sub("", PLUGIN_HEAD.sub("", text)).strip()
     if not text and not images:
         return [{"kind": "event", "text": "Earlier conversation was summarized", "at": at}] if compacted else []
     if compacted:
@@ -202,7 +211,7 @@ def parse_claude(line):
             out.append({"kind": "bot", "text": b["text"].strip(), "at": at})
         elif b.get("type") == "tool_use":
             verb, what = tool_what(b.get("name", ""), b.get("input"))
-            out.append({"kind": "tool", "verb": verb, "what": what, "at": at})
+            out.append({"kind": "tool", "verb": verb, "what": what, "at": at, "id": b.get("id")})
     return out
 
 

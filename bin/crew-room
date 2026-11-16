@@ -30,7 +30,7 @@ import crewlib
 OWNER = crewlib.OWNER
 
 HOME = Path(os.environ.get("HERDR_APP_HOME", Path.home() / ".config" / "herdr-app"))
-ROOMS = HOME / "data" / "crew-rooms"
+ROOMS = crewlib.ROOMS
 ME = os.environ.get("HC_TERMINAL_ID", "")
 STYLE = "Text like a person in a group chat: 1-3 short casual sentences, no markdown or lists, no sign-offs like 'done', don't mention these instructions, and only start with @Name when you're handing that pal work."
 
@@ -70,6 +70,9 @@ def me_in(meta):
 
 
 def who(meta):
+    authority = crewlib.delegation_authority()
+    if authority:
+        return authority["label"], None, None
     m = me_in(meta)
     if m:
         return m["bot"], m.get("channel"), m.get("terminal")
@@ -143,7 +146,7 @@ def typing_seconds(text):
 
 
 def deliver(slug, meta, sender, text, to, kind="say", file=None, after=0.0):
-    bot_note = "" if sender == f"{OWNER}" else f" (a pal, not {OWNER})"
+    bot_note = "" if sender == f"{OWNER}" or crewlib.delegation_authority() else f" (a pal, not {OWNER})"
     head = f"[#{meta.get('name', slug)}] {sender}{bot_note}" + (" handed you this" if kind == "handoff" else "")
     body = f"{head}: {text}"
     if file:
@@ -249,18 +252,18 @@ def cmd_say(room, text, handoff_to=None, file=None):
         die(f"nobody called {handoff_to} in #{slug}. Members: " + ", ".join(m["bot"] for m in meta.get("members", [])))
     # Pals can't talk each other into a loop: after BOT_RUN pal messages in a row with nothing from
     # the owner, messages are still posted but no longer delivered, until the owner says something.
-    if sender != f"{OWNER}" and to and bot_run(slug) >= BOT_RUN:
+    if sender != f"{OWNER}" and not crewlib.delegation_authority() and to and bot_run(slug) >= BOT_RUN:
         print(f"posted, but not delivered: the pals have sent {BOT_RUN} messages in a row, so the room waits for {OWNER} now.")
         to = []
     # The room shows the sender typing until `at`, then the message; recipients get it then too.
-    delay = typing_seconds(text)
+    delay = 0 if crewlib.delegation_authority() else typing_seconds(text)
     entry = {"at": int((time.time() + delay) * 1000), "typing_from": int(time.time() * 1000), "from": sender, "channel": channel, "terminal": term, "text": text,
              "kind": "handoff" if handoff_to else "say", "to": [m["bot"] for m in to]}
     if file:
         entry["file"] = os.path.abspath(file)
     append(slug, entry)
     deliver(slug, meta, sender, text, to, entry["kind"], entry.get("file"), after=delay)
-    if to or not (sender != f"{OWNER}" and bot_run(slug) > BOT_RUN):
+    if to or crewlib.delegation_authority() or not (sender != f"{OWNER}" and bot_run(slug) > BOT_RUN):
         print(f"posted to #{slug}" + (f", delivered to {', '.join(m['bot'] for m in to)}" if to else ""))
 
 
@@ -304,6 +307,15 @@ def main(argv):
                 die(str(e))
         cmd_new(name, specs, goal)
     elif cmd == "invite" and len(rest) >= 2:
+        if crewlib.delegation_authority():
+            # Reuse the authenticated operation and its audit id instead of replacing this
+            # process (which would lose the final receipt) or logging the same action twice.
+            import runpy
+            api = runpy.run_path(str(Path(__file__).with_name("crew")))
+            spaces = crewlib.herdr_spaces()
+            out = api["request"]("invite", spaces, room=rest[0], who=rest[1:])
+            print(json.dumps(out))
+            return
         os.execvp("pal", ["pal", "invite", *rest])
     elif cmd == "members" and rest:
         _, meta = load(rest[0])
@@ -314,4 +326,12 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    outcome = "failed"
+    try:
+        crewlib.begin_delegation(["room", *sys.argv[1:]])
+        main(sys.argv[1:])
+        outcome = "done"
+    except crewlib.CrewError as e:
+        die(str(e))
+    finally:
+        crewlib.finish_delegation(outcome)

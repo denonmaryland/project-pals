@@ -113,7 +113,7 @@ def refuse_target(spec, what="a card"):
 # ── what the Chief may run ─────────────────────────────────────────────────────────────────────
 
 # `pal <cmd> [sub]`: the read commands, its own memory and notebook, and pal desk send (checked below).
-READ = {"overview", "team", "feed", "peek", "memory", "diff", "whoami", "computer", "help", "--help", "-h"}
+READ = {"overview", "team", "feed", "peek", "memory", "diff", "whoami", "help", "--help", "-h"}
 SUBS = {
     "desk": {"", "ls", "open", "sent", "stats", "send"},
     "home": {""},

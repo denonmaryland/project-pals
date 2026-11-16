@@ -41,19 +41,15 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, spaces, agents, shared, run, notify, exec, appHome, home as homeDir, readTextFile, settings, openOverlay, closeOverlay, nextCommand } from "herdr";
 import {
-  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli, memoryLow, memoryLine,
-  loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, showDesk,
-  openProposalPanel, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE,
-  severalFactories, currentFactory, inFactory, homeItemShown,
-  withoutChief, welcomePending,
+  ds, tone, scrollArea, pebble, channelName, botOf, crew, headName, owner as ownerName, ownerCli, crewCli, memoryLow, memoryLine, loadOps, loadDesk, blockedReports, wantsTo, taskTitle, petOf, petReady, petEl, petState, mascotEl, mood, showTabs, openProposal, workingMark, openTerminal, homeMode, homeData, jsonLines, homeAge, feedSince, findChannel, deskSlug, HOME_FILE, INSTALLS_FILE, severalFactories, currentFactory, inFactory, homeItemShown, withoutChief, welcomePending, openDrop, editProps, draftTarget, targetLabel, PARTNER_NAME,
 } from "./crew.js";
-import { logRow, helperRows, helperToday } from "./helperlog.js";
+import { logRow, helperRows, helperToday, helperNeed, tapNeed, tapsHolding, tapUndoable } from "./helperlog.js";
 import { welcomeView, welcomeKey } from "./welcome.js";
 
 const ICON = "mods/crew-roster/icons";
 const CARD = 76, ROW = 36, PROW = 48, AGE_W = 52, DRAWER_W = 420;
 // ("name": what trusted helpers sent in your name and tried, T116; shown once there's anything.)
-const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"], ["name", "In your name"]];
+const TABS = [["today", "Today"], ["working", "Working"], ["releases", "Releases"], ["parked", "Parked"], ["name", "Helper activity"]];
 const hhmm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`; };
 const midnight = (now = Date.now()) => { const t = new Date(now); t.setHours(0, 0, 0, 0); return t.getTime(); };
 const short = (name) => String(name ?? "").split(" - ")[0];
@@ -180,11 +176,17 @@ export default class CrewHome extends View {
     for (const c of this.cards) {
       if (["done", "cancelled", "expired"].includes(c.status)) continue;
       if (c.status === "needs you" || c.tray === "_owner") out.push({ key: `c-${c.id}`, kind: "desk", at: Date.parse(c.created ?? "") || 0, pal: (c.from ?? "").split("#")[0], c });
+      // A card the idea partner drafted for you (Pals Lite, T217: Home, since the Desk page is gone).
+      else if (c.tray === "_drafts" && c.status === "draft") out.push({ key: `dr-${c.id}`, kind: "draft", at: Date.parse(c.created ?? "") || 0, pal: (c.from ?? PARTNER_NAME).split("#")[0], c });
     }
     for (const p of this.ops.proposals ?? []) out.push({ key: `p-${p.id}`, kind: "proposal", at: p.at, pal: p.pal ?? p.by, p });
     for (const [term, st] of Object.entries(this.ops.stalled ?? {})) out.push({ key: `s-${term}`, kind: "stuck", at: st.since, pal: st.bot, st });
+    // A trusted helper that isn't working, or is off without your click (T170): yours whichever factory shows.
+    for (const h of this.ops.helpers ?? []) out.push({ key: `th-${h.name}`, kind: "helper", at: h.since, pal: h.name, h });
+    // A relayed tap that's being held (T147): it goes through by itself unless you stop it, so it comes first.
+    for (const h of tapsHolding(this.ops.taps)) out.push({ key: `tap-${h.id}`, kind: "tap", at: 0, held: h.at, pal: h.helper, h });
     // Home items were filtered on load; everything else goes by its pal.
-    return out.filter((n) => n.kind === "ask" || n.kind === "login" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
+    return out.filter((n) => n.kind === "ask" || n.kind === "login" || n.kind === "helper" || n.kind === "tap" || this.onFloor(n.pal)).sort((x, y) => (x.at || 0) - (y.at || 0));
   }
 
   since() {
@@ -287,7 +289,8 @@ export default class CrewHome extends View {
       sub = x.body ? x.body.split("\n")[0] : `${x.id} · from ${x.by ?? "?"}`;
       mono = !x.body;
       const opts = x.options ?? [];
-      acts = opts.map((o, i) => B(`o${i}`, clip(o, 22), (cx) => this.act(n.key, ["home", "answer", x.id, o], `You picked: ${o}`, cx), { primary: i === 0 }));
+      acts = x.authorization ? [B("review", "Review command", (cx) => { this.atKey = n.key; this.mode = "review"; this.handle.focus(); cx.notify(); }, { primary: true })]
+        : opts.map((o, i) => B(`o${i}`, clip(o, 22), (cx) => this.act(n.key, ["home", "answer", x.id, o], `You picked: ${o}`, cx), { primary: i === 0 }));
       if (!opts.length && x.by) acts.push(B("go", `Answer in #${clip((x.by.split("#")[1] ?? "topic"), 16)}`, () => this.openTopic(x.by), { primary: true }));
       acts.push(B("park", "Park", (cx) => this.act(n.key, ["home", "park", x.id], null, cx)));
     } else if (n.kind === "login") {
@@ -311,18 +314,43 @@ export default class CrewHome extends View {
       acts = [B("go", `Open #${clip(channelName(n.tab), 18)}`, () => this.openTopic(`${n.space.name}#${channelName(n.tab)}`), { primary: true })];
     } else if (n.kind === "desk") {
       const c = n.c;
-      tag = this.tag(d, "Desk", d.warnText);
+      tag = this.tag(d, "Message", d.warnText);
       title = c.title || "(no title)";
       sub = `${c.id} · ${c.kind ?? "card"} · from ${c.from_kind === "owner" ? own : c.from ?? "?"}${c.result ? ` · ${clip(c.result, 80)}` : ""}`;
-      acts = [B("desk", "Open in Desk", () => showDesk("needs")),
-        B("done", "Done", (cx) => this.act(n.key, ["desk", "done", c.id, "closed on Home"], "Closed", cx), { primary: true })];
+      acts = [B("done", "Done", (cx) => this.act(n.key, ["desk", "done", c.id, "closed on Home"], "Closed", cx), { primary: true })];
+    } else if (n.kind === "draft") {
+      // A draft goes out only on your Send, as your card; Edit opens it in the quick-drop first.
+      const c = n.c;
+      tag = this.tag(d, "Draft", d.infoText);
+      title = c.title || "(no title)";
+      sub = `${String(c.from ?? PARTNER_NAME).split("#")[0]} drafted it · for ${targetLabel(draftTarget(c.to))} · ${c.id}`;
+      acts = [B("discard", "Discard", (cx) => this.act(n.key, ["desk", "discard", c.id], "Discarded", cx)), div().w(10).flex_none(),
+        B("edit", "Edit…", () => openDrop(editProps(c))),
+        B("send", "Send", (cx) => this.act(n.key, ["desk", "send-draft", c.id, "--to", draftTarget(c.to), "--json"], "Sent as yours", cx), { primary: true })];
     } else if (n.kind === "proposal") {
       const p = n.p;
       tag = this.tag(d, "Proposal", "#B79CF7");
       title = `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`;
       sub = `${p.id}${p.note ? ` · ${clip(p.note, 120)}` : ""}`;
       acts = [B("no", "Decline", (cx) => this.act(n.key, ["proposal", "decline", p.id], "Declined", cx)), div().w(10).flex_none(),
-        B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { primary: true })];
+        B("view", "View", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposal(p); }, { primary: true })];
+    } else if (n.kind === "tap") {
+      const h = n.h, tn = tapNeed(h);
+      tag = this.tag(d, tn.outward ? "Outward tap" : "Tap", tn.outward ? d.err : "#B79CF7");
+      title = tn.title;
+      sub = tn.sub;
+      acts = [B("stop", "Stop", (cx) => this.act(n.key, ["taps", "stop", h.id], "Stopped: it did not run", cx), { primary: true }),
+        B("now", "Let it go now", (cx) => this.act(n.key, ["taps", "now", h.id], "Let through", cx))];
+    } else if (n.kind === "helper") {
+      const h = n.h, hn = helperNeed(h);
+      const sheet = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
+      const set = (what, said) => (cx) => this.act(n.key, ["settings", "trust-helper", h.name, what], said, cx);
+      tag = this.tag(d, "Helper", d.warnText);
+      title = hn.title;
+      sub = hn.sub;
+      acts = [hn.fix ? B("fix", hn.fix.label, set(hn.fix.action, hn.fix.action === "on" ? `${h.name} is trusted` : `${h.name} has a new key`), { primary: true }) : null,
+        B("sheet", "Trusted helpers", sheet, { primary: !hn.fix }),
+        hn.off ? B("off", hn.off.label, set("off", `${h.name} is off`)) : null].filter(Boolean);
     } else {
       const st = n.st;
       tag = this.tag(d, "Stuck", d.warnText);
@@ -356,7 +384,7 @@ export default class CrewHome extends View {
 
   // Nothing waiting: the head pal's pet, "All caught up", one quiet line.
   caughtUp(d, t) {
-    const answered = this.home.items.filter((x) => x.status === "answered" && (x.answered_at ?? 0) >= midnight()).length;
+    const answered = this.home.items.filter((x) => x.status === "answered" && !x.tapped && !x.delegated && (x.answered_at ?? 0) >= midnight()).length;   // yours, not helper decisions
     const head = this.who();
     return v_flex().id("caught-up").flex_1().min_h(0).items_center().justify_center().gap(10)
       .child(this.face(head, "idle", 120, t))
@@ -420,7 +448,7 @@ export default class CrewHome extends View {
     const seen = this.home.seen || 0;
     const nNew = since.filter((r) => r.at > seen).length;
     const nPark = this.home.items.filter((x) => x.status === "parked").length;
-    const nName = this.helperLog.filter((e) => e.kind !== "switch" && (e.at ?? 0) > seen).length;
+    const nName = helperRows(this.helperLog, seen).filter((e) => e.kind !== "switch").length;
     const count = { today: nNew || null, working: prog.rows.length || null, releases: null, parked: nPark || null, name: nName || null };
     const tabs = h_flex().h(40).flex_none().items_end().gap(2).px(10).border_b_1().border_color(d.line)
       .children(TABS.filter(([k]) => k !== "name" || this.helperLog.length > 0).map(([k, label]) => {
@@ -450,7 +478,7 @@ export default class CrewHome extends View {
       const pb = v_flex().children(prog.rows.map((r, i) => this.progressRow(d, t, r, i)));
       if (prog.desk.length) {
         pb.child(h_flex().h(28).flex_none().items_center().px(14).border_t_1().border_color(d.line)
-          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`On ${this.who()}'s desk · ${prog.desk.length}`)));
+          .child(div().text_size(11).font_weight(500).text_color(d.fg3).child(`Waiting with ${this.who()} · ${prog.desk.length}`)));
         pb.children(prog.desk.map((c, i) => this.deskRow(d, c, i)));
       }
       body = prog.rows.length || prog.desk.length ? scrollArea(d, "home-prog", pb).flex_1().min_h(0)
@@ -496,7 +524,10 @@ export default class CrewHome extends View {
     } else if (r.kind === "note") {
       icon = svg(`${ICON}/ds-notebook.svg`).size(11).text_color(d.fg2); bold = short(r.x.by); rest = r.x.title; right = "note";
     } else if (r.kind === "answered") {
-      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok); bold = "You answered"; rest = `${r.x.title} → ${r.x.answer}`; right = short(r.x.by);
+      icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(d.ok);
+      bold = r.x.delegated ? `${r.x.delegated.helper} answered` : r.x.tapped ? `Tapped by ${r.x.tapped.by}` : "You answered";
+      rest = `${r.x.title} → ${r.x.answer}${r.x.delegated ? " · Full control" : r.x.tapped ? " · relayed, not your click" : ""}`; right = short(r.x.by);
+      if (r.x.tapped || r.x.delegated) icon = dot("#B79CF7");
     } else if (r.kind === "closed") {
       icon = svg(`${ICON}/ds-check-thin.svg`).size(11).text_color(r.x.withdrawn ? d.warn : d.ok); bold = r.x.withdrawn ? "Withdrawn" : "Done";
       rest = `${r.x.title}${r.x.result ? ` · ${r.x.result}` : ""}`; right = short(r.x.closed_by ?? r.x.by);
@@ -585,13 +616,29 @@ export default class CrewHome extends View {
       .child(div().h(28).flex_none().px(14).flex().items_center().border_t_1().border_color(d.line).text_size(11).text_color(d.fg4).child(checked));
   }
 
-  // In your name (T116): everything trusted helpers sent as you, what they tried that was refused,
-  // and your own switches, newest first; the dialog (About → Trusted helpers) turns one off.
+  // A delegated action stays attributed to the helper. Revocation is an owner's click, right in
+  // the record, and never promises to undo a completed external action.
+  helperActionRow(d, e, i) {
+    const h = logRow(e), key = `revoke-helper-${e.helper}`;
+    return v_flex().id(`name-${i}`).h(52).flex_none().px(14).py(5).gap(3)
+      .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
+      .child(h_flex().items_center().gap(8)
+        .child(div().flex_1().min_w(0).truncate().text_size(12).font_weight(500).text_color(d.fg1).child(h.bold))
+        .child(pebble(d, { id: `name-revoke-${i}`, label: "Revoke", disabled: Boolean(this.busy[key]),
+          tooltip: `Revoke ${e.helper}'s access; completed actions are not undone`,
+          onClick: (cx) => this.act(key, ["settings", "trust-helper", e.helper, "level", "off"], `${e.helper}'s access revoked`, cx) })))
+      .child(h_flex().items_center().gap(8)
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(h.tone === "warn" ? d.warnText : d.fg2).child(h.rest))
+        .child(div().w(40).flex_none().text_right().text_size(11).text_color(d.fg4).child(homeAge(e.at))));
+  }
+
+  // Helper activity: messages, decisions, outcomes and owner trust changes, newest first.
   nameBody(d) {
     const rows = helperRows(this.helperLog).slice(0, 200);
     const today = helperToday(this.helperLog);
     const open = () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 });
     const list = v_flex().children(rows.map((e, i) => {
+      if (e.kind === "action" && e.helper) return this.helperActionRow(d, e, i);
       const h = logRow(e);
       return h_flex().id(`name-${i}`).h(ROW).flex_none().items_center().gap(10).pl(14).pr(12)
         .when(i > 0, (el) => el.border_t_1().border_color(d.lineSoft))
@@ -599,6 +646,9 @@ export default class CrewHome extends View {
         .child(h_flex().flex_1().min_w(0).gap(6).items_center()
           .child(div().flex_none().max_w(200).truncate().text_size(12.5).font_weight(500).text_color(h.tone === "warn" ? d.warnText : h.tone === "quiet" ? d.fg2 : d.fg1).child(h.bold))
           .child(div().min_w(0).truncate().text_size(12.5).text_color(d.body).child(h.rest)))
+        .when(e.kind === "tap-done" && tapUndoable(this.ops.taps, e.hold), (el) => el.child(div().id(`name-undo-${i}`).flex_none().px(6).h(22).flex().items_center()
+          .rounded(d.r.xs).cursor_pointer().hover((s) => s.bg(d.hover)).text_size(11.5).text_color(d.body)
+          .on_click((_e, cx) => this.act(`undo-${e.hold}`, ["taps", "undo", e.hold], "Undone: the question is open again", cx)).child("Undo")))
         .child(div().w(40).flex_none().text_right().text_size(11).text_color(e.at > (this.home.seen || 0) ? d.infoText : d.fg4).child(homeAge(e.at)));
     }));
     return v_flex().flex_1().min_h(0)
@@ -644,7 +694,7 @@ export default class CrewHome extends View {
     }
     if (n.kind === "ask") {
       const x = n.x;
-      const opts = (x.options ?? []).map((label, i) => o(label, x.does?.[i] || "", owner(["home", "answer", x.id, label], `You picked: ${label}`)));
+      const opts = (x.options ?? []).map((label, i) => o(label, [x.does?.[i], x.authorization?.commands?.[i]?.command, x.authorization?.commands?.[i] ? `For ${x.authorization.bot}#${x.authorization.channel} · ${x.authorization.commands[i].guard_context.cwd}${x.authorization.commands[i].land_tip ? ` · commit ${x.authorization.commands[i].land_tip}` : ""}` : null].filter(Boolean).join("\n"), owner(["home", "answer", x.id, label, ...(x.authorization ? ["--approval-snapshot", JSON.stringify({ authorization: x.authorization, options: x.options ?? null, title: x.title ?? null, body: x.body ?? null, does: x.does ?? null, by: x.by ?? null, recommend: x.recommend ?? null, why: x.why ?? null, links: x.links ?? null, images: x.images ?? null })] : [])], `You picked: ${label}`)));
       if (!opts.length && x.by) opts.push(o(`Answer in #${(x.by.split("#")[1] ?? "topic")}`, "Shows the topic so you can reply there", () => this.openTopic(x.by)));
       const later = (cx) => this.act(n.key, ["home", "park", x.id], null, cx);
       opts.push(o("Park", "Decide later; it waits in Parked", later, { cap: "L" }));
@@ -665,17 +715,42 @@ export default class CrewHome extends View {
     }
     if (n.kind === "desk") {
       const c = n.c, r = recs[c.id];
-      return { tag: ["Desk", this.d.warnText], who: c.from_kind === "owner" ? null : c.from, topic: topicOf(c.from), sub: `${c.id} · ${c.kind ?? "card"} · ${homeAge(n.at)} ago`,
+      return { tag: ["Message", this.d.warnText], who: c.from_kind === "owner" ? null : c.from, topic: topicOf(c.from), sub: `${c.id} · ${c.kind ?? "card"} · ${homeAge(n.at)} ago`,
         title: c.title || "(no title)", body: [c.body, c.result ? `Result: ${c.result}` : null].filter(Boolean).join("\n\n"), images: c.attachments,
-        rec: r ? { option: r.option === "done" ? "Done" : "Open in Desk", why: r.why, by: r.by } : null,
-        options: [o("Done", "Closes the card; the sender sees it", owner(["desk", "done", c.id, "closed on Home"], "Closed")), o("Open in Desk", "Shows it with its receipts", () => showDesk("needs"))] };
+        rec: r && r.option === "done" ? { option: "Done", why: r.why, by: r.by } : null,
+        options: [o("Done", "Closes the card; the sender sees it", owner(["desk", "done", c.id, "closed on Home"], "Closed"))] };
+    }
+    if (n.kind === "draft") {
+      const c = n.c;
+      return { tag: ["Draft", this.d.infoText], who: String(c.from ?? PARTNER_NAME).split("#")[0], topic: null, sub: `${c.id} · for ${targetLabel(draftTarget(c.to))} · ${homeAge(n.at)} ago`,
+        title: c.title || "(no title)", body: c.body ?? "", images: c.attachments,
+        options: [o("Send", "Goes out as your card, to where it suggests", owner(["desk", "send-draft", c.id, "--to", draftTarget(c.to), "--json"], "Sent as yours")),
+          o("Edit…", "Opens it in the quick-drop to change first", () => openDrop(editProps(c))),
+          o("Discard", "Drops the draft; nothing is sent", owner(["desk", "discard", c.id], "Discarded"), { gapBefore: true })] };
     }
     if (n.kind === "proposal") {
       const p = n.p;
       return { tag: ["Proposal", "#B79CF7"], who: p.by, topic: topicOf(p.by), sub: `${p.id} · ${homeAge(n.at)} ago`,
         title: `${short(p.by)} proposes a change to ${p.kind === "mission" ? "its mission" : p.file ?? "a file"}`, body: p.note,
         options: [o("Decline", "The pal is told", owner(["proposal", "decline", p.id], "Declined")),
-          o("View", "Opens the change in the profile panel", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposalPanel(p); }, { gapBefore: true })] };
+          o("View", "Shows the change, to accept or decline", () => { const f = this.locate(p.pal); if (f) { run("space.select", { id: f.space.id }); showTabs(); } openProposal(p); }, { gapBefore: true })] };
+    }
+    if (n.kind === "tap") {
+      const h = n.h, tn = tapNeed(h);
+      return { tag: [tn.outward ? "Outward tap" : "Tap", tn.outward ? this.d.err : "#B79CF7"], who: null, topic: h.by && h.by.includes("#") ? h.by : null,
+        sub: `tapped by ${h.helper}, relayed from you · ${tn.goes}`, title: tn.title, body: tn.sub,
+        rec: null,
+        options: [o("Stop", "It doesn't run; the item is yours to answer", owner(["taps", "stop", h.id], "Stopped: it did not run")),
+          o("Let it go now", tn.outward ? "Runs at once. It can't be undone" : "Runs at once", owner(["taps", "now", h.id], "Let through"), { gapBefore: true })] };
+    }
+    if (n.kind === "helper") {
+      const h = n.h, hn = helperNeed(h);
+      const opts = [];
+      if (hn.fix) opts.push(o(hn.fix.label, hn.fix.does, owner(["settings", "trust-helper", h.name, hn.fix.action], hn.fix.action === "on" ? `${h.name} is trusted` : `${h.name} has a new key`)));
+      opts.push(o("Trusted helpers", "Opens the sheet: the switch, the key, the record", () => openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 })));
+      if (hn.off) opts.push(o(hn.off.label, hn.off.does, owner(["settings", "trust-helper", h.name, "off"], `${h.name} is off`), { gapBefore: true }));
+      return { tag: ["Helper", this.d.warnText], who: null, topic: null, sub: `a trusted helper · ${homeAge(n.at)} ago`, title: hn.title, body: hn.sub,
+        rec: hn.fix ? { option: hn.fix.label, why: "Only your click turns a helper on or gives it a key", by: "Project Pals" } : null, options: opts };
     }
     const st = n.st;
     return { tag: ["Stuck", this.d.warnText], who: st.bot, topic: `${st.bot}#${st.channel}`, sub: `no progress for ${homeAge(st.since)}`,

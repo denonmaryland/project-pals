@@ -254,9 +254,8 @@ def backups(pal, rel=None):
     return out
 
 
-def apply(pal, folder, rel, new_text, expect, note=None):
-    """Write a project file: refuse if it changed since the diff (`expect` is the sha the diff was
-    made against, "none" for a new file), back the old one up, write, and return what happened."""
+def validate_apply(folder, rel, expect):
+    """Check the target and reviewed base without writing or creating a backup."""
     rel = rel.strip()
     rel = rel[2:] if rel.startswith("./") else rel
     if not WRITABLE.match(rel) or ".." in rel.split("/"):
@@ -265,6 +264,13 @@ def apply(pal, folder, rel, new_text, expect, note=None):
     cur = read(target)
     if sha(cur) != expect:
         raise CrewError(f"{rel} changed since the diff was made; review it again")
+    return rel, target, cur
+
+
+def apply(pal, folder, rel, new_text, expect, note=None):
+    """Write a project file: refuse if it changed since the diff (`expect` is the sha the diff was
+    made against, "none" for a new file), back the old one up, write, and return what happened."""
+    rel, target, cur = validate_apply(folder, rel, expect)
     d = backup_dir(pal)
     d.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")

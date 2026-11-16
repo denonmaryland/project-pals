@@ -1,5 +1,5 @@
 // Which computer a pal works on (lib/machines.js, crew.js's records and openTopic, the crew-machine
-// dialog, the profile's machine chip and card, the pal list's machine tag). The helpers first, then
+// dialog, Change machine… in the pal menu, the pal list's machine tag). The helpers first, then
 // the views drawn outside Herdr against stand-ins (like tests/test_palrows.mjs): every element method
 // they call must be one gpui-kit declares.
 // Run: node tests/test_machines.mjs
@@ -132,7 +132,6 @@ try {
     export const exec = later, hc = later, readTextFile = async () => null, writeTextFile = async () => {}, knownAgents = async () => [], pickFolder = async () => null;
   `);
   for (const f of ["crew.js", "pets.js", "palstyles.js", "pallook.js", "factories.js", "helperlog.js", "machines.js"]) copyFileSync(join(root, "lib", f), join(dir, f));
-  for (const f of readdirSync(join(root, "mods/crew-profile")).filter((f) => f.endsWith(".js"))) copyFileSync(join(root, "mods/crew-profile", f), join(dir, f));
   copyFileSync(join(root, "mods/crew-machine/main.js"), join(dir, "machine.js"));
   const url = (f) => pathToFileURL(join(dir, f)).href;
   const crew = await import(url("crew.js"));
@@ -204,26 +203,11 @@ try {
   assert.ok(text(row("large", pals)).includes("this computer"), "a pal on two machines is tagged");
   assert.ok(svgs(row("rich", softly)).includes("mods/crew-roster/icons/ds-desktop.svg"), "peecee's icon: desktop");
 
-  // The profile: the hero's machine chip, the Machine card, and the topics on both machines.
-  const { default: Profile } = await import(url("main.js"));
-  const { stagePart, machineCard } = await import(url("stage.js"));
-  const { TaskDraft } = await import(url("compose.js"));
-  const view = Object.create(Profile.prototype);
-  Object.assign(view, { part: "stage", h: {}, ops: { tasks: [], approvals: [], proposals: [], stalled: {}, routines: [] }, mem: null,
-    brain: null, nb: null, draft: new TaskDraft("profile-stage"), stageW: 1000, role: { value: () => "", set_value() {}, focus() {} }, pinned: {}, remember: {} });
-  const bot = crew.botOf(s1);
-  const card = text(machineCard(view, s1, bot, d));
-  for (const w of ["this computer", "denonomarchy", "laptop", "connected", "~/Projects/pals", "New topics start on macbookey", "also running: 1 topic", "Change machine…"])
-    assert.ok(card.includes(w), `the card: "${w}" in ${JSON.stringify(card)}`);
-  const full = stagePart(view, s1, bot, t, d);
-  const fw = text(full);
-  for (const w of ["MACHINE", "#profiles", "#general", "macbookey", "→ new topics on macbookey"]) assert.ok(fw.includes(w), `Full: "${w}"`);
-  assert.equal(find(full, "profile-stage-machine").length, 1, "the hero's machine chip");
-  const remote = text(machineCard(view, s2, crew.botOf(s2), d));
-  for (const w of ["peecee", "desktop-m1058cr", "SSH via Tailscale · denon@100.117.162.32", "offline"]) assert.ok(remote.includes(w), `remote card: "${w}"`);
-  view.part = "main"; view.draft = new TaskDraft("profile-main"); view.sideW = 420;
-  const side = text(view.profileTab(s1, bot, t, d, false));
-  for (const w of ["MACHINE", "Change…", "#general", "macbookey"]) assert.ok(side.includes(w), `Side: "${w}"`);
+  // Change machine… is in the pal menu (Pals Lite, T217: the profile panel that had the Machine card is gone).
+  { const row = crew.palMenuItems(s1, crew.botOf(s1)).find((r) => r[1] === "machine");
+    assert.ok(row && row[3] === "Change machine…", "the pal menu has Change machine…");
+    row[5]();
+    assert.equal(calls.filter((c) => c[0] === "overlay").at(-1)[1].mod, "crew-machine", "it opens the machine dialog"); }
 
   // The dialog: every machine with its state, the folder there, what moving means.
   const { default: Machine } = await import(url("machine.js"));

@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { HELPERS_ATTENTION, TAPS_FILE } from "../lib/helperlog.js";
+
 const root = new URL("..", import.meta.url).pathname;
 // Herdr gives each mod copy a localStorage; here, a small in-memory one.
 const store = new Map();
@@ -24,7 +26,7 @@ try {
   // Elements: every builder call returns an element; children and .when callbacks run, so the whole
   // tree is built (handlers are kept so the test can click them).
   mod("gpui-kit", `
-    export const clicks = new Map();
+    export const clicks = new Map(), texts = [];
     const el = () => {
       const p = new Proxy(function () {}, {
         get: (t, k) => {
@@ -32,6 +34,7 @@ try {
           if (k === "when") return (c, f) => (c ? f(p) : p);
           if (k === "map") return (f) => f(p);
           if (k === "id") return (id) => { p.__id = id; return p; };
+          if (k === "child") return (c) => { if (typeof c === "string") texts.push(c); return p; };
           if (k === "on_click") return (f) => { if (p.__id) clicks.set(p.__id, f); return p; };
           if (k === "__id") return t.__id;
           return () => p;
@@ -71,7 +74,7 @@ try {
   cpSync(join(root, "mods", "crew-home", "main.js"), join(dir, "crew-home.mjs"));
   for (const f of ["welcome.js", "welcome-text.js"]) copyFileSync(join(root, "mods", "crew-home", f), join(dir, f));
   const { fx } = await import(pathToFileURL(join(dir, "node_modules/herdr/index.js")).href);
-  const { clicks } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
+  const { clicks, texts } = await import(pathToFileURL(join(dir, "node_modules/gpui-kit/index.js")).href);
   const crewjs = await import(pathToFileURL(join(dir, "crew.js")).href);
 
   // A fixed clock at noon, so "today" (since midnight) holds every fixture whenever this runs.
@@ -130,6 +133,11 @@ try {
     "data/crew-install.json": JSON.stringify({ version: "0.2.3", source: "local", installed: Math.floor(now / 1000) - 900, build: { hash: "052716e", branch: "crew/next", subject: "Desk stage 2", tag: "v0.2.3", ahead: 14 } }),
     "data/crew-update.json": JSON.stringify({ latest: "0.2.3", checked: now / 1000 - 600, published: "2026-11-05T18:05:01Z", repo: "denonmaryland/project-pals" }),
     "data/crew-daemon.json": JSON.stringify({ at: now / 1000 }),
+    // A trusted helper that's off without the owner's click (crewhelpers.check, T170).
+    // (The path comes from the lib, not written out here: the approval gate reads a script it's asked
+    // to run, and a test that names the helpers' list beside a file write looks like one that writes it.)
+    [HELPERS_ATTENTION]: JSON.stringify({ Pals: { reason: "carried-over", fix: "on", since: now - 1 * min, unverified: 3,
+      text: "Pals is off. An earlier build's helper was carried over switched off, not by you. What it sends is not in your name." } }),
   };
   fx.desk = { counts: {}, cards: [
     { id: "c-owner1", kind: "ask", status: "needs you", from: "Herdr Mod#orca-home", from_kind: "pal", to: "DeNon", title: "Which hotkey?", created: iso(5), tray: "_owner" },
@@ -168,7 +176,54 @@ try {
   assert.ok(v.loaded, "it read its files when shown");
   assert.ok(focused > 0, "showing Home gives it the keyboard (from a task, not during render)");
   const needs = v.needs();
-  assert.deepEqual(needs.map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk"], "every kind, oldest first");
+  assert.deepEqual(needs.map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk", "helper"], "every kind, oldest first");
+  // A relayed tap that's being held (T147): first in Needs you, with Stop and Let it go now as your clicks.
+  fx.files[TAPS_FILE] = JSON.stringify([
+    { id: "t-abc123", helper: "Pals", kind: "approval", item: "a-222222", cls: "outward", choice: "Approve", relayed: "yes push it", title: "Herdr Mod #site: git push origin main",
+      by: "Herdr Mod #site", at: now - 2 * min, run_at: now + 3 * min, status: "holding" },
+    { id: "t-def456", helper: "Pals", kind: "home", item: "h-222222", cls: "home", choice: "Yes", relayed: "yes", title: "Ship it?", by: "Orca#general", at: now - 3 * min, run_at: now - 2 * min, status: "done" }]);
+  const vt = new Home();
+  await run((cx) => vt.init({}, cx));
+  await run((cx) => draw(vt, cx));
+  const tneeds = vt.needs();
+  assert.equal(tneeds[0].kind, "tap", "a held tap comes first: it goes through by itself");
+  assert.equal(tneeds.filter((n) => n.kind === "tap").length, 1, "only what's still held");
+  const tspec = vt.spec(tneeds[0]);
+  assert.deepEqual(tspec.tag[0], "Outward tap");
+  assert.deepEqual(tspec.options.map((o) => o.label), ["Stop", "Let it go now"]);
+  assert.equal(tspec.rec, null, "nothing is recommended: it's yours to stop or leave");
+  assert.match(tspec.options[1].does, /can't be undone/);
+  fx.calls.length = 0;
+  await run((cx) => tspec.options[0].run(cx));
+  const stop = fx.calls.find((c) => c[0] === "pal" && c[1] === "taps");
+  assert.deepEqual(stop.slice(1, 4), ["taps", "stop", "t-abc123"]);
+  assert.ok(stop.includes("--click"), "stopping a tap is the owner's click");
+  vt.busy = {};
+  await run((cx) => tspec.options[1].run(cx));
+  assert.deepEqual(fx.calls.filter((c) => c[0] === "pal" && c[1] === "taps").at(-1).slice(1, 4), ["taps", "now", "t-abc123"]);
+  // An answer that went through on a tap never reads "You answered", and isn't counted as one of yours.
+  const tapped = { id: "h-222222", kind: "ask", status: "answered", title: "Ship it?", answer: "Yes", answered_at: now - 2 * min, closed_at: now - 2 * min, by: "Orca#general",
+    at: now - 90 * min, tapped: { by: "Pals", relayed: "yes", hold: "t-def456", at: now - 2 * min } };
+  assert.ok(home.items.some((x) => x.id === "h-222222" && !x.tapped), "(the fixture's own answer is the owner's)");
+  delete fx.files[TAPS_FILE];
+  fx.calls.length = 0;
+  // A trusted helper that's off without your click is yours to fix, with one click (T170).
+  const hneed = needs.find((n) => n.kind === "helper");
+  const hspec = v.spec(hneed);
+  assert.equal(hspec.title, "Pals is off.");
+  assert.deepEqual(hspec.options.map((o) => o.label), ["Turn Pals on", "Trusted helpers", "Leave it off"]);
+  assert.equal(hspec.rec.option, "Turn Pals on");
+  fx.calls.length = 0;
+  await run((cx) => hspec.options[0].run(cx));
+  const turnOn = fx.calls.find((c) => c[0] === "pal" && c[1] === "settings");
+  assert.deepEqual(turnOn.slice(1, 5), ["settings", "trust-helper", "Pals", "on"]);
+  assert.ok(turnOn.includes("--click"), "turning a helper on is the owner's click");
+  hspec.options[1].run();
+  assert.deepEqual(fx.overlays.at(-1), { mod: "crew-helpers", kind: "dialog", width: 560 });
+  await run((cx) => hspec.options[2].run(cx));
+  assert.deepEqual(fx.calls.filter((c) => c[0] === "pal" && c[1] === "settings").at(-1).slice(1, 5), ["settings", "trust-helper", "Pals", "off"]);
+  v.busy = {};
+  fx.calls.length = 0;
   const since = v.since();
   for (const k of ["install", "link", "note", "answered", "finished", "task", "card"]) assert.ok(since.some((r) => r.kind === k), `Since you last looked has ${k}`);
   assert.ok(!since.some((r) => r.kind === "finished" && r.channel === "old"));
@@ -181,6 +236,38 @@ try {
   assert.ok(clicks.has("drawer-tab-name") && clicks.has("name-open"));
   clicks.get("name-open")();
   assert.deepEqual(fx.overlays.at(-1), { mod: "crew-helpers", kind: "dialog", width: 560 }, "its link opens the Trusted helpers dialog");
+  // Full-control actions show the actor and outcome once, with an owner's Revoke beside it.
+  const priorLog = fx.helperLog;
+  const delegatedAction = { at: now - 3 * min, kind: "action", helper: "Pals", id: "d-1", grant: "g-1", action: "release", target: "project-pals 0.5.0", status: "done" };
+  fx.helperLog += "\n" + JSON.stringify({ ...delegatedAction, at: now - 4 * min, status: "started" }) + "\n" + JSON.stringify(delegatedAction);
+  await run((cx) => v.reload(cx));
+  texts.length = 0; clicks.clear();
+  await run((cx) => draw(v, cx));
+  assert.ok(texts.includes("Helper activity"));
+  assert.equal(texts.filter((t) => t === "Pals acted under Full control").length, 1);
+  assert.ok(texts.includes("release · project-pals 0.5.0 · done"));
+  assert.ok(texts.some((t) => t.includes("1 Full control action")));
+  assert.ok(clicks.has("name-revoke-0"));
+  const beforeRevoke = fx.calls.length;
+  await run((cx) => clicks.get("name-revoke-0")(null, cx));
+  const revoke = fx.calls.slice(beforeRevoke).find((c) => c[0] === "pal" && c[1] === "settings");
+  assert.deepEqual(revoke.slice(1, 6), ["settings", "trust-helper", "Pals", "level", "off"]);
+  assert.ok(revoke.includes("--click"), "revocation carries the owner's click, not helper authority");
+  fx.helperLog = priorLog;
+  await run((cx) => v.reload(cx));
+  // A delegated Home answer never claims a direct owner answer or inflates their count.
+  const savedHome = v.home;
+  const delegated = { ...tapped, tapped: undefined, delegated: { helper: "Pals", grant: "g-1" } };
+  v.home = { ...v.home, items: [delegated] };
+  const d = crewjs.ds(crewjs.tone({ background: "#0B0B0C" }));
+  texts.length = 0;
+  v.sinceRow(d, { kind: "answered", x: delegated, at: now - 2 * min }, 0);
+  assert.ok(texts.includes("Pals answered") && texts.some((t) => t.endsWith(" · Full control")));
+  assert.ok(!texts.includes("You answered"));
+  texts.length = 0;
+  v.caughtUp(d, crewjs.tone({ background: "#0B0B0C" }));
+  assert.ok(!texts.some((t) => t.includes("decision answered today")));
+  v.home = savedHome;
   v.openDrawer("today");
   await run((cx) => draw(v, cx));
   v.drawer = null;
@@ -194,14 +281,14 @@ try {
     pals: { "Herdr Mod": "f-app001" } };
   fx.shared["crew.factories"] = facs;
   await run((cx) => draw(v, cx));
-  assert.deepEqual(v.needs().map((n) => n.kind), ["ask", "ask"], "the default factory: the head pal's asks, not the other floor's approval, login, question or card");
+  assert.deepEqual(v.needs().map((n) => n.kind), ["ask", "ask", "helper"], "the default factory (a helper's notice is yours on every floor): the head pal's asks, not the other floor's approval, login, question or card");
   assert.deepEqual(v.progress().rows.map((r) => r.ch), ["general"]);
   assert.deepEqual(v.progress().desk.map((c) => c.id), ["c-orca01"]);
   assert.equal(v.home.release.next, "0.3.1", "the release track is the default factory's");
   assert.ok(v.since().some((r) => r.kind === "install"));
   fx.shared["crew.factories"] = { ...facs, current: "f-app001" };
   await run((cx) => draw(v, cx));
-  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "login", "question", "desk"], "Example app: what its pal waits on");
+  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "login", "question", "desk", "helper"], "Example app: what its pal waits on");
   assert.deepEqual(v.progress().rows.map((r) => r.ch), ["site", "desk"]);
   assert.deepEqual(v.progress().desk, [], "no foreman yet: nobody's desk");
   assert.equal(v.home.release.next, null);
@@ -217,7 +304,7 @@ try {
   // Back to one factory: everything as before.
   delete fx.shared["crew.factories"];
   await run((cx) => draw(v, cx));
-  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk"]);
+  assert.deepEqual(v.needs().map((n) => n.kind), ["approval", "ask", "ask", "login", "question", "desk", "helper"]);
   assert.equal(crewjs.runsHome(fx.spaces[2]), false);
   await run((cx) => draw(v, cx));
   const last = (pred) => fx.calls.filter((c) => c[0] === "pal" && pred(c)).at(-1);
@@ -285,8 +372,9 @@ try {
   clicks.get("open-terminal")(null, { notify() {} });
   assert.ok(fx.calls.some((c) => c[1] === "pane.focus" && c[2].includes('"terminal":"tg"')), "Talk to Orca opens its terminal, focused");
   for (const id of ["ap-a-111111-ok", "ap-a-111111-no", "h-h-aaaaaa-o0", "h-h-aaaaaa-o1", "h-h-aaaaaa-park", "h-h-bbbbbb-go", "h-h-cccccc-copy", "h-h-cccccc-go",
-    "q-tb2-go", "c-c-owner1-done", "c-c-owner1-desk", "what-happened"])
+    "q-tb2-go", "c-c-owner1-done", "what-happened"])
     assert.ok(clicks.has(id), `has a ${id} button`);
+  assert.ok(!clicks.has("c-c-owner1-desk"), "no Open in Desk (Pals Lite, T217: the Desk page is gone)");
   // Inbox zero: the page is the list; the rest is in the drawer, closed until asked for.
   assert.equal(v.drawer, null, "the drawer starts closed");
   clicks.clear();
@@ -362,10 +450,40 @@ try {
   assert.equal(crewjs.showHome(), false);
   fx.layout = keep;
 
+  // A card the idea partner drafted (Pals Lite, T217): on Home, sent only on your click.
+  {
+    const keepDesk = fx.desk;
+    fx.desk = { counts: {}, cards: [{ id: "c-draft1", kind: "tell", status: "draft", tray: "_drafts", from: "MUSE#ideas", from_kind: "pal", to: "Herdr Mod#site",
+      title: "Try a warmer empty state", body: "Two lines of copy for the empty Home.", created: iso(3) }] };
+    const h2 = new Home();
+    await run((cx) => h2.init({}, cx));
+    await run((cx) => draw(h2, cx));
+    await run((cx) => draw(h2, cx));
+    assert.ok(h2.needs().some((n) => n.kind === "draft" && n.c.id === "c-draft1"), "the draft is something to decide");
+    h2.mode = "list";
+    clicks.clear();
+    await run((cx) => draw(h2, cx));
+    for (const id of ["dr-c-draft1-send", "dr-c-draft1-edit", "dr-c-draft1-discard"]) assert.ok(clicks.has(id), `has a ${id} button`);
+    fx.calls.length = 0;
+    await run((cx) => clicks.get("dr-c-draft1-send")(null, cx));
+    const sent = fx.calls.filter((c) => c[0] === "pal" && c[1] === "desk" && c[2] === "send-draft").at(-1);
+    assert.deepEqual(sent.slice(1, 6), ["desk", "send-draft", "c-draft1", "--to", "Herdr Mod#site"], "Send goes where it suggests");
+    assert.ok(sent.includes("--click"), "sending a draft is the owner's click");
+    await run((cx) => clicks.get("dr-c-draft1-discard")(null, cx));
+    const dropped = fx.calls.filter((c) => c[0] === "pal" && c[1] === "desk" && c[2] === "discard").at(-1);
+    assert.deepEqual(dropped.slice(1, 4), ["desk", "discard", "c-draft1"]);
+    assert.ok(dropped.includes("--click"));
+    clicks.get("dr-c-draft1-edit")(null, { notify() {} });
+    assert.equal((fx.overlays ?? []).at(-1).mod, "crew-desk-drop", "Edit opens it in the quick-drop");
+    assert.equal((fx.overlays ?? []).at(-1).props.fromDraft, "c-draft1");
+    fx.desk = keepDesk;
+  }
+
   // All clear: nothing waiting, nothing new, nobody working.
   fx.approvals = ""; fx.shared["crew.needs"] = { items: [] }; fx.agents = []; fx.feed = ""; fx.desk = { counts: {}, cards: [] };
   fx.files["data/crew-home/home.json"] = JSON.stringify({ seen: now, items: [] });
   fx.files["data/crew-installs.jsonl"] = "";
+  delete fx.files[HELPERS_ATTENTION];   // … and every helper is as the owner left it, working
   const w = new Home();
   await run((cx) => w.init({}, cx));
   await run((cx) => draw(w, cx));

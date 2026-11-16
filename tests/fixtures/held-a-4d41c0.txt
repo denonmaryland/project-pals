@@ -1,0 +1,27 @@
+cd ~/.config/herdr-app/data/crew-worktrees/project-pals-herdr-mod/pals-lite && git rm -q -r mods/crew-desk mods/crew-room mods/crew-room-new mods/crew-composer tests/test_desk_view.mjs && python3 - <<'PYEOF'
+from pathlib import Path
+p = Path("install.sh"); s = p.read_text()
+a = "crew-palboard crew-profile crew-routines; do"
+assert s.count(a) == 1
+s = s.replace(a, "crew-palboard crew-profile crew-routines crew-desk crew-room crew-room-new crew-composer; do")
+s = s.replace("deleted the full pages: the pal board, the Computer, the profile panel, the Routines dialog.", "deleted the full pages: the pal board, the Computer, the profile panel, the Routines dialog,\n# the Desk page, the room page and its composer.")
+p.write_text(s)
+PYEOF
+bash -n install.sh && echo ok; for f in mods/*/main.js mods/*/*.js lib/*.js; do node --check "$f" 2>/dev/null || echo "BAD $f"; done; python3 - <<'EOF'
+import re, glob
+lib = open("lib/crew.js").read()
+exported = set(re.findall(r"export (?:const|function|async function|let|class) (\w+)", lib))
+for grp in re.findall(r"export \{([^}]*)\}", lib): exported |= {x.strip().split(" as ")[-1] for x in grp.split(",") if x.strip()}
+bad = []
+for f in glob.glob("mods/*/*.js"):
+    src = open(f).read()
+    for m in re.finditer(r'import \{([^}]*)\} from "\./crew\.js"', src, re.S):
+        for name in [x.strip().split(" as ")[0] for x in m.group(1).split(",") if x.strip()]:
+            if name not in exported: bad.append((f, name))
+print(bad or "every import from crew.js exists")
+mods = {p.split("/")[1] for p in glob.glob("mods/crew-*/")}
+refs = set()
+for f in glob.glob("mods/*/*.js") + ["lib/crew.js", "layouts/pals.json"]:
+    refs |= set(re.findall(r'mod: "(crew-[a-z-]+)"|"mod": "(crew-[a-z-]+)"', open(f).read()) and [x for t in re.findall(r'mod: "(crew-[a-z-]+)"|"mod": "(crew-[a-z-]+)"', open(f).read()) for x in t if x])
+print("opened but missing:", sorted(refs - mods))
+EOF

@@ -303,5 +303,18 @@ class Installer(unittest.TestCase):
         self.assertEqual(len(agy["Stop"]), 1)
 
 
+class PluginMessages(unittest.TestCase):
+    """A message a Claude Code plugin hands in between turns is classified by its own header
+    (T183): a card from Orca is Orca's note, one headed [from DeNon] is the owner's."""
+
+    def test_classified_by_their_own_header(self):
+        from crewchat import classify_user_text, OWNER
+        tail = "\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn."
+        r = classify_user_text(f"The pals plugin sent a message:\n[from {OWNER}] 📥 Re h-1: Build it" + tail, 0, 1)
+        self.assertEqual((r[0]["kind"], r[0]["text"]), ("you", "📥 Re h-1: Build it"))
+        r = classify_user_text(f"The pals plugin sent a message:\n[from Orca, a pal, not {OWNER}] please check the docs" + tail, 0, 1)
+        self.assertEqual((r[0]["kind"], r[0]["from"], r[0]["text"]), ("note", "Orca", "please check the docs"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -139,6 +139,40 @@ def line(t):
 
 
 def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None, notify_assignee=True, due=None):
+    """A new task. From a trusted helper, for someone: the helper is checked again and the task and
+    its card are written as one step, under the helpers' send lock (Codex T174, P2: a strict helper
+    switched off after the command's first check was refused at the card, exit 4 "nothing went out",
+    and the task was already on the board). Should the card still be refused, the task is taken back."""
+    import crewdesk
+    who = crewdesk.sender(spaces) if assignee else None
+    if not who or who["from_kind"] != "helper":
+        return _add(title, spaces, me, me_name, body, assignee, deps, check, notify_assignee, due)
+    made = []
+    with crewdesk.helper_sending():
+        crewdesk.helper_gate(who["from"], "pal task add")   # a strict helper stops here, before anything is written
+        try:
+            return _add(title, spaces, me, me_name, body, assignee, deps, check, notify_assignee, due, made=made)
+        except CrewError as e:
+            if getattr(e, "code", None) == 4 and made:
+                withdraw(made[0]["id"], me_name)
+            raise
+
+
+def withdraw(tid, by):
+    """Take back a task that was written a moment ago and whose send was then refused: off the board,
+    and the feed says so (it already said the task was open)."""
+    with locked("tasks"):
+        board = load()
+        t = next((x for x in board["tasks"] if x["id"] == tid), None)
+        if not t:
+            return None
+        board["tasks"].remove(t)
+        save_json(STORE, board)
+    feed("task", task=tid, status="withdrawn", title=t["title"], by=by)
+    return t
+
+
+def _add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=None, notify_assignee=True, due=None, made=None):
     if assignee:
         s, tab = find(assignee, spaces)
         assignee = f"{s['name']}#{chan(tab)}" if "#" in assignee else s["name"]
@@ -154,6 +188,8 @@ def add(title, spaces, me, me_name, body=None, assignee=None, deps=(), check=Non
         board["next"] += 1
         board["tasks"].append(t)
         save_json(STORE, board)
+    if made is not None:
+        made.append(t)
     feed("task", task=t["id"], status="open", title=title, by=me_name, to=assignee)
     blocked_by = [d for d in t["deps"] if get(load(), d)["status"] != "done"]
     if assignee and not blocked_by and notify_assignee:

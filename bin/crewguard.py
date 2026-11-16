@@ -8,8 +8,10 @@ This is a guard against mistakes and against one pal talking another into someth
 security boundary: a pal with full permissions could still edit these files. Codex and other
 harnesses without a pre-command hook aren't gated."""
 import hashlib
+import json
 import os
 import re
+import shlex
 import subprocess
 import time
 
@@ -22,8 +24,10 @@ POLICY = DATA / "crew-policy.json"
 # carries (two branches picking the same number can't strand a rule again).
 # 13: the uninstall rule's '# --dry-run' fix and uninstall-indirect (Grok T56).
 # 16: live-branch (T90) and base-branch (T136).
-# 17: phone-alert credentials (T178), kept outside the Herdr data folder.
-DEFAULTS_VERSION = 17
+# 17: tap-write (T147). 16 was the live channel's (crew/live-updates).
+# 18: nested-cwd (T205/T210): the flattened parser cannot vouch for nested execution cwd.
+# 19: phone-alert credentials (T178), kept outside the Herdr data folder.
+DEFAULTS_VERSION = 19
 RETIRED_RULES = {"helper-write"}   # built-in once (7692987), replaced by helper-key: dropped, not kept as "a rule people added"
 DEFAULT = {
     "guarded": [
@@ -89,6 +93,10 @@ DEFAULT = {
          "check": "helper-keys", "pattern": r"$^"},
         {"name": "notify-key", "why": "reaches for phone-alert credentials or their private delivery controls (the owner's only)",
          "check": "notify-keys", "pattern": r"$^"},
+        # Relayed taps (T147, data/crew-taps): tickets, holds and the one-time tokens a hold runs with.
+        # A file written there by hand would be a tap nobody made, or one let through early: like a
+        # click token (owner-click). Pals read holds with `pal taps`.
+        {"name": "tap-write", "why": "writes into the relayed taps (a ticket, a hold or a tap token nobody tapped)", "check": "tap-writes", "pattern": r"$^"},
         # The Live channel (T90): while the owner has it on, whatever lands on the branch it follows is
         # installed into their running Project Pals at once. So moving that branch by hand (git
         # update-ref refs/heads/main …, git branch -f main …) needs the click a landing needs. Off
@@ -101,6 +109,10 @@ DEFAULT = {
         # base branch (main, master, a topic's base) moved by name is held. `pal land` is the way.
         {"name": "base-branch", "why": "moves a project's base branch by hand (land it instead: pal land)",
          "check": "moves-base-branch", "pattern": r"$^"},
+        # Nested literal runners lose ordering/cwd in the heuristic parse. Hold potentially
+        # affected Git mutations for the owner, even when no other rule happens to match.
+        {"name": "nested-cwd", "why": "uses a command execution context that needs owner review",
+         "check": "nested-cwd", "pattern": r"$^"},
     ],
     "trusted": [],
 }
@@ -131,6 +143,8 @@ HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n.*?\n\s*\2\s*(?=\n|$)
 HEREDOC_BODY = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n(.*?)\n\s*\2\s*(?=\n|$)", re.S)   # HEREDOC, body kept
 heredoc_free = lambda cmd: HEREDOC.sub(lambda m: m.group(1) + m.group(3), cmd)
 SPLIT = re.compile(r"\n|;|&&|\|\||\||\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
+# These flattened delimiters do not guarantee that a cd executes in the outer shell.
+CWD_UNCERTAIN_BOUNDARIES = {"$(", "`", "(", "|", "&&", "||", "then", "do", "else"}
 INNER = re.compile(r"""\b(?:sh|bash|zsh|eval)\s+(?:-\w+\s+)*-c\s+(['"])(.*?)\1""", re.S)
 # (A wrapper with options, `env -i …`, is left for normal_head, which knows them.)
 LEAD = re.compile(r"""^\s*(?:(?:sudo|env|command|exec|nohup|time|timeout\s+\S+)\s+(?!-)|\w+=(?:'[^']*'|"[^"]*"|\S)*\s+)*""")
@@ -345,9 +359,9 @@ def _edited_files(name, args):
 def write_targets(cmd):
     """The files a shell line writes to, as far as a plain parse can tell: redirect targets, tee's
     files, sed / perl -i files, sed's own w commands, cp / mv / install / ln / rsync destinations,
-    dd of=, and every file a terminal editor opens or its commands name (ed, ex, vim -c / +cmd / -es,
-    nano, emacs …). Inside sh -c '…' too. Heredoc bodies are dropped but their header lines are
-    kept, except a body fed to ed / ex, which is that editor's commands."""
+    dd of=, rm / rmdir / unlink operands, and every file a terminal editor opens or its commands
+    name (ed, ex, vim -c / +cmd / -es, nano, emacs …). Inside sh -c '…' too. Heredoc bodies are
+    dropped but their header lines are kept, except a body fed to ed / ex, which is that editor's commands."""
     import shlex
     text = heredoc_free(cmd)
     out = _editor_heredocs(cmd)
@@ -419,7 +433,8 @@ def write_targets(cmd):
                 out.append(files[-1])
             elif name == "dd":
                 out += [a[3:] for a in args if a.startswith("of=")]
-            elif name in ("truncate", "touch") and files:
+            elif name in ("truncate", "touch", "rm", "rmdir", "unlink") and files:
+                # Deleting protected data changes it just as a write does (T219).
                 out += files
     return out
 
@@ -640,7 +655,11 @@ def _place(names):
     """For one of Project Pals' own data folders: (a quoted path into it in code, a path argument into it).
     A folder of that name right under mods/ is a mod's source code (mods/crew-desk), not the data (T68)."""
     alt = "|".join(re.escape(n) for n in names)
-    return (re.compile(r"""['"][^'"`\n]*(?<!\bmods/)\b(?:""" + alt + r""")(?![\w.-])[^'"`\n]*['"]"""),
+    # In quoted code the name counts only as a path component (T218: a quoted list of mod names,
+    # "crew-routines crew-desk crew-room", was taken for a path into the cards): the whole string or
+    # right after a "/", and followed by "/" or the closing quote. 'crew-desk', 'crew-desk/a.md',
+    # f'{D}/crew-desk/x' and os.path.join(D, 'crew-desk') are paths; 'the crew-desk mod' isn't.
+    return (re.compile(r"""['"](?:[^'"`\n]*/)?(?<!\bmods/)(?:""" + alt + r""")(?=/|['"])[^'"`\n]*['"]"""),
             re.compile(r"(?:^|(?<!\bmods)/)(?:" + alt + r")(?:/|$)"))
 
 
@@ -696,6 +715,15 @@ def writes_desk(cmd):
     return _writes_into(cmd, {"crew-desk"}, DESK_PLACE)
 
 
+TAPS_PLACE = _place(["crew-taps"])
+
+
+def writes_taps(cmd):
+    """A write INTO data/crew-taps (as writes_click): a ticket, a hold or a tap token made by hand
+    would be a tap nobody tapped (T147). `pal taps` reading them isn't a write."""
+    return _writes_into(cmd, {"crew-taps"}, TAPS_PLACE)
+
+
 def _writes_into(cmd, names, place):
     edited = _edited(cmd)
     if edited is not None:
@@ -704,7 +732,8 @@ def _writes_into(cmd, names, place):
 
 
 # ─── Trusted helpers' keys (T116) ───────────────────────────────────────────────────────────────
-HELPER_DATA = {"crew-helpers", "crew-helper"}   # (crew-helper: where build 7692987 kept its key and receipts, until carried over)
+HELPER_DATA = {"crew-helpers", "crew-helper", "owner-helper-audit.jsonl", "owner-action-receipts.jsonl"}
+# The owner-held uninstall archives survive --purge and remain audit evidence, not helper-editable data.
 HELPERS_PLACE = _place(sorted(HELPER_DATA))
 # ~/.config/project-pals/helpers, however it's written; and the older build's key inside the data folder.
 # The folder above the keys counts too: a search pointed at ~/.config/project-pals reads them (T122).
@@ -929,8 +958,8 @@ def _literal(st, span):
     return re.sub(r"\\(.)", lambda m: "\n" if m.group(1) == "n" else m.group(1), body)
 
 
-def run_strings(cmd):
-    """Command lines inside the line: scripts fed to a shell, and strings interpreter code runs."""
+def run_strings(cmd, overflow=None):
+    """Command lines inside the line; optionally report truncated runnable statements."""
     out = [t for w, t in _stdin_text(cmd) if w and w[0] in SHELL_RUNNERS]
     code = [(w[0], t) for w, t in _stdin_text(cmd) if w and INTERP.match(w[0])]
     for seg in commands(cmd):
@@ -959,6 +988,8 @@ def run_strings(cmd):
                     lits += v
             # Each literal, and each run of them to the end: spawn("git", ["push"]) after
             # require("child_process") in one statement is "git push" only from its 2nd literal on.
+            if len(lits) > 40 and overflow is not None:
+                overflow.append("interpreter-literals")
             lits = lits[:40]
             out += lits + [" ".join(lits[k:]) for k in range(len(lits))]
     return [c for c in out if c and c.strip()]
@@ -1460,10 +1491,87 @@ def _help(seg):
     return "--help" in normal_words(seg)[1:]
 
 
+def _nested_commands(cmd, overflow):
+    """Literal execution boundaries, including every shell payload commands() flattens.
+    This is deliberately not an execution-order or shell interpreter.
+    """
+    text = heredoc_free(cmd)
+    masked = mask_quotes(text)
+    out = [m.group(2) for m in list(INNER.finditer(text)) + list(EVAL.finditer(text))
+           if masked[m.start()] != "_"]
+    out += run_strings(cmd, overflow=overflow)
+    shell_stdin = any(w and w[0] in SHELL_RUNNERS for w, _ in _stdin_text(cmd))
+    for seg in commands(cmd):
+        words = normal_words(RUNNER.sub("", seg))
+        if not words:
+            continue
+        if words[0] in SHELL_RUNNERS:
+            # normal_words handles paths and supported wrappers; include combined bash -lc.
+            out += [words[i + 1] for i in range(1, len(words) - 1)
+                    if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", words[i])]
+        elif words[0] == "eval":
+            out.append(" ".join(words[1:]))
+        elif shell_stdin and words[0] in ("echo", "printf"):
+            # The stdin helper joins printf's format and arguments. Inspect literal arguments
+            # too: printf '%s' 'git commit ...' | sh must not hide behind the format word.
+            out += words[1:]
+    return list(dict.fromkeys(s for s in out if s and s.strip() and s != cmd))
+
+
+def _cwd_git_mutation(seg):
+    """Git forms whose branch effect can depend on cwd; known read forms stay free."""
+    sub, args, _folder = _git_words(seg)
+    # Only an unambiguous help flag is free here. A later --help may instead be a
+    # message (-m --help), another option's value, or a path after --.
+    if args and args[0] in ("--help", "-h"):
+        return False
+    if sub in MOVES_HEAD or sub == "fetch":
+        opts, _pos, odd = git_parse(sub, args)
+        return odd or "dry-run" not in opts
+    if sub == "branch":
+        opts, names, odd = _branch_parse(args)
+        if odd or set(opts) & {"delete-merged", "delete", "move", "copy"}:
+            return True
+        return not (set(opts) & BRANCH_QUIET_MODES) and bool(names)
+    if sub == "symbolic-ref":
+        pos = [a for a in args if a not in ("-q", "--quiet", "--short", "--recurse", "--no-recurse")]
+        return len(pos) != 1 or pos[0].startswith("-")
+    if sub == "worktree":
+        return bool(args) and args[0] != "list"
+    return sub in ("update-ref", "switch", "checkout")
+
+
+def nested_cwd(cmd, _depth=0, _seen=None):
+    """Require the owner when nested execution can invalidate Git's parsed cwd.
+    A child cd can pollute an OUTER mutation too, so inspect both sides of the boundary.
+    Explicit nested pushes remain outward; read-only commands within the scan budget stay free.
+    Exhausting a bound requires owner review, never permission for an unchecked tail.
+    """
+    seen = set() if _seen is None else _seen
+    if cmd in seen:
+        return False
+    seen.add(cmd)
+    overflow = []
+    nested = _nested_commands(cmd, overflow)
+    if overflow or len(nested) > 200:
+        return True
+    # commands() also flattens child shells and conditional execution. A child or
+    # skipped cd must not change our view of an outer mutation; share its quote mask.
+    shell_boundary = any(m.group(0) in CWD_UNCERTAIN_BOUNDARIES
+                         for m in SPLIT.finditer(mask_quotes(heredoc_free(cmd))))
+    if not nested and not shell_boundary:
+        return False
+    if any(_cwd_git_mutation(seg) for seg in commands(cmd)) or _depth >= 3:
+        return True
+    return any(any(_cwd_git_mutation(seg) for seg in commands(inner))
+               or nested_cwd(inner, _depth + 1, seen) for inner in nested[:200])
+
+
 CHECKS = {"agent-file-writes": writes_agent_file, "agent-file-interpreter": writes_agent_file_via_interpreter,
           "click-writes": writes_click, "queue-writes": writes_queue,
-          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers, "notify-keys": touches_notify,
-          "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch}
+          "desk-writes": writes_desk, "uninstall-indirect": runs_uninstall, "helper-keys": touches_helpers, "tap-writes": writes_taps,
+          "notify-keys": touches_notify, "moves-live-branch": moves_live_branch, "moves-base-branch": moves_base_branch,
+          "nested-cwd": nested_cwd}
 
 
 def matches(cmd, _depth=0):
@@ -1479,12 +1587,64 @@ def matches(cmd, _depth=0):
 
 
 def _matches(cmd):
+    return next(_matching_rules(cmd), None)
+
+
+def all_matches(cmd, _depth=0):
+    """Every applicable rule, including nested commands even when the outer command matched.
+    The normal gate keeps its first-match behavior; delegated approval needs the full set."""
+    found = {r["name"]: r for r in _matching_rules(cmd)}
+    if _depth < 3:
+        for inner in run_strings(cmd)[:200]:
+            found.update((r["name"], r) for r in all_matches(inner, _depth + 1))
+    return list(found.values())
+
+
+def all_matches_at(cmd, cwd):
+    """Re-evaluate an approval in its execution directory, never the reviewer's directory."""
+    global HOOK_CWD
+    previous = HOOK_CWD
+    HOOK_CWD = cwd
+    try:
+        return all_matches(cmd)
+    finally:
+        HOOK_CWD = previous
+
+
+def command_context(cmd, cwd, rule=None):
+    """Capture every matched rule with the caller's known execution cwd.
+    A hook without cwd remains unknown: the hook process's own cwd is not execution evidence.
+    Programs asking for themselves may explicitly supply their process cwd.
+    """
+    # Keep the hook's spelling: resolving symlinks can change what a following relative cd means.
+    cwd = cwd if isinstance(cwd, str) and os.path.isabs(cwd) else None
+    rules = {r["name"] for r in all_matches_at(cmd, cwd)}
+    if rule:
+        rules.add(rule)
+    return {"cwd": cwd, "rules": sorted(rules)}
+
+
+def approval_rules(request):
+    """Saved rules plus current rules in the saved cwd; None means context cannot be vouched for.
+    Changing repository or Live settings can add restrictions, never erase an earlier one.
+    """
+    context = request.get("guard_context")
+    if not isinstance(context, dict):
+        return None
+    cwd, rules = context.get("cwd"), context.get("rules")
+    if not isinstance(cwd, str) or not os.path.isabs(cwd) or not os.path.isdir(cwd) \
+            or not isinstance(rules, list) or not rules or not all(isinstance(r, str) and r for r in rules):
+        return None
+    return set(rules) | {r["name"] for r in all_matches_at(request.get("command") or "", cwd)}
+
+
+def _matching_rules(cmd):
     segs = [s for s in commands(cmd) if not _help(s)]
     flat = heredoc_free(cmd)
     for rule in policy().get("guarded", []):
         if rule.get("check"):
             if CHECKS.get(rule["check"], lambda _c: False)(cmd):
-                return rule
+                yield rule
             continue
         try:
             pat = re.compile(rule["pattern"])
@@ -1492,15 +1652,18 @@ def _matches(cmd):
             continue
         # Most rules: a command that starts that way. "anywhere" rules (URLs): anywhere in the line.
         if rule.get("anywhere") and pat.search(flat):
-            return rule
+            yield rule
+            continue
         # As written, or as run (normal_head: behind npx, a path, env, nice …; T26).
         if any(pat.match(seg) or pat.match(normal_head(seg)) for seg in segs):
-            return rule
-    return None
+            yield rule
 
 
-def key(terminal, cmd):
-    return hashlib.sha1(f"{terminal}\n{' '.join(cmd.split())}".encode()).hexdigest()[:16]
+def key(terminal, cmd, context=None):
+    text = f"{terminal}\n{' '.join(cmd.split())}"
+    if context is not None:
+        text += "\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
 def all_requests():
@@ -1509,38 +1672,172 @@ def all_requests():
 
 EXPIRE_MIN = 30   # an approval not used within this long lapses; running the command again asks again
 
+# These protect who may act and the evidence of it, rather than ordinary app operations.
+OWNER_CONTROL_RULES = {"helper-key", "notify-key", "owner-click", "queue-write", "desk-write", "tap-write"}
+
+
+def has_heredoc(cmd):
+    """True when the line contains `<<` anywhere: a heredoc (<<, <<-) or a here-string (<<<), quoted
+    or not. A Full helper's standing grant never decides such a line; the owner does (T212 round 8:
+    three rounds of reading heredoc bodies each found a way to hide an expansion, so nothing is read)."""
+    return "<<" in (cmd or "")
+
+
+def delegation_allowed(command, rule=None):
+    """A standing grant covers ordinary operations, never editing its own trust or audit trail.
+    Inspect every matching rule: a push followed by a credential write is not just a push. A line
+    with `<<` anywhere is the owner's alone (round 8)."""
+    return rule not in OWNER_CONTROL_RULES and not has_heredoc(command) and not any(
+        r.get("name") in OWNER_CONTROL_RULES for r in _matching_rules(command or ""))
+
+
+def delegation_refusal(request):
+    """Why a helper's standing grant may not decide or reuse this request, else None (T205 card
+    c-ddd208): ordinary operations only, in a context the gate can vouch for. The rules saved when the
+    hook held it and the rules in its saved cwd now (nested runners included) must not name an
+    owner-control rule; a request without a saved context needs the owner."""
+    trust = "a helper cannot decide a command that changes trust or audit evidence"
+    if not delegation_allowed(request.get("command"), request.get("rule")):
+        return trust
+    rules = approval_rules(request)
+    if rules is None:
+        return "a helper cannot decide a command without its saved execution context"
+    return trust if rules & OWNER_CONTROL_RULES else None
+
+
+def _delegation_current(request, command=None):
+    authority = request.get("delegated")
+    if not authority:
+        return True
+    import crewhelpers
+    try:
+        crewhelpers.validate_grant(authority)
+        if request.get("delegated_snapshot") != _delegated_snapshot(request):
+            return False
+        if command is not None and request.get("command") != command:
+            return False
+        return delegation_refusal(request) is None
+    except CrewError:
+        return False
+
+
+def _delegated_snapshot(request):
+    """Pin the operation that was approved, including reviewed diff/extra metadata.
+    Decision bookkeeping is excluded; changing the executable request invalidates the stamp."""
+    # claimed / claimed_by: the hand-over's once-only bookkeeping (T206), which must not void the stamp.
+    bookkeeping = {"status", "decided", "decided_via", "note", "attempts", "used", "expired", "delegated", "delegated_snapshot",
+                   "claimed", "claimed_by"}
+    return hashlib.sha256(json.dumps({k: v for k, v in request.items() if k not in bookkeeping},
+                                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
 
 def expire_stale():
     """Approved but never used for EXPIRE_MIN: mark it expired, so an old yes can't be cashed in later.
     Call it holding the approvals lock."""
     for r in all_requests():
-        if r.get("status") == "approved" and now_ms() - r.get("decided", r.get("at", 0)) > EXPIRE_MIN * 60 * 1000:
+        if r.get("status") == "approved" and (not _delegation_current(r) or
+                now_ms() - r.get("decided", r.get("at", 0)) > EXPIRE_MIN * 60 * 1000):
             r["status"], r["expired"] = "expired", now_ms()
             save_json(APPROVALS / f"{r['id']}.json", r)
             feed("approval", id=r["id"], bot=r.get("bot"), channel=r.get("channel"), status="expired")
 
 
-def check(terminal, bot, channel, cmd, extra=None):
-    """None: go ahead. Else the reason it's held."""
+def home_authorization(terminal, bot, channel, cwd, commands):
+    """Pin the asking topic, execution folder, complete command and land tip at ask time."""
+    entries = []
+    for cmd in commands:
+        if cmd is None:
+            entries.append(None)
+            continue
+        words = handover_words(cmd)
+        if not words:
+            raise CrewError("--approves needs one plain command without shell expansion")
+        rules = all_matches_at(cmd, cwd)
+        if not rules:
+            raise CrewError("--approves needs a command held by the approval gate")
+        if any(r["name"] == "land" for r in rules):
+            # cmd_land reconstructs this spelling in hookless harnesses. Reject variants here,
+            # while the asker can fix them, rather than promising a click that asks again.
+            flags = words[3:]
+            if (len(words) < 3 or words[:2] != ["pal", "land"] or len(flags) % 2
+                    or not words[2] or any(not flags[i + 1] for i in range(0, len(flags), 2))
+                    or any(flags[i] not in ("--check", "--at", "--onto") for i in range(0, len(flags), 2))
+                    or [flags[i] for i in range(0, len(flags), 2)] !=
+                       [f for f in ("--check", "--at", "--onto") if f in flags[::2]]):
+                raise CrewError("--approves land needs canonical pal land syntax")
+            canonical = " ".join(w if re.fullmatch(r"[\w@%+=:,./#-]+", w) else shlex.quote(w) for w in words)
+            if cmd != canonical:
+                raise CrewError("--approves land needs canonical pal land syntax")
+        tip = land_tip(cmd)
+        if any(r["name"] == "land" for r in rules) and not tip:
+            raise CrewError("--approves cannot identify the topic's current commit")
+        entries.append({"command": cmd, "guard_context": command_context(cmd, cwd),
+                        "rule": rules[0]["name"], "why": rules[0].get("why", ""), "land_tip": tip})
+    return {"terminal": terminal, "bot": bot, "channel": channel, "commands": entries}
+
+
+def approve_from_home(auth, entry, home_id):
+    """Issue an approval only in the process that verified the owner's exact app click."""
+    from crewlib import owner_proven, delegation_authority
+    import crewhelpers
+    if not owner_proven() or delegation_authority() or crewhelpers.claimed():
+        raise CrewError("only the owner’s own app click can approve a command")
+    cmd, context = entry["command"], entry["guard_context"]
+    tip = entry.get("land_tip")
+    if not handover_words(cmd) or command_context(cmd, context.get("cwd")) != context:
+        raise CrewError("command context changed since this question was asked")
+    if tip and land_tip(cmd) != tip:
+        raise CrewError("the topic's commit changed since this question was asked")
+    terminal = auth["terminal"]
+    with locked("approvals"):
+        r = {"id": new_id("a-"), "key": key(terminal, cmd + (f"\n@{tip}" if tip else ""), context),
+             "at": now_ms(), "decided": now_ms(), "decided_via": "home", "home_id": home_id,
+             "terminal": terminal, "bot": auth["bot"], "channel": auth["channel"], "command": cmd,
+             "rule": entry["rule"], "why": entry["why"], "status": "approved", "guard_context": context,
+             "home_exact": True, **({"land_tip": tip} if tip else {})}
+        save_json(APPROVALS / f"{r['id']}.json", r)
+    feed("approval", id=r["id"], bot=r["bot"], channel=r["channel"], status="approved")
+    return r
+
+
+def check(terminal, bot, channel, cmd, extra=None, claim=False, cwd=None):
+    """None: go ahead. Else the reason it's held. claim: the caller is the program itself (pal land's
+    own check), so the approval it uses is spent for good; the hook's use leaves it for the program it
+    let through to claim once (recently_used)."""
     if bot in policy().get("trusted", []):
         return None
     rule = matches(cmd)
     if not rule:
         return None
-    k = key(terminal, cmd)
+    context = command_context(cmd, cwd if cwd is not None else HOOK_CWD)
+    # A land is approved for the commit its topic is at now (T212): the hook's request names it too,
+    # so a commit made after the owner's yes asks again, and the program's hand-over carries it.
+    tip = land_tip(cmd)
+    k = key(terminal, cmd + (f"\n@{tip}" if tip else ""), context)
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k:
+            # A program's own land check adds a display-only commit comment. It may spend the
+            # exact Home command directly when no hook ran, once, at the same pinned commit.
+            direct_land = (claim and r.get("home_exact") and r.get("rule") == "land" and tip
+                           and r.get("land_tip") == tip and cmd == r.get("command") + f"  # at {tip[:12]}")
+            if r.get("home_exact") and (r.get("terminal") != terminal or r.get("bot") != bot
+                                       or r.get("channel") != channel or
+                                       not (r.get("command") == cmd or direct_land)):
                 continue
-            if r["status"] == "approved":
+            if (r.get("key") != k and not direct_land) or r.get("guard_context") != context:
+                continue
+            if r["status"] == "approved" and _delegation_current(r, cmd):
                 r["status"], r["used"] = "used", now_ms()
+                if claim:
+                    r["claimed"] = r["used"]
                 save_json(APPROVALS / f"{r['id']}.json", r)
                 return None
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {})}
+             "command": cmd, "rule": rule["name"], "why": rule.get("why", ""), "status": "pending", **(extra or {}),
+             "guard_context": context, **({"land_tip": tip} if tip else {})}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r
@@ -1549,7 +1846,7 @@ def check(terminal, bot, channel, cmd, extra=None):
 SHELL = "shell"   # the "terminal" of a request that comes from no Herdr terminal (a plain shell)
 
 
-def owner_step(terminal, bot, channel, cmd, rule, why=None):
+def owner_step(terminal, bot, channel, cmd, rule, why=None, argv=None):
     """A program asking for the owner's go itself, wherever it runs (T110: on 2026-11-10 ./release ran
     from a plain shell and nothing asked the owner, because the hook only sees pals' terminals).
     None: go ahead, once. Either the owner approved exactly this command (used up now), or the gate
@@ -1559,36 +1856,208 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None):
     named = next((r for r in policy().get("guarded", []) if r.get("name") == rule), None)
     if not named:
         raise CrewError(f"no guarded rule called {rule}")
-    if terminal != SHELL and (bot in policy().get("trusted", []) or recently_used(terminal, rule)):
+    from crewlib import delegation_authority
+    delegated = delegation_authority()
+    if delegated:
+        import crewhelpers
+        crewhelpers.recheck_full(delegated)
+        if not delegation_allowed(cmd, rule):
+            raise CrewError("a helper cannot authorize a command that changes trust or audit evidence")
         return None
-    k = key(terminal, f"{rule}\n{cmd}")
+    # A pal whose run the hook held and the owner approved isn't asked twice: only when what the hook
+    # let through was this very line, and only once (T206: any release from that terminal went through
+    # for two minutes on one approval, other versions and notes included).
+    # argv: the program's own argument list (pal owner-step passes it as given). Without it, `cmd` is
+    # read as a quoted command line by the hand-over's own scanner, which keeps quoted arguments whole;
+    # a line it can't read means no hand-over. Compared as a list either way (T212 round 5).
+    # The program's own approval is keyed on its exact argument list (T212 round 6: key() folds
+    # whitespace, so -F 'notes public.md' and -F 'notes  public.md' keyed the same). Without argv,
+    # the line itself, exactly as given, is the one element.
+    exact = [str(a) for a in argv] if argv is not None else [cmd]
+    if argv is None:
+        argv = handover_words(cmd)
+    if terminal != SHELL and (bot in policy().get("trusted", []) or (argv is not None
+                                                                         and recently_used(terminal, rule, words=list(argv), cwd=os.getcwd()))):
+        return None
+    context = command_context(cmd, os.getcwd(), rule)
+    k = hashlib.sha1(json.dumps([terminal, rule, exact, context], sort_keys=True, separators=(",", ":"))
+                     .encode()).hexdigest()[:16]
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k:
-                continue
-            if r["status"] == "approved":
+            # A Home click may precede the program's own gate on a harness without a hook.
+            # The program supplies argv; compare each argument and the pinned execution context.
+            home_cmd = r.get("command") or ""
+            home_context = r.get("guard_context")
+            home_match = (r.get("home_exact") and r.get("status") == "approved"
+                          and r.get("terminal") == terminal and r.get("bot") == bot
+                          and r.get("channel") == channel and r.get("rule") == rule
+                          and handover_words(home_cmd) == exact and home_context == command_context(home_cmd, os.getcwd())
+                          and rule in (home_context.get("rules") or [])) if isinstance(home_context, dict) else False
+            if home_match:
                 r["status"], r["used"] = "used", now_ms()
+                r["claimed"] = r["used"]
+                save_json(APPROVALS / f"{r['id']}.json", r)
+                return None
+            if r.get("key") != k or r.get("guard_context") != context or r.get("argv") != exact:
+                continue
+            if r["status"] == "approved" and _delegation_current(r, cmd):
+                r["status"], r["used"] = "used", now_ms()
+                r["claimed"] = r["used"]   # spent here: nothing else may count it again
                 save_json(APPROVALS / f"{r['id']}.json", r)
                 return None
             if r["status"] == "pending":
                 return r
         r = {"id": new_id("a-"), "key": k, "at": now_ms(), "terminal": terminal, "bot": bot, "channel": channel,
-             "command": cmd, "rule": rule, "why": why or named.get("why", ""), "status": "pending", "asked_by": "the program itself"}
+             "command": cmd, "argv": exact, "rule": rule, "why": why or named.get("why", ""), "status": "pending",
+             "asked_by": "the program itself", "guard_context": context}
         save_json(APPROVALS / f"{r['id']}.json", r)
     feed("approval", id=r["id"], bot=bot, channel=channel, command=cmd[:200], status="pending")
     return r
 
 
-def recently_used(terminal, rule, seconds=120):
-    """Did the owner's approval of a `rule` command from this terminal just go through?"""
-    return any(r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
-               and now_ms() - r.get("used", 0) < seconds * 1000 for r in all_requests())
+HANDOVER_S = 120   # how long after the hook let a command through its program may claim that approval
+# The hand-over's language (T212 round 4): one plain command and nothing else. No cd, no ; && | or
+# subshell, no wrapper (env, command, exec, nice, sudo …), no leading VAR=value; words are literal
+# atoms or quoted strings without expansion characters. The program claiming it must run in exactly
+# the folder the hook recorded. Four rounds of working out where a line runs (case, env -C, CDPATH,
+# cd options …) each found another gap, so no folder is worked out at all: anything else means no
+# hand-over, and the owner is asked again. Recognised by one linear scan, the line capped, before
+# the approvals lock is taken (round 3).
+HANDOVER_MAX = 2048
+_HO_ATOM_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:@%+=,#-")
+_HO_QUOTED_BANNED = frozenset("$`\\!\n")
+HANDOVER_NOT_FIRST = {"cd", "pushd", "popd", "env", "command", "builtin", "exec", "nice", "ionice", "nohup", "time",
+                      "timeout", "sudo", "doas", "su", "chrt", "taskset", "stdbuf", "setsid", "unbuffer", "script",
+                      "xargs", "eval", "source", ".", "sh", "bash", "zsh", "dash", "ksh", "fish", "chroot", "flock",
+                      "systemd-run", "runuser", "nsenter", "unshare", "firejail", "proot", "watch", "then", "do", "!"}
 
 
-def decide(rid, approve, note=None, via=None):
+def handover_words(cmd):
+    """The words of a line that is one plain command in the hand-over language, else None."""
+    if not isinstance(cmd, str) or not cmd.strip() or len(cmd) > HANDOVER_MAX:
+        return None
+    words, word, in_word, i, n = [], [], False, 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        if c in (" ", "\t"):
+            if in_word:
+                words.append("".join(word))
+            word, in_word = [], False
+            i += 1
+        elif c in ("'", '"'):
+            j = cmd.find(c, i + 1)
+            if j < 0 or any(ch in _HO_QUOTED_BANNED for ch in cmd[i + 1:j]):
+                return None
+            word.append(cmd[i + 1:j])
+            in_word = True
+            i = j + 1
+        elif c in _HO_ATOM_CHARS:
+            word.append(c)
+            in_word = True
+            i += 1
+        else:
+            return None   # ; & | ( ) < > $ ` ~ \ ! newline …: not one plain command
+    if in_word:
+        words.append("".join(word))
+    if not words or os.path.basename(words[0]) in HANDOVER_NOT_FIRST or "=" in words[0] or words[0].startswith("-"):
+        return None
+    return words
+
+
+def recently_used(terminal, rule, seconds=HANDOVER_S, words=None, cwd=None, tip=None):
+    """The hand-over from the gate to the program it let through (T206): the hook held a pal's command,
+    the owner approved it, the hook let it run (status used); the program then asks again itself (pal
+    land's own check, ./release's owner-step) and may count that approval ONCE, and only for exactly
+    what was approved (T212, T215):
+      - the approved line is one plain command (handover_words), and it is the one asked about:
+        `words` (a pal subcommand after pal / crew / botz / buddy, or the whole line's words);
+      - the context: the record carries T205's guard_context, re-checked in its cwd now it adds no
+        rule, and the program's own cwd is exactly that cwd;
+      - with `tip`, the commit the hook recorded (land_tip).
+    The program's own approvals, claimed ones and ones a handoff voided never count. Everything is
+    checked before the approvals lock is taken; under it, a candidate is re-read and claimed only if
+    unchanged. Returns the claimed record (its land_tip is what may land), else None."""
+    if words is None:
+        raise CrewError("recently_used needs the exact command it may stand for")
+    want = list(words)
+
+    def hit(approved):
+        """The approved command's argument list equals the program's, element for element (round 5:
+        never joined, so "--dry-run notes" isn't --dry-run and notes); or, for a pal subcommand,
+        its arguments after pal / crew / botz / buddy."""
+        if approved is None:
+            return False
+        return approved == want or (
+            len(approved) >= 2 and os.path.basename(approved[0]) in ("pal", "crew", "botz", "buddy") and approved[1:] == want)
+
+    def eligible(r):
+        return (r.get("terminal") == terminal and r.get("rule") == rule and r.get("status") == "used"
+                and not r.get("claimed") and r.get("asked_by") != "the program itself"
+                and now_ms() - r.get("used", 0) < seconds * 1000
+                and _delegation_current(r))   # a helper-decided approval: its grant still current (Full control)
+    good = []
+    for r in all_requests():
+        if not eligible(r) or not hit(handover_words(r.get("command") or "")):
+            continue
+        ctx = r.get("guard_context")
+        allowed = approval_rules(r)
+        if not isinstance(ctx, dict) or allowed is None or not allowed <= set(ctx.get("rules") or []):
+            continue
+        # Exactly the folder the hook recorded: no symlink resolving, no working out.
+        if not isinstance(ctx.get("cwd"), str) or not os.path.isabs(ctx["cwd"]) or cwd is None or cwd != ctx["cwd"]:
+            continue
+        if tip is not None and not (r.get("land_tip") and (tip.startswith(r["land_tip"]) or r["land_tip"].startswith(tip))):
+            continue
+        good.append(r)
+    if not good:
+        return None
+    with locked("approvals"):
+        for r in good:
+            now = load_json(APPROVALS / f"{r['id']}.json", None)
+            if not now or not eligible(now) or {k: now.get(k) for k in ("command", "guard_context", "land_tip", "key")} \
+                    != {k: r.get(k) for k in ("command", "guard_context", "land_tip", "key")}:
+                continue
+            now["claimed"] = now_ms()
+            save_json(APPROVALS / f"{r['id']}.json", now)
+            return now
+    return None
+
+
+def land_tip(cmd):
+    """The commit a `pal land <Pal#topic>` in this line would land: its topic's branch head, from
+    Project Pals' own records (shared.json). None when it isn't a land or the topic can't be found."""
+    for seg in commands(cmd):
+        w = normal_words(seg)
+        if len(w) < 3 or os.path.basename(w[0]) not in ("pal", "crew", "botz", "buddy") or w[1] != "land":
+            continue
+        pal, _, topic = w[2].lstrip("@").partition("#")
+        if not topic:
+            return None
+        try:
+            from crewlib import records, norm
+            recs = [b for k, b in records().items() if k.startswith("name:")]
+        except Exception:
+            return None
+        bot = next((b for b in recs if norm(b.get("name", "")) == norm(pal)), None) \
+            or next((b for b in recs if norm(b.get("name", "")).startswith(norm(pal))), None)
+        wts = (bot or {}).get("worktrees") or {}
+        wt = wts.get("#" + topic) or wts.get(topic)
+        if not wt or not wt.get("path"):
+            return None
+        try:
+            r = subprocess.run(["git", "-C", wt["path"], "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return r.stdout.strip() if r.returncode == 0 else None
+    return None
+
+
+def decide(rid, approve, note=None, via=None, tap=None, delegated=None):
     """The owner's answer. `via` says where it came from (the Inbox, a terminal), kept on the record
     with every attempt, so a click that seems not to have counted can be traced afterwards."""
+    from crewlib import delegation_authority
+    delegated = delegated or delegation_authority()
     with locked("approvals"):
         f = APPROVALS / f"{rid}.json"
         r = load_json(f, None)
@@ -1601,6 +2070,19 @@ def decide(rid, approve, note=None, via=None):
             feed("approval-refused", id=rid, bot=r["bot"], channel=r["channel"], wanted=want, status=r["status"])
             raise CrewError(f"{rid} was already {r['status']}" + (f" ({_ago(r['decided'])})" if r.get("decided") else "")
                             + "; nothing changed")
+        if tap:
+            import crewtaps
+            crewtaps.validate_snapshot("approval", r, tap)
+        if delegated:
+            import crewhelpers
+            delegated = crewhelpers.recheck_full(delegated)
+            refusal = delegation_refusal(r)
+            if refusal:
+                save_json(f, r)   # the attempt stays on the record; the request stays pending
+                raise CrewError(refusal)
+            r["delegated"] = delegated
+            r["delegated_snapshot"] = _delegated_snapshot(r)
+            via = delegated["label"]
         r["status"] = "approved" if approve else "denied"
         r["decided"] = now_ms()
         r["decided_via"] = via
@@ -1608,14 +2090,22 @@ def decide(rid, approve, note=None, via=None):
             r["note"] = note
         save_json(f, r)
     feed("approval", id=rid, bot=r["bot"], channel=r["channel"], status=r["status"])
-    if approve:
+    if delegated:
+        msg = (f"[pal] {delegated['label']}: {'approved' if approve else 'declined'}: {r['command']}"
+               + ("\nRun that exact command again; its standing grant is checked when used." if approve else ""))
+    elif tap:
+        # A relayed tap (T147): the pal hears who tapped, never "<owner> approved".
+        who = f"{tap['helper']} tapped, relaying {OWNER} (not {OWNER}'s own click)"
+        msg = (f"[pal] {who}: approved: {r['command']}\nRun that exact command again now; it'll go through once." if approve else
+               f"[pal] {who}: said no to: {r['command']}\nDon't retry it; carry on without it or ask {OWNER}.")
+    elif approve:
         msg = f"[pal] {OWNER} approved: {r['command']}\nRun that exact command again now; it'll go through once."
     else:
         msg = f"[pal] {OWNER} said no to: {r['command']}" + (f"\nTheir note: {note}" if note else "") + f"\nDon't retry it; carry on without it or ask {OWNER}."
     if r.get("terminal") == SHELL:
         return r   # nobody to tell: whoever ran it from a plain shell runs it again (owner_step)
     try:
-        enqueue(r["terminal"], msg, sender=f"{OWNER}", kind="approval")
+        enqueue(r["terminal"], msg, sender=delegated["helper"] if delegated else f"{OWNER}", kind="approval")
     except CrewError:
         pass
     return r

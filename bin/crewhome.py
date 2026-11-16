@@ -26,6 +26,7 @@ taken off (done, drop, park, unpark) only by whoever put it there, the head pal,
 (T112: a plain shell closed a pal's ask on 2026-11-10); an ask closed by anyone but the owner is
 `withdrawn`, never an answer.
 """
+import json
 import re
 import time
 
@@ -120,7 +121,7 @@ def _find(h, iid):
 
 
 def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=None, status="open",
-        does=(), recommend=None, why=None, links=(), images=()):
+        does=(), recommend=None, why=None, links=(), images=(), owner_only=False, authorization=None):
     if kind not in KINDS:
         raise HomeError(f"kind is one of {', '.join(KINDS)}")
     item = {"id": new_id("h-"), "kind": kind, "status": status, "title": _one_line(title, TITLE_MAX, "the title"),
@@ -143,6 +144,10 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
             item["does"] = what + [""] * (len(opts) - len(what))
     elif does:
         raise HomeError("--does explains an --option")
+    if authorization:
+        if kind != "ask" or not opts or len(authorization.get("commands", [])) > len(opts):
+            raise HomeError("--approves must follow an option")
+        item["authorization"] = authorization
     if recommend is not None:
         if kind != "ask" or not opts:
             raise HomeError("--recommend names one of the ask's --option values")
@@ -183,6 +188,8 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
         item["factory"] = fac
     if status == "parked":
         item["parked_at"] = item["at"]
+    if owner_only and kind == "ask":
+        item["owner_only"] = True   # no helper, including Full control, answers it
     with locked("home"):
         h = load()
         if status == "open" and sum(1 for x in h["items"] if x.get("status") == "open") >= OPEN_CAP:
@@ -261,8 +268,13 @@ def unpark(iid, *, by, role=None):
     return x
 
 
-def answer(iid, text, *, by):
-    """The owner's answer to an ask (the caller has checked the click)."""
+def answer(iid, text, *, by, tapped=None, delegated=None, approval_snapshot=None):
+    """The owner's answer to an ask (the caller has checked the click). Or a relayed tap's (T147:
+    `tapped` is crewlib.tap_authority(), the caller has taken its token): then it must be one of the
+    ask's listed choices, `by` says who tapped, and the item keeps who, what they relayed and which
+    hold, so Home shows "Tapped by …" and never "You answered"."""
+    from crewlib import delegation_authority, owner_proven
+    delegated = delegated or delegation_authority()
     text = _one_line(text, 500, "the answer")
     with locked("home"):
         h = load()
@@ -271,7 +283,77 @@ def answer(iid, text, *, by):
             raise HomeError(f"{x['id']} is a {x.get('kind')}, not a question")
         if x.get("status") not in ("open", "parked"):
             raise HomeError(f"{x['id']} is {x['status']} already")
+        if x.get("owner_only"):
+            import crewhelpers
+            if delegated or tapped or crewhelpers.claimed() or not owner_proven():
+                raise HomeError(f"{x['id']} is owner-only: only the owner's own app click may answer it; helper authority cannot")
+        auth = x.get("authorization") or {}
+        options = x.get("options") or []
+        index = next((i for i, o in enumerate(options) if o.lower() == text.lower()), None)
+        commands = auth.get("commands") or []
+        command = commands[index] if index is not None and index < len(commands) else None
+        if approval_snapshot is not None or command:
+            try:
+                shown = json.loads(approval_snapshot or "null")
+            except (TypeError, ValueError):
+                shown = None
+            expected = {k: x.get(k) for k in ("authorization", "options", "title", "body", "does", "by", "recommend", "why", "links", "images")}
+            if shown != expected:
+                raise HomeError("the question or command changed; reopen this question")
+        if command:
+            import crewhelpers
+            if delegated or tapped or crewhelpers.claimed() or not owner_proven():
+                raise HomeError("only the owner’s own app click can approve a command")
+            import crewguard
+            crewguard.approve_from_home(auth, command, x["id"])
+            text = options[index]
+        if delegated:
+            import crewhelpers
+            delegated = crewhelpers.recheck_full(delegated)
+            x["delegated"] = delegated
+            by = delegated["label"]
+        if tapped:
+            import crewtaps
+            crewtaps.validate_snapshot("home", x, tapped)
+            if x.get("owner_only"):
+                raise HomeError(f"{x['id']} is for {tapped.get('helper')}'s owner alone: it can't be answered by a tap")
+            pick = [o for o in x.get("options") or [] if o.lower() == text.lower()]
+            if x.get("status") != "open" or not pick:
+                raise HomeError(f"{x['id']}: a tap picks one of an open question's listed choices")
+            text = pick[0]
+            x["tapped"] = {"by": tapped.get("helper"), "relayed": _one_line(tapped.get("relayed") or "", 300, "the relayed words"),
+                           "hold": tapped.get("hold"), "at": now_ms()}
         x["status"], x["answer"], x["answered_at"], x["closed_at"], x["closed_by"] = "answered", text, now_ms(), now_ms(), by
+        _save(h)
+    return x
+
+
+def untap(iid):
+    """The owner undoes a tapped answer (the caller has checked the click): the question is open again,
+    for the owner's own answer only. What was tapped stays on the item as `untapped`, for the record."""
+    with locked("home"):
+        h = load()
+        x = _find(h, iid)
+        if x.get("status") != "answered" or not x.get("tapped"):
+            raise HomeError(f"{x['id']} wasn't answered by a tap")
+        x["untapped"] = {**x.pop("tapped"), "answer": x.pop("answer", None), "undone": now_ms()}
+        x["status"], x["owner_only"] = "open", True
+        for k in ("answered_at", "closed_at", "closed_by"):
+            x.pop(k, None)
+        _save(h)
+    return x
+
+
+def owner_only(iid, *, by, role=None):
+    """Mark an ask for the owner's own click: no helper at any level answers it. Its asker (any topic of that
+    pal), the head pal or the owner may; nobody can take the mark off but the owner answering it."""
+    with locked("home"):
+        h = load()
+        x = _find(h, iid)
+        if x.get("kind") != "ask":
+            raise HomeError(f"{x['id']} is a {x.get('kind')}, not a question")
+        _allow(x, by, role, "mark")
+        x["owner_only"] = True
         _save(h)
     return x
 
@@ -391,5 +473,11 @@ def line(x):
         bits.append(f"→ {x['answer']}")
     if x.get("withdrawn"):
         bits.append(f"withdrawn by {x.get('closed_by') or '?'}")
+    if x.get("tapped"):
+        bits.append(f"tapped by {x['tapped'].get('by')}, relayed")
+    if x.get("delegated"):
+        bits.append(x["delegated"]["label"])
+    if x.get("owner_only") and x.get("status") == "open":
+        bits.append("your click only")
     bits.append(f"· {x.get('by', '?')} · {ago(x.get('at'))}")
     return "  ".join(b for b in bits if b)

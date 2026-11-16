@@ -1,10 +1,9 @@
 // Project Pals menu: what a right-click offers, as a small popup at the pointer.
 // - A tab: pin it, review its branch (a worktree channel), sleep or wake its agent in place, color it (from the theme's own colors,
 //   so it follows the theme), rename, close.
-// - A pal: its profile (the right-side panel), pin it to the top, rename it (its memory and routines follow the name), change its look,
+// - A pal: pin it to the top, rename it (its memory and routines follow the name), change its look,
 //   add a channel, Sleep (keep topics, free RAM) / Wake (resume topics), or Close pal (end its space).
 // - A sleeping pal: wake it, unpin it, or forget it (its memory folder stays on disk).
-// - A room: open it, sleep or wake everyone in it, or close it (its transcript is kept).
 // - A chat message: copy it, or one of its code blocks.
 // - The factory switcher (props.what "factory"; the sidebar's chip, Ctrl+Shift+G, the command bar):
 //   every factory with what it needs from you, then New / Rename / Remove.
@@ -13,12 +12,8 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, spaces, run, knownAgents } from "herdr";
 import {
-  botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone,
-  areasOf, areaOfTopic, fileTopic,
-  canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup,
-  crew, wakePal, forgetPal, rememberModel, rooms, roomMembers, showRoom, deleteRoom, showTabs, togglePanel, worktreeOf, openReview,
-  powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL, HANDOFF_BRAINS, topicBrain, seatHolders, handOff, brainLogo, ds,
-  factories, severalFactories, currentFactory, factoryOf, factoryNeeds, switchFactory, removeFactory, movePalToFactory, setForeman, templateOf } from "./crew.js";
+  botOf, updateBot, channelName, renameChannel, a, TAB_COLORS, tabPinned, pinTab, tabColorKey, colorTab, palPinned, pinPal, tone, areasOf, areaOfTopic, fileTopic, canMoveChannel, moveChannel, canMovePal, movePal, palGroups, groupOf, setPalGroup, moveGroup, deleteGroup, crew, wakePal, forgetPal, rememberModel, worktreeOf, openReview, powerPals, topicAwake, SLEEP_LABEL, WAKE_LABEL, CLOSE_LABEL, HANDOFF_BRAINS, topicBrain, seatHolders, handOff, brainLogo, ds, factories, severalFactories, currentFactory, factoryOf, factoryNeeds, switchFactory, removeFactory, movePalToFactory, setForeman, templateOf,
+} from "./crew.js";
 
 const ICON = "mods/crew-roster/icons";
 
@@ -86,20 +81,6 @@ export default class CrewMenu extends View {
         .child(careful("m-forget", "Forget this pal", "Click again to forget", () => { forgetPal(rec); this.close(); }));
     }
 
-    // A room: open it, sleep or wake its pals, or close it (Project Pals keeps its transcript).
-    if (p.what === "room") {
-      const room = rooms().find((r) => r.id === p.room);
-      if (!room) return root.child(div().p(8).text_size(13).text_color(t.dim).child("That room is gone."));
-      const names = roomMembers(room).map((m) => (m.channel ? `${m.name}#${m.channel}` : m.name));   // its seats, not every tab
-      return root
-        .child(title(`#${room.name}`))
-        .child(item("m-open", null, "Open", () => showRoom(room.id)))
-        .when(names.length > 0, (el) => el
-          .child(item("m-room-sleep", "ds-moon", "Sleep all (keep seats, free RAM)", () => powerPals("sleep", names)))
-          .child(item("m-room-wake", null, "Wake all (resume seats)", () => powerPals("wake", names))))
-        .child(line())
-        .child(careful("m-close-room", "Close room", "Click again to close it", () => { deleteRoom(room.id); showTabs(); this.close(); }));
-    }
 
     // The factory switcher.
     if (p.what === "factory") {
@@ -221,10 +202,6 @@ export default class CrewMenu extends View {
     const pinned = palPinned(bot);
     return root
       .child(title(bot.name))
-      // Its profile: the right-side panel (DeNon 2026-11-08).
-      .child(item("m-profile", "ds-user", "Profile", () => togglePanel("profile")))
-      .child(item("m-mission", "ds-mission", "Mission", () => togglePanel("mission")))
-      .child(line())
       .when(!bot.god, (el) => el.child(item("m-pin", "pin", pinned ? "Unpin from the top" : "Pin to the top", () => pinPal(bot, !pinned)))
         .child(moves("m-move", (dir) => canMovePal(space, dir), (dir) => movePal(space, dir))))
       // Herdr asks for the name; the roster then moves its memory and routines to the new name.

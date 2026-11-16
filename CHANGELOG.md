@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 — 2026-11-13
+
+Supported Herdr is unchanged: 0.1.8 or newer and herdr-core 0.1.11 or newer, both below 0.2. This
+release was run day to day (install, topics, messages, the full test suite) on Herdr 0.1.15 with
+herdr-core 0.1.20.
+
+- **Back to the terminal.** The app's full pages are gone, so a pal is its terminals
+  again: clicking a pal opens its topic (the head pal still opens Home). Gone: the profile panel
+  (Profile, the Vault, Memory, the AGENTS.md editor, the dashboard), a pal's Computer, the pal
+  board, the Routines dialog, the Desk page and the room page with its composer, their
+  shortcuts (Ctrl+Shift+I, Y and U), and the `pal computer` and `pal page` commands. What stays: Home, the Inbox and the approval gate, Tasks, the
+  quick-drop, Review changes, Hire, New topic, the command bar, Look, updates and the Chief. The
+  pals still use Desk cards (`pal desk`), rooms (`pal-room`) and routines (`pal routine`). Where
+  things moved: a pal's proposed change to its mission or AGENTS.md opens in a small dialog that
+  shows it as a diff, with Decline and Accept; the idea partner's drafts are on Home, with Send,
+  Edit… and Discard; Change machine… is in the pal menu (click the pal's name); the sidebar's
+  buttons are Inbox, Tasks, Pop out (the topic's terminal in its own window) and Close pal (Home
+  on the head pal); and sending a pal a message from the app is **Send to a pal…** (Ctrl+Shift+D or the
+  gear menu). Nothing in the app says Desk any more: the header's button and the Desk settings dialog
+  are gone too, and waiting messages on Home are tagged Message. The Desk's settings (triage, the check-in's
+  timings, archiving, whether MUSE sends as itself) keep their values; to change one, ask your trusted
+  helper on Full control, or edit the "desk" section of `crew-settings.json`. Nothing you made is touched: memory,
+  notebooks, missions, tasks, cards, rooms, routines and pages stay on disk. The installer backs up
+  the old mods before setting them aside, and takes the three old shortcuts out of `keys.json` only
+  where they still point at Project Pals.
+
+- **Land always goes to main.** A topic's branch now lands on the project's main branch (or a base
+  you named when making it), never on whatever branch the project folder happens to have out, and
+  new topics are cut from main the same way. A topic built on another topic's unlanded branch is
+  refused with how to land it on purpose (`pal land … --onto`).
 
 - **See your own changes live: the Live channel and Try it live.** For people who work on
   Project Pals itself. About has an **Update channel** switch: on Live, your install follows `main`
@@ -63,9 +92,9 @@
   Trusted helpers. Switch a helper on by name and it gets a key; from then on what it sends with
   `PAL_HELPER=<name> pal tell`, `ask`, `task add --for` or `desk send` arrives headed "from you via
   <name>, a trusted helper: normal work only", and your pals do it as if you'd asked. One click
-  switches it off, gives it a new key or removes it. It is never your click: approvals, push,
-  publish, deploy, release, merge, messaging people, settings, missions, AGENTS.md and everything
-  waiting on Home refuse it, and each try is recorded. Home shows what helpers sent in your name
+  switches it off, gives it a new key or removes it. At Work only it is never your click: approvals,
+  push, publish, deploy, release, merge, messaging people, settings, missions, AGENTS.md and
+  everything waiting on Home refuse it, and each try is recorded. Home shows what helpers sent in your name
   and what they tried (Today, and a new In your name tab). At most 20 messages an hour per helper;
   past that they arrive as "not verified". Pals can't use a helper's key: the approval gate holds
   the attempt and `pal` refuses a key from inside Herdr. Keys are kept outside Project Pals'
@@ -76,12 +105,75 @@
   over switched **off**, and its old key is deleted. That build accepted a request without any key
   and could be used by a pal, so turn Pals on again in Trusted helpers when you want it; your
   assistant's `pal --as-helper …` line keeps working after that.
-- **Releases need your click from any terminal.** `./release` used to be held only when a pal ran
-  it. Now the script itself asks: a request in your Inbox, then the same command once more after
-  you approve. `./release X.Y.Z --dry-run` runs every check and changes nothing.
+- **Full control: a helper you choose can make decisions for you.** Each helper in Trusted helpers
+  has one level: **Off**, **Work only** (normal work, as above) or **Full control**. With Full
+  control, that helper makes app decisions on its own: it can approve what waits on you, including
+  a pal's held command (once, exactly as held), pushes, releases and landings, with no prompt and no
+  waiting period. Only your own click in Trusted helpers sets a level or changes a key; a helper
+  can't raise itself or another helper. New and existing helpers start at Work only, and no update
+  turns Full control on. Home → Helper activity shows each "acted under Full control" and how it
+  ended, with **Revoke**: the helper goes Off and its queued actions and unused approvals stop
+  working (finished work isn't undone). Decisions are always recorded as the helper's, never as
+  your click. Read docs/full-control.md before you turn it on: anything that can act as that helper
+  can then push and release in your name.
+
+- **A trusted helper stays as you left it, and you're told if it stops working.** Only your click
+  turns a helper on or off: installs, updates and Roll back never touch its switch or its key. If
+  a helper you left on can't be used (its key is missing or unreadable, it has reached its hourly
+  limit), or one is off without your click, Home shows it under Needs you with the fix as a button,
+  and `pal feed` says so. The hourly limit is now a setting in Trusted helpers. A helper can ask to
+  be strict (`PAL_HELPER_STRICT=1`): then a message that wouldn't go in your name isn't sent at
+  all, and the helper gets a clear error to pass on to you.
+- **Releases need your approval from any terminal.** `./release` used to be held only when a pal
+  ran it. Now the script itself asks: a request in your Inbox, then the same command once more
+  after it's approved (by you, or by a helper you gave Full control). `./release X.Y.Z --dry-run` runs every check and changes nothing.
 - **Only you answer what's on Home.** `pal home done`, `drop` and `park` used to work from any
   shell. Now an item is taken off only by whoever put it there, the head pal, or your click, and an
   ask its asker takes back shows as Withdrawn, never as your answer.
+
+- **An approval runs exactly what was approved, once.** When you (or a Full-control helper)
+  approve a held command, that approval now covers one run of that exact command, in the same
+  folder, for the same commit when it lands one. It can't be spent on a changed release, a second
+  land, a different folder, or a seat that changed hands since; a command the gate can't read
+  plainly (a heredoc, a nested shell, a folder it would have to guess) is left for your own click.
+  (From Codex's release reviews.)
+- **Roll back puts everything back, and can't revive a helper you switched off.** Roll back now
+  also restores the memory drop-in for Herdr's terminals (or removes the one the install added),
+  and a failed install takes away a drop-in it added itself. A helper's backup list is only trusted
+  when it's newer than the last install on record, and the install log a roll back can't rewind
+  now counts too, so a helper you switched off with another build doesn't come back on. A helper
+  whose list can't be read safely is refused instead of guessed at, and credentials can't be used
+  from inside a pal's own memory scope. (From Codex's release reviews.)
+- **Memory: one hungry pal can't take down the crew.** Herdr keeps every terminal in one systemd
+  unit, so when memory ran out, the out-of-memory killer took that unit and every pal with it. Now
+  each pal's agent starts in a scope of its own (with a systemd user session, on this computer), so
+  only the hungry one is stopped, and the installer asks systemd to stop Herdr's holder last (a
+  drop-in you can skip with `--no-oomd-dropin`; a drop-in of yours there wins). When available
+  memory falls under a floor (1.5 GB or a tenth of your RAM, or `memory_floor_mb`), hiring, new
+  topics and waking say so, Home shows a quiet "Memory is low" row with **Sleep idle pals**, and
+  About shows a Memory row. `pal ram` lists what each topic uses; `pal sleep --idle --older HOURS`
+  puts long-idle topics to sleep, and `sleep_idle_hours` does it for you every half hour (off
+  unless you set it). The README has measured RAM per pal for each harness.
+- **`pal report` and a ten-minute start for new testers.** The README has a short "Try it in
+  10 minutes", and GitHub has issue templates for a bug, an install problem and a harness report.
+  `pal report` prints what a report needs (versions, distro, which harness commands it finds,
+  crewd's state, the kinds of recent errors) and uploads nothing: no paths, names, prompts,
+  transcripts, settings or keys. CONTRIBUTING.md says how to report and contribute.
+- **`pal handoff limits`.** Each awake topic's usage limit, fullest first (Claude Code's from its
+  status line, Codex's from its session), and for a brain that is out, the command that hands its
+  seat to another. It only reads.
+- A handoff brief no longer loses your home folder: on a machine with a long home path, the path
+  was cut out as if it were a secret before it could become `~`.
+
+### Known issues
+
+These affect topics whose brain is Codex; they're on the board for the next release.
+
+- `pal sleep` refuses an idle Codex topic, because Codex's always-running helper programs look
+  like work still going.
+- `pal wake` can start a Codex topic with Claude Code. If that happens, `pal handoff "Pal#topic"
+  --to codex` puts Codex back.
+- `--model` on `pal topic` and `pal hire` is ignored for Codex, which then runs its default model.
 
 ## 0.4.2 — 2026-11-10
 

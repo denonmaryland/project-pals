@@ -155,6 +155,14 @@ class Crewd:
 
     def tick(self):
         save_json(DATA / "crew-daemon.json", {"at": time.time(), "pid": os.getpid()})
+        # Relayed taps whose hold is over are carried out here (T147): every tick, whatever else is
+        # up, before anything that might return early. Nothing held: one directory look.
+        try:
+            import crewtaps
+            for h in crewtaps.run_due():
+                log(f"tap {h['id']} {h['status']}: {h['helper']} → {h['item']}: {h['choice']}" + (f" ({h['result']})" if h.get("result") else ""))
+        except Exception:
+            log("taps failed:\n" + traceback.format_exc())
         if time.time() - self.last_mem > 60:
             self.last_mem = time.time()
             self.memory()
@@ -178,6 +186,15 @@ class Crewd:
                 crewguard.tidy()   # unused approvals lapse after 30 minutes; week-old decided ones go
             except Exception:
                 log("approval tidy failed:\n" + traceback.format_exc())
+            # Trusted helpers: is each one as the owner left it, and working? At start (an update restarts
+            # crewd, so this is "right after every update") and hourly; Home shows what isn't (T170).
+            if time.time() - getattr(self, "last_helper_check", 0) > 3600:
+                self.last_helper_check = time.time()
+                try:
+                    import crewhelpers
+                    crewhelpers.check()
+                except Exception:
+                    log("helper check failed:\n" + traceback.format_exc())
         minute = time.strftime("%Y-%m-%d %H:%M")
         if minute != self.last_minute:
             self.last_minute = minute
@@ -294,9 +311,6 @@ class Crewd:
             if first:
                 continue
             bot, ch = split_where(t.get("where"))
-            if now == "working" and before != "working":
-                # A turn starting: with "finished" it bounds a work block (the pal Computer's calendar).
-                feed("working", terminal=addr, bot=bot, channel=ch)
             if before == "working" and now != "working" and now != "blocked":
                 feed("finished", terminal=addr, bot=bot, channel=ch, turn=t.get("turn"))
                 self.callbacks(addr, t, "finished")

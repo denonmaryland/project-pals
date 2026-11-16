@@ -5,7 +5,7 @@ file's own writer (crewagents.apply, with its backup and hash check, or the brai
 import json
 import time
 
-from crewlib import DATA, CrewError, load_json, save_json, new_id, now_ms, feed
+from crewlib import DATA, CrewError, load_json, save_json, new_id, now_ms, feed, locked
 
 DIR = DATA / "crew-proposals"
 EXPIRE_DAYS = 7
@@ -22,6 +22,11 @@ def propose(kind, pal, by, text, file=None, base_sha=None, note=None, meta=None)
 
 
 def all_(status=None):
+    with locked("proposals"):
+        return _all(status)
+
+
+def _all(status=None):
     if not DIR.exists():
         return []
     out = []
@@ -61,13 +66,32 @@ def check_reviewed(p, given):
         raise CrewError("the proposal's text isn't the one you were shown; look at it again")
 
 
-def decide(pid, status, note=None, via=None):
-    p = load_json(DIR / f"{pid}.json", None)
-    if not p:
-        raise CrewError(f"no proposal {pid}")
-    if p["status"] != "pending":
-        raise CrewError(f"{pid} is already {p['status']}")
-    p.update(status=status, decided=now_ms(), reason=note, via=via)
-    save_json(DIR / f"{pid}.json", p)
+def decide(pid, status, note=None, via=None, *, validate=None, apply=None):
+    """Serialize validation, application and decision against other decisions/expiry.
+    Reserve an application before effects begin. A failed/interrupted write is never retried as
+    pending: effects can be partial, so failed/applying records require the owner's inspection."""
+    with locked("proposals"):
+        p = get(pid)
+        if p["status"] != "pending":
+            raise CrewError(f"{pid} is already {p['status']}")
+        if validate:
+            validate(p)
+        record = {k: v for k, v in p.items() if k != "text"}
+        record.update(status=status, decided=now_ms(), reason=note, via=via)
+        path = DIR / f"{pid}.json"
+        if apply:
+            record["status"] = "applying"
+            save_json(path, record)
+            try:
+                result = apply(p)
+            except BaseException:
+                record.update(status="failed", reason="application failed; inspect its effects before proposing again")
+                save_json(path, record)
+                raise
+            record["status"] = status
+            if result is not None:
+                record["result"] = result
+        save_json(path, record)
+        p = record
     feed("proposal", id=pid, what=p["kind"], bot=p["pal"], status=status)
     return p

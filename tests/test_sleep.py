@@ -678,6 +678,23 @@ class WakeCli(unittest.TestCase):
         self.assertEqual(sent, {"t4": "agy --dangerously-skip-permissions --conversation=11111111-1111-1111-1111-111111111111"})
         self.assertFalse((crewsleep_dir / "t4.json").exists())   # woken: the marker goes
 
+    def test_wake_tells_the_app_the_brain_the_seat_last_ran(self):
+        # T173, T221: a Grok or Codex topic with nothing on record woke as the pal's Claude Code.
+        # Wake now names the brain pal sleep stopped there, else the seat's handoff holder.
+        slept, seats = self.sb["data"] / "crew-slept", self.sb["data"] / "crew-seats"
+        slept.mkdir(parents=True); seats.mkdir(parents=True)
+        (slept / "t1.json").write_text(json.dumps({"terminal": "t1", "app": "grok"}))
+        (slept / "t3.json").write_text(json.dumps({"terminal": "t3", "app": "node", "link": {"harness": "codex"}}))
+        (seats / "t2.json").write_text(json.dumps({"terminal": "t2", "holders": [{"brain": "claude"}, {"brain": "codex"}]}))
+        r = run_crew(self.sb, "wake", "Plain#general", "Codexy#general", "Linked#general", me="t99")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        seen = {q["space"]: q.get("seen") for q in self.app.asked}
+        self.assertEqual(seen, {"plain": "grok", "codexy": "codex", "linked": "codex"})
+        (slept / "t1.json").write_text(json.dumps({"terminal": "t1", "app": "some-wrapper"}))
+        self.app.asked.clear()
+        run_crew(self.sb, "wake", "Plain#general", me="t99")
+        self.assertNotIn("seen", self.app.asked[0], "a process name that isn't a known brain says nothing")
+
     def test_a_session_changed_since_sleep_starts_fresh(self):
         d = self.sb["data"] / "crew-slept"
         d.mkdir(parents=True)

@@ -207,7 +207,7 @@ def pre_tool_use(event):
         if crewguard.private_file_path(path, event.get("cwd")):
             path = os.path.realpath(os.path.join(event.get("cwd") or os.getcwd(), os.path.expanduser(path)))
             cmd = f"edit {path}"
-        elif crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper"}) \
+        elif crewguard.into_place(path, {"crew-clicks", "crew-queue", "crew-queue-sent", "crew-desk", "crew-helpers", "crew-helper", "crew-taps"}) \
                 or crewguard.in_helper_keys(path):   # not mods/crew-desk, mods/crew-helpers (T68)
             cmd = f"edit {path}"
         elif os.path.basename(path) in AGENT_FILES:

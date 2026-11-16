@@ -12,21 +12,23 @@ Gemini CLI, opencode, Hermes and more.
 without a systemd user session) aren't supported yet. See [docs/mac-support.md](docs/mac-support.md).
 
 Each Herdr space is a pal (a project with a brain), and each of its tabs is a topic. Pals can
-work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. On top of that you get:
+work together in rooms. A head pal (Orchestrator unless you rename it) oversees the rest. The app
+is terminal-forward: you work in the pals' terminals, and around them are a sidebar, Home, an
+Inbox and small dialogs. On top of that you get:
 
 - **Pocket pets:** every pal is a little LED critter whose pose shows what it's doing (working,
   needs you, done, PR open, merged, stuck, asleep). Pick its species, colour, what it wears and its
   eyes.
-- **Terminal-first:** a topic is its agent's own terminal. Split it right or down, and answer the
-  agent's questions right there.
+- **Terminal-first:** a topic is its agent's own terminal. Click a pal and you're in it. Split it
+  right or down, pop it out into a window of its own, and answer the agent's questions right there.
 - **A sidebar built for scanning:** the shown pal up top with its topics and quick actions, then
   every pal with its state in colour. Group pals into folders ("Personal", "Business"), pin them,
   and drag them into any order. Pin and reorder topics too.
-- **Profiles:** a panel per pal with its mission, brain, memory, topics and tasks.
-- **The Vault:** each pal's notes, with a live Home note: mission, focus, what's running, tasks,
-  today's journal and the week, updating as work lands.
 - **Tasks:** give a pal a task (with screenshots attached); it lands on its desk as a card.
-  Routines run on a schedule.
+  Routines run on a schedule (`pal routine`).
+- **Missions and proposals:** each pal can have a mission and a brain (decisions, a change log).
+  When a pal proposes a change to its mission or to a project's AGENTS.md, you see it as a diff
+  in a small dialog and accept or decline it.
 - **Sleep (keep topics, free RAM):** a pal's agents stop while its topics' tabs and room seats
   stay; **Wake (resume topics)** starts them again where they were, resuming each topic's session.
   It never stops a pal that's working, asking you something, being typed to, or still running work
@@ -41,9 +43,9 @@ Everything sent to a pal (a message, a question, a task, the answer to something
 card with a status: queued, seen, working, done, held or needs you. You see when a pal actually
 got it and what it did with it, instead of guessing from its screen.
 
-- The header's **Desk** button shows every desk at once: what waits on you, what has no pal yet,
-  what's held and why, then each pal and its topics. Move, raise, lower, close or cancel a card.
-- **Ctrl+Shift+D** drops a card from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
+- Cards that wait on you show on Home and are counted on the Inbox. `pal desk ls --all` lists every
+  desk: what has no pal yet, what's held and why, each pal and its topics.
+- **Send to a pal** (**Ctrl+Shift+D**, or the gear menu) sends a message from anywhere. Pick a pal or topic, or **Auto**: a quick, cheap
   model (Claude Haiku) picks one for you, and a card it isn't sure about waits for you to place it.
 - Claude Code pals get cards mid-step or when idle without anything typed into their box, so a
   half-written prompt stays put. Antigravity CLI pals get them between steps through hooks; Codex
@@ -73,7 +75,9 @@ unit. When memory ran out, systemd-oomd killed that unit, and with it every pal.
 - **Herdr's holder goes last.** The installer adds `ManagedOOMPreference=avoid` for
   `hc-hold-<id>.service` (`~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf`),
   unless a drop-in of yours there already sets it (yours wins either way: ours sorts first). Skip it
-  with `--no-oomd-dropin`; uninstall takes it out.
+  with `--no-oomd-dropin`; this choice is remembered through reinstalls, updates and rollback.
+  `./install.sh --oomd-dropin` turns Project Pals' drop-in back on. Owner-edited drop-ins stay as
+  they are; uninstall takes out only Project Pals' file.
 - **Warned before it runs out.** Under the floor (1.5 GB available or 10% of RAM, whichever is larger;
   `"memory_floor_mb"` to change it), `pal hire`, `pal topic` and `pal wake` say so, the app's hire
   and topic paths show a toast, and Home shows a quiet "Memory is low" row with **Sleep idle pals**.
@@ -98,7 +102,7 @@ Before waking many topics at once, check `pal ram`'s available figure against th
 An optional pal to think out loud with. Hire it from the hire dialog (Idea partner) or with
 `pal hire --partner`, then riff in its #ideas topic: half-formed ideas, screenshots. It asks sharp
 questions and turns what you settle on into card drafts with the right pal suggested. Nothing goes
-out until you click **Send** in the Desk's Drafts; then it's your own card. MUSE runs on Claude
+out until you click **Send** on its draft on Home (or **Edit…** it first); then it's your own card. MUSE runs on Claude
 Code (Sonnet).
 
 ## Harnesses
@@ -140,8 +144,8 @@ is skipped, messages are typed in directly, and routines and callbacks don't run
    pal tell Tryout "Say hello and suggest one tiny project we could make here. Do not change files yet."
    ```
 
-   Watch its topic and pet, then check the header's **Desk** for the card's delivery state.
-   If it waits, open the topic for a prompt and check the Desk for a held reason.
+   Watch its topic and pet, then run `pal desk ls --all` for the card's delivery state.
+   If it waits, open the topic for a prompt and check `pal desk ls --held` for a held reason.
 4. Tell us what worked or where you got stuck. Run `pal report`, review the output, then
    paste it into a [bug, install problem or harness report](https://github.com/denonmaryland/project-pals/issues/new/choose).
    Include what you tried, what you expected, and what happened. A successful first run is
@@ -210,23 +214,30 @@ Claude Code and Antigravity CLI pals ask you before they push, publish, make a G
 merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
 moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
-tokens or the Desk's cards. The command waits in your Inbox until you click Approve.
+tokens or the Desk's cards. The command waits in your Inbox for approval. You can approve it
+yourself, or delegate ordinary app decisions to a helper with Full control. Trust and audit
+protections remain under your own click.
 
 - It looks at the command as it runs: behind `npx`, a full path or `env`; inside `sh -c`, a heredoc
   fed to a shell, or a string that Python, Node, Perl, Ruby or PHP runs; file writes from those
   languages and from editors. A command that's only mentioned (a grep pattern, a quoted string,
   `--help`) isn't held. If the gate itself fails, the command is stopped, not let through.
-- Settings, updates, roll back, uninstall, landing and renaming need your click in Project Pals too, and only
-  your click sends a message as you.
-- `./release` asks for your click from any terminal, not only a pal's, and only whoever put
-  something on Home, the head pal or your click takes it off.
-- **Trusted helpers** (About → Settings): you can let one of your own assistants send normal work
-  to your pals in your name (`PAL_HELPER=<name> pal tell …`). It's off until you switch a helper
-  on, one click turns it off or gives it a new key, and Home shows everything it sent and tried. It
-  is never your click: approvals, push, release, merge, messaging people, settings and what's
-  waiting on Home still need you. Its key is a file on your computer, so anything running as you
-  that reads it can do the same, and an assistant that's been tricked by something it read will
-  pass the trick on with your name on it. That's why it covers only work that's safe to undo.
+- Settings, updates, roll back, uninstall, landing and renaming need your click or a helper's
+  authenticated Full control grant. Only your own click sends a message as you.
+- **One level per helper** (About → Settings → **Trusted helpers**): **Off** grants no helper
+  authority; **Work only** sends normal work to your pals; **Full control** lets that helper make
+  app decisions autonomously, including pushes and releases. Full control has no per-action
+  prompts or hold period. The helper can also approve a pal's exact held command once.
+- Only your actual app click sets helper trust or changes keys. Helpers cannot promote themselves
+  or other helpers. New helpers start at Work only when you add them; existing on helpers migrate
+  to Work only. No update or migration turns Full control on.
+- **Home → Helper activity** says “Pals acted under Full control”, shows outcomes, and offers
+  **Revoke**. Revoke switches that helper off and invalidates queued actions and unused approvals
+  under its old grant. It does not undo completed work. Helper decisions are always attributed to
+  the helper, never described as your own click.
+- **Relayed taps are retired.** The three tap switches and delay settings are replaced by the
+  trust level. No new taps run; old queued holds are cancelled and history remains visible.
+  See [Full control](docs/full-control.md) for setup, commands and what revocation means.
 - **It catches mistakes, not a pal set on getting around it.** Pals run as you: a determined one
   could build a command from pieces or write a script and run it later. Antigravity CLI pals are
   gated on shell commands only: their own file-edit tools aren't checked yet.
@@ -276,7 +287,7 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
 
 - **Layout, mods and commands:** `~/.config/herdr-app/layouts/pals.json`, `mods/crew-*`, and
   `~/.local/bin/pal` and friends (`crew` is an alias).
-- **Shortcuts:** Ctrl+Shift+I (profile), Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
+- **Shortcuts:** Ctrl+Shift+Space (command bar), Ctrl+Shift+D (drop a
   card) and Ctrl+Shift+H (Home) go into Herdr's `keys.json`, backed up first, and only where the
   key and the action are free.
 - **Helpers (skip all with `--no-helpers`, or skip one harness's hooks with `--no-claude-hooks` / `--no-agy-hooks`):**
@@ -287,7 +298,8 @@ Project Pals runs programs (`hc`, `git`, `claude -p` / `agy -p`) and reads files
   - Antigravity CLI hooks (`project-pals`) in `~/.gemini/config/hooks.json`, backed up first, plus shared skill symlinks in `~/.gemini/config/skills`.
   - With systemd: a drop-in making Herdr's terminal holder oomd's last pick
     (`~/.config/systemd/user/hc-hold-.service.d/00-project-pals-oomd.conf`; skip with
-    `--no-oomd-dropin`), and each pal's agent in its own `pal-*.scope` (see Memory).
+    `--no-oomd-dropin`, remembered until `--oomd-dropin`), and each pal's agent in its own
+    `pal-*.scope` (see Memory).
 - **Memory reviews:** these send topic screens to Claude (Haiku/Sonnet) or Antigravity CLI (Gemini Flash; choose in About → Background model).
 - **The Desk's Auto routing:** a card you drop with Auto is sent to Claude Haiku (else Antigravity
   CLI) with your pals' names and topics, at most 100 times a day. Turn it off in Settings → Desk.
@@ -357,7 +369,8 @@ at most, and every 10 minutes while About or the update dialog is open.
 - Updates come only from this repo's GitHub releases, and must match the release's
   `SHA256SUMS`.
 - Updates replace only Project Pals's own files. Your pals, rooms, memory, routines and tasks
-  are never touched. Herdr reloads the mods by itself; nothing restarts.
+  are never touched. Herdr reloads the mods by itself; your pals and their agents keep running.
+  Project Pals' helper (crewd) restarts only when its own code changed.
 - The previous version is kept for **Roll back** (in the update dialog after an update, and in
   Project Pals settings). If an install fails, the previous version goes back by itself.
 
