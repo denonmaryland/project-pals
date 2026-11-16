@@ -26,6 +26,7 @@ taken off (done, drop, park, unpark) only by whoever put it there, the head pal,
 (T112: a plain shell closed a pal's ask on 2026-11-10); an ask closed by anyone but the owner is
 `withdrawn`, never an answer.
 """
+import json
 import re
 import time
 
@@ -120,7 +121,7 @@ def _find(h, iid):
 
 
 def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=None, status="open",
-        does=(), recommend=None, why=None, links=(), images=(), owner_only=False):
+        does=(), recommend=None, why=None, links=(), images=(), owner_only=False, authorization=None):
     if kind not in KINDS:
         raise HomeError(f"kind is one of {', '.join(KINDS)}")
     item = {"id": new_id("h-"), "kind": kind, "status": status, "title": _one_line(title, TITLE_MAX, "the title"),
@@ -143,6 +144,10 @@ def add(kind, title, *, by, body="", options=(), command=None, url=None, topic=N
             item["does"] = what + [""] * (len(opts) - len(what))
     elif does:
         raise HomeError("--does explains an --option")
+    if authorization:
+        if kind != "ask" or not opts or len(authorization.get("commands", [])) > len(opts):
+            raise HomeError("--approves must follow an option")
+        item["authorization"] = authorization
     if recommend is not None:
         if kind != "ask" or not opts:
             raise HomeError("--recommend names one of the ask's --option values")
@@ -263,7 +268,7 @@ def unpark(iid, *, by, role=None):
     return x
 
 
-def answer(iid, text, *, by, tapped=None, delegated=None):
+def answer(iid, text, *, by, tapped=None, delegated=None, approval_snapshot=None):
     """The owner's answer to an ask (the caller has checked the click). Or a relayed tap's (T147:
     `tapped` is crewlib.tap_authority(), the caller has taken its token): then it must be one of the
     ask's listed choices, `by` says who tapped, and the item keeps who, what they relayed and which
@@ -282,6 +287,24 @@ def answer(iid, text, *, by, tapped=None, delegated=None):
             import crewhelpers
             if delegated or tapped or crewhelpers.claimed() or not owner_proven():
                 raise HomeError(f"{x['id']} is owner-only: only the owner's own app click may answer it; helper authority cannot")
+        auth = x.get("authorization") or {}
+        options = x.get("options") or []
+        index = next((i for i, o in enumerate(options) if o.lower() == text.lower()), None)
+        commands = auth.get("commands") or []
+        command = commands[index] if index is not None and index < len(commands) else None
+        if command:
+            try:
+                shown = json.loads(approval_snapshot or "null")
+            except (TypeError, ValueError):
+                shown = None
+            if shown != auth:
+                raise HomeError("the command or its context changed; reopen this question")
+            import crewhelpers
+            if delegated or tapped or crewhelpers.claimed() or not owner_proven():
+                raise HomeError("only the owner’s own app click can approve a command")
+            import crewguard
+            crewguard.approve_from_home(auth, command, x["id"])
+            text = options[index]
         if delegated:
             import crewhelpers
             delegated = crewhelpers.recheck_full(delegated)

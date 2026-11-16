@@ -37,7 +37,7 @@ Pop out (the owner, from Project Pals: a topic's live terminal in its own deskto
 
 Home (the head pal keeps it current: what needs the owner, links, what's queued; the app shows it)
   pal home [--json] [--factory NAME|all]   what's on Home (with several factories: the one you're in)
-  pal home ask "question" [--option A [--does "what A does"]]... [--recommend A --why "…"] [--topic P#t]
+  pal home ask "question" [--option A [--does "what A does"] [--approves "exact command"]]... [--recommend A --why "…"] [--topic P#t]
             [--body …] [--link URL]... [--image FILE]...   a decision for the owner (options: one click each)
   pal home recommend <a-…|c-…|h-…> <option> --why "…"   your pick for an approval (approve|decline),
                                      a Desk card (done|open) or an ask (one of its options)
@@ -918,7 +918,7 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
             # The approval is for the commit the topic is at now (T206): one made after the owner said
             # yes asks again. Shown in the Inbox after the command.
             held = crewguard.check(ME, s["name"] if s else "?", chan(t) if t else "?",
-                                   line + (f"  # at {tip[:12]}" if tip else ""), claim=True)
+                                   line + (f"  # at {tip[:12]}" if tip else ""), claim=True, cwd=os.getcwd())
             if held:
                 die(f"held for {OWNER}'s approval ({held['id']}); you'll be told when it's decided")
             at = at or tip or None
@@ -3326,6 +3326,11 @@ def home_answer_to(spaces, x, answer, tap=None, undone=False):
         who = crewdesk.sender(spaces)
         title = f"Re {x['id']}: {answer}"[:crewdesk.TITLE_MAX]
         body = f"You asked on Home: {x.get('title', '')}\n\n{OWNER} picked: {answer}"
+        options, auth = x.get("options") or [], x.get("authorization") or {}
+        selected = next((i for i, option in enumerate(options) if option.lower() == answer.lower()), None)
+        commands = auth.get("commands") or []
+        if selected is not None and selected < len(commands) and commands[selected]:
+            body += "\n\nApproved once for 30 minutes: " + commands[selected]["command"]
         card = crewdesk.create("tell", dest, title, body, frm=who["from"], from_kind=who["from_kind"], proof=who["proof"],
                                via="pal home answer")
     card, _, what = crewdesk.deliver(card, spaces)
@@ -3384,10 +3389,10 @@ def cmd_home(spaces, rest):
     from crewlib import is_head
     role = "owner" if owner_proven() or delegation_authority() else "head" if is_head(mine) else None
     # Repeatable: --option (each may be followed by --does "what it does"), --link, --image.
-    options, does, links, images, clean, i = [], [], [], [], [], 0
+    options, does, approves, links, images, clean, i = [], [], [], [], [], [], 0
     while i < len(args):
         a = args[i]
-        if a in ("--option", "--does", "--link", "--image") and i + 1 < len(args):
+        if a in ("--option", "--does", "--approves", "--link", "--image") and i + 1 < len(args):
             v = args[i + 1]
             if a == "--option":
                 options.append(v)
@@ -3398,6 +3403,13 @@ def cmd_home(spaces, rest):
                 if len(does) >= len(options):
                     die("one --does per --option")
                 does.append(v)
+            elif a == "--approves":
+                if not options:
+                    die("--approves goes right after the --option it authorizes")
+                approves.extend([None] * (len(options) - 1 - len(approves)))
+                if len(approves) >= len(options):
+                    die("one --approves per --option")
+                approves.append(v)
             elif a == "--link":
                 links.append(v)
             else:
@@ -3406,7 +3418,7 @@ def cmd_home(spaces, rest):
         else:
             clean.append(a); i += 1
     args = clean
-    if (options or does or links or images) and sub != "ask":
+    if (options or does or approves or links or images) and sub != "ask":
         die("only pal home ask takes --option, --does, --link and --image")
     try:
         if sub in ("ls", "list", "show"):
@@ -3437,9 +3449,14 @@ def cmd_home(spaces, rest):
             if len(images) > crewhome.IMAGES_MAX:
                 die(f"at most {crewhome.IMAGES_MAX} images")
             imgs = [str(Path(desk_attach(f)).resolve().relative_to(DATA)) for f in images]
+            authorization = None
+            if approves:
+                if not me or not ME or not is_bot_terminal(ME):
+                    die("only a pal topic can ask for a command approval")
+                authorization = crewguard.home_authorization(ME, name, chan(where_of(ME, spaces)[1]), os.getcwd(), approves)
             x = crewhome.add("ask", " ".join(pos), by=by, body=o.get("body", ""), options=options, topic=home_topic(spaces, o.get("topic")),
                              does=does, recommend=o.get("recommend"), why=o.get("why"), links=links, images=imgs,
-                             owner_only=bool(o.get("owner-only")))
+                             owner_only=bool(o.get("owner-only")), authorization=authorization)
             print(crewhome.line(x))
         elif sub == "recommend" and len(args) >= 2:
             pos, o = opts(args, ("why",))
@@ -3490,7 +3507,9 @@ def cmd_home(spaces, rest):
                               allow_delegate=not item.get("owner_only"))
             from crewlib import tap_authority
             t = tap_authority()
-            x = crewhome.answer(args[0], " ".join(args[1:]), by=acted(), tapped=t)
+            answer_args, answer_opts = opts(args, ("approval-snapshot",))
+            x = crewhome.answer(answer_args[0], " ".join(answer_args[1:]), by=acted(), tapped=t,
+                                approval_snapshot=answer_opts.get("approval-snapshot"))
             print(crewhome.line(x))
             print(home_answer_to(spaces, x, x["answer"], tap=t))
         elif sub == "owner-only" and len(args) == 1:

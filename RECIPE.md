@@ -2001,6 +2001,8 @@ implementation details below, not the current permission model.
   try`, `back` and `stable` are refused, and with Live on, a pal's `git update-ref refs/heads/main
   …` is held for the Inbox.
 
+- A pal can attach a guarded command to a decision option with `pal home ask "Land it?" --option "Land it" --approves "pal land Pal#topic"`. Home shows the full command, asking topic, working directory and pinned land commit in the review. The owner's own click approves it once for that topic and directory for 30 minutes. The same exact command and commit may pass the hook and the land program's own check without a second click; a changed command, commit, directory, topic or reused approval is held. Helpers cannot activate the approval. Other options do not approve anything. Commands must be a single plain guarded command without shell expansion.
+
 - Clicking the head pal shows Home; Ctrl+Shift+H goes back to its terminal and again to Home.
   `pal home ask "x?" --option A --option B` shows a Decision card with A and B; clicking A
   closes it and the asker gets "Re h-…: A" as a card from the owner. With nothing waiting, Home

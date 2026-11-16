@@ -1663,7 +1663,51 @@ def expire_stale():
             feed("approval", id=r["id"], bot=r.get("bot"), channel=r.get("channel"), status="expired")
 
 
-def check(terminal, bot, channel, cmd, extra=None, claim=False):
+def home_authorization(terminal, bot, channel, cwd, commands):
+    """Pin the asking topic, execution folder, complete command and land tip at ask time."""
+    entries = []
+    for cmd in commands:
+        if cmd is None:
+            entries.append(None)
+            continue
+        if not handover_words(cmd):
+            raise CrewError("--approves needs one plain command without shell expansion")
+        rules = all_matches_at(cmd, cwd)
+        if not rules:
+            raise CrewError("--approves needs a command held by the approval gate")
+        tip = land_tip(cmd)
+        if any(r["name"] == "land" for r in rules) and not tip:
+            raise CrewError("--approves cannot identify the topic's current commit")
+        entries.append({"command": cmd, "guard_context": command_context(cmd, cwd),
+                        "rule": rules[0]["name"], "why": rules[0].get("why", ""), "land_tip": tip})
+    return {"terminal": terminal, "bot": bot, "channel": channel, "commands": entries}
+
+
+def approve_from_home(auth, entry, home_id):
+    """Issue an approval only in the process that verified the owner's exact app click."""
+    from crewlib import owner_proven, delegation_authority
+    import crewhelpers
+    if not owner_proven() or delegation_authority() or crewhelpers.claimed():
+        raise CrewError("only the owner’s own app click can approve a command")
+    cmd, context = entry["command"], entry["guard_context"]
+    tip = entry.get("land_tip")
+    if not handover_words(cmd) or command_context(cmd, context.get("cwd")) != context:
+        raise CrewError("command context changed since this question was asked")
+    if tip and land_tip(cmd) != tip:
+        raise CrewError("the topic's commit changed since this question was asked")
+    terminal = auth["terminal"]
+    with locked("approvals"):
+        r = {"id": new_id("a-"), "key": key(terminal, cmd + (f"\n@{tip}" if tip else ""), context),
+             "at": now_ms(), "decided": now_ms(), "decided_via": "home", "home_id": home_id,
+             "terminal": terminal, "bot": auth["bot"], "channel": auth["channel"], "command": cmd,
+             "rule": entry["rule"], "why": entry["why"], "status": "approved", "guard_context": context,
+             "home_exact": True, **({"land_tip": tip} if tip else {})}
+        save_json(APPROVALS / f"{r['id']}.json", r)
+    feed("approval", id=r["id"], bot=r["bot"], channel=r["channel"], status="approved")
+    return r
+
+
+def check(terminal, bot, channel, cmd, extra=None, claim=False, cwd=None):
     """None: go ahead. Else the reason it's held. claim: the caller is the program itself (pal land's
     own check), so the approval it uses is spent for good; the hook's use leaves it for the program it
     let through to claim once (recently_used)."""
@@ -1672,7 +1716,7 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
     rule = matches(cmd)
     if not rule:
         return None
-    context = command_context(cmd, HOOK_CWD)
+    context = command_context(cmd, cwd if cwd is not None else HOOK_CWD)
     # A land is approved for the commit its topic is at now (T212): the hook's request names it too,
     # so a commit made after the owner's yes asks again, and the program's hand-over carries it.
     tip = land_tip(cmd)
@@ -1680,7 +1724,15 @@ def check(terminal, bot, channel, cmd, extra=None, claim=False):
     with locked("approvals"):
         expire_stale()
         for r in all_requests():
-            if r.get("key") != k or r.get("guard_context") != context:
+            # A program's own land check adds a display-only commit comment. It may spend the
+            # exact Home command directly when no hook ran, once, at the same pinned commit.
+            direct_land = (claim and r.get("home_exact") and r.get("rule") == "land" and tip
+                           and r.get("land_tip") == tip and cmd == r.get("command") + f"  # at {tip[:12]}")
+            if r.get("home_exact") and (r.get("terminal") != terminal or r.get("bot") != bot
+                                       or r.get("channel") != channel or
+                                       not (r.get("command") == cmd or direct_land)):
+                continue
+            if (r.get("key") != k and not direct_land) or r.get("guard_context") != context:
                 continue
             if r["status"] == "approved" and _delegation_current(r, cmd):
                 r["status"], r["used"] = "used", now_ms()

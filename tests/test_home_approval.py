@@ -1,0 +1,96 @@
+"""Home's single-click command approvals: exact, scoped and spent once."""
+import json
+import os
+import shutil
+import sys
+import unittest
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_desk import sandbox, pal, owner, py
+
+
+class HomeApproval(unittest.TestCase):
+    def setUp(self):
+        self.root, self.env, self.data = sandbox()
+        self.command = 'git push origin main'
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def ask(self):
+        r = pal(self.env, 'home', 'ask', 'Push?', '--option', 'Push', '--approves', self.command,
+                '--option', 'Wait', term='tW')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads((self.data / 'crew-home/home.json').read_text())['items'][-1]
+
+    def approve(self, x):
+        return owner(self.env, self.data, 'home', 'answer', x['id'], 'Push',
+                     '--approval-snapshot', json.dumps(x['authorization'], separators=(',', ':')))
+
+    def gate(self, command, terminal='tW', bot='Worker', channel='general'):
+        return py(self.env, f'''import crewguard
+crewguard.HOOK_CWD = {os.getcwd()!r}
+r = crewguard.check({terminal!r}, {bot!r}, {channel!r}, {command!r})
+print(json.dumps(r))''')
+
+    def test_exact_owner_click_once_and_wrong_terminal(self):
+        x = self.ask()
+        self.assertEqual(x['authorization']['commands'][0]['command'], self.command)
+        self.assertNotEqual(owner(self.env, self.data, 'home', 'answer', x['id'], 'Push').returncode, 0)
+        r = self.approve(x)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIsNotNone(self.gate(self.command, 'tH', 'Helper', 'build'))
+        self.assertIsNotNone(self.gate('git push  origin main'))
+        self.assertIsNone(self.gate(self.command))
+        self.assertIsNotNone(self.gate(self.command))
+
+    def test_expiry_and_other_option(self):
+        x = self.ask()
+        self.assertEqual(self.approve(x).returncode, 0)
+        f = next((self.data / 'crew-approvals').glob('*.json'))
+        r = json.loads(f.read_text()); r['decided'] -= 31 * 60 * 1000; f.write_text(json.dumps(r))
+        self.assertIsNotNone(self.gate(self.command))
+        self.assertEqual(json.loads(f.read_text())['status'], 'expired')
+        x = self.ask()
+        self.assertEqual(owner(self.env, self.data, 'home', 'answer', x['id'], 'Wait').returncode, 0)
+        self.assertEqual(len([r for r in (self.data / 'crew-approvals').glob('*.json') if json.loads(r.read_text())['status'] == 'approved']), 0)
+
+    def test_snapshot_changed_and_shell_command_rejected(self):
+        x = self.ask()
+        f = self.data / 'crew-home/home.json'; h = json.loads(f.read_text())
+        h['items'][0]['authorization']['terminal'] = 'tH'; f.write_text(json.dumps(h))
+        self.assertNotEqual(self.approve(x).returncode, 0)
+        r = pal(self.env, 'home', 'ask', 'x', '--option', 'Go', '--approves', 'git push && echo hi', term='tW')
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_helper_cannot_activate_an_approval(self):
+        x = self.ask()
+        result = py(self.env, f'''import crewhome, crewlib
+crewlib.owner_proven = lambda: False
+try:
+    crewhome.answer({x['id']!r}, 'Push', by='helper', delegated={{'helper': 'test'}}, approval_snapshot={json.dumps(x['authorization'])!r})
+    print(json.dumps('allowed'))
+except crewhome.HomeError:
+    print(json.dumps('refused'))''')
+        self.assertEqual(result, 'refused')
+        self.assertFalse((self.data / 'crew-approvals').exists())
+
+    def test_land_handover_and_direct_program_check(self):
+        result = py(self.env, f'''import os, crewguard
+import crewlib
+crewlib._owner_proven = True
+cwd = {os.getcwd()!r}
+tip = 'a' * 40
+crewguard.land_tip = lambda cmd: tip
+cmd = 'pal land Worker#general'
+auth = crewguard.home_authorization('tW', 'Worker', 'general', cwd, [cmd])
+crewguard.approve_from_home(auth, auth['commands'][0], 'h-123456')
+crewguard.HOOK_CWD = cwd
+hook = crewguard.check('tW', 'Worker', 'general', cmd)
+handed = crewguard.recently_used('tW', 'land', words=['land', 'Worker#general'], cwd=cwd, tip=tip)
+ag = crewguard.recently_used('tW', 'land', words=['land', 'Worker#general'], cwd=cwd, tip=tip)
+crewguard.approve_from_home(auth, auth['commands'][0], 'h-654321')
+direct = crewguard.check('tW', 'Worker', 'general', cmd + '  # at ' + tip[:12], claim=True, cwd=cwd)
+again = crewguard.check('tW', 'Worker', 'general', cmd + '  # at ' + tip[:12], claim=True, cwd=cwd)
+print(json.dumps([hook, bool(handed), ag, direct, bool(again)]))''')
+        self.assertEqual(result, [None, True, None, None, True])

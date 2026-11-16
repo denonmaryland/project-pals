@@ -289,7 +289,8 @@ export default class CrewHome extends View {
       sub = x.body ? x.body.split("\n")[0] : `${x.id} · from ${x.by ?? "?"}`;
       mono = !x.body;
       const opts = x.options ?? [];
-      acts = opts.map((o, i) => B(`o${i}`, clip(o, 22), (cx) => this.act(n.key, ["home", "answer", x.id, o], `You picked: ${o}`, cx), { primary: i === 0 }));
+      acts = x.authorization ? [B("review", "Review command", (cx) => { this.atKey = n.key; this.mode = "review"; this.handle.focus(); cx.notify(); }, { primary: true })]
+        : opts.map((o, i) => B(`o${i}`, clip(o, 22), (cx) => this.act(n.key, ["home", "answer", x.id, o], `You picked: ${o}`, cx), { primary: i === 0 }));
       if (!opts.length && x.by) acts.push(B("go", `Answer in #${clip((x.by.split("#")[1] ?? "topic"), 16)}`, () => this.openTopic(x.by), { primary: true }));
       acts.push(B("park", "Park", (cx) => this.act(n.key, ["home", "park", x.id], null, cx)));
     } else if (n.kind === "login") {
@@ -693,7 +694,7 @@ export default class CrewHome extends View {
     }
     if (n.kind === "ask") {
       const x = n.x;
-      const opts = (x.options ?? []).map((label, i) => o(label, x.does?.[i] || "", owner(["home", "answer", x.id, label], `You picked: ${label}`)));
+      const opts = (x.options ?? []).map((label, i) => o(label, [x.does?.[i], x.authorization?.commands?.[i]?.command, x.authorization?.commands?.[i] ? `For ${x.authorization.bot}#${x.authorization.channel} · ${x.authorization.commands[i].guard_context.cwd}${x.authorization.commands[i].land_tip ? ` · commit ${x.authorization.commands[i].land_tip}` : ""}` : null].filter(Boolean).join("\n"), owner(["home", "answer", x.id, label, ...(x.authorization?.commands?.[i]?.command ? ["--approval-snapshot", JSON.stringify(x.authorization)] : [])], `You picked: ${label}`)));
       if (!opts.length && x.by) opts.push(o(`Answer in #${(x.by.split("#")[1] ?? "topic")}`, "Shows the topic so you can reply there", () => this.openTopic(x.by)));
       const later = (cx) => this.act(n.key, ["home", "park", x.id], null, cx);
       opts.push(o("Park", "Decide later; it waits in Parked", later, { cap: "L" }));
