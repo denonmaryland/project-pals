@@ -569,9 +569,7 @@ def _post(bundle, payload):
 
 
 def _tls_outcome(error):
-    if isinstance(error, (ssl.SSLEOFError, ssl.SSLZeroReturnError)):
-        return "retry"
-    return "tls-error" if isinstance(error, ssl.SSLError) else "retry"
+    return "retry"
 
 
 def transport(bundle, payload):
@@ -750,7 +748,7 @@ class Worker:
                 s.update(last_outcome=outcome, last_at=self.clock())
                 if outcome == "sent":
                     s["queue"].remove(q)
-                elif outcome in ("rejected", "redirect-refused", "protocol-unconfirmed", "tls-error",
+                elif outcome in ("rejected", "redirect-refused", "protocol-unconfirmed",
                                  "credentials-unavailable"):
                     s["enabled"] = False
                     s["queue"] = []

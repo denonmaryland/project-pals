@@ -300,7 +300,7 @@ class Notify(unittest.TestCase):
         self.assertEqual(self.reports, [(self.data, "rejected")])
 
     def test_each_permanent_failure_reports_once(self):
-        for index, outcome in enumerate(("redirect-refused", "protocol-unconfirmed", "tls-error")):
+        for index, outcome in enumerate(("redirect-refused", "protocol-unconfirmed")):
             with self.subTest(outcome=outcome):
                 self.configure()
                 self.enable()
@@ -310,7 +310,7 @@ class Notify(unittest.TestCase):
                 self.worker.step()
                 self.assertEqual(self.reports[-1], (self.data, outcome))
                 self.assertFalse(self.state()["enabled"])
-        self.assertEqual(len(self.reports), 3)
+        self.assertEqual(len(self.reports), 2)
 
     def test_transient_failure_keeps_queue_and_does_not_report_disabled(self):
         self.configure()
@@ -617,8 +617,9 @@ class Transport(unittest.TestCase):
                 self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), outcome)
         with patch.object(opener, "open", side_effect=urllib.error.URLError(ssl.SSLError("SECRET"))), \
                 patch.object(n.urllib.request, "build_opener", return_value=opener):
-            self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), "tls-error")
-        for error in (ssl.SSLEOFError("SECRET"), ssl.SSLZeroReturnError("SECRET"),
+            self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), "retry")
+        for error in (ssl.SSLError("SECRET"), ssl.SSLCertVerificationError("SECRET"),
+                      ssl.SSLEOFError("SECRET"), ssl.SSLZeroReturnError("SECRET"),
                       urllib.error.URLError(ssl.SSLEOFError("SECRET")),
                       urllib.error.URLError(ssl.SSLZeroReturnError("SECRET"))):
             with self.subTest(error=type(error).__name__), \
