@@ -46,7 +46,7 @@ class LandBase(unittest.TestCase):
         self.env = {"HOME": str(self.home), "HERDR_APP_HOME": str(self.app), "PATH": f"{shims}:/usr/bin:/bin", "LANG": "C.UTF-8",
                     "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Sam",
                     "GIT_AUTHOR_EMAIL": "s@example.invalid", "GIT_COMMITTER_NAME": "Sam", "GIT_COMMITTER_EMAIL": "s@example.invalid"}
-        (self.data / "crew-settings.json").write_text(json.dumps({"owner": "Sam", "head": "Boss"}))
+        (self.data / "crew-settings.json").write_text(json.dumps({"owner": "Sam", "head": "Boss", "approval_gate": True}))
         # The shared project checkout: main, a topic branch (unlanded work), and the folder parked on it.
         self.repo = self.t / "proj"
         self.repo.mkdir()

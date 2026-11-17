@@ -1,6 +1,6 @@
-"""Proposals waiting for the owner in the Inbox: a change a pal (or the Dream loop) wants made to a
+"""Proposals waiting for the owner in Your call: a change a pal (or the Dream loop) wants made to a
 file it may not write itself. Each one is data/crew-proposals/<id>.json plus its proposed text in
-<id>.md. Nothing is written until the owner accepts it in the Inbox, and then it goes through the
+<id>.md. Nothing is written until the owner accepts it in Your call, and then it goes through the
 file's own writer (crewagents.apply, with its backup and hash check, or the brain's)."""
 import json
 import time
@@ -60,7 +60,7 @@ def check_reviewed(p, given):
     given for a dream proposal, is refused."""
     if given is None:
         if p.get("kind") == "dream":
-            raise CrewError("open the whole proposal in the Inbox first (its text wasn't shown)")
+            raise CrewError("open the whole proposal in Your call first (its text wasn't shown)")
         return
     if given != text_sha(p):
         raise CrewError("the proposal's text isn't the one you were shown; look at it again")

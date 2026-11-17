@@ -3,10 +3,10 @@
 //   - Chief's read: its priorities.md and watch.md (the only model words here, labelled as such);
 //   - a strip: working, stuck, needs you, held, next release;
 //   - every awake pal (not the Chief) with its topics: status, #topic, what it's on; a click opens it;
-//   - what needs you and what's stuck (the roster's crew.needs; Open Home);
+//   - what needs you and what's stuck (the roster's crew.needs; Open Your call);
 //   - shipping: public, installed here, next;
 //   - what the Chief handed to the head pal, with each card's status.
-// Like Home, numbers and states come from data, never from a model. It reads only while open (files
+// Numbers and states come from data, never from a model. It reads only while open (files
 // every 4 s, the Desk every 10 s).
 //
 // The keyboard: Herdr can't put it in a window's terminal from code (spike, 2026-11-09), and
@@ -19,7 +19,7 @@ import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { theme, props, shared, setShared, agents, readTextFile, appHome, hc, notify } from "herdr";
 import {
   ds, tone, scrollArea, withoutChief, botOf, crew, chiefOf, chiefTerminal, chiefShell, chiefState, petOf, petReady, petEl, petState, mascotEl, mood,
-  statusColor, channelName, taskTitle, homeData, jsonLines, HOME_FILE, INSTALLS_FILE, loadOps, loadDesk, showHome,
+  statusColor, channelName, taskTitle, homeData, jsonLines, HOME_FILE, INSTALLS_FILE, loadOps, loadDesk, openDecide,
   openTerminal, closeChief, resizeChief, wakeChief, ownerCli, headName, CHIEF_NAME, pebble,
 } from "./crew.js";
 
@@ -228,7 +228,7 @@ export default class CrewChief extends View {
   }
   needs(d) {
     const items = (shared("crew.needs")?.items ?? []).slice(0, 4);
-    const out = [this.label(d, "Needs you and stuck", div().id("chief-open-home").text_size(11.5).text_color(d.info).cursor_pointer().on_click(() => { closeChief(); showHome(); }).child("Open Home ›"))];
+    const out = [this.label(d, "Needs you and stuck", div().id("chief-open-decide").text_size(11.5).text_color(d.info).cursor_pointer().on_click(() => { closeChief(); openDecide(); }).child("Open Your call ›"))];
     if (!items.length) out.push(div().text_size(12.5).text_color(d.fg2).child("Nothing waits on you."));
     else out.push(this.rows(d, items.map((x) => [this.tag(d, WHY[x.why] ?? x.why), div().flex_1().min_w(0).truncate().text_size(12.5).text_color(d.body).child(x.label ?? "")])));
     return out;

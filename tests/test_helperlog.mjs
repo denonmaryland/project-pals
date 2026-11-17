@@ -158,22 +158,23 @@ assert.equal(helperToday([old], NOW), "");
 assert.equal(helperToday([], NOW), "");
 
 // ── wiring: the app's side ──
-const dialog = read("mods/crew-helpers/main.js"), about = read("mods/crew-about/main.js"), home = read("mods/crew-home/main.js");
+const dialog = read("mods/crew-helpers/main.js"), about = read("mods/crew-about/main.js"), decide = read("mods/crew-decide/main.js");
 // Every change is the owner's click (the token is written at the click): never the plain CLI.
 assert.ok(dialog.includes('ownerCli(["settings", "trust-helper", name, what])'));
 assert.ok(!/crewCli\(\["settings"/.test(dialog), "no change without the click's token");
 assert.ok(dialog.includes('crewCli(["helpers", "--json"])'), "the list and the record come from pal helpers --json");
 // Nothing in the app reads a key file or shows one.
-for (const [name, src] of [["crew-helpers", dialog], ["crew-about", about], ["crew-home", home]]) {
+for (const [name, src] of [["crew-helpers", dialog], ["crew-about", about], ["crew-decide", decide]]) {
   assert.ok(!/\.key["'`]|project-pals\/helpers|palkey_|readTextFile\([^)]*key/.test(src), `${name} never touches a key file`);
 }
 // Removing asks once more in place; rotating and switching don't open anything else.
 assert.ok(dialog.includes('"Remove it"') && dialog.includes("this.confirm = h.name"));
-// About's row opens the dialog; Home's rows and its tab do too.
+// About's row opens the dialog; so does Your call's helper item. The record (Helper activity) is in
+// the dialog, with Undo on a question that went through on a tap (Home's tab until T235).
 assert.ok(about.includes('row("set-helpers", "Trusted helpers"') && about.includes('openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 })'));
-assert.ok(home.includes('["name", "Helper activity"]') && home.includes("nameBody(d)"));
-assert.ok(home.includes('out.push({ kind: "helper", at: e.at, e })'), "what a helper sent or tried is in Today");
-assert.ok(home.includes('k !== "name" || this.helperLog.length > 0'), "the tab shows once there's anything to show");
+assert.ok(decide.includes('openOverlay({ mod: "crew-helpers", kind: "dialog", width: 560 })'));
+assert.ok(dialog.includes('"Helper activity"') && dialog.includes("helperRows(info?.log ?? [])"));
+assert.ok(dialog.includes('ownerCli(["taps", "undo", hold])') && dialog.includes('e.kind === "tap-done" && tapUndoable(this.taps, e.hold)'), "Undo a tapped answer: the owner's click");
 assert.deepEqual(JSON.parse(read("mods/crew-helpers/mod.json")).overlay, { kind: "dialog", width: 560 });
 // install.sh gives every mod the shared file and keeps it through the mirror.
 const ins = read("install.sh");

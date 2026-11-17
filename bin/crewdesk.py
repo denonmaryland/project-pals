@@ -6,7 +6,7 @@
     <pal-slug>/done/*.md         done, cancelled, expired (moved here when a card closes)
     <pal-slug>/archive/YYYY-MM/  done cards older than desk.archive_after_days (14); nothing is deleted
     _route/open/                 To route: cards with no pal yet (dropped with Auto, or their pal was removed)
-    _owner/open/                 cards for the owner (needs you; the Inbox shows them)
+    _owner/open/                 cards for the owner (needs you; Your call shows them)
     events.jsonl                 every receipt, append-only; it wins when a card file disagrees
     .owner-ledger.jsonl          click-verified owner cards: {card, hash, at}; and a trusted helper's
                                  cards, sent with its key: {card, hash, at, helper} (crewhelpers, T116)
@@ -1087,7 +1087,7 @@ def deliver(card, spaces, urgent=False, delegation=None, rules_only=False):
     from crewlib import find, chan, lead, hc_terminals, is_agent, enqueue, DraftInTheWay
     folder = folder_of(card["to"])
     if folder in (ROUTE, OWNER_TRAY):
-        return card, None, "waiting in " + ("To route" if folder == ROUTE else f"{OWNER}'s Inbox")
+        return card, None, "waiting in " + ("To route" if folder == ROUTE else "Your call")
     try:
         if topic_of(card["to"]):
             space, tab = find(card["to"], spaces)

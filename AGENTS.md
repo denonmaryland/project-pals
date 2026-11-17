@@ -3,7 +3,8 @@
 Project Pals is a [Herdr](https://herdr.dev) layout plus a set of mods and command-line helpers.
 Each Herdr space is a pal (a project with a brain: Claude Code, Codex, …). Each of its tabs is a
 topic. A head pal oversees the rest. `README.md` is the user-facing pitch. `RECIPE.md` is the
-full spec (what you see, how it behaves, watch-outs, done-when): read it before changing behavior.
+short brief in Herdr's format (Herdr's gallery reads it). `docs/spec.md` is the full spec (what you
+see, how it behaves, watch-outs, done-when): read it before changing behavior, and keep both true.
 
 ## Layout
 

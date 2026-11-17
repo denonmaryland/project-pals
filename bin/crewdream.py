@@ -7,7 +7,7 @@ Nightly (crewd, 03:30) and on demand (`pal dream`):
    ledger. Without the model (--no-model, or when it can't run), by word overlap.
 3. Draft: patterns that qualify (2+ pals, or 3+ times, or 30+ minutes lost) go to the head pal as a
    short digest; it drafts at most MAX_PROPOSALS proposals with `pal dream propose`.
-Proposals only: each is an Inbox card with its text or diff, and nothing is written until the owner
+Proposals only: each is a Your call item with its text or diff, and nothing is written until the owner
 accepts it, through the writer for that kind (a skill, an AGENTS.md change, a task, a brain note).
 An accepted fix is watched WATCH_DAYS days: a matching hiccup marks it "recurred" (and it comes back),
 none marks it "resolved". Declined patterns rest DECLINE_REST_DAYS unless they double.
@@ -269,7 +269,7 @@ def summary_of(p):
 def digest(qualifying):
     """The message the head pal gets: the patterns, and how to propose a fix for each."""
     lines = [f"[dream] {len(qualifying)} pattern(s) in the crew's notebooks qualify for a fix. Draft at most one proposal "
-             f"each (or skip one that needs nothing). Proposals only: {OWNER} approves each in the Inbox; nothing is written before that."]
+             f"each (or skip one that needs nothing). Proposals only: {OWNER} approves each in Your call; nothing is written before that."]
     for p in qualifying:
         quotes = " | ".join(f"\"{s['text'][:120]}\" ({s['pal']}, {s['day']})" for s in p.get("sources", [])[-2:])
         lines.append(f"- {p['id']} ({p.get('kind') or 'kind?'}): {p['summary']} · {p['count']}x, {len(p['pals'])} pal(s) "

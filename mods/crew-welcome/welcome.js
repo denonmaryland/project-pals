@@ -1,7 +1,7 @@
-// The welcome tour, on Home (T76; design: data/crew-boards/onboarding, DeNon's pick A "On Home",
-// 2026-11-09; RECIPE "The welcome tour"). Seven fixed screens in the head pal's voice, one message
-// and one main button each: hello → what a pal is → hire your first pal → Home → talk to me → you
-// stay in charge → done. "Skip the tour" is on every screen; a tour left halfway resumes there.
+// The welcome tour (T76; design: data/crew-boards/onboarding, DeNon's pick A, 2026-11-09; RECIPE
+// "The welcome tour"; a dialog of its own since T235 took Home out). Seven fixed screens in the head
+// pal's voice, one message and one main button each: hello → what a pal is → hire your first pal →
+// your calls → talk to me → you stay in charge → done. "Skip the tour" is on every screen; a tour left halfway resumes there.
 //
 // What it does, and when:
 // - Looking only, before any click: the installed brains (Herdr's knownAgents, the hire dialog's
@@ -12,7 +12,7 @@
 // - Nothing else: no second pal, no routines, no settings but the tour's own mark.
 //
 // The words are in welcome-text.js (pure, tested by tests/test_welcome.mjs). This file is drawn by
-// crew-home's render while welcomePending().
+// crew-welcome's render while welcomePending(); the dialog closes itself once the tour is done.
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -29,7 +29,7 @@ const hasHead = () => crew().bots.some((b) => b.god);
 // Pals that aren't the head pal, the idea partner or the Chief.
 const otherPals = () => spaces().filter((s) => { const b = botOf(s); return !b.god && !b.partner && !b.chief; });
 
-// The tour's own state, kept on the Home view (host.wel).
+// The tour's own state, kept on the dialog's view (host.wel).
 function state(host) {
   host.wel ??= { loaded: false, loading: false, agents: [], folders: [], pick: 0, brain: null, headBrain: null, hiring: null, hired: null, busy: false };
   return host.wel;
@@ -74,7 +74,7 @@ function context(host) {
 const setBeat = (i) => saveUiSettings({ welcome: { beat: Math.min(BEATS.length - 1, Math.max(0, i)) } });
 
 // Hiring makes a space, and its new terminal takes the keyboard (seen live, 2026-11-09: Enter worked
-// on screen 1 and not after). Give it back to Home once the hire returns, from a task, never in render.
+// on screen 1 and not after). Give it back to the tour once the hire returns, from a task, never in render.
 const refocus = (host) => { try { host.handle?.focus(); } catch {} };
 
 // The first click: every install gets its head pal (when a brain is installed and there isn't one).
@@ -108,7 +108,7 @@ function finish(host, cx, go) {
   if (go && pal) {
     const s = spaces().find((x) => same(x.name, pal));
     if (s) { run("space.select", { id: s.id }); showTabs(); }
-  }
+  } else if (!go && hasHead()) openTerminal();   // "Go to <Head>"
   cx.notify();
 }
 
@@ -231,7 +231,7 @@ export function welcomeView(host, d, t, cx) {
       }
     }
   } else if (id === "home") {
-    // What a decision looks like here (an example, not a real one).
+    // What a decision looks like in Your call (an example, not a real one).
     mid.child(v_flex().w(narrow ? 320 : 420).flex_none().gap(8).px(14).py(12).rounded(6).bg(d.bg1).border_1().border_color(d.line)
       .child(h_flex().gap(8).items_center()
         .child(div().h(16).px(5).flex().items_center().rounded(3).border_1().border_color(d.warnText + "66").text_size(9.5).font_weight(600).text_color(d.warnText).child("DECISION"))

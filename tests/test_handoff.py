@@ -584,6 +584,7 @@ class Parts(unittest.TestCase):
 
     def test_an_approval_never_crosses_with_the_seat(self):
         import crewguard
+        crewlib.save_settings(approval_gate=True)
         crewguard.APPROVALS.mkdir(parents=True, exist_ok=True)
         cmd = "git push origin crew/x"
         self.assertIsNotNone(crewguard.matches(cmd), "the gate should hold a push")

@@ -14,7 +14,7 @@ MOST = 5
 
 
 def pal_name(folder):
-    """"weather-app" → "Weather App" (the same rule as mods/crew-home/welcome-text.js palName)."""
+    """"weather-app" → "Weather App" (the same rule as mods/crew-welcome/welcome-text.js palName)."""
     base = Path(str(folder).rstrip("/")).name.lstrip(".")
     words = [w for w in re.split(r"[-_.\s]+", base) if w]
     return " ".join(w[0].upper() + w[1:] for w in words) or "My Project"
@@ -79,5 +79,5 @@ def status(st):
     if state == "skipped":
         return "The welcome tour was skipped. See it from the gear menu: Welcome tour."
     if state in ("new", "open"):
-        return f"The welcome tour is waiting on Home (screen {int(w.get('beat') or 0) + 1} of 7): Ctrl+Shift+H."
+        return f"The welcome tour is waiting (screen {int(w.get('beat') or 0) + 1} of 7): it opens when Project Pals starts, or from the gear menu's Welcome tour."
     return "The welcome tour hasn't run here. Start it from the gear menu: Welcome tour."

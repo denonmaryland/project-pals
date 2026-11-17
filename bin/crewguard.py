@@ -1800,10 +1800,39 @@ def approve_from_home(auth, entry, home_id):
     return r
 
 
+def log_action_attempts(terminal, bot, channel, cmd):
+    """Log each recognizable outward action without recording the command or secrets."""
+    for segment in commands(cmd):
+        # commands() emits shell -c/eval contents as well as their outer wrapper.
+        # The inner segments carry the individual attempts; do not count the wrapper again.
+        if len(commands(segment)) > 1:
+            continue
+        words = normal_words(segment)
+        action = None
+        if len(words) >= 2 and words[:2] == ["git", "push"]:
+            action = "push"
+        elif len(words) >= 3 and words[:2] == ["gh", "release"] and words[2] in ("create", "upload", "edit", "delete"):
+            action = "release"
+        elif len(words) >= 2 and words[0] in ("pal", "crew", "botz", "buddy") and words[1] == "land":
+            action = "land"
+        elif words and (words[0] in ("release", "release.sh") or
+                        words[0] in ("bash", "sh", "zsh") and len(words) > 1 and os.path.basename(words[1]) in ("release", "release.sh") or
+                        words[0] == "make" and "release" in words[1:]):
+            action = "release"
+        if action:
+            feed("action-attempt", bot=bot, channel=channel, terminal=terminal, action=action, phase="attempt")
+
+
 def check(terminal, bot, channel, cmd, extra=None, claim=False, cwd=None):
     """None: go ahead. Else the reason it's held. claim: the caller is the program itself (pal land's
     own check), so the approval it uses is spent for good; the hook's use leaves it for the program it
     let through to claim once (recently_used)."""
+    from crewlib import settings
+    if not settings()["approval_gate"]:
+        rule = matches(cmd)
+        if rule:
+            feed("gate-passed", bot=bot, channel=channel, terminal=terminal, rule=rule["name"], phase="attempt")
+        return None
     if bot in policy().get("trusted", []):
         return None
     rule = matches(cmd)
@@ -1853,6 +1882,10 @@ def owner_step(terminal, bot, channel, cmd, rule, why=None, argv=None):
     just let this terminal's `rule` command through (a pal whose run was approved isn't asked twice).
     Else the request that waits in the Inbox."""
     terminal = terminal or SHELL
+    from crewlib import settings
+    if not settings()["approval_gate"]:
+        feed("gate-passed", bot=bot, channel=channel, terminal=terminal, rule=rule, phase="attempt")
+        return None
     named = next((r for r in policy().get("guarded", []) if r.get("name") == rule), None)
     if not named:
         raise CrewError(f"no guarded rule called {rule}")

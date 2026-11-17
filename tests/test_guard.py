@@ -242,6 +242,9 @@ class EditApprovals(unittest.TestCase):
     """Review H2: an approval is for one exact edit of one file version."""
 
     def setUp(self):
+        # These cases exercise the existing approval path, now an opt-in setting.
+        from crewlib import save_settings
+        save_settings(approval_gate=True)
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
         import importlib.util
         spec = importlib.util.spec_from_file_location("crewhook", Path(__file__).resolve().parent.parent / "bin" / "crew-hook")

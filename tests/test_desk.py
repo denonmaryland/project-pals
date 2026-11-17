@@ -45,7 +45,7 @@ def sandbox(helper_state="live", crewd=True):
     (shims / "systemctl").write_text("#!/bin/sh\nexit 1\n")
     for f in shims.iterdir():
         f.chmod(0o755)
-    (data / "crew-settings.json").write_text(json.dumps({"owner": OWNER, "head": "Boss"}))
+    (data / "crew-settings.json").write_text(json.dumps({"owner": OWNER, "head": "Boss", "approval_gate": True}))
     if crewd:
         (data / "crew-daemon.json").write_text(json.dumps({"at": time.time() + 3600, "pid": 1}))
     env = {"HOME": str(home), "HERDR_APP_HOME": str(root / "app"), "CREW_DATA": str(data),
