@@ -799,8 +799,17 @@ def notify_credential_path(path, cwd=None, recursive=False):
         prefix = os.path.dirname(p[:wildcard.start()])
         p = os.path.realpath(prefix) + p[len(prefix):]
         target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
-        return fnmatch.fnmatchcase(target, p) or (recursive and any(
-            fnmatch.fnmatchcase(parent, p) for parent in (os.path.dirname(target), os.path.dirname(os.path.dirname(target)))))
+        def matches_components(value):
+            parts, pattern = value.split(os.sep), p.split(os.sep)
+            return len(parts) == len(pattern) and all(fnmatch.fnmatchcase(part, pat) for part, pat in zip(parts, pattern))
+        if matches_components(target):
+            return True
+        parent = os.path.dirname(target)
+        while recursive and parent != os.path.dirname(parent):
+            if matches_components(parent):
+                return True
+            parent = os.path.dirname(parent)
+        return False
     p = os.path.realpath(os.path.normpath(p))
     target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
     return p == target or (recursive and target.startswith(p.rstrip(os.sep) + os.sep))
@@ -831,6 +840,15 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
         operands = args[1:] if search else args
         if not search:
             operands += [w.split("=", 1)[1] for w in words[1:] if w.startswith("-") and "=" in w]
+        else:
+            for i, word in enumerate(words[1:], 1):
+                if word in {"-f", "--file"} and i + 1 < len(words):
+                    operands.append(words[i + 1])
+                elif word.startswith("--file="):
+                    operands.append(word[len("--file="):])
+                elif word.startswith("-f") and len(word) > 2:
+                    operands.append(word[2:])
+        operands += [word[2:] for word in words[1:] if re.match(r"^-[A-Za-z]@", word)]
         if name not in {"echo", "printf"}:
             for arg in operands:
                 candidate = arg.split("=", 1)[-1].lstrip("<@")
