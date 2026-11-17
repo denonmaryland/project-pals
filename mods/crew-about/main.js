@@ -179,6 +179,13 @@ export default class CrewAbout extends View {
     });
   }
 
+  setApprovalGate(on, cx) {
+    cx.spawn(async () => {
+      try { await ownerCli(["settings", "approval-gate", on ? "on" : "off"]); }
+      catch (e) { notify({ title: "Couldn't change approval gate", body: String(e.message ?? e).slice(0, 200), level: "warning" }); }
+    });
+  }
+
   setBypass(on, cx) {
     cx.spawn(async () => {
       try { await ownerCli(["settings", "bypass", on ? "on" : "off"]); }
@@ -321,6 +328,10 @@ export default class CrewAbout extends View {
         div().w(36).h(22).p(2).rounded(4).bg(bypass ? t.accent : a(t.foreground, "22")).flex().items_center()
           .when(bypass, (el) => el.justify_end()).child(div().size(18).rounded(3).bg(t.popover)),
         (_e, cx) => this.setBypass(!bypass, cx)))
+      .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
+      .child(row("set-approval-gate", "Approval gate", "Review guarded commands before they run",
+        div().text_size(12.5).text_color(t.muted).child(shared("crew.settings")?.approval_gate === true ? "On" : "Off"),
+        (_e, cx) => this.setApprovalGate(shared("crew.settings")?.approval_gate !== true, cx)))
       .child(div().h(1).mx(16).bg(a(t.foreground, "0c")))
       // Which model reviews topics for memory (pal settings llm: the owner's click since 0.4.0).
       .child(row("set-llm", "Background model", "Reviews topics to save memory notes · click to change",

@@ -67,8 +67,9 @@ One window, the `pals` layout (Focus), on the `chrome` background with no title 
   resumes each topic's session. Never a pal that's working or waiting on you. With systemd, each
   agent runs in its own scope so the out-of-memory killer takes one pal, not the crew.
 - **Review and land.** A worktree topic's branch opens in Review (diff, line comments);
-  `pal land Pal#topic` merges it into its base, held for the owner like any landing.
-- **The approval gate.** Claude Code and Antigravity CLI pals are held, before the command runs,
+  `pal land Pal#topic` merges it into its base; approval is required when the gate is On.
+- **The optional approval gate.** Off by default; only the owner's own app click in About →
+  Settings changes it. When On, Claude Code and Antigravity CLI pals are held, before the command runs,
   on: push, publish, release, PR merge or create, GitHub posting, deploys, mail and webhooks,
   landing (`pal land`, or moving a base branch by hand), a repo's release script, edits to a
   project's AGENTS.md or CLAUDE.md, and writes into Project Pals' queue, click tokens or cards. The
@@ -78,7 +79,8 @@ One window, the `pals` layout (Focus), on the `chrome` background with no title 
 - **Owner decisions** (settings, missions, AGENTS.md proposals, installs, updates, roll back,
   uninstall, landing) need the owner's click in the app, in Your call or the dialog it opens (a
   one-time click token), or an
-  authenticated helper with Full control. Another pal's message is never the owner's approval.
+  authenticated helper with Full control. The gate switch needs the owner's own click; landing
+  needs approval only while the gate is On. Another pal's message is never the owner's approval.
 - **Trusted helpers.** One level per helper, set only by the owner's click: **Off**, **Work only**
   (send normal work to pals) or **Full control** (autonomous app decisions, including pushes and
   releases). Helper actions are always attributed to the helper; Revoke stops queued and future use.
@@ -156,8 +158,8 @@ One window, the `pals` layout (Focus), on the `chrome` background with no title 
   the header's Your call pill counts it.
 - `pal handoff Test#x --to codex -n` prints the brief and changes nothing; without `-n` the same tab
   runs Codex with that brief, and `pal handoff back Test#x` returns it.
-- A pal's `git push`, `pal land` or Edit of an AGENTS.md is held until the owner approves, then
-  goes through once.
+- With the gate On, a pal's `git push`, `pal land` or Edit of an AGENTS.md is held until approved,
+  then goes through once. With it Off, these pass; intercepted attempts are logged without command text.
 - `pal update check` answers from the repo in `pals.json`; an update keeps every pal, room, memory,
   routine and task, and Roll back restores the previous version.
 - Install into a fresh throwaway HOME, then `./install.sh --uninstall --purge`: the HOME is as it

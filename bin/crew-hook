@@ -209,12 +209,14 @@ def pre_tool_use(event):
         return
     import crewguard
     crewguard.HOOK_CWD = event.get("cwd") or None   # where it runs: the live-branch rule asks which branch is checked out there
-    if not crewguard.matches(cmd):
-        return
     me = crew_bot()
     if not me:
         return
     t, bot, ch = me
+    if tool == "Bash":
+        crewguard.log_action_attempts(t, bot, ch, cmd)
+    if not crewguard.matches(cmd):
+        return
     held = crewguard.check(t, bot, ch, cmd, extra)
     if not held:
         return
@@ -255,12 +257,13 @@ def agy_pre_tool_use(event):
     cmd = str(args.get("CommandLine") or args.get("command") or "")
     import crewguard
     crewguard.HOOK_CWD = args.get("Cwd") or args.get("cwd") or event.get("cwd") or None
-    if not crewguard.matches(cmd):
-        return
     me = crew_bot()
     if not me:
         return
     t, bot, ch = me
+    crewguard.log_action_attempts(t, bot, ch, cmd)
+    if not crewguard.matches(cmd):
+        return
     held = crewguard.check(t, bot, ch, cmd)
     if not held:
         return

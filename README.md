@@ -26,9 +26,9 @@ Early software: start with a throwaway project.
 - **Your call.** What only you decide comes up one at a time in a small dialog over the terminal
   (**Ctrl+Shift+A**, or the header's **Your call** pill): a pal's question, a held command, a
   proposed change, with who's asking and what each option does.
-- **An approval gate.** Claude Code and Antigravity CLI pals stop and wait for your click before
-  they push, merge or land a branch, publish a release, deploy, or edit a project's AGENTS.md or
-  CLAUDE.md. It catches mistakes; it isn't a sandbox.
+- **An optional approval gate.** Off by default. Your own click in About → Settings turns it On or
+  Off. When On, Claude Code and Antigravity CLI pals wait for approval before guarded commands.
+  It catches mistakes; it is not a sandbox.
 - **Trust per helper.** A helper that acts for you gets one level: Off, Work only (sends normal work
   to your pals) or Full control (makes app decisions on its own). Only your own click sets the level,
   and helper actions are always shown as the helper's. See [docs/full-control.md](docs/full-control.md).

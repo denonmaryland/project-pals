@@ -48,6 +48,23 @@ owner_go() {
   [[ "$typed" == "$version" ]] || { echo "not released" >&2; return 3; }
 }
 
+# Only successful steps are logged here. The generic hook records attempts separately.
+log_release_event() {
+  python3 - "$1" "$version" <<'PYLOG' || true
+import os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path.home() / ".local/lib/herdr-crew"))
+try:
+    from crewlib import feed, term_info, split_where
+    terminal = os.environ.get("HC_TERMINAL_ID")
+    labels = (term_info(terminal).get("labels") or {}) if terminal else {}
+    bot, channel = split_where(labels.get("where")) if labels.get("where") else (None, None)
+    feed("release-action", action=sys.argv[1], version=sys.argv[2], terminal=terminal, bot=bot, channel=channel, phase="success")
+except Exception:
+    pass
+PYLOG
+}
+
 repo="$(python3 -c 'import json; print(json.load(open("pals.json"))["repo"])')"
 current="$(cat VERSION)"
 # Newer than VERSION, or VERSION already says it (set ahead of the release, so a local install
@@ -108,6 +125,8 @@ git archive --format=tar.gz --prefix="project-pals-$version/" -o "$tarball" "v$v
 (cd dist && sha256sum "project-pals-$version.tar.gz" > SHA256SUMS)
 
 git push -q origin main "v$version"
+log_release_event push
 trap - ERR   # pushed: from here a failure leaves the tag on GitHub; rerun just the gh release command
 gh release create "v$version" "$tarball" dist/SHA256SUMS --repo "$repo" --title "Project Pals $version" --notes "$notes"
+log_release_event release
 echo "released $version: installs see it at their next check (About → Check for updates)"

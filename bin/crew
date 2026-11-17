@@ -523,6 +523,11 @@ def cmd_feed(spaces, show_all, n):
                 "routine": f"routine {e.get('routine')} ({e.get('bot')}): {e.get('status')}",
                 "approval": f"approval {e.get('id')} {e.get('status')}: {where} {e.get('command', '')[:80]}",
                 "approval-refused": f"approval {e.get('id')}: a {e.get('wanted')} came after it was already {e.get('status')}; nothing changed",
+                "gate-passed": f"{where or e.get('terminal') or 'Unknown'} attempted a guarded action ({e.get('rule', 'unknown')}); approval gate off",
+                "action-attempt": f"{where or e.get('terminal') or 'Unknown'} attempted {e.get('action', 'an action')}",
+                "release-action": f"{where or e.get('terminal') or 'Unknown'} completed {e.get('action', 'release action')} ({e.get('version', 'unknown version')})",
+                "landed": f"{e.get('by') or where or 'Unknown'} landed {e.get('branch', 'a branch')}",
+                "land-snapshot": f"{e.get('by') or where or 'Unknown'} saved an installed-app snapshot before land",
                 "remembered": f"{where} remembered {e.get('count')} things", "skill": f"{where} saved skill {e.get('skill')}",
                 "helper": f"trusted helper: {e.get('text') or e.get('status')}",
                 "tap": f"relayed tap {e.get('hold')} by {e.get('helper')}: {e.get('item')} → {e.get('choice')} · {e.get('status')}",
@@ -989,11 +994,19 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
             die(f"{wt['branch']} moved while this was landing it; nothing changed. Try again.")
         # Everything on the branch is on the base already: nothing to merge (and no empty merge commit).
         already = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", tip, old], capture_output=True).returncode == 0
+        if not already:
+            if where and [l for l in git(where, "status", "--porcelain", "--untracked-files=no").splitlines() if l]:
+                die(f"{where} (on {wt['base']}) has uncommitted changes of its own; commit or stash them before landing")
+            # Snapshot the installed app before changing a ref. This does not restore the Git ref.
+            try:
+                snapshot = crewupdate._snapshot("before-land")
+            except Exception as e:
+                die(f"could not snapshot the installed app before land: {e}; nothing changed")
+            actor, _ = whoami(spaces)
+            append_jsonl(FEED, {"at": now_ms(), "kind": "land-snapshot", "bot": space["name"], "channel": chan(tab), "by": actor or OWNER, "snapshot": str(snapshot)})
         if already:
             pass
         elif where:
-            if [l for l in git(where, "status", "--porcelain", "--untracked-files=no").splitlines() if l]:
-                die(f"{where} (on {wt['base']}) has uncommitted changes of its own; commit or stash them before landing")
             delegation_authority()
             r = subprocess.run(["git", "-C", where, "merge", "--no-ff", tip, "-m", msg], capture_output=True, text=True)
             if r.returncode != 0:
@@ -1025,7 +1038,8 @@ def cmd_land(spaces, spec, check=None, at=None, onto=None):
             enqueue(x["terminal"], f"[pal] Your branch {wt['branch']} landed on {wt['base']}.", sender="crew", kind="land")
         except CrewError:
             pass
-    append_jsonl(FEED, {"at": now_ms(), "kind": "landed", "bot": space["name"], "channel": chan(tab), "branch": wt["branch"]})
+    actor, _ = whoami(spaces)
+    append_jsonl(FEED, {"at": now_ms(), "kind": "landed", "bot": space["name"], "channel": chan(tab), "by": actor or OWNER, "branch": wt["branch"]})
     print(f"landed {wt['branch']} on {wt['base']} in {repo}")
 
 
@@ -2966,13 +2980,22 @@ def cmd_settings(rest):
     if not rest:
         st = settings()
         print(f"owner: {st['owner']}\nhead pal: {st['head']}\nhead pal's inbox topic: {'#' + head_topic() if head_topic() else 'none (the topic it shows, else its first tab)'}"
-              f"\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}"
+              f"\napproval gate: {'on' if st['approval_gate'] else 'off'}\nbypass permissions for new pals: {'on' if st['bypass'] else 'off'}\nbackground llm: {st.get('llm', 'auto')}"
               + f"\nupdate channel: {'Live (follows ' + crewupdate.channel()['branch'] + ' in ' + str(crewupdate.channel()['repo']) + ')' if crewupdate.channel()['channel'] == 'live' else 'Stable (GitHub releases)'}")
         return
     # Changing one is the owner's: a click in Project Pals (About, Settings → Desk). A missing or
     # unknown terminal ID isn't the owner (Grok review H1).
-    require_owner("changing settings")
     key, val = rest[0], " ".join(rest[1:]).strip()
+    source = require_owner("changing settings", allow_delegate=key != "approval-gate")
+    if key == "approval-gate":
+        if source != "the app":
+            die("only the owner’s own app click can change the approval gate")
+        if val not in ("on", "off"):
+            die("pal settings approval-gate on|off")
+        save_settings(approval_gate=val == "on")
+        append_jsonl(FEED, {"at": now_ms(), "kind": "approval-gate", "state": val, "by": OWNER})
+        print(f"approval gate: {val}")
+        return
     if key.startswith("desk."):
         # The Desk's settings apply at once (crewd reads them each time), so no restart.
         v = crewdesk.set_setting(key[5:], val)

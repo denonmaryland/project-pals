@@ -399,7 +399,12 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   - A cheap model (`claude -p` or `agy -p`, chosen in About → Background model: `pal settings llm` with the owner's click) reviews topics to save memory notes, distilled nightly.
   - Pals' replies (for `pal ask` and the "finished what you asked" callbacks) are read from Claude Code (`~/.claude/projects/…`) and Antigravity CLI (`~/.gemini/antigravity-cli/brain/…`) session files, through `crewchat.py`.
   - It checks for updates every 6 hours at most (`crewupdate.CHECK_EVERY`).
-- **Approvals:** with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in
+- **Approval gate:** Off by default; only the owner's own app click changes it. Off passes guarded
+  commands and records intercepted attempts without command text. Hooks record recognizable land, push
+  and release attempts; the bundled release script records successful push and release steps. Raw
+  commands in hookless harnesses are not observed. `pal land` snapshots the installed app before a
+  branch change; About → Roll back restores installed files, not Git refs.
+- **Approvals:** when the gate is On, with the Claude Code or Antigravity CLI hook, these are held for the owner's approval in
   Your call: push, publish, release, PR merge or create, GitHub posting, deploys, messaging, and
   `pal land`. An approval lets that exact command through once.
   When the hook lets an approved line through and the program it runs asks again itself (`pal land`'s
@@ -408,7 +413,7 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
   command, exec, nice or sudo, no leading `VAR=value`), the same words, the same rules re-checked in
   the folder the hook recorded, the program running in exactly that folder, and for a land the same
   commit. Anything else asks the owner again (T206, T212, T215).
-  Landing by hand is held too (`base-branch`, T136, always on, every project): a base branch
+  Landing by hand is held too (`base-branch`, T136, with the gate On, every project): a base branch
   (`main`, `master`, the branch Live follows, any base a worktree topic was cut from) moved by its
   name: `git update-ref refs/heads/main <commit>`, `git branch -f main crew/x`, `-M` / `-C` onto
   it, deleting it, `switch -C` / `checkout -B main`, `git fetch . crew/x:main`, a write to its ref
@@ -1608,6 +1613,9 @@ implementation details below, not the current permission model.
 
 ## Watch out
 
+Descriptions of commands held by crewguard below apply when the optional approval gate is On;
+it is Off by default. Owner-only app actions still require their own authorization.
+
 - **A swap started by crewd must outlive crewd** (T90): installing may restart it, and systemd
   kills a unit's whole process group. `crewupdate.detach` starts `pal update follow` (and the
   background tests) with `systemd-run --user`, a unit of its own; without a systemd user session it
@@ -1675,7 +1683,7 @@ implementation details below, not the current permission model.
   an interpreter is judged as code (T38): text quoted inside its strings is neither a path nor a call,
   unless the code runs commands. Best effort: a command built from pieces, base64, or a script written
   and run later isn't seen.
-- **The gate fails closed** (Grok review M3): when `crew-hook pre-tool-use` / `agy-pre-tool-use` throws
+- **The gate fails closed when On** (Grok review M3): when `crew-hook pre-tool-use` / `agy-pre-tool-use` throws
   in a Herdr terminal it denies with what failed. Outside Herdr (the hooks are global) and for the
   other events it fails open, so a bug never blocks someone's own Claude Code session.
 - **A queue file needs a card or enqueue's record** (Grok review H2): `enqueue` writes
@@ -1840,7 +1848,7 @@ implementation details below, not the current permission model.
   (`release-script`). An approval is good for one run of that exact command, and lapses
   (`expired`) if it isn't used within 30 minutes. Your call shows the request's ID on the asker's
   line, lists Decline first and Approve second (keys 1 and 2), and every decision attempt is recorded with where it came from.
-- **A release script asks for the owner itself:** the gate is a hook in pals' terminals, so a
+- **With the gate On, a release script asks for the owner itself:** the gate is a hook in pals' terminals, so a
   script run from a plain shell was never asked (0.4.2 went out that way). `./release` now runs
   `pal owner-step release-script -- <its own command line>` before it checks or changes anything:
   exit 3 and a request in Your call from "a shell on this computer", then the same line goes
@@ -2012,6 +2020,9 @@ implementation details below, not the current permission model.
   holder's `ManagedOOMPreference=avoid`: that's the point.
 
 ## Done when
+
+Approval-hold checks below assume the gate is On. With it Off, guarded commands pass and the
+logging and snapshot behavior described above applies.
 
 - Add creates Work only. With a valid key its card has the normal-work header; owner operations
   refuse. Off/missing/rotated keys cannot authorize Full operations; strict sending produces no

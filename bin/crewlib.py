@@ -95,7 +95,7 @@ DEFAULT_HEAD = "Orchestrator"   # the head pal's name until the owner picks one
 def settings():
     s = load_json(SETTINGS, {})
     return {**s, "owner": (s.get("owner") or "").strip() or _default_owner(), "bypass": bool(s.get("bypass", False)),
-            "head": (s.get("head") or "").strip() or DEFAULT_HEAD, "llm": (s.get("llm") or "auto").strip().lower()}
+            "approval_gate": s.get("approval_gate") is True, "head": (s.get("head") or "").strip() or DEFAULT_HEAD, "llm": (s.get("llm") or "auto").strip().lower()}
 
 
 _held_locks = threading.local()

@@ -172,7 +172,9 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for reporting and contributing.
 
 ## The approval gate
 
-Claude Code and Antigravity CLI pals ask you before they push, publish, make a GitHub release,
+The gate is **Off by default**. Your own app click in About → Settings → Approval gate turns it On
+or Off; helpers cannot change the switch. When On, Claude Code and Antigravity CLI pals ask you
+before they push, publish, make a GitHub release,
 merge or post on GitHub, deploy, send mail or webhooks, land a branch (with `pal land`, or by hand:
 moving `main` with `git update-ref`, `git branch -f` and the like), run a repo's release script,
 edit a project's AGENTS.md or CLAUDE.md, or write into Project Pals' message queue, your click
@@ -184,8 +186,13 @@ protections remain under your own click.
   fed to a shell, or a string that Python, Node, Perl, Ruby or PHP runs; file writes from those
   languages and from editors. A command that's only mentioned (a grep pattern, a quoted string,
   `--help`) isn't held. If the gate itself fails, the command is stopped, not let through.
-- Settings, updates, roll back, uninstall, landing and renaming need your click or a helper's
-  authenticated Full control grant. Only your own click sends a message as you.
+- Settings, updates, roll back, uninstall and renaming need your click or a helper's authenticated
+  Full control grant. The gate switch needs your own click. Landing needs approval with the gate On.
+  Only your own click sends a message as you.
+- With the gate Off, intercepted guarded commands are logged as attempts without command text.
+  The hooks record recognizable land, push and release attempts; the bundled release script records
+  successful push and release steps. Raw commands from hookless harnesses are not observed. A land
+  snapshots installed files; About → Roll back restores the app, not Git refs.
 - **One level per helper** (About → Settings → **Trusted helpers**): **Off** grants no helper
   authority; **Work only** sends normal work to your pals; **Full control** lets that helper make
   app decisions autonomously, including pushes and releases. Full control has no per-action
@@ -354,7 +361,7 @@ amber strip across the top saying so, and **Back** (what was running returns) an
 on it. **Back to stable** in About puts the newest release back.
 
 All of these are your click. A pal can't switch the channel, start a trial or install, and while
-Live is on, a pal moving `main` by hand is held for your approval like any landing.
+Live is on and the gate is On, a pal moving `main` by hand is held for approval like any landing.
 A first install has nothing to roll back to; to take it out again, use Uninstall (above).
 
 ## Releasing (maintainers)
@@ -364,8 +371,8 @@ A first install has nothing to roll back to; to take it out again, use Uninstall
 ```
 
 This bumps `VERSION`, tags it, builds the tarball and `SHA256SUMS`, pushes, and creates the
-GitHub release. It first asks for the owner's go: a request in Project Pals' Your call, then the same
-command once more after the click (without Project Pals, you type the version). `./release 0.2.0
+GitHub release. With the gate On, it asks for approval in Your call, then runs after the click;
+with the gate Off it runs without that prompt. Without Project Pals, you type the version. `./release 0.2.0
 --dry-run` runs every check and nothing else.
 
 ## License
