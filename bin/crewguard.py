@@ -785,6 +785,71 @@ NOTIFY_SECRET_CALL = re.compile(r"\bcrewnotify\.(?:_unseal|_credentials|_post|_t
                                 r"|\bsystemd-creds\b[^\n]*\bpal-notify\b|\bpal-notify\b[^\n]*\bsystemd-creds\b")
 
 
+def notify_credential_path(path, cwd=None, recursive=False):
+    """Match the credential file or an ancestor scanned recursively, without opening it."""
+    if not isinstance(path, str) or not path:
+        return False
+    p = os.path.expanduser(path.strip("'\""))
+    p = p.replace("${HOME}", os.path.expanduser("~")).replace("$HOME", os.path.expanduser("~"))
+    if not os.path.isabs(p):
+        p = os.path.join(cwd or os.getcwd(), p)
+    wildcard = re.search(r"[*?\[]", p)
+    if wildcard:
+        p = os.path.dirname(p[:wildcard.start()])
+        recursive = True
+    p = os.path.realpath(os.path.normpath(p))
+    target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
+    return p == target or (recursive and target.startswith(p.rstrip(os.sep) + os.sep))
+
+
+def notify_credential_command(cmd, cwd=None):
+    """Refuse ordinary credential access even when the optional approval gate is off.
+
+    This is a mistake guard for hook-enabled pals, not same-user process isolation.
+    """
+    if re.search(r"\bsystemd-creds\b[^\n]*\bpal-notify\b|\bpal-notify\b[^\n]*\bsystemd-creds\b", cmd):
+        return True
+    if re.search(r"\bcrewnotify\.(?:_unseal|_credentials|_post|_transport_main)\b", cmd) and INTERP_ANY.search(cmd):
+        return True
+    if INTERP_ANY.search(cmd) and re.search(r"\bfrom\s+crewnotify\s+import\s+[^\n]*(?:_unseal|_credentials|_post|_transport_main)", cmd):
+        return True
+    current = cwd or os.getcwd()
+    for seg in commands(cmd):
+        words = normal_words(seg)
+        if not words:
+            continue
+        name = words[0]
+        args = [w for w in words[1:] if not w.startswith("-")]
+        if re.fullmatch(r"(?:python|pypy)[\d.]*", name) and "-c" in words:
+            import ast
+            try:
+                tree = ast.parse(words[words.index("-c") + 1])
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    called = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+                    if called in {"open", "Path", "read_text", "read_bytes"} and any(
+                            isinstance(value, ast.Constant) and isinstance(value.value, str)
+                            and notify_credential_path(value.value, current, recursive=True)
+                            for value in ast.walk(node)):
+                        return True
+            except (SyntaxError, IndexError):
+                pass
+        if name == "cd" and args:
+            if notify_credential_path(args[0], current):
+                return True
+            current = os.path.realpath(os.path.join(current, os.path.expanduser(args[0])))
+            continue
+        if name in {"grep", "rg", "ag"}:
+            args = args[1:]  # The first positional argument is a pattern, not a path.
+        elif name not in {"cat", "head", "tail", "less", "more", "cp", "mv", "base64", "xxd", "tar", "sed", "awk", "find", "python", "python3", "systemd-creds"}:
+            continue
+        if any(notify_credential_path(arg, current, recursive=True) for arg in args):
+            return True
+    return False
+
+
 def touches_notify(cmd):
     """Protect ordinary credential reads/calls, without claiming same-user OS isolation."""
     edited = _edited(cmd)

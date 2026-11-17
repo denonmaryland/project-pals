@@ -222,6 +222,11 @@ def pre_tool_use(event):
     if not me:
         return
     t, bot, ch = me
+    if (tool == "Bash" and crewguard.notify_credential_command(cmd, event.get("cwd"))) or (
+            tool != "Bash" and crewguard.notify_credential_path(inp.get("file_path") or inp.get("notebook_path"), event.get("cwd"))):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": "Project Pals: phone-alert credentials are private to the owner."}}))
+        return
     if tool == "Bash":
         crewguard.log_action_attempts(t, bot, ch, cmd)
     if not crewguard.matches(cmd):
@@ -270,6 +275,9 @@ def agy_pre_tool_use(event):
     if not me:
         return
     t, bot, ch = me
+    if crewguard.notify_credential_command(cmd, crewguard.HOOK_CWD):
+        print(json.dumps({"decision": "deny", "reason": "Project Pals: phone-alert credentials are private to the owner."}))
+        return
     crewguard.log_action_attempts(t, bot, ch, cmd)
     if not crewguard.matches(cmd):
         return

@@ -195,6 +195,45 @@ print(json.dumps({"held":inside, "free":outside}))
         self.assertEqual(got["held"], [True] * 3)
         self.assertEqual(got["free"], [False] * 3)
 
+    def test_credential_lock_stays_on_when_optional_gate_is_off(self):
+        settings = self.data / "crew-settings.json"
+        config = json.loads(settings.read_text())
+        config["approval_gate"] = False
+        settings.write_text(json.dumps(config))
+        home = Path(self.env["HOME"])
+        notify = home / ".config/project-pals/notify"
+        notify.mkdir(parents=True)
+        repo = self.root / "source"
+        repo.mkdir()
+        (repo / "alias").symlink_to(notify, target_is_directory=True)
+        def hook(kind, event, term="tW"):
+            env = {**self.env, **({"HC_TERMINAL_ID": term} if term else {})}
+            result = subprocess.run([sys.executable, str(BIN / "crew-hook"), kind], input=json.dumps(event),
+                                    text=True, capture_output=True, env=env, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout) if result.stdout.strip() else None
+        commands = ["cat ~/.config/project-pals/notify/credentials.json", "cat alias/credentials.json",
+                    "cd ~/.config/project-pals/notify && cat credentials.json",
+                    "cat ~/.config/project-pals/notify/*.json",
+                    "systemd-creds --user --name=pal-notify decrypt - -",
+                    "python3 -c 'open(\"~/.config/project-pals/notify/credentials.json\").read()'",
+                    "python3 -c 'from crewnotify import _credentials; _credentials()'"]
+        for command in commands:
+            with self.subTest(command=command):
+                event = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo)}
+                result = hook("pre-tool-use", event)
+                self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+                agy = {"toolCall": {"name": "run_command", "args": {"CommandLine": command, "Cwd": str(repo)}}}
+                self.assertEqual(hook("agy-pre-tool-use", agy)["decision"], "deny")
+        for command in ("git status", "cat bin/crewnotify.py", "pal notify status --json",
+                        "cat ~/.config/project-pals/notify/state.json",
+                        "rg 'credentials.json' bin"):
+            event = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo)}
+            self.assertIsNone(hook("pre-tool-use", event), command)
+        event = {"tool_name": "Read", "tool_input": {"file_path": str(notify / "credentials.json")}, "cwd": str(repo)}
+        self.assertEqual(hook("pre-tool-use", event)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIsNone(hook("pre-tool-use", event, term=None))
+
     def test_purge_lists_and_removes_only_owned_alert_files_without_following_links(self):
         got = py(self.env, '''
 import crewuninstall as u

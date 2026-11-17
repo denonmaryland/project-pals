@@ -403,6 +403,8 @@ Credentials are kept outside Herdr's data folder with private file permissions a
 this Linux user where supported. Setup refuses an unsealed fallback unless you explicitly run
 `pal notify setup --allow-plain`. Same-user programs can still reach user credentials; this
 protects ordinary agent flows and does **not** provide OS isolation.
+For hook-enabled pals, the phone-alert credential lock stays active even when the optional
+approval gate is Off. It guards common shell and file-tool access, not all same-user code.
 
 While crewd runs, new asks/plans, approval requests, logins, owner-needed cards/proposals and
 trusted-helper off/removal events are queued promptly, including when no terminals are open.
