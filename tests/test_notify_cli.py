@@ -206,6 +206,9 @@ print(json.dumps({"held":inside, "free":outside}))
         repo = self.root / "source"
         repo.mkdir()
         (repo / "alias").symlink_to(notify, target_is_directory=True)
+        (repo / "reader.sh").write_text("#!/bin/sh\ncat ~/.config/project-pals/notify/credentials.json\n")
+        (repo / "reader.py").write_text("open('~/.config/project-pals/notify/credentials.json').read()\n")
+        (repo / "safe.py").write_text("print('~/.config/project-pals/notify/credentials.json')\n")
         def hook(kind, event, term="tW"):
             env = {**self.env, **({"HC_TERMINAL_ID": term} if term else {})}
             result = subprocess.run([sys.executable, str(BIN / "crew-hook"), kind], input=json.dumps(event),
@@ -215,6 +218,15 @@ print(json.dumps({"held":inside, "free":outside}))
         commands = ["cat ~/.config/project-pals/notify/credentials.json", "cat alias/credentials.json",
                     "cd ~/.config/project-pals/notify && cat credentials.json",
                     "cat ~/.config/project-pals/notify/*.json",
+                    "od ~/.config/project-pals/notify/credentials.json",
+                    "strings ~/.config/project-pals/notify/credentials.json",
+                    "dd if=~/.config/project-pals/notify/credentials.json",
+                    "jq . ~/.config/project-pals/notify/credentials.json",
+                    "bat ~/.config/project-pals/notify/credentials.json",
+                    "rsync ~/.config/project-pals/notify/credentials.json /tmp/",
+                    "perl -e 'open(F,\"~/.config/project-pals/notify/credentials.json\")'",
+                    "node -e 'require(\"fs\").readFileSync(\"~/.config/project-pals/notify/credentials.json\")'",
+                    "bash reader.sh", "./reader.sh", "python3 reader.py",
                     "systemd-creds --user --name=pal-notify decrypt - -",
                     "python3 -c 'open(\"~/.config/project-pals/notify/credentials.json\").read()'",
                     "python3 -c 'from crewnotify import _credentials; _credentials()'"]
@@ -227,7 +239,7 @@ print(json.dumps({"held":inside, "free":outside}))
                 self.assertEqual(hook("agy-pre-tool-use", agy)["decision"], "deny")
         for command in ("git status", "cat bin/crewnotify.py", "pal notify status --json",
                         "cat ~/.config/project-pals/notify/state.json",
-                        "rg 'credentials.json' bin"):
+                        "rg 'credentials.json' bin", "python3 safe.py"):
             event = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo)}
             self.assertIsNone(hook("pre-tool-use", event), command)
         event = {"tool_name": "Read", "tool_input": {"file_path": str(notify / "credentials.json")}, "cwd": str(repo)}

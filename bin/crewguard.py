@@ -802,7 +802,7 @@ def notify_credential_path(path, cwd=None, recursive=False):
     return p == target or (recursive and target.startswith(p.rstrip(os.sep) + os.sep))
 
 
-def notify_credential_command(cmd, cwd=None):
+def notify_credential_command(cmd, cwd=None, _depth=0):
     """Refuse ordinary credential access even when the optional approval gate is off.
 
     This is a mistake guard for hook-enabled pals, not same-user process isolation.
@@ -814,6 +814,8 @@ def notify_credential_command(cmd, cwd=None):
     if INTERP_ANY.search(cmd) and re.search(r"\bfrom\s+crewnotify\s+import\s+[^\n]*(?:_unseal|_credentials|_post|_transport_main)", cmd):
         return True
     current = cwd or os.getcwd()
+    if _depth > 3:
+        return False
     for seg in commands(cmd):
         words = normal_words(seg)
         if not words:
@@ -841,12 +843,51 @@ def notify_credential_command(cmd, cwd=None):
                 return True
             current = os.path.realpath(os.path.join(current, os.path.expanduser(args[0])))
             continue
-        if name in {"grep", "rg", "ag"}:
+        if name in {"grep", "rg", "ag", "jq"}:
             args = args[1:]  # The first positional argument is a pattern, not a path.
-        elif name not in {"cat", "head", "tail", "less", "more", "cp", "mv", "base64", "xxd", "tar", "sed", "awk", "find", "python", "python3", "systemd-creds"}:
+        elif name not in {"cat", "head", "tail", "less", "more", "cp", "mv", "base64", "xxd", "tar", "sed", "awk", "find", "od", "strings", "dd", "bat", "batcat", "rsync", "perl", "node", "nodejs", "python", "python3", "systemd-creds", "sh", "bash"} and not name.endswith((".sh", ".py", ".js", ".pl")):
             continue
-        if any(notify_credential_path(arg, current, recursive=True) for arg in args):
+        if any(notify_credential_path(arg.split("=", 1)[-1], current, recursive=True) for arg in args):
             return True
+        # Literal paths inside interpreter expressions (e.g. node -e / perl -e).
+        if name in {"node", "nodejs", "perl"} and any(x in words for x in ("-e", "--eval")):
+            for arg in args:
+                for literal in re.findall(r"['\"]([^'\"\n]+)['\"]", arg):
+                    if notify_credential_path(literal, current, recursive=True):
+                        return True
+        # Inspect small, regular executable scripts, never the credential itself. This catches
+        # straightforward paths in script files without claiming to interpret arbitrary code.
+        import shlex
+        try:
+            raw_head = shlex.split(seg)[0]
+        except (ValueError, IndexError):
+            raw_head = words[0]
+        scripts = ([raw_head] if name.endswith((".sh", ".py", ".js", ".pl")) and os.path.basename(raw_head) == name else [])
+        if name in {"sh", "bash", "python", "python3", "node", "nodejs", "perl"}:
+            scripts += [arg for arg in args if arg.endswith((".sh", ".py", ".js", ".pl"))]
+        for script in scripts:
+            filename = os.path.abspath(os.path.join(current, os.path.expanduser(script)))
+            if notify_credential_path(filename, current, recursive=True):
+                return True
+            try:
+                import stat
+                fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    info = os.fstat(fd)
+                    if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
+                        continue
+                    source = os.read(fd, 65537).decode("utf-8")
+                finally:
+                    os.close(fd)
+            except (OSError, UnicodeError):
+                continue
+            if filename.endswith(".sh") and notify_credential_command(source, current, _depth + 1):
+                return True
+            for line in source.splitlines():
+                if re.search(r"\b(?:open|readFile|readFileSync|read_text|read_bytes)\s*\(", line):
+                    for literal in re.findall(r"['\"]([^'\"\n]+)['\"]", line):
+                        if notify_credential_path(literal, current, recursive=True):
+                            return True
     return False
 
 
