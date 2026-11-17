@@ -2190,7 +2190,7 @@ logging and snapshot behavior described above applies.
   Unchanged ticks do not rewrite state; source metadata controls parsing, with a 10-second refresh.
   HTTP 408/425/429/5xx and TLS failures retry with backoff. Certificate verification failures
   show a distinct actionable status while retrying. A permanent failure turns
-  alerts off and leaves a fixed-text Home notice to acknowledge plus a readable pal-feed entry.
+  alerts off and leaves a fixed-text, owner-only Home notice to acknowledge plus a readable pal-feed entry.
   Credential decryption runs outside the state lock; owner changes cancel a prepared send.
   `bin/crewnotify.py` owns state/transport; `crewnotifycli.py` controls owner input; `crew-notify`
   renders safe status only. Tests use fake credentials/receivers. A real phone test is DeNon's setup
