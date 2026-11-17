@@ -1,4 +1,22 @@
-# Project Pals 0.3.0: screenshots and clips
+# Project Pals: screenshots and clips
+
+## 0.5.0 gallery (2026-11-17)
+
+Five `herdr-app shot` frames of 0.5.0 in a demo Herdr window: its own herdr-core and app home,
+2304x1440 at zoom 1.5 (2880x1800 frames, stored here at 1920x1200), made-up pals (Bean, Mallow,
+Copper, Flick) in throwaway folders, real Claude Code (Haiku) and Codex. Painted out: agent version
+numbers, the account plan, Codex's usage lines and Herdr's own update toast. Every frame was
+text-checked. `preview.png` (repo root) is the first one at full size.
+
+| File | What it shows |
+|---|---|
+| `gallery-01-at-work.png` | Mallow (Claude Code) adds two functions and their tests in #streaks; the sidebar shows the crew. |
+| `gallery-02-crew.png` | Three pals working and Copper waiting on a permission, the header's Your call pill, a toast. |
+| `gallery-03-handoff.png` | Mallow's #streaks after `pal handoff --to codex`: Codex read the brief and carries on. |
+| `gallery-04-your-call.png` | The Your call dialog: Copper asks to run `./check.sh`. |
+| `gallery-05-command-bar.png` | The command bar over a pal: the pal's and project's actions. |
+
+## 0.3.0 (2026-11-08)
 
 Two sets, both shot on 2026-11-08 in a second Herdr window with its own app home.
 
