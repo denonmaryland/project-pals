@@ -793,6 +793,7 @@ def notify_credential_path(path, cwd=None, recursive=False):
     p = p.replace("${HOME}", os.path.expanduser("~")).replace("$HOME", os.path.expanduser("~"))
     if not os.path.isabs(p):
         p = os.path.join(cwd or os.getcwd(), p)
+    p = os.path.normpath(p)
     wildcard = re.search(r"[*?\[]", p)
     if wildcard:
         import fnmatch
@@ -842,7 +843,7 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
             operands += [w.split("=", 1)[1] for w in words[1:] if w.startswith("-") and "=" in w]
         else:
             for i, word in enumerate(words[1:], 1):
-                if word in {"-f", "--file"} and i + 1 < len(words):
+                if (word in {"-f", "--file"} or re.fullmatch(r"-[a-zA-Z]*f", word)) and i + 1 < len(words):
                     operands.append(words[i + 1])
                 elif word.startswith("--file="):
                     operands.append(word[len("--file="):])

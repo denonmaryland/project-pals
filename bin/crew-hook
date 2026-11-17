@@ -193,7 +193,7 @@ def pre_tool_use(event):
         import crewguard
         if crewguard.private_file_read(tool, inp, event.get("cwd")) and crew_bot():
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                "permissionDecisionReason": "Project Pals: private phone-alert and helper credentials aren't a pal's to read or search. Ask the owner instead."}}))
+                "permissionDecisionReason": "Project Pals: this scope can include private phone-alert or helper credentials. Narrow the file or search scope to exclude their folders."}}))
         return
     if tool == "Bash":
         cmd = inp.get("command") or ""

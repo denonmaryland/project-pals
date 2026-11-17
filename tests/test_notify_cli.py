@@ -168,6 +168,7 @@ print(json.dumps({"held":[crewguard.touches_notify(x) or crewguard.touches_helpe
                 self.assertEqual((result or {}).get("permissionDecision"), "deny")
                 if tool != "Edit":
                     self.assertNotIn("credentials.json", result["permissionDecisionReason"])
+                    self.assertIn("Narrow", result["permissionDecisionReason"])
         # Merely searching source for the protected path is not a secret read.
         for tool, args in [("Read", {"file_path": "bin/crewnotify.py"}),
                            ("Grep", {"pattern": str(keys / "notify/credentials.json"), "path": str(repo)}),
@@ -194,6 +195,20 @@ print(json.dumps({"held":inside, "free":outside}))
 ''')
         self.assertEqual(got["held"], [True] * 3)
         self.assertEqual(got["free"], [False] * 3)
+
+    def test_credential_globs_and_grep_file_option_clusters(self):
+        got = py(self.env, r'''
+import crewguard as g
+from pathlib import Path
+h = str(Path.home())
+p = h + "/.config/project-pals/notify/credentials.json"
+commands = ["cat " + h + "/.config/project-pals/*/./credentials.json",
+            "cat " + h + "/.config/project-pals/*//credentials.json",
+            "cat " + h + "/.config/project-pals/n*/../notify/credentials.json",
+            "grep -rf " + p + " .", "grep -if " + p + " .", "grep -Ef " + p + " ."]
+print(json.dumps([g.notify_credential_command(c, h) for c in commands]))
+''')
+        self.assertEqual(got, [True] * 6)
 
     def test_credential_lock_stays_on_when_optional_gate_is_off(self):
         settings = self.data / "crew-settings.json"
