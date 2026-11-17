@@ -375,9 +375,6 @@ GitHub release. With the gate On, it asks for approval in Your call, then runs a
 with the gate Off it runs without that prompt. Without Project Pals, you type the version. `./release 0.2.0
 --dry-run` runs every check and nothing else.
 
-## License
-
-MIT
 ## Phone alerts
 
 **About → Settings → Phone alerts** can ping your own bot when Home needs you. It starts off.
@@ -418,3 +415,6 @@ arrive. Changing the receiver clears pending work and turns sending off.
 Uninstall preserves the receiver/settings; `--purge` explicitly removes them. A reinstall can
 resume a preserved enabled configuration, so disable alerts first if that is not wanted.
 
+## License
+
+MIT
