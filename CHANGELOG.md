@@ -5,9 +5,6 @@
 Supported Herdr is unchanged: 0.1.8 or newer and herdr-core 0.1.11 or newer, both below 0.2. The
 full test suite for this release ran on Herdr 0.1.16 with herdr-core 0.1.21.
 
-- **Project Pals settings scroll.** On a shorter screen the About/settings dialog cut off its rows
-  below Trusted helpers and the wheel did nothing. Its body now scrolls between the header and the
-  buttons, and is never taller than the window.
 - **Just the terminals: Home and the Inbox are gone.** Project Pals is terminal-focused now. Clicking
   any pal, the head pal included, opens its terminal, and Ctrl+Shift+H takes you to the head pal's
   terminal. Gone: Home (the head pal's page with Needs you, the one-at-a-time review, All caught up,
@@ -71,6 +68,9 @@ full test suite for this release ran on Herdr 0.1.16 with herdr-core 0.1.21.
 
 ### Fixed
 
+- **Project Pals settings scroll.** On a shorter screen the About/settings dialog cut off its rows
+  below Trusted helpers and the wheel did nothing. Its body now scrolls between the header and the
+  buttons, and is never taller than the window.
 - `test_guard` no longer fails when other test files load the shared library first: it uses the
   same data folder the gate already reads.
 
