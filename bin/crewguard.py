@@ -795,8 +795,12 @@ def notify_credential_path(path, cwd=None, recursive=False):
         p = os.path.join(cwd or os.getcwd(), p)
     wildcard = re.search(r"[*?\[]", p)
     if wildcard:
-        p = os.path.dirname(p[:wildcard.start()])
-        recursive = True
+        import fnmatch
+        prefix = os.path.dirname(p[:wildcard.start()])
+        p = os.path.realpath(prefix) + p[len(prefix):]
+        target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
+        return fnmatch.fnmatchcase(target, p) or (recursive and any(
+            fnmatch.fnmatchcase(parent, p) for parent in (os.path.dirname(target), os.path.dirname(os.path.dirname(target)))))
     p = os.path.realpath(os.path.normpath(p))
     target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
     return p == target or (recursive and target.startswith(p.rstrip(os.sep) + os.sep))
@@ -822,6 +826,16 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
             continue
         name = words[0]
         args = [w for w in words[1:] if not w.startswith("-")]
+        search = name in {"grep", "rg", "ag", "jq"}
+        # Content patterns and print-only commands may mention the name without reading it.
+        operands = args[1:] if search else args
+        if not search:
+            operands += [w.split("=", 1)[1] for w in words[1:] if w.startswith("-") and "=" in w]
+        if name not in {"echo", "printf"}:
+            for arg in operands:
+                candidate = arg.split("=", 1)[-1].lstrip("<@")
+                if notify_credential_path(candidate, current):
+                    return True
         if re.fullmatch(r"(?:python|pypy)[\d.]*", name) and "-c" in words:
             import ast
             try:
@@ -833,7 +847,7 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
                     called = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
                     if called in {"open", "Path", "read_text", "read_bytes"} and any(
                             isinstance(value, ast.Constant) and isinstance(value.value, str)
-                            and notify_credential_path(value.value, current, recursive=True)
+                            and notify_credential_path(value.value, current)
                             for value in ast.walk(node)):
                         return True
             except (SyntaxError, IndexError):
@@ -843,17 +857,17 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
                 return True
             current = os.path.realpath(os.path.join(current, os.path.expanduser(args[0])))
             continue
-        if name in {"grep", "rg", "ag", "jq"}:
+        if search:
             args = args[1:]  # The first positional argument is a pattern, not a path.
-        elif name not in {"cat", "head", "tail", "less", "more", "cp", "mv", "base64", "xxd", "tar", "sed", "awk", "find", "od", "strings", "dd", "bat", "batcat", "rsync", "perl", "node", "nodejs", "python", "python3", "systemd-creds", "sh", "bash"} and not name.endswith((".sh", ".py", ".js", ".pl")):
-            continue
-        if any(notify_credential_path(arg.split("=", 1)[-1], current, recursive=True) for arg in args):
+        recursive = name in {"find", "rg", "ag", "tar"} or (name in {"grep", "cp", "rsync", "zip"} and any(
+            w in {"--recursive", "--archive"} or (w.startswith("-") and not w.startswith("--") and any(c in w[1:] for c in "rRa")) for w in words[1:]))
+        if recursive and any(notify_credential_path(arg.split("=", 1)[-1], current, recursive=True) for arg in args):
             return True
         # Literal paths inside interpreter expressions (e.g. node -e / perl -e).
         if name in {"node", "nodejs", "perl"} and any(x in words for x in ("-e", "--eval")):
             for arg in args:
                 for literal in re.findall(r"['\"]([^'\"\n]+)['\"]", arg):
-                    if notify_credential_path(literal, current, recursive=True):
+                    if notify_credential_path(literal, current):
                         return True
         # Inspect small, regular executable scripts, never the credential itself. This catches
         # straightforward paths in script files without claiming to interpret arbitrary code.
@@ -867,7 +881,7 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
             scripts += [arg for arg in args if arg.endswith((".sh", ".py", ".js", ".pl"))]
         for script in scripts:
             filename = os.path.abspath(os.path.join(current, os.path.expanduser(script)))
-            if notify_credential_path(filename, current, recursive=True):
+            if notify_credential_path(filename, current):
                 return True
             try:
                 import stat
@@ -886,7 +900,7 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
             for line in source.splitlines():
                 if re.search(r"\b(?:open|readFile|readFileSync|read_text|read_bytes)\s*\(", line):
                     for literal in re.findall(r"['\"]([^'\"\n]+)['\"]", line):
-                        if notify_credential_path(literal, current, recursive=True):
+                        if notify_credential_path(literal, current):
                             return True
     return False
 
