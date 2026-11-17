@@ -410,8 +410,9 @@ While crewd runs, new asks/plans, approval requests, logins, owner-needed cards/
 trusted-helper off/removal events are queued promptly, including when no terminals are open.
 Enabling starts with new items, so existing Home items do not create a backlog of pings. An
 enabled daemon recovers retained new events after a restart. Network failure never waits in
-crewd's main loop. Delivery uses a bounded queue with retries;
-failed/expired deliveries show in the settings status. A retry after a lost response may
+crewd's main loop. Delivery uses a bounded queue with retries. Certificate verification failures
+show a distinct status telling you to check the receiver's TLS certificate. Failed and expired
+deliveries show in the settings status. A retry after a lost response may
 produce a duplicate ping. Disabling clears queued work; a request already in flight may still
 arrive. Changing the receiver clears pending work and turns sending off.
 Uninstall preserves the receiver/settings; `--purge` explicitly removes them. A reinstall can

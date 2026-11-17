@@ -569,7 +569,9 @@ def _post(bundle, payload):
 
 
 def _tls_outcome(error):
-    return "retry"
+    # Certificate failures need an actionable status, but keep the normal retry
+    # schedule so alerts recover if the receiver's certificate is fixed.
+    return "tls-error" if isinstance(error, ssl.SSLCertVerificationError) else "retry"
 
 
 def transport(bundle, payload):

@@ -62,7 +62,7 @@ export default class CrewNotify extends View {
         .child(row("Receiver", info.configured ? "Configured" : "Not configured"))
         .child(row("Credential storage", !info.configured ? "Not set" : info.sealed ? "Sealed for this user" : "0600 file (unsealed)"))
         .child(row("Pending", String(info.pending ?? 0)))
-        .child(row("Last outcome", String(info.last_outcome || "No delivery yet")))
+        .child(row("Last outcome", info.last_outcome === "tls-error" ? "Certificate verification failed; check receiver TLS (retrying)" : String(info.last_outcome || "No delivery yet")))
         .child(row("Expired / dropped", `${info.expired ?? 0} / ${info.dropped ?? 0}`)));
       body.child(text("Set up or replace the receiver yourself in a terminal outside Herdr:", true));
       body.child(div().px(10).py(8).rounded(4).bg(d.inset).text_size(12).font_family(d.mono).text_color(d.fg1).child("pal notify setup"));

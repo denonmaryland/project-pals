@@ -55,7 +55,10 @@ def run(rest, require_owner):
             print("Phone alerts: " + ("on" if info.get("enabled") else "off"))
             print("Receiver: " + ("configured" if info.get("configured") else "not configured"))
             print("Payload: " + ("kind, id, title and topic" if info.get("privacy") == "detail" else "kind and id only"))
-            print("Last delivery: " + str(info.get("last_outcome") or "none"))
+            outcome = info.get("last_outcome") or "none"
+            if outcome == "tls-error":
+                outcome = "certificate verification failed; check the receiver's TLS certificate (retrying)"
+            print("Last delivery: " + str(outcome))
         return
     as_json = args[-1:] == ["--json"]
     if as_json:

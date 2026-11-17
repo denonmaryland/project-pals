@@ -322,6 +322,22 @@ class Notify(unittest.TestCase):
         self.assertEqual(self.state()["queue"][0]["next"], self.now + 2)
         self.assertEqual(self.reports, [])
 
+    def test_certificate_failure_is_visible_and_retries_until_recovered(self):
+        self.configure()
+        self.enable()
+        self.new()
+        self.outcome = "tls-error"
+        self.worker.step()
+        self.assertTrue(self.state()["enabled"])
+        self.assertEqual(n.status(directory=self.directory)["last_outcome"], "tls-error")
+        self.assertEqual(self.state()["queue"][0]["next"], self.now + 2)
+        self.assertEqual(self.reports, [])
+        self.now += 2
+        self.outcome = "sent"
+        self.worker.step()
+        self.assertEqual(self.state()["last_outcome"], "sent")
+        self.assertEqual(self.state()["queue"], [])
+
     def test_queue_and_seen_limits_do_not_repeat_old_items(self):
         self.configure()
         self.enable()
@@ -618,7 +634,13 @@ class Transport(unittest.TestCase):
         with patch.object(opener, "open", side_effect=urllib.error.URLError(ssl.SSLError("SECRET"))), \
                 patch.object(n.urllib.request, "build_opener", return_value=opener):
             self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), "retry")
-        for error in (ssl.SSLError("SECRET"), ssl.SSLCertVerificationError("SECRET"),
+        for error in (ssl.SSLCertVerificationError("SECRET"),
+                      urllib.error.URLError(ssl.SSLCertVerificationError("SECRET"))):
+            with self.subTest(error=type(error).__name__), \
+                    patch.object(opener, "open", side_effect=error), \
+                    patch.object(n.urllib.request, "build_opener", return_value=opener):
+                self.assertEqual(n._post(bundle, {"kind": "test", "id": "n-abcdef"}), "tls-error")
+        for error in (ssl.SSLError("SECRET"),
                       ssl.SSLEOFError("SECRET"), ssl.SSLZeroReturnError("SECRET"),
                       urllib.error.URLError(ssl.SSLEOFError("SECRET")),
                       urllib.error.URLError(ssl.SSLZeroReturnError("SECRET"))):
