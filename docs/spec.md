@@ -259,8 +259,9 @@ Adwaita Sans, or Geist when Adwaita Sans isn't installed.
 - **Demo filter (for screenshots):** `data/crew-demo.json` `{"only": ["Website", …]}` makes that
   window's sidebar show just those pals, and `{"states": {"Website": "pr", …}}` shows those pals'
   pets in that tile state; no file, everyone, live. Screenshots come from a second Herdr window
-  (`HERDR_APP_HOME` on a short path). Since 0.3.0, `preview.png` is `docs/media/overview.png`
-  scaled to 1600 wide: that window on the real herdr-core, with a real agent working.
+  (`HERDR_APP_HOME` on a short path). Since 0.5.0, `preview.png` is the full-size (2880x1800)
+  `docs/media/gallery-01-at-work.png`: a demo window on its own herdr-core at zoom 1.5, with made-up
+  pals and real Claude Code working.
 - **`pal hire --model <model>`** puts `--model` on the hired pal's command line.
 - **Models:** Hire and New topic have a **Model** row for Claude Code (Your default · Opus ·
   Sonnet · Haiku) and Antigravity CLI (Your default · Gemini 4 Argon · Gemini 3.8 Flash · Claude

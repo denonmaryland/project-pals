@@ -4,9 +4,14 @@
 with a brain (Claude Code, Codex, Antigravity CLI and more), each of its tabs is a topic, and a head
 pal keeps the crew moving.
 
-[![Mallow's #streaks topic handed from Claude Code to Codex, with its brief](preview.png)](docs/media/promo.mp4)
+![Mallow, a pal on Claude Code, adding and testing a function in its #streaks topic while the rest of the crew works](preview.png)
 
-▶ **[Watch the 45-second film](docs/media/promo.mp4)**: real Claude Code and Codex sessions in a demo crew.
+| [![At work](docs/media/gallery-01-at-work.png)](docs/media/gallery-01-at-work.png) | [![The crew](docs/media/gallery-02-crew.png)](docs/media/gallery-02-crew.png) | [![Handoff](docs/media/gallery-03-handoff.png)](docs/media/gallery-03-handoff.png) | [![Your call](docs/media/gallery-04-your-call.png)](docs/media/gallery-04-your-call.png) | [![Command bar](docs/media/gallery-05-command-bar.png)](docs/media/gallery-05-command-bar.png) |
+|:-:|:-:|:-:|:-:|:-:|
+| A pal at work | The whole crew at once | Claude Code → Codex handoff | Your call | The command bar |
+
+▶ **[Watch the 45-second film](docs/media/promo.mp4)**. Everything above is the real app, with real Claude Code
+and Codex sessions in a demo crew.
 
 **Linux only for now** (it needs a systemd user session; see [docs/mac-support.md](docs/mac-support.md)).
 Early software: start with a throwaway project.
