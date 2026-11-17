@@ -487,7 +487,7 @@ def _report_disabled(data, outcome):
     try:
         # An open ask stays on Home until acknowledged; ordinary notes only appear
         # in Today's drawer. No pal authored this system notice or needs a reply.
-        crewhome.add("ask", title, by="", options=("Noted",),
+        crewhome.add("ask", title, by="", options=("Noted",), owner_only=True,
                      body="Alerts are off and queued alerts were cancelled. After fixing the issue, enable phone alerts in Settings.")
     except Exception:
         pass
