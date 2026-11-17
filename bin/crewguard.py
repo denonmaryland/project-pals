@@ -793,12 +793,13 @@ def notify_credential_path(path, cwd=None, recursive=False):
     p = p.replace("${HOME}", os.path.expanduser("~")).replace("$HOME", os.path.expanduser("~"))
     if not os.path.isabs(p):
         p = os.path.join(cwd or os.getcwd(), p)
-    p = os.path.normpath(p)
     wildcard = re.search(r"[*?\[]", p)
     if wildcard:
         import fnmatch
+        if ".." in p[wildcard.start():].split(os.sep):
+            return True  # A wildcard may expand to a symlink before '..'.
         prefix = os.path.dirname(p[:wildcard.start()])
-        p = os.path.realpath(prefix) + p[len(prefix):]
+        p = os.path.normpath(os.path.realpath(prefix) + p[len(prefix):])
         target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
         def matches_components(value):
             parts, pattern = value.split(os.sep), p.split(os.sep)
@@ -811,7 +812,7 @@ def notify_credential_path(path, cwd=None, recursive=False):
                 return True
             parent = os.path.dirname(parent)
         return False
-    p = os.path.realpath(os.path.normpath(p))
+    p = os.path.realpath(p)
     target = os.path.realpath(os.path.expanduser("~/.config/project-pals/notify/credentials.json"))
     return p == target or (recursive and target.startswith(p.rstrip(os.sep) + os.sep))
 
@@ -847,8 +848,8 @@ def notify_credential_command(cmd, cwd=None, _depth=0):
                     operands.append(words[i + 1])
                 elif word.startswith("--file="):
                     operands.append(word[len("--file="):])
-                elif word.startswith("-f") and len(word) > 2:
-                    operands.append(word[2:])
+                elif re.match(r"^-[a-zA-Z]*?f.", word):
+                    operands.append(word[word.index("f") + 1:])
         operands += [word[2:] for word in words[1:] if re.match(r"^-[A-Za-z]@", word)]
         if name not in {"echo", "printf"}:
             for arg in operands:

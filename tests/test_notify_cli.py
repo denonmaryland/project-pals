@@ -202,13 +202,18 @@ import crewguard as g
 from pathlib import Path
 h = str(Path.home())
 p = h + "/.config/project-pals/notify/credentials.json"
+sub = Path(h) / ".config/project-pals/notify/sub"
+sub.mkdir(parents=True)
+(Path(h) / "link").symlink_to(sub, target_is_directory=True)
 commands = ["cat " + h + "/.config/project-pals/*/./credentials.json",
             "cat " + h + "/.config/project-pals/*//credentials.json",
             "cat " + h + "/.config/project-pals/n*/../notify/credentials.json",
-            "grep -rf " + p + " .", "grep -if " + p + " .", "grep -Ef " + p + " ."]
+            "cat " + h + "/link/../credentials.json",
+            "grep -rf " + p + " .", "grep -if " + p + " .", "grep -Ef " + p + " .",
+            "grep -if" + p + " ."]
 print(json.dumps([g.notify_credential_command(c, h) for c in commands]))
 ''')
-        self.assertEqual(got, [True] * 6)
+        self.assertEqual(got, [True] * 8)
 
     def test_credential_lock_stays_on_when_optional_gate_is_off(self):
         settings = self.data / "crew-settings.json"
