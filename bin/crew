@@ -2642,9 +2642,11 @@ def cmd_dream(spaces, rest):
             new = (cur.rstrip() + "\n\n" if cur else "") + text.strip() + "\n"
             pr = crewproposals.propose("agents", name, by, new, "AGENTS.md", crewagents.sha(cur), o.get("note"), meta)
         elif kind == "skill":
-            if not o.get("name"):
+            skill_meta, _ = crewskills.frontmatter(text)
+            skill_name = skill_meta.get("name") or o.get("name")
+            if not skill_name:
                 die("a skill needs --name skill-name")
-            meta["name"] = slug(o["name"])
+            meta["name"] = slug(skill_name)
             pr = crewproposals.propose("dream", "crew", by, text, f"skill {meta['name']}", None, o.get("note"), meta)
         else:
             target = o.get("pal")
@@ -2668,7 +2670,10 @@ def apply_dream(spaces, p):
     kind = m.get("kind")
     if kind == "skill":
         import crewskills
-        f = crewskills.save(m["name"], (p.get("note") or m.get("summary") or "")[:200], p["text"], by="dream")
+        skill_meta, body = crewskills.frontmatter(p["text"])
+        name = skill_meta.get("name") or m["name"]
+        description = skill_meta.get("description") or (p.get("note") or m.get("summary") or "")[:200]
+        f = crewskills.save(name, description, body, by="dream", source=p["text"] if skill_meta.get("name") and skill_meta.get("description") else None)
         linked = crewskills.link(f.parent.name)
         return f"saved skill {f.parent.name}" + (f"; linked for {', '.join(linked)}" if linked else "")
     if kind in ("tool", "process"):
