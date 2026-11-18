@@ -2673,7 +2673,7 @@ def apply_dream(spaces, p):
         skill_meta, body = crewskills.frontmatter(p["text"])
         name = skill_meta.get("name") or m["name"]
         description = skill_meta.get("description") or (p.get("note") or m.get("summary") or "")[:200]
-        f = crewskills.save(name, description, body, by="dream", source=p["text"] if skill_meta.get("name") and skill_meta.get("description") else None)
+        f = crewskills.save(name, description, body, by="dream")
         linked = crewskills.link(f.parent.name)
         return f"saved skill {f.parent.name}" + (f"; linked for {', '.join(linked)}" if linked else "")
     if kind in ("tool", "process"):

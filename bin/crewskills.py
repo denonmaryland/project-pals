@@ -45,7 +45,7 @@ def get(name):
     return f if f.exists() else None
 
 
-def save(name, description, body, by=None, learned=False, source=None):
+def save(name, description, body, by=None, learned=False):
     name = slug(name)
     d = SKILLS / name
     d.mkdir(parents=True, exist_ok=True)
@@ -58,7 +58,7 @@ def save(name, description, body, by=None, learned=False, source=None):
         description = description or meta.get("description", "")
     desc = " ".join((description or f"How to {name.replace('-', ' ')}").split()).replace('"', "'")
     who = f'{"learned-by" if learned else "saved-by"}: "{by}"\n' if by else ""
-    f.write_text(source if source is not None else f'---\nname: {name}\ndescription: "{desc}"\n{who}---\n\n{body.strip()}\n')
+    f.write_text(f'---\nname: {name}\ndescription: "{desc}"\n{who}---\n\n{body.strip()}\n')
     link(name)
     return f
 

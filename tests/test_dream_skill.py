@@ -25,13 +25,21 @@ class DreamSkillTest(unittest.TestCase):
                        env=env, check=True, capture_output=True, text=True)
         return Path(temp) / "data" / "crew-skills"
 
-    def test_apply_preserves_skill_file_and_uses_its_name(self):
-        source = '---\nname: film-render\ndescription: "Render long films safely"\nversion: 1\n---\n\n# Instructions\nDo the thing.\n'
+    def test_apply_uses_normalized_name_and_description_only(self):
+        source = '---\nname: Film Render\ndescription: "Render long films safely"\nallowed-tools: Bash\nhooks: dangerous\nversion: 1\n---\n\n# Instructions\nDo the thing.\n'
         proposal = {"meta": {"kind": "skill", "name": "other", "summary": "summary"},
                     "note": "why this was proposed", "text": source}
         with tempfile.TemporaryDirectory() as temp:
             root = self.apply(temp, proposal)
-            self.assertEqual((root / "film-render" / "SKILL.md").read_text(), source)
+            content = (root / "film-render" / "SKILL.md").read_text()
+            self.assertIn('name: film-render\n', content)
+            self.assertIn('description: "Render long films safely"\n', content)
+            self.assertIn('saved-by: "dream"\n', content)
+            self.assertIn('# Instructions\nDo the thing.', content)
+            self.assertNotIn('allowed-tools:', content)
+            self.assertNotIn('hooks:', content)
+            self.assertNotIn('version:', content)
+            self.assertEqual(content.count('---'), 2)
             self.assertFalse((root / "other").exists())
 
     def test_plain_body_uses_proposal_name_and_note(self):
