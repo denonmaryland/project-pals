@@ -34,7 +34,9 @@ branch; explain the problem, resulting behavior, and checks in your PR. Add a re
 for fixes. Edit shared JS in `lib/`, not installed copies. Keep internal `crew` names and legacy
 command aliases intact.
 
-Run `python3 -m unittest discover -s tests` and each `tests/*.mjs` with Node (one at a time).
+Run `tests/check_tmp.sh` for the Python and JavaScript suites. It requires bubblewrap and isolates
+the live Herdr data and runtime sockets. For a focused command, use
+`tests/run-isolated.sh python3 -m unittest discover -s tests -p 'test_name.py'`.
 Tests use temporary data and fake programs. For installer checks, follow AGENTS.md's throwaway
 HOME **and command shims** instructions; changing HOME alone doesn't isolate Herdr or systemd.
 Never run the installer on your everyday setup just to test a contribution. Don't run `release`

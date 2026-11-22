@@ -830,7 +830,7 @@ def quick_checks(root, log=print):
             run(["sh", "-c", 'for f in "$@"; do node --check "$f" || exit 1; done', "sh", *(str(stage / f"syntax-{i}.mjs") for i in range(len(js)))],
                 "a JS file doesn't parse")
             for t in sorted((root / "tests").glob("*.mjs")):
-                run(["node", str(t)], f"the test {t.name} failed")
+                run(["python3", str(Path(__file__).with_name("crewtest.py")), "node", str(t)], f"the test {t.name} failed")
         if shutil.which("herdr-app"):
             from concurrent.futures import ThreadPoolExecutor
 
@@ -852,7 +852,7 @@ def quick_checks(root, log=print):
 def full_tests(root):
     """The whole regression suite in that folder → (ok, a line about it). Minutes."""
     try:
-        r = subprocess.run(["python3", "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=root, capture_output=True, text=True, timeout=TEST_TIMEOUT)
+        r = subprocess.run(["python3", str(Path(__file__).with_name("crewtest.py")), "python3", "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=root, capture_output=True, text=True, timeout=TEST_TIMEOUT)
     except subprocess.TimeoutExpired:
         return False, "the Python tests took over half an hour"
     if r.returncode != 0:
@@ -861,7 +861,7 @@ def full_tests(root):
     m = re.search(r"Ran (\d+) tests?", r.stderr)
     if shutil.which("node"):
         for t in sorted((Path(root) / "tests").glob("*.mjs")):
-            if subprocess.run(["node", str(t)], cwd=root, capture_output=True, timeout=600).returncode != 0:
+            if subprocess.run(["python3", str(Path(__file__).with_name("crewtest.py")), "node", str(t)], cwd=root, capture_output=True, timeout=600).returncode != 0:
                 return False, f"{t.name} failed"
     return True, f"{m.group(1)} tests passed" if m else "tests passed"
 

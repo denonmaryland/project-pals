@@ -14,6 +14,12 @@ import pals_tmp  # noqa: E402  (scratch folders removed at exit, T143)
 # through test_handoff, say), these tests use that folder, or the gate would read one folder while
 # the tests write another (T213: 7 tests failed after owner_step/land_base/handoff/taps).
 _crewlib = sys.modules.get("crewlib")
+if _crewlib is not None:
+    import pwd
+    real_data = (Path(pwd.getpwuid(os.getuid()).pw_dir) / ".config/herdr-app/data").resolve()
+    cached_data = Path(_crewlib.DATA).resolve()
+    if cached_data == real_data or real_data in cached_data.parents:
+        raise RuntimeError("unsafe test discovery: crewlib was imported with the real Herdr data folder")
 TMP = str(_crewlib.DATA) if _crewlib is not None else pals_tmp.mkdtemp(prefix="pals-test-")
 Path(TMP).mkdir(parents=True, exist_ok=True)
 os.environ["CREW_DATA"] = TMP

@@ -5,6 +5,9 @@
 #   systemd-run --user --scope --quiet --collect -p MemoryMax=2G -- tests/check_tmp.sh
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+if [[ "${PALS_TEST_ISOLATED:-}" != 1 ]]; then
+  exec tests/run-isolated.sh env PALS_TEST_ISOLATED=1 "$0" "$@"
+fi
 # Short on purpose: tests make unix sockets under it, and those paths must stay under 108 bytes.
 scratch="$(mktemp -d /tmp/pt-XXXXXX)"
 trap 'rm -rf "$scratch"' EXIT
