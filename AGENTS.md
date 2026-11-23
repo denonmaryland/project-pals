@@ -103,3 +103,9 @@ plain shell it asks nobody (a pal's is still held by the gate, like any release 
 - Anything that writes outside Herdr's folder (`~/.claude`, systemd, `~/.local/bin`) gets backed
   up first and stays skippable with `--no-helpers`.
 - Linux only for now. See `docs/mac-support.md` before adding platform-specific code.
+
+## Git in the shared repo
+- Never work, squash or land in DeNon's checkout (~/Projects/project-pals). Use your topic worktree; land with `git update-ref` from a worktree, then sync his checkout.
+- Squash onto `git merge-base HEAD main`, never onto the name `main` (main may have moved and the squash would undo others' work).
+- Stage explicit paths (`git add path…`), never `git add -A` / `.` in a shared tree.
+- Don't amend a commit someone is testing or reviewing; add a new commit.
