@@ -447,6 +447,8 @@ class ReleaseScript(unittest.TestCase):
             f.write_text(text)
         shutil.copy(REPO / "release", self.repo / "release")
         shutil.copy(REPO / "tests" / "check_tmp.sh", self.repo / "tests" / "check_tmp.sh")   # its test step (T143)
+        shutil.copy(REPO / "tests" / "run-isolated.sh", self.repo / "tests" / "run-isolated.sh")
+        shutil.copy(REPO / "bin" / "crewtest.py", self.repo / "bin" / "crewtest.py")
         (self.shims / "gh").write_text("#!/bin/sh\nexit 0\n")
         (self.shims / "gh").chmod(0o755)
         self.env = {"HOME": str(self.root / "home"), "PATH": f"{self.shims}:/usr/bin:/bin", "LANG": "C.UTF-8",
