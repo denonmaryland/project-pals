@@ -68,7 +68,29 @@ based on a read of the code as of v0.2.0.
   (Xcode's `/usr/bin/python3` is 3.9. Check the code doesn't use newer syntax, such as
   `match` or `X | Y` type hints at runtime).
 
-### 6. Docs
+### 6. Sleep and wake: the terminal ownership checks ([#6](https://github.com/denonmaryland/project-pals/issues/6))
+
+Reported on macOS in #6 (Project Pals 0.5.0, Herdr 0.1.16, herdr-core 0.1.21): `pal sleep` and
+`pal wake` refuse every local topic with "can't find its shell on this machine". Nothing is
+stopped or written to, so this is a safe refusal, not a crash.
+
+- **Why:** before stopping an agent or typing into a shell, `crewlib.owns_terminal` and
+  `crewsleep.names_terminal` prove the pid belongs to that terminal by finding
+  `HC_TERMINAL_ID=<address>` in `/proc/<pid>/environ`. macOS has no `/proc`, so the read fails
+  and both return False. `ps eww` and `sysctl KERN_PROCARGS2` don't show another process's
+  environment there either.
+- **What already falls back:** `proc_comm` and `child_pids` use `ps` and `pgrep` when `/proc` is
+  missing. These two checks are the only ones with no fallback.
+- **Proposed fix (not built yet):** the reporter suggested, and offered a PR for, a fallback used
+  only when `/proc` doesn't exist: a pid counts as the terminal's shell when `hc get <address>`
+  reports it as that terminal's `pid` *and* its parent (`ps -o ppid=`) is `herdr-core`.
+  `names_terminal` would then walk up a few parents to that shell. If either check fails, the
+  answer stays False. The Linux `/proc` path stays exactly as it is. Until that lands, sleep and
+  wake don't work on macOS.
+- **Related:** on macOS `proc_comm` reports Hermes as `python3` (`hermes` is a shell wrapper that
+  execs Python), so `agent_children` doesn't recognise a running Hermes pal there.
+
+### 7. Docs
 
 - README: replace "Linux only" with a supported-platforms line, and add macOS install notes
   (Homebrew `rsync`/`python3` if needed, PATH).
